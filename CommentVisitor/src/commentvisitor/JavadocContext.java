@@ -1,6 +1,8 @@
 package commentvisitor;
 
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.Javadoc;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 
 public class JavadocContext extends CommentContext {
 
@@ -8,8 +10,19 @@ public class JavadocContext extends CommentContext {
 	Javadoc javadoc;
 	
 	public JavadocContext(Javadoc javadoc) {
+		
 		//sets default comment text to empty string in case of null
 		super("");
+		
+		// set the name of the method containing the comment
+		ASTNode parent = javadoc.getParent();
+		if(parent.getNodeType() == ASTNode.METHOD_DECLARATION) {
+			// JFF: I am assuming that getNodeType() is coherent with the type. 
+			//      Otherwise, the following cast may be unsafe.
+			String methodName = ((MethodDeclaration)parent).getName().getIdentifier();
+			this.setParentName(methodName);
+		}
+
 		//if not null set comment text to the text
 		if (javadoc.tags().get(0) != null) {
 				this.commentText = javadoc.tags().get(0).toString().trim();
@@ -21,5 +34,15 @@ public class JavadocContext extends CommentContext {
 			tags[i] = javadoc.tags().get(i).toString();
 		}
 		
+	}
+	
+	public String toString() {
+		String ret = "\nParent name:\t" + this.parentName + "\n";
+		ret = ret + "Javadoc comment:\n";
+		for(String s: tags) {
+			ret = ret + s;
+		}
+		ret = ret + "\n";
+		return ret;
 	}
 }
