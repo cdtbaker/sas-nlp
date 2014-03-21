@@ -24,7 +24,7 @@ public class JavadocContext extends CommentContext {
 		}
 
 		//if not null set comment text to the text
-		if (javadoc.tags().get(0) != null) {
+		if (javadoc.tags().size() >0) {
 				this.commentText = javadoc.tags().get(0).toString().trim();
 		}
 		this.javadoc = javadoc;

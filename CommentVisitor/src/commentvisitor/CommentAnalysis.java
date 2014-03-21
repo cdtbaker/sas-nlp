@@ -2,15 +2,18 @@ package commentvisitor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
 
 import org.eclipse.jdt.core.ITypeRoot;
+import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Javadoc;
+import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 
 import testanalysis.TestAnalysis;
-
 import edu.cmu.cs.crystal.AbstractCrystalMethodAnalysis;
 
 public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
@@ -24,6 +27,23 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 	// Called before all methods
 	@Override
 	public void beforeAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
+		List<ASTNode> commentList1 = rootNode.getCommentList();
+		
+		for(int i=0;i<commentList1.size();i++){
+			//print each comment in the list
+		System.out.println(commentList1.get(i));
+		try {
+			//print the name of the method associated with the comment
+			System.out.println(compUnit.getElementAt(commentList1.get(i).getStartPosition()).getJavaModel());
+		} catch (JavaModelException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		}
+		
+		
+		
+		
 		// Initialises this lists
 		javadocList = new ArrayList<JavadocContext>();
 		commentList = new ArrayList<CommentContext>();
@@ -36,6 +56,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 	// Called after all methods
 	@Override
 	public void afterAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
+		
 		// records end time
 		endTime = System.currentTimeMillis();
 		// prints time taken
@@ -49,8 +70,6 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 	@Override
 	public void analyzeMethod(MethodDeclaration d) {
-		
-		System.out.println(d.getParent().toString());
 		d.accept(new CommentVisitor());
 	}
 
@@ -61,7 +80,6 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 	// visitor to find comments
 	private class CommentVisitor extends ASTVisitor {
-
 		// called whenever javadoc comment is found
 		@Override
 		public void endVisit(Javadoc node) {
@@ -69,6 +87,14 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			super.endVisit(node);
 		}
 
-	}
+		@Override
+		public boolean visit(LineComment node) {
+			System.out.println("LINE COMMENT");
+			return true;
+		}
+		
+		
 
+	}
+	
 }
