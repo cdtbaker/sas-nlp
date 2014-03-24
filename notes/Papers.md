@@ -2,7 +2,7 @@
 
  * [Dana Movshovitz-Attias and William W. Cohen. 2013. Natural language models for predicting programming comments. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers). Sofia, Bulgaria, 35-40] (http://www.aclweb.org/anthology/P13-2007)
 
- * [Dorsaf Haouari, Houari Sahraoui, and Philippe Langlais. 2011. In Proceedings of the 2011 International Symposium on Empirical Software Engineering and Measurement.] (http://ieeexplore.ieee.org/xpl/abstractAuthors.jsp?arnumber=6092562)
+ * [Dorsaf Haouari, Houari Sahraoui, and Philippe Langlais. 2011. How good is your comment? A study of comments in Java programs. In Proceedings of the 2011 International Symposium on Empirical Software Engineering and Measurement.] (http://ieeexplore.ieee.org/xpl/abstractAuthors.jsp?arnumber=6092562)
 
  * [Rene Witte, Bahar Sateli, Ninus Khamis, and Juergen Rilling. 2011. Intelligent software development environments: Integrating natural language processing with the Eclipse platform. In Advances in Artificial Intelligence. Springer Berlin Heidelberg, 408-419] (http://link.springer.com/chapter/10.1007/978-3-642-21043-3_49)
 
@@ -21,3 +21,6 @@
 
 
  * [David Shepherd, Lori Pollock, and Tom Tourwé. 2005. Using language clues to discover crosscutting concerns. SIGSOFT Softw. Eng. Notes 30, 4 (May 2005), 1-6.](http://doi.acm.org/10.1145/1082983.1083129)
+
+ * [Greg Badros. 2000. JavaML: a markup languge for Java source code. Computer Networks 33(1-6) (June 2000), 159-177.] (http://www.sciencedirect.com/science/article/pii/S1389128600000372)
+ 
