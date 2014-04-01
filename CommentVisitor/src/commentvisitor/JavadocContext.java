@@ -12,7 +12,7 @@ public class JavadocContext extends CommentContext {
 	public JavadocContext(Javadoc javadoc) {
 		
 		//sets default comment text to empty string in case of null
-		super("");
+		super("",javadoc);
 		
 		// set the name of the method containing the comment
 		ASTNode parent = javadoc.getParent();

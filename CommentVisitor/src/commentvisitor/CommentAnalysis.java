@@ -124,7 +124,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			int startLineNumber = compUnit.getLineNumber(node
 					.getStartPosition()) - 1;
 			String lineComment = source[startLineNumber].trim();
-
+			lineComment = lineComment.substring(lineComment.indexOf("//"));
 			System.out.println("@@@@@");
 			System.out.println(lineComment);
 
@@ -132,7 +132,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
 			System.out.println(withoutSignature.getParent());
-
+			commentList.add(new CommentContext(lineComment,withoutSignature));
 			System.out.println("@@@@@");
 			System.out.println("END LINE COMMENT");
 
@@ -167,7 +167,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
 			System.out.println(withoutSignature.getParent());
-
+			commentList.add(new CommentContext(blockComment.toString(),withoutSignature));
 			System.out.println("@@@@@");
 
 			System.out.println("END BLOCK COMMENT");
