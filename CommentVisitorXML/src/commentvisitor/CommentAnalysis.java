@@ -41,7 +41,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 	@Override
 	public void beforeAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
 		List<ASTNode> commentList1 = rootNode.getCommentList();
-		
+		elements = new Stack();
 		String source = null;
 		try {
 			source = compUnit.getSource();
@@ -71,7 +71,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 		}
 
 		d = new Document();
-		Element root = new Element("class ");
+		Element root = new Element("class");
 		elements.add(root);
 		d.setRootElement(root);
 		// records start time of analysis
@@ -101,7 +101,7 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 	@Override
 	public void analyzeMethod(MethodDeclaration d) {
-		Element method = new Element(d.getName().toString());
+		Element method = new Element("method_return-" + d.getReturnType2() + "_name-" + d.getName().toString()+"");
 		
 		elements.peek().addContent(method);
 		d.accept(cvisitor);
@@ -125,11 +125,12 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 		@Override
 		public boolean visit(Block node) {
-			Element scope = new Element("scope");
+			Element e = new Element("scope");
+			
 			//adds block to previous top of stack
-			elements.peek().addContent(scope);
+			elements.peek().addContent(e);
 			//pushes block to top of stack
-			elements.push(scope);
+			elements.push(e);
 			return super.visit(node);
 		}
 		
@@ -154,13 +155,13 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 		@Override
 		public boolean visit(VariableDeclarationFragment node) {
-			elements.peek().addContent("declaration fragment");
+			elements.peek().addContent(node.getName().toString());
 			return super.visit(node);
 		}
 
 		@Override
 		public boolean visit(VariableDeclarationStatement node) {
-			elements.peek().addContent(node.getType().toString());
+			elements.peek().addContent(node.getType().toString()+"_");
 			return super.visit(node);
 		}
 
