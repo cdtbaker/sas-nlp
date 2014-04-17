@@ -1,4 +1,4 @@
-package commentvisitor;
+package xmlparser;
 
 import java.util.List;
 import java.util.Stack;
@@ -12,10 +12,13 @@ import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.BlockComment;
 import org.eclipse.jdt.core.dom.Comment;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.SimplePropertyDescriptor;
+import org.eclipse.jdt.core.dom.TagElement;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -26,25 +29,27 @@ import org.jdom2.output.XMLOutputter;
 import testanalysis.TestAnalysis;
 import edu.cmu.cs.crystal.AbstractCrystalMethodAnalysis;
 
-public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
+public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
-	// lists to hold comments
+	
 	Stack<Element> elements;
+	MethodDeclaration methodDec;
 	Document d;
 	long startTime;
 	long endTime;
-	CommentVisitor cvisitor; // This is the comment visitor used to visit all
+	XMLParser parser; // This is the comment visitor used to visit all
 								// the AST Nodes; it is initialised in
 								// beforeAllMethods()
 
 	// Called before all methods
 	@Override
-	public void beforeAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
-		List<ASTNode> commentList1 = rootNode.getCommentList();
-		elements = new Stack();
+	public void beforeAllMethods(ITypeRoot rootNode, CompilationUnit compilationUnit) {
+		List<ASTNode> commentList1 = compilationUnit.getCommentList();
+		elements = new Stack<Element>();
+		methodDec = null;
 		String source = null;
 		try {
-			source = compUnit.getSource();
+			source = rootNode.getSource();
 		} catch (JavaModelException e) {
 			// TODO: what is the best way of terminating the analysis?
 			System.exit(-1);
@@ -58,26 +63,27 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 		// Property: At this point, source exists and is not null.
 
 		// initialize the cvisitor with the source
-		cvisitor = new CommentVisitor(rootNode, source.split("\n"));
+		parser = new XMLParser(compilationUnit, source.split("\n"));
 
 		// To visite LineComment and BlockComment nodes, we need to call the
 		// accept method on them
 		// (see documentation of getCommentList() for more details)
-		List<Comment> l = rootNode.getCommentList();
+		List<Comment> l = compilationUnit.getCommentList();
 		for (Comment c : l) {
 			if (!(c instanceof Javadoc)) {
-				c.accept(cvisitor);
+				c.accept(parser);
 			}
 		}
-
+		
 		d = new Document();
 		Element root = new Element("class");
 		elements.add(root);
 		d.setRootElement(root);
+		compilationUnit.accept(parser);
 		// records start time of analysis
 		startTime = System.currentTimeMillis();
 		System.out.println("Running: " + this.getName());
-		super.beforeAllMethods(compUnit, rootNode);
+		super.beforeAllMethods(rootNode, compilationUnit);
 	}
 
 	// Called after all methods
@@ -101,10 +107,8 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 	@Override
 	public void analyzeMethod(MethodDeclaration d) {
-		Element method = new Element("method_return-" + d.getReturnType2() + "_name-" + d.getName().toString()+"");
-		
-		elements.peek().addContent(method);
-		d.accept(cvisitor);
+		//methodDec = d;
+		//d.accept(parser);
 	}
 
 	@Override
@@ -112,21 +116,36 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 		return "Comment Visitor";
 	}
 
-	// visitor to find comments
-	private class CommentVisitor extends ASTVisitor {
+	/**
+	 * Issue with Parsing line and block comments as the parser runs for  
+	 * comments and then the rest of the class as accept() needs to be 
+	 * called on each comment
+	 */
+	private class XMLParser extends ASTVisitor {
 
 		CompilationUnit compUnit;
 		String[] source;
+	
 
-		public CommentVisitor(CompilationUnit c, String[] s) {
+		public XMLParser(CompilationUnit c, String[] s) {
 			compUnit = c;
 			source = s;
 		}
 
 		@Override
 		public boolean visit(Block node) {
-			Element e = new Element("scope");
-			
+			Element e;
+			if(methodDec != null){
+				//if block is a method add appropriate attributes
+				e = new Element("method");	
+				Attribute type = new Attribute("type",methodDec.getReturnType2().toString());
+				Attribute name = new Attribute("name", methodDec.getName().toString());
+				e.setAttribute(type);
+				e.setAttribute(name);
+				methodDec = null;
+			}else{
+				 e = new Element("scope");
+			}
 			//adds block to previous top of stack
 			elements.peek().addContent(e);
 			//pushes block to top of stack
@@ -140,38 +159,69 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			elements.pop();
 			super.endVisit(node);
 		}
+	
+		@Override
+		public boolean visit(MethodDeclaration node) {
+			methodDec = node;
+			return super.visit(node);
+		}
 
 		@Override
-		public void endVisit(ArrayCreation node) {
-			elements.peek().addContent("array");
+		public void endVisit(FieldDeclaration node) {
+	
+			Element e = new Element("declaration");
+			Attribute type = new Attribute("type",node.getType().toString());
+			String nameS = ((VariableDeclarationFragment)node.fragments().get(0)).getName().toString();
+			Attribute name = new Attribute("name",nameS);
+			e.setAttribute(type);
+			e.setAttribute(name);
+			elements.peek().addContent(e);
 			super.endVisit(node);
 		}
-
-		@Override
-		public boolean visit(VariableDeclarationExpression node) {
-			elements.peek().addContent(node.getType().toString());
-			return super.visit(node);
-		}
-
-		@Override
-		public boolean visit(VariableDeclarationFragment node) {
-			elements.peek().addContent(node.getName().toString());
-			return super.visit(node);
-		}
-
+	
 		@Override
 		public boolean visit(VariableDeclarationStatement node) {
-			elements.peek().addContent(node.getType().toString()+"_");
+			//getType() ignores arrays so check for array added
+			String typeS = node.getType().toString();
+			if(node.fragments().get(0).toString().contains("[]")){
+				typeS = typeS + "[]";
+			}
+			Element declaration = new Element("declaration");
+			Attribute type = new Attribute("type" ,typeS);
+			declaration.setAttribute(type);
+			
+			String nameS = ((VariableDeclarationFragment)node.fragments().get(0)).getName().toString();
+			Attribute name = new Attribute("name" ,nameS);
+			declaration.setAttribute(name);
+			elements.peek().addContent(declaration);
+			super.endVisit(node);
 			return super.visit(node);
 		}
 
-		// called whenever javadoc comment is found
+		
+
 		@Override
-		public void endVisit(Javadoc node) {
-			org.jdom2.Comment c = new org.jdom2.Comment(node.tags().get(0).toString());
-			elements.peek().addContent(c);
-			super.endVisit(node);
+		public boolean visit(Javadoc node) {
+			Element javadoc  = new Element("javadoc");
+			List<TagElement> tags = node.tags() ;
+			for(TagElement t : tags){
+				
+				if(t.getTagName() == null){
+					Element tag = new Element("text");
+					tag.addContent(t.toString().substring(3));
+					javadoc.addContent(tag);
+				}else{
+					Element tag = new Element(t.getTagName().substring(1));
+					tag.addContent(t.toString().substring(t.getTagName().toString().length()+4));
+					
+					javadoc.addContent(tag);
+				}
+			}
+				
+			elements.peek().addContent(javadoc);
+			return super.visit(node);
 		}
+
 
 		@Override
 		public boolean visit(LineComment node) {			
@@ -183,8 +233,9 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 			int start = node.getStartPosition();
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
-			
-			elements.peek().addContent(new org.jdom2.Comment(lineComment));
+			Element comment = new Element("comment");
+			comment.addContent(lineComment.toString());
+			elements.peek().addContent(comment);
 
 			return true;
 
@@ -207,8 +258,9 @@ public class CommentAnalysis extends AbstractCrystalMethodAnalysis {
 					blockComment.append("\n");
 				}
 			}
-
-			elements.peek().addContent(new org.jdom2.Comment(blockComment.toString()));
+			Element comment =  new Element("comment");
+			comment.addContent(blockComment.toString());
+			elements.peek().addContent(comment);
 
 			int start = node.getStartPosition();
 			ASTNode withoutSignature = NodeFinder.perform(
