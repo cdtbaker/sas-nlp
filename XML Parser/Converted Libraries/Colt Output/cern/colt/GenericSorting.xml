@@ -1,0 +1,365 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<class name="GenericSorting">
+  <javadoc>
+    <text>Generically sorts arbitrary shaped data (for example multiple arrays, 1,2 or 3-d matrices, and so on) using a 
+ * quicksort or mergesort. This class addresses two problems, namely 
+ * &lt;ul&gt;
+ * &lt;li&gt;&lt;i&gt;Sorting multiple arrays in sync&lt;/i&gt; 
+ * &lt;li&gt;&lt;i&gt;Sorting by multiple sorting criteria&lt;/i&gt; (primary, secondary, tertiary, 
+ * ...) 
+ * &lt;/ul&gt;
+ * &lt;h4&gt;Sorting multiple arrays in sync&lt;/h4&gt;
+ * &lt;p&gt;
+ * Assume we have three arrays X, Y and Z. We want to sort all three arrays by 
+ * X (or some arbitrary comparison function). For example, we have&lt;br&gt;
+ * &lt;tt&gt;X=[3, 2, 1], Y=[3.0, 2.0, 1.0], Z=[6.0, 7.0, 8.0]&lt;/tt&gt;. The output should 
+ * be &lt;tt&gt;&lt;br&gt;
+ * X=[1, 2, 3], Y=[1.0, 2.0, 3.0], Z=[8.0, 7.0, 6.0]&lt;/tt&gt;. &lt;/p&gt;
+ * &lt;p&gt;How can we achive this? Here are several alternatives. We could ... &lt;/p&gt;
+ * &lt;ol&gt;
+ * &lt;li&gt; make a list of Point3D objects, sort the list as desired using a comparison 
+ * function, then copy the results back into X, Y and Z. The classic object-oriented 
+ * way. &lt;/li&gt;
+ * &lt;li&gt;make an index list [0,1,2,...,N-1], sort the index list using a comparison function, 
+ * then reorder the elements of X,Y,Z as defined by the index list. Reordering 
+ * cannot be done in-place, so we need to copy X to some temporary array, then 
+ * copy in the right order back from the temporary into X. Same for Y and Z. 
+ * &lt;/li&gt;
+ * &lt;li&gt; use a generic quicksort or mergesort which, whenever two elements in X are swapped, 
+ * also swaps the corresponding elements in Y and Z. &lt;/li&gt;
+ * &lt;/ol&gt;
+ * Alternatives 1 and 2 involve quite a lot of copying and allocate significant amounts 
+ * of temporary memory. Alternative 3 involves more swapping, more polymorphic message dispatches, no copying and does not need any temporary memory. 
+ * &lt;p&gt; This class implements alternative 3. It operates on arbitrary shaped data. 
+ * In fact, it has no idea what kind of data it is sorting. Comparisons and swapping 
+ * are delegated to user provided objects which know their data and can do the 
+ * job. 
+ * &lt;p&gt; Lets call the generic data &lt;tt&gt;g&lt;/tt&gt; (it may be one array, three linked lists 
+ * or whatever). This class takes a user comparison function operating on two indexes 
+ * &lt;tt&gt;(a,b)&lt;/tt&gt;, namely an {@link IntComparator}. The comparison function determines 
+ * whether &lt;tt&gt;g[a]&lt;/tt&gt; is equal, less or greater than &lt;tt&gt;g[b]&lt;/tt&gt;. The sort, 
+ * depending on its implementation, can decide to swap the data at index &lt;tt&gt;a&lt;/tt&gt; 
+ * with the data at index &lt;tt&gt;b&lt;/tt&gt;. It calls a user provided {@link cern.colt.Swapper} 
+ * object that knows how to swap the data of these indexes. 
+ * &lt;p&gt;The following snippet shows how to solve the problem. 
+ * &lt;table&gt;
+ * &lt;td class="PRE"&gt; 
+ * &lt;pre&gt;
+ * final int[] x;
+ * final double[] y;
+ * final double[] z;
+ * x = new int[]    {3,   2,   1  };
+ * y = new double[] {3.0, 2.0, 1.0};
+ * z = new double[] {6.0, 7.0, 8.0};
+ * // this one knows how to swap two indexes (a,b)
+ * Swapper swapper = new Swapper() {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;public void swap(int a, int b) {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;int t1;	double t2, t3;
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;t1 = x[a]; x[a] = x[b];	x[b] = t1;
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;t2 = y[a]; y[a] = y[b]; y[b] = t2;
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;t3 = z[a]; z[a] = z[b];	z[b] = t3;
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+ * };
+ * // simple comparison: compare by X and ignore Y,Z&lt;br&gt;
+ * IntComparator comp = new IntComparator() {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;public int compare(int a, int b) {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;return x[a]==x[b] ? 0 : (x[a]&amp;lt;x[b] ? -1 : 1);
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+ * };
+ * System.out.println("before:");
+ * System.out.println("X="+Arrays.toString(x));
+ * System.out.println("Y="+Arrays.toString(y));
+ * System.out.println("Z="+Arrays.toString(z));
+ * GenericSorting.quickSort(0, X.length, comp, swapper);
+ * // GenericSorting.mergeSort(0, X.length, comp, swapper);
+ * System.out.println("after:");
+ * System.out.println("X="+Arrays.toString(x));
+ * System.out.println("Y="+Arrays.toString(y));
+ * System.out.println("Z="+Arrays.toString(z));
+ * &lt;/pre&gt;
+ * &lt;/td&gt;
+ * &lt;/table&gt;
+ * &lt;h4&gt;Sorting by multiple sorting criterias (primary, secondary, tertiary, ...)&lt;/h4&gt;
+ * &lt;p&gt;Assume again we have three arrays X, Y and Z. Now we want to sort all three 
+ * arrays, primarily by Y, secondarily by Z (if Y elements are equal). For example, 
+ * we have&lt;br&gt;
+ * &lt;tt&gt;X=[6, 7, 8, 9], Y=[3.0, 2.0, 1.0, 3.0], Z=[5.0, 4.0, 4.0, 1.0]&lt;/tt&gt;. The 
+ * output should be &lt;tt&gt;&lt;br&gt;
+ * X=[8, 7, 9, 6], Y=[1.0, 2.0, 3.0, 3.0], Z=[4.0, 4.0, 1.0, 5.0]&lt;/tt&gt;. &lt;/p&gt;
+ * &lt;p&gt;Here is how to solve the problem. All code in the above example stays the same, 
+ * except that we modify the comparison function as follows&lt;/p&gt;
+ * &lt;table&gt;
+ * &lt;td class="PRE"&gt; 
+ * &lt;pre&gt;
+ * //compare by Y, if that doesn't help, reside to Z
+ * IntComparator comp = new IntComparator() {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;public int compare(int a, int b) {
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;if (y[a]==y[b]) return z[a]==z[b] ? 0 : (z[a]&amp;lt;z[b] ? -1 : 1);
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;return y[a]&amp;lt;y[b] ? -1 : 1;
+ * &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+ * };
+ * &lt;/pre&gt;
+ * &lt;/td&gt;
+ * &lt;/table&gt;
+ * &lt;h4&gt;Notes&lt;/h4&gt;
+ * &lt;p&gt;&lt;/p&gt;
+ * &lt;p&gt; Sorts involving floating point data and not involving comparators, like, for 
+ * example provided in the JDK {@link java.util.Arrays} and in the Colt {@link cern.colt.Sorting} handle floating point numbers in special ways to guarantee 
+ * that NaN's are swapped to the end and -0.0 comes before 0.0. Methods delegating 
+ * to comparators cannot do this. They rely on the comparator. Thus, if such boundary 
+ * cases are an issue for the application at hand, comparators explicitly need 
+ * to implement -0.0 and NaN aware comparisons. Remember: &lt;tt&gt;-0.0 &lt; 0.0 == false&lt;/tt&gt;, 
+ * &lt;tt&gt;(-0.0 == 0.0) == true&lt;/tt&gt;, as well as &lt;tt&gt;5.0 &amp;lt; Double.NaN == false&lt;/tt&gt;, 
+ * &lt;tt&gt;5.0 &amp;gt; Double.NaN == false&lt;/tt&gt;. Same for &lt;tt&gt;float&lt;/tt&gt;.
+ * &lt;h4&gt;Implementation &lt;/h4&gt;
+ * &lt;p&gt;The quicksort is a derivative of the JDK 1.2 V1.26 algorithms (which are, in 
+ * turn, based on Bentley's and McIlroy's fine work).
+ * The mergesort is a derivative of the JAL algorithms, with optimisations taken from the JDK algorithms.
+ * Both quick and merge sort are "in-place", i.e. do not allocate temporary memory (helper arrays).
+ * Mergesort is &lt;i&gt;stable&lt;/i&gt; (by definition), while quicksort is not.
+ * A stable sort is, for example, helpful, if matrices are sorted successively 
+ * by multiple columns. It preserves the relative position of equal elements.</text>
+    <see>java.util.Arrays</see>
+    <see>cern.colt.Sorting</see>
+    <see>cern.colt.matrix.doublealgo.Sorting</see>
+    <author>wolfgang.hoschek@cern.ch</author>
+    <version>1.0, 03-Jul-99</version>
+  </javadoc>
+  <declaration type="int" name="SMALL" />
+  <declaration type="int" name="MEDIUM" />
+  <javadoc>
+    <text>Makes this class non instantiable, but still let's others inherit from it.</text>
+  </javadoc>
+  <method type="constructor" name="GenericSorting" />
+  <javadoc>
+    <text>Transforms two consecutive sorted ranges into a single sorted 
+ * range.  The initial ranges are &lt;code&gt;[first, middle)&lt;/code&gt;
+ * and &lt;code&gt;[middle, last)&lt;/code&gt;, and the resulting range is
+ * &lt;code&gt;[first, last)&lt;/code&gt;.  
+ * Elements in the first input range will precede equal elements in the 
+ * second.</text>
+  </javadoc>
+  <method type="void" name="inplace_merge">
+    <scope>
+      <scope />
+    </scope>
+    <declaration type="int" name="firstCut" />
+    <declaration type="int" name="secondCut" />
+    <scope />
+    <scope />
+    <declaration type="int" name="first2" />
+    <declaration type="int" name="middle2" />
+    <declaration type="int" name="last2" />
+    <scope>
+      <declaration type="int" name="first1" />
+      <declaration type="int" name="last1" />
+    </scope>
+    <comment>rotate(firstCut, middle, secondCut, swapper);</comment>
+    <comment>is manually inlined for speed (jitter inlining seems to work only for small call depths, even if methods are "static private")</comment>
+    <comment>speedup = 1.7</comment>
+    <comment>begin inline</comment>
+    <comment>end inline</comment>
+  </method>
+  <javadoc>
+    <text>Performs a binary search on an already-sorted range: finds the first
+ * position where an element can be inserted without violating the ordering.
+ * Sorting is by a user-supplied comparison function.</text>
+    <param>array    Array containing the range.</param>
+    <param>first    Beginning of the range.</param>
+    <param>last     One past the end of the range.</param>
+    <param>x        Element to be searched for.</param>
+    <param>comp     Comparison function.</param>
+    <return>The largest index i such that, for every j in the
+ * range &lt;code&gt;[first, i)&lt;/code&gt;, 
+ * &lt;code&gt;comp.apply(array[j], x)&lt;/code&gt; is
+ * &lt;code&gt;true&lt;/code&gt;.</return>
+    <see>Sorting#upper_bound</see>
+    <see>Sorting#equal_range</see>
+    <see>Sorting#binary_search</see>
+  </javadoc>
+  <method type="int" name="lower_bound">
+    <declaration type="int" name="len" />
+    <scope>
+      <declaration type="int" name="half" />
+      <declaration type="int" name="middle" />
+      <scope />
+      <scope />
+    </scope>
+    <comment>if (comp==null) throw new NullPointerException();</comment>
+  </method>
+  <javadoc>
+    <text>Returns the index of the median of the three indexed chars.</text>
+  </javadoc>
+  <method type="int" name="med3">
+    <declaration type="int" name="ab" />
+    <declaration type="int" name="ac" />
+    <declaration type="int" name="bc" />
+  </method>
+  <javadoc>
+    <text>Sorts the specified range of elements according
+ * to the order induced by the specified comparator.  All elements in the
+ * range must be &lt;i&gt;mutually comparable&lt;/i&gt; by the specified comparator
+ * (that is, &lt;tt&gt;c.compare(a, b)&lt;/tt&gt; must not throw an
+ * exception for any indexes &lt;tt&gt;a&lt;/tt&gt; and
+ * &lt;tt&gt;b&lt;/tt&gt; in the range).&lt;p&gt;
+ * This sort is guaranteed to be &lt;i&gt;stable&lt;/i&gt;:  equal elements will
+ * not be reordered as a result of the sort.&lt;p&gt;
+ * The sorting algorithm is a modified mergesort (in which the merge is
+ * omitted if the highest element in the low sublist is less than the
+ * lowest element in the high sublist).  This algorithm offers guaranteed
+ * n*log(n) performance, and can approach linear performance on nearly
+ * sorted lists.</text>
+    <param>fromIndex the index of the first element (inclusive) to be sorted.</param>
+    <param>toIndex the index of the last element (exclusive) to be sorted.</param>
+    <param>c the comparator to determine the order of the generic data.</param>
+    <param>swapper an object that knows how to swap the elements at any two indexes (a,b).</param>
+    <see>IntComparator</see>
+    <see>Swapper</see>
+  </javadoc>
+  <method type="void" name="mergeSort">
+    <declaration type="int" name="length" />
+    <scope>
+      <scope>
+        <scope />
+      </scope>
+    </scope>
+    <declaration type="int" name="mid" />
+    <comment>We retain the same method signature as quickSort.
+Given only a comparator and swapper we do not know how to copy and move elements fromto temporary arrays.
+Hence, in contrast to the JDK mergesorts this is an "in-place" mergesort, i.e. does not allocate any temporary arrays.
+A non-inplace mergesort would perhaps be faster in most cases, but would require non-intuitive delegate objects...</comment>
+    <comment>Insertion sort on smallest arrays</comment>
+    <comment>Recursively sort halves</comment>
+    <comment>If list is already sorted, nothing left to do.  This is an</comment>
+    <comment>optimization that results in faster sorts for nearly ordered lists.</comment>
+    <comment>Merge sorted halves</comment>
+  </method>
+  <javadoc>
+    <text>Sorts the specified range of elements according
+ * to the order induced by the specified comparator.  All elements in the
+ * range must be &lt;i&gt;mutually comparable&lt;/i&gt; by the specified comparator
+ * (that is, &lt;tt&gt;c.compare(a, b)&lt;/tt&gt; must not throw an
+ * exception for any indexes &lt;tt&gt;a&lt;/tt&gt; and
+ * &lt;tt&gt;b&lt;/tt&gt; in the range).&lt;p&gt;
+ * The sorting algorithm is a tuned quicksort,
+ * adapted from Jon L. Bentley and M. Douglas McIlroy's "Engineering a
+ * Sort Function", Software-Practice and Experience, Vol. 23(11)
+ * P. 1249-1265 (November 1993).  This algorithm offers n*log(n)
+ * performance on many data sets that cause other quicksorts to degrade to
+ * quadratic performance.</text>
+    <param>fromIndex the index of the first element (inclusive) to be sorted.</param>
+    <param>toIndex the index of the last element (exclusive) to be sorted.</param>
+    <param>c the comparator to determine the order of the generic data.</param>
+    <param>swapper an object that knows how to swap the elements at any two indexes (a,b).</param>
+    <see>IntComparator</see>
+    <see>Swapper</see>
+  </javadoc>
+  <method type="void" name="quickSort" />
+  <javadoc>
+    <text>Sorts the specified sub-array into ascending order.</text>
+  </javadoc>
+  <method type="void" name="quickSort1">
+    <scope>
+      <scope />
+    </scope>
+    <declaration type="int" name="m" />
+    <scope>
+      <declaration type="int" name="l" />
+      <declaration type="int" name="n" />
+      <scope>
+        <declaration type="int" name="s" />
+      </scope>
+    </scope>
+    <declaration type="int" name="a" />
+    <scope>
+      <declaration type="int" name="comparison" />
+      <scope>
+        <scope />
+      </scope>
+      <scope>
+        <scope />
+      </scope>
+    </scope>
+    <declaration type="int" name="s" />
+    <comment>Insertion sort on smallest arrays</comment>
+    <comment>Choose a partition element, v</comment>
+    <comment>Small arrays, middle element</comment>
+    <comment>Big arrays, pseudomedian of 9</comment>
+    <comment>Mid-size, med of 3</comment>
+    <comment>long v = x[m];</comment>
+    <comment>Establish Invariant: v* (&lt;v)* (&gt;v)* v*</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>moving target; DELTA to JDK !!!</comment>
+    <comment>Swap partition elements back to middle</comment>
+    <comment>Recursively sort non-partition-elements</comment>
+  </method>
+  <javadoc>
+    <text>Reverses a sequence of elements.</text>
+    <param>array      Array containing the sequence</param>
+    <param>first      Beginning of the range</param>
+    <param>last       One past the end of the range</param>
+    <exception>ArrayIndexOutOfBoundsException If the range
+ * is invalid.</exception>
+  </javadoc>
+  <method type="void" name="reverse">
+    <scope />
+    <comment>no more needed since manually inlined</comment>
+  </method>
+  <javadoc>
+    <text>Rotate a range in place: &lt;code&gt;array[middle]&lt;/code&gt; is put in
+ * &lt;code&gt;array[first]&lt;/code&gt;, &lt;code&gt;array[middle+1]&lt;/code&gt; is put in
+ * &lt;code&gt;array[first+1]&lt;/code&gt;, etc.  Generally, the element in position
+ * &lt;code&gt;i&lt;/code&gt; is put into position 
+ * &lt;code&gt;(i + (last-middle)) % (last-first)&lt;/code&gt;.</text>
+    <param>array    Array containing the range</param>
+    <param>first    Beginning of the range</param>
+    <param>middle   Index of the element that will be put in
+ * &lt;code&gt;array[first]&lt;/code&gt;</param>
+    <param>last     One past the end of the range</param>
+  </javadoc>
+  <method type="void" name="rotate">
+    <scope />
+    <comment>no more needed since manually inlined</comment>
+  </method>
+  <javadoc>
+    <text>Performs a binary search on an already-sorted range: finds the last
+ * position where an element can be inserted without violating the ordering.
+ * Sorting is by a user-supplied comparison function.</text>
+    <param>array    Array containing the range.</param>
+    <param>first    Beginning of the range.</param>
+    <param>last     One past the end of the range.</param>
+    <param>x        Element to be searched for.</param>
+    <param>comp     Comparison function.</param>
+    <return>The largest index i such that, for every j in the
+ * range &lt;code&gt;[first, i)&lt;/code&gt;, 
+ * &lt;code&gt;comp.apply(x, array[j])&lt;/code&gt; is 
+ * &lt;code&gt;false&lt;/code&gt;.</return>
+    <see>Sorting#lower_bound</see>
+    <see>Sorting#equal_range</see>
+    <see>Sorting#binary_search</see>
+  </javadoc>
+  <method type="int" name="upper_bound">
+    <declaration type="int" name="len" />
+    <scope>
+      <declaration type="int" name="half" />
+      <declaration type="int" name="middle" />
+      <scope />
+      <scope />
+    </scope>
+    <comment>if (comp==null) throw new NullPointerException();</comment>
+  </method>
+  <javadoc>
+    <text>Swaps x[a .. (a+n-1)] with x[b .. (b+n-1)].</text>
+  </javadoc>
+  <method type="void" name="vecswap" />
+  <comment>Copyright � 1999 CERN - European Organization for Nuclear Research.
+Permission to use, copy, modify, distribute and sell this software and its documentation for any purpose
+is hereby granted without fee, provided that the above copyright notice appear in all copies and
+that both that copyright notice and this permission notice appear in supporting documentation.
+CERN makes no representations about the suitability of this software for any purpose.
+It is provided "as is" without expressed or implied warranty.</comment>
+</class>

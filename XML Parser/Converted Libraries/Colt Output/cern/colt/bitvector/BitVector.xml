@@ -1,0 +1,594 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<class name="BitVector">
+  <javadoc>
+    <text>Fixed sized (non resizable) bitvector.
+ * Upon instance construction a bitvector is told to hold a fixed number of bits - it's size.
+ * The size can be any number (need not be a power of 2 or so).
+ * The bits of a &lt;tt&gt;BitVector&lt;/tt&gt; are indexed by nonnegative integers. 
+ * Any attempt to access a bit at an &lt;tt&gt;index&amp;lt;0 || index&amp;gt;=size()&lt;/tt&gt; will throw an &lt;tt&gt;IndexOutOfBoundsException&lt;/tt&gt;.
+ * &lt;p&gt;
+ * Individual indexed bits can be examined, set, or cleared.
+ * Subranges can quickly be extracted, copied and replaced.
+ * Quick iteration over subranges is provided by optimized internal iterators (&lt;tt&gt;forEach()&lt;/tt&gt; methods).
+ * One &lt;code&gt;BitVector&lt;/code&gt; may be used to modify the contents of another 
+ * &lt;code&gt;BitVector&lt;/code&gt; through logical AND, OR, XOR and other similar operations.
+ * &lt;p&gt;
+ * All operations consider the bits &lt;tt&gt;0..size()-1&lt;/tt&gt; and nothing else.
+ * Operations involving two bitvectors (like AND, OR, XOR, etc.) will throw an &lt;tt&gt;IllegalArgumentException&lt;/tt&gt; if the secondary bit vector has a size smaller than the receiver.
+ * &lt;p&gt;
+ * A &lt;tt&gt;BitVector&lt;/tt&gt; is never automatically resized,
+ * but it can manually be grown or shrinked via &lt;tt&gt;setSize(...)&lt;/tt&gt;.
+ * &lt;p&gt;
+ * For use cases that need to store several bits per information entity, quick accessors are provided that interpret subranges as 64 bit &lt;tt&gt;long&lt;/tt&gt; integers.
+ * &lt;p&gt;
+ * Why this class? Fist, &lt;tt&gt;boolean[]&lt;/tt&gt; take one byte per stored bit. This class takes one bit per stored bit.
+ * Second, many applications find the semantics of &lt;tt&gt;java.util.BitSet&lt;/tt&gt; not particularly helpful for their needs.
+ * Third, operations working on all bits of a bitvector are extremely quick.
+ * For example, on NT, Pentium Pro 200 Mhz, SunJDK1.2.2, java -classic, for two bitvectors A,B (both much larger than processor cache), the following results are obtained.
+ * &lt;ul&gt;
+ * &lt;li&gt;&lt;tt&gt;A.and(B)&lt;/tt&gt; i.e. A = A &amp; B --&gt; runs at about 35 MB/sec
+ * &lt;li&gt;&lt;tt&gt;A.cardinality()&lt;/tt&gt;, i.e. determining the selectivity, the number of bits in state "true" --&gt; runs at about 80 MB/sec
+ * &lt;li&gt;Similar performance for &lt;tt&gt;or, xor, andNot, not, copy, replace, partFromTo, indexOf, clear&lt;/tt&gt; etc.
+ * &lt;/ul&gt;
+ * If you need extremely quick access to individual bits: Although getting and setting individual bits with methods &lt;tt&gt;get(...)&lt;/tt&gt;, &lt;tt&gt;set(...)&lt;/tt&gt; and &lt;tt&gt;put(...)&lt;/tt&gt;is quick, it is even quicker (&lt;b&gt;but not safe&lt;/b&gt;) to use &lt;tt&gt;getQuick(...)&lt;/tt&gt; and &lt;tt&gt;putQuick(...)&lt;/tt&gt; or even &lt;tt&gt;QuickBitVector&lt;/tt&gt;.
+ * &lt;p&gt;
+ * &lt;b&gt;Note&lt;/b&gt; that this implementation is not synchronized.</text>
+    <author>wolfgang.hoschek@cern.ch</author>
+    <version>1.01, 11/10/99</version>
+    <see>QuickBitVector</see>
+    <see>BitMatrix</see>
+    <see>java.util.BitSet</see>
+  </javadoc>
+  <javadoc>
+    <text>The bits of this object.  The ith bit is stored in bits[i/64] at
+ * bit position i % 64 (where bit position 0 refers to the least
+ * significant bit and 63 refers to the most significant bit).</text>
+    <serial />
+  </javadoc>
+  <declaration type="long" name="bits" />
+  <declaration type="int" name="nbits" />
+  <declaration type="int" name="foundPos" />
+  <method type="boolean" name="apply" />
+  <javadoc>
+    <text>You normally need not use this method. Use this method only if performance is critical. 
+ * Constructs a bit vector with the given backing bits and size.
+ * &lt;b&gt;WARNING:&lt;/b&gt; For efficiency reasons and to keep memory usage low, &lt;b&gt;the array is not copied&lt;/b&gt;.
+ * So if subsequently you modify the specified array directly via the [] operator, be sure you know what you're doing.
+ * &lt;p&gt;A bitvector is modelled as a long array, i.e. &lt;tt&gt;long[] bits&lt;/tt&gt; holds bits of a bitvector.
+ * Each long value holds 64 bits.
+ * The i-th bit is stored in bits[i/64] at
+ * bit position i % 64 (where bit position 0 refers to the least
+ * significant bit and 63 refers to the most significant bit).</text>
+    <throws>IllegalArgumentException if &lt;tt&gt;size &amp;lt; 0 || size &amp;gt; bits.length*64&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="constructor" name="BitVector" />
+  <javadoc>
+    <text>Constructs a bit vector that holds &lt;tt&gt;size&lt;/tt&gt; bits. All bits are initially &lt;tt&gt;false&lt;/tt&gt;.</text>
+    <param>size the number of bits the bit vector shall have.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size &amp;lt; 0&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="constructor" name="BitVector" />
+  <javadoc>
+    <text>Performs a logical &lt;b&gt;AND&lt;/b&gt; of the receiver with another bit vector (A = A &amp; B).
+ * The receiver is modified so that a bit in it has the
+ * value &lt;code&gt;true&lt;/code&gt; if and only if it already had the 
+ * value &lt;code&gt;true&lt;/code&gt; and the corresponding bit in the other bit vector
+ * argument has the value &lt;code&gt;true&lt;/code&gt;.</text>
+    <param>other   a bit vector.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size() &amp;gt; other.size()&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="and">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="long[]" name="otherBits" />
+    <comment>cached for speed.</comment>
+    <comment>cached for speed.</comment>
+  </method>
+  <javadoc>
+    <text>Clears all of the bits in receiver whose corresponding
+ * bit is set in the other bitvector (A = A \ B).
+ * In other words, determines the difference (A=A\B) between two bitvectors.</text>
+    <param>other   a bitvector with which to mask the receiver.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size() &amp;gt; other.size()&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="andNot">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="long[]" name="otherBits" />
+    <comment>cached for speed.</comment>
+    <comment>cached for speed.</comment>
+  </method>
+  <javadoc>
+    <text>Returns the number of bits currently in the &lt;tt&gt;true&lt;/tt&gt; state.
+ * Optimized for speed. Particularly quick if the receiver is either sparse or dense.</text>
+  </javadoc>
+  <method type="int" name="cardinality">
+    <declaration type="int" name="cardinality" />
+    <declaration type="int" name="fullUnits" />
+    <declaration type="int" name="bitsPerUnit" />
+    <declaration type="long[]" name="theBits" />
+    <scope>
+      <declaration type="long" name="val" />
+      <scope />
+      <scope>
+        <scope />
+      </scope>
+    </scope>
+    <scope />
+    <comment>determine cardinality on full units</comment>
+    <comment>all bits set?</comment>
+    <comment>more than one bit set?</comment>
+    <comment>determine cardinality on remaining partial unit, if any.</comment>
+  </method>
+  <javadoc>
+    <text>Checks if the given range is within the contained array's bounds.</text>
+  </javadoc>
+  <method type="void" name="checkRangeFromTo" />
+  <javadoc>
+    <text>Sanity check for operations requiring another bitvector with at least the same size.</text>
+  </javadoc>
+  <method type="void" name="checkSize" />
+  <javadoc>
+    <text>Clears all bits of the receiver.</text>
+  </javadoc>
+  <method type="void" name="clear">
+    <declaration type="long[]" name="theBits" />
+    <comment>new LongArrayList(bits).fillFromToWith(0,size()-1,0L);</comment>
+  </method>
+  <javadoc>
+    <text>Changes the bit with index &lt;tt&gt;bitIndex&lt;/tt&gt; to the "clear" (&lt;tt&gt;false&lt;/tt&gt;) state.</text>
+    <param>bitIndex   the index of the bit to be cleared.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;bitIndex&amp;lt;0 || bitIndex&amp;gt;=size()&lt;/tt&gt;</throws>
+  </javadoc>
+  <method type="void" name="clear" />
+  <javadoc>
+    <text>Cloning this &lt;code&gt;BitVector&lt;/code&gt; produces a new &lt;code&gt;BitVector&lt;/code&gt; 
+ * that is equal to it.
+ * The clone of the bit vector is another bit vector that has exactly the 
+ * same bits set to &lt;code&gt;true&lt;/code&gt; as this bit vector and the same 
+ * current size, but independent state.</text>
+    <return>a deep copy of this bit vector.</return>
+  </javadoc>
+  <method type="Object" name="clone">
+    <declaration type="BitVector" name="clone" />
+  </method>
+  <javadoc>
+    <text>Returns a deep copy of the receiver; calls &lt;code&gt;clone()&lt;/code&gt; and casts the result.</text>
+    <return>a deep copy of the receiver.</return>
+  </javadoc>
+  <method type="BitVector" name="copy" />
+  <javadoc>
+    <text>You normally need not use this method. Use this method only if performance is critical. 
+ * Returns the bit vector's backing bits.
+ * &lt;b&gt;WARNING:&lt;/b&gt; For efficiency reasons and to keep memory usage low, &lt;b&gt;the array is not copied&lt;/b&gt;.
+ * So if subsequently you modify the returned array directly via the [] operator, be sure you know what you're doing.
+ * &lt;p&gt;A bitvector is modelled as a long array, i.e. &lt;tt&gt;long[] bits&lt;/tt&gt; holds bits of a bitvector.
+ * Each long value holds 64 bits.
+ * The i-th bit is stored in bits[i/64] at
+ * bit position i % 64 (where bit position 0 refers to the least
+ * significant bit and 63 refers to the most significant bit).</text>
+  </javadoc>
+  <method type="long[]" name="elements" />
+  <javadoc>
+    <text>You normally need not use this method. Use this method only if performance is critical. 
+ * Sets the bit vector's backing bits and size.
+ * &lt;b&gt;WARNING:&lt;/b&gt; For efficiency reasons and to keep memory usage low, &lt;b&gt;the array is not copied&lt;/b&gt;.
+ * So if subsequently you modify the specified array directly via the [] operator, be sure you know what you're doing.
+ * &lt;p&gt;A bitvector is modelled as a long array, i.e. &lt;tt&gt;long[] bits&lt;/tt&gt; holds bits of a bitvector.
+ * Each long value holds 64 bits.
+ * The i-th bit is stored in bits[i/64] at
+ * bit position i % 64 (where bit position 0 refers to the least
+ * significant bit and 63 refers to the most significant bit).</text>
+    <param>bits the backing bits of the bit vector.</param>
+    <param>size the number of bits the bit vector shall hold.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size &amp;lt; 0 || size &amp;gt; bits.length*64&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="elements" />
+  <javadoc>
+    <text>Compares this object against the specified object.
+ * The result is &lt;code&gt;true&lt;/code&gt; if and only if the argument is 
+ * not &lt;code&gt;null&lt;/code&gt; and is a &lt;code&gt;BitVector&lt;/code&gt; object
+ * that has the same size as the receiver and 
+ * the same bits set to &lt;code&gt;true&lt;/code&gt; as the receiver.
+ * That is, for every nonnegative &lt;code&gt;int&lt;/code&gt; index &lt;code&gt;k&lt;/code&gt;, 
+ * &lt;pre&gt;((BitVector)obj).get(k) == this.get(k)&lt;/pre&gt;
+ * must be true.</text>
+    <param>obj   the object to compare with.</param>
+    <return>&lt;code&gt;true&lt;/code&gt; if the objects are the same;
+ * &lt;code&gt;false&lt;/code&gt; otherwise.</return>
+  </javadoc>
+  <method type="boolean" name="equals">
+    <declaration type="BitVector" name="other" />
+    <declaration type="int" name="fullUnits" />
+    <declaration type="int" name="i" />
+    <scope />
+    <comment>perform logical comparison on full units</comment>
+    <comment>perform logical comparison on remaining bits</comment>
+  </method>
+  <javadoc>
+    <text>Applies a procedure to each bit index within the specified range that holds a bit in the given state.
+ * Starts at index &lt;tt&gt;from&lt;/tt&gt;, moves rightwards to &lt;tt&gt;to&lt;/tt&gt;.
+ * Useful, for example, if you want to copy bits into an image or somewhere else.
+ * &lt;p&gt;
+ * Optimized for speed. Particularly quick if one of the following conditions holds
+ * &lt;ul&gt;
+ * &lt;li&gt;&lt;tt&gt;state==true&lt;/tt&gt; and the receiver is sparse (&lt;tt&gt;cardinality()&lt;/tt&gt; is small compared to &lt;tt&gt;size()&lt;/tt&gt;).
+ * &lt;li&gt;&lt;tt&gt;state==false&lt;/tt&gt; and the receiver is dense (&lt;tt&gt;cardinality()&lt;/tt&gt; is large compared to &lt;tt&gt;size()&lt;/tt&gt;).
+ * &lt;/ul&gt;</text>
+    <param>from the leftmost search position, inclusive.</param>
+    <param>to the rightmost search position, inclusive.</param>
+    <param>state element to search for.</param>
+    <param>procedure a procedure object taking as argument the current bit index. Stops iteration if the procedure returns &lt;tt&gt;false&lt;/tt&gt;, otherwise continues.</param>
+    <return>&lt;tt&gt;false&lt;/tt&gt; if the procedure stopped before all elements where iterated over, &lt;tt&gt;true&lt;/tt&gt; otherwise.</return>
+    <throws>IndexOutOfBoundsException if (&lt;tt&gt;size()&amp;gt;0 &amp;&amp; (from&amp;lt;0 || from&amp;gt;to || to&amp;gt;=size())&lt;/tt&gt;).</throws>
+  </javadoc>
+  <method type="boolean" name="forEachIndexFromToInState">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="int" name="bitsPerUnit" />
+    <declaration type="int" name="fromUnit" />
+    <declaration type="int" name="toUnit" />
+    <declaration type="int" name="i" />
+    <declaration type="int" name="bitIndex" />
+    <declaration type="int" name="partialWidth" />
+    <scope>
+      <scope>
+        <scope />
+      </scope>
+    </scope>
+    <scope />
+    <scope />
+    <declaration type="long" name="comparator" />
+    <scope>
+      <declaration type="long" name="val" />
+      <scope>
+        <scope>
+          <scope>
+            <scope />
+          </scope>
+        </scope>
+        <scope>
+          <scope>
+            <scope />
+          </scope>
+        </scope>
+      </scope>
+      <scope />
+    </scope>
+    <scope>
+      <scope />
+    </scope>
+    <comment>this version is equivalent to the low level version below, but about 100 times slower for large ranges.
+if (nbits==0) return true;
+checkRangeFromTo(from, to, nbits);
+final long[] theBits = this.bits;  cached for speed
+int length=to-from+1;
+for (int i=from; --length &gt;= 0; i++) {
+if (QuickBitVector.get(theBits,i)==state) {
+if (!function.apply(i)) return false;
+}
+}
+return true;</comment>
+    <comment>This low level implementation exploits the fact that for any full unit one can determine in O(1)
+ whether it contains at least one true bit,
+ and whether it contains at least one false bit.
+ Thus, 64 bits can often be skipped with one simple comparison if the vector is either sparse or dense.
+
+ However, careful coding must be done for leading andor trailing units which are not entirely contained in the query range.</comment>
+    <comment>System.out.println("\n");</comment>
+    <comment>System.out.println(this);</comment>
+    <comment>System.out.println("from="+from+", to="+to+", bit="+state);</comment>
+    <comment>Cache some vars for speed.</comment>
+    <comment>Prepare</comment>
+    <comment>current bitvector index</comment>
+    <comment>Iterate over the leading partial unit, if any.</comment>
+    <comment>There exists a leading partial unit.</comment>
+    <comment>System.out.println("partialWidth1="+partialWidth);</comment>
+    <comment>leading partial unit is done.</comment>
+    <comment>done</comment>
+    <comment>If there is a trailing partial unit, then there is one full unit less to test.</comment>
+    <comment>trailing partial unit needs to be tested extra.</comment>
+    <comment>System.out.println("partialWidth2="+partialWidth);</comment>
+    <comment>Iterate over all full units, if any.</comment>
+    <comment>(It does not matter that iterating over partial units is a little bit slow,</comment>
+    <comment>the only thing that matters is that iterating over full units is quick.)</comment>
+    <comment>all 64 bits set</comment>
+    <comment>System.out.println("fromUnit="+fromUnit+", toUnit="+toUnit);</comment>
+    <comment>at least one element within current unit matches.</comment>
+    <comment>iterate over all bits within current unit.</comment>
+    <comment>is bit set?</comment>
+    <comment>is bit cleared?</comment>
+    <comment>System.out.println("trail with i="+i);</comment>
+    <comment>Iterate over trailing partial unit, if any.</comment>
+  </method>
+  <javadoc>
+    <text>Returns from the bitvector the value of the bit with the specified index.
+ * The value is &lt;tt&gt;true&lt;/tt&gt; if the bit with the index &lt;tt&gt;bitIndex&lt;/tt&gt; 
+ * is currently set; otherwise, returns &lt;tt&gt;false&lt;/tt&gt;.</text>
+    <param>bitIndex   the bit index.</param>
+    <return>the value of the bit with the specified index.</return>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;bitIndex&amp;lt;0 || bitIndex&amp;gt;=size()&lt;/tt&gt;</throws>
+  </javadoc>
+  <method type="boolean" name="get" />
+  <javadoc>
+    <text>Returns a long value representing bits of the receiver from index &lt;tt&gt;from&lt;/tt&gt; to index &lt;tt&gt;to&lt;/tt&gt;.
+ * Bits are returned as a long value with the return value having bit 0 set to bit &lt;code&gt;from&lt;/code&gt;, ..., bit &lt;code&gt;to-from&lt;/code&gt; set to bit &lt;code&gt;to&lt;/code&gt;.
+ * All other bits of the return value are set to 0.
+ * If &lt;tt&gt;to-from+1==0&lt;/tt&gt; then returns zero (&lt;tt&gt;0L&lt;/tt&gt;).</text>
+    <param>from index of start bit (inclusive).</param>
+    <param>to index of end bit (inclusive).</param>
+    <return>the specified bits as long value.</return>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;from&amp;lt;0 || from&amp;gt;=size() || to&amp;lt;0 || to&amp;gt;=size() || to-from+1&lt;0 || to-from+1&gt;64&lt;/tt&gt;</throws>
+  </javadoc>
+  <method type="long" name="getLongFromTo">
+    <declaration type="int" name="width" />
+  </method>
+  <javadoc>
+    <text>Returns from the bitvector the value of the bit with the specified index; &lt;b&gt;WARNING:&lt;/b&gt; Does not check preconditions.
+ * The value is &lt;tt&gt;true&lt;/tt&gt; if the bit with the index &lt;tt&gt;bitIndex&lt;/tt&gt; 
+ * is currently set; otherwise, returns &lt;tt&gt;false&lt;/tt&gt;.
+ * &lt;p&gt;Provided with invalid parameters this method may return invalid values without throwing any exception.
+ * &lt;b&gt;You should only use this method when you are absolutely sure that the index is within bounds.&lt;/b&gt;
+ * Precondition (unchecked): &lt;tt&gt;bitIndex &amp;gt;= 0 &amp;&amp; bitIndex &amp;lt; size()&lt;/tt&gt;.</text>
+    <param>bitIndex   the bit index.</param>
+    <return>the value of the bit with the specified index.</return>
+  </javadoc>
+  <method type="boolean" name="getQuick" />
+  <javadoc>
+    <text>Returns a hash code value for the receiver. The hash code 
+ * depends only on which bits have been set within the receiver.
+ * The algorithm used to compute it may 
+ * be described as follows.&lt;p&gt;
+ * Suppose the bits in the receiver were to be stored 
+ * in an array of &lt;code&gt;long&lt;/code&gt; integers called, say, 
+ * &lt;code&gt;bits&lt;/code&gt;, in such a manner that bit &lt;code&gt;k&lt;/code&gt; is 
+ * set in the receiver (for nonnegative values of 
+ * &lt;code&gt;k&lt;/code&gt;) if and only if the expression 
+ * &lt;pre&gt;((k&amp;gt;&amp;gt;6) &amp;lt; bits.length) &amp;&amp; ((bits[k&amp;gt;&amp;gt;6] &amp; (1L &amp;lt;&amp;lt; (bit &amp; 0x3F))) != 0)&lt;/pre&gt;
+ * is true. Then the following definition of the &lt;code&gt;hashCode&lt;/code&gt; 
+ * method would be a correct implementation of the actual algorithm:
+ * &lt;pre&gt;
+ * public int hashCode() {
+ * long h = 1234;
+ * for (int i = bits.length; --i &amp;gt;= 0; ) {
+ * h ^= bits[i] * (i + 1);
+ * }
+ * return (int)((h &amp;gt;&amp;gt; 32) ^ h);
+ * }&lt;/pre&gt;
+ * Note that the hash code values change if the set of bits is altered.</text>
+    <return>a hash code value for the receiver.</return>
+  </javadoc>
+  <method type="int" name="hashCode">
+    <declaration type="long" name="h" />
+  </method>
+  <javadoc>
+    <text>Returns the index of the first occurrence of the specified
+ * state. Returns &lt;code&gt;-1&lt;/code&gt; if the receiver does not contain this state.
+ * Searches between &lt;code&gt;from&lt;/code&gt;, inclusive and &lt;code&gt;to&lt;/code&gt;, inclusive.
+ * &lt;p&gt;
+ * Optimized for speed. Preliminary performance (200Mhz Pentium Pro, JDK 1.2, NT): size=10^6, from=0, to=size-1, receiver contains matching state in the very end --&gt; 0.002 seconds elapsed time.</text>
+    <param>state state to search for.</param>
+    <param>from the leftmost search position, inclusive.</param>
+    <param>to the rightmost search position, inclusive.</param>
+    <return>the index of the first occurrence of the element in the receiver; returns &lt;code&gt;-1&lt;/code&gt; if the element is not found.</return>
+    <exception>IndexOutOfBoundsException if (&lt;tt&gt;size()&amp;gt;0 &amp;&amp; (from&amp;lt;0 || from&amp;gt;to || to&amp;gt;=size())&lt;/tt&gt;).</exception>
+  </javadoc>
+  <method type="int" name="indexOfFromTo">
+    <declaration type="IndexProcedure" name="indexProcedure" />
+  </method>
+  <javadoc>
+    <text>Performs a logical &lt;b&gt;NOT&lt;/b&gt; on the bits of the receiver (A = ~A).</text>
+  </javadoc>
+  <method type="void" name="not">
+    <declaration type="long[]" name="theBits" />
+  </method>
+  <javadoc>
+    <text>Returns the number of bits used in the trailing PARTIAL unit.
+ * Returns zero if there is no such trailing partial unit.</text>
+  </javadoc>
+  <method type="int" name="numberOfBitsInPartialUnit" />
+  <javadoc>
+    <text>Returns the number of units that are FULL (not PARTIAL).</text>
+  </javadoc>
+  <method type="int" name="numberOfFullUnits" />
+  <javadoc>
+    <text>Performs a logical &lt;b&gt;OR&lt;/b&gt; of the receiver with another bit vector (A = A | B).
+ * The receiver is modified so that a bit in it has the
+ * value &lt;code&gt;true&lt;/code&gt; if and only if it either already had the 
+ * value &lt;code&gt;true&lt;/code&gt; or the corresponding bit in the other bit vector
+ * argument has the value &lt;code&gt;true&lt;/code&gt;.</text>
+    <param>other   a bit vector.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size() &amp;gt; other.size()&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="or">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="long[]" name="otherBits" />
+    <comment>cached for speed.</comment>
+    <comment>cached for speed.</comment>
+  </method>
+  <javadoc>
+    <text>Constructs and returns a new bit vector which is a copy of the given range.
+ * The new bitvector has &lt;tt&gt;size()==to-from+1&lt;/tt&gt;.</text>
+    <param>from the start index within the receiver, inclusive.</param>
+    <param>to the end index within the receiver, inclusive.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;size()&amp;gt;0 &amp;&amp; (from&amp;lt;0 || from&amp;gt;to || to&amp;gt;=size()))&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="BitVector" name="partFromTo">
+    <declaration type="int" name="width" />
+    <declaration type="BitVector" name="part" />
+  </method>
+  <javadoc>
+    <text>Sets the bit with index &lt;tt&gt;bitIndex&lt;/tt&gt; to the state specified by &lt;tt&gt;value&lt;/tt&gt;.</text>
+    <param>bitIndex   the index of the bit to be changed.</param>
+    <param>value   the value to be stored in the bit.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;bitIndex&amp;lt;0 || bitIndex&amp;gt;=size()&lt;/tt&gt;</throws>
+  </javadoc>
+  <method type="void" name="put" />
+  <javadoc>
+    <text>Sets bits of the receiver from index &lt;code&gt;from&lt;/code&gt; to index &lt;code&gt;to&lt;/code&gt; to the bits of &lt;code&gt;value&lt;/code&gt;.
+ * Bit &lt;code&gt;from&lt;/code&gt; is set to bit 0 of &lt;code&gt;value&lt;/code&gt;, ..., bit &lt;code&gt;to&lt;/code&gt; is set to bit &lt;code&gt;to-from&lt;/code&gt; of &lt;code&gt;value&lt;/code&gt;.
+ * All other bits stay unaffected.
+ * If &lt;tt&gt;to-from+1==0&lt;/tt&gt; then does nothing.</text>
+    <param>value the value to be copied into the receiver.</param>
+    <param>from index of start bit (inclusive).</param>
+    <param>to index of end bit (inclusive).</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;from&amp;lt;0 || from&amp;gt;=size() || to&amp;lt;0 || to&amp;gt;=size() || to-from+1&lt;0 || to-from+1&gt;64&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="putLongFromTo">
+    <declaration type="int" name="width" />
+  </method>
+  <javadoc>
+    <text>Sets the bit with index &lt;tt&gt;bitIndex&lt;/tt&gt; to the state specified by &lt;tt&gt;value&lt;/tt&gt;; &lt;b&gt;WARNING:&lt;/b&gt; Does not check preconditions.
+ * &lt;p&gt;Provided with invalid parameters this method may set invalid values without throwing any exception.
+ * &lt;b&gt;You should only use this method when you are absolutely sure that the index is within bounds.&lt;/b&gt;
+ * Precondition (unchecked): &lt;tt&gt;bitIndex &amp;gt;= 0 &amp;&amp; bitIndex &amp;lt; size()&lt;/tt&gt;.</text>
+    <param>bitIndex   the index of the bit to be changed.</param>
+    <param>value   the value to be stored in the bit.</param>
+  </javadoc>
+  <method type="void" name="putQuick" />
+  <javadoc>
+    <text>Replaces the bits of the receiver in the given range with the bits of another bit vector.
+ * Replaces the range &lt;tt&gt;[from,to]&lt;/tt&gt; with the contents of the range &lt;tt&gt;[sourceFrom,sourceFrom+to-from]&lt;/tt&gt;, all inclusive.
+ * If &lt;tt&gt;source==this&lt;/tt&gt; and the source and destination range intersect in an ambiguous way, then replaces as if using an intermediate auxiliary copy of the receiver.
+ * &lt;p&gt;
+ * Optimized for speed. Preliminary performance (200Mhz Pentium Pro, JDK 1.2, NT): replace 10^6 ill aligned bits --&gt; 0.02 seconds elapsed time.</text>
+    <param>from the start index within the receiver, inclusive.</param>
+    <param>to the end index within the receiver, inclusive.</param>
+    <param>source the source bitvector to copy from.</param>
+    <param>sourceFrom the start index within &lt;tt&gt;source&lt;/tt&gt;, inclusive.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;size()&amp;gt;0 &amp;&amp; (from&amp;lt;0 || from&amp;gt;to || to&amp;gt;=size() || sourceFrom&lt;0 || sourceFrom+to-from+1&gt;source.size()))&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="replaceFromToWith">
+    <declaration type="int" name="length" />
+    <scope />
+    <scope />
+    <declaration type="long[]" name="theBits" />
+    <declaration type="long[]" name="sourceBits" />
+    <declaration type="int" name="width" />
+    <declaration type="int" name="blocks" />
+    <declaration type="int" name="bitsPerUnit" />
+    <declaration type="int" name="bitsPerUnitMinusOne" />
+    <scope>
+      <declaration type="long" name="val" />
+    </scope>
+    <declaration type="int" name="offset" />
+    <declaration type="long" name="val" />
+    <comment>dangerous intersection</comment>
+    <comment>cached for speed.</comment>
+    <comment>cached for speed.</comment>
+    <comment>This version is equivalent to the version below but 20 times slower...
+for (int i=from; --length &gt;= 0; i++, sourceFrom++) {
+QuickBitVector.put(theBits,i,QuickBitVector.get(sourceBits,sourceFrom));
+}</comment>
+    <comment>Low level implementation for speed.</comment>
+    <comment>This could be done even faster by implementing on even lower levels. But then the code would probably become a "don't touch" piece.</comment>
+    <comment>width/64</comment>
+    <comment>copy entire 64 bit blocks, if any.</comment>
+    <comment>copy trailing bits, if any.</comment>
+    <comment>width%64</comment>
+  </method>
+  <javadoc>
+    <text>Sets the bits in the given range to the state specified by &lt;tt&gt;value&lt;/tt&gt;.
+ * &lt;p&gt;
+ * Optimized for speed. Preliminary performance (200Mhz Pentium Pro, JDK 1.2, NT): replace 10^6 ill aligned bits --&gt; 0.002 seconds elapsed time.</text>
+    <param>from the start index, inclusive.</param>
+    <param>to the end index, inclusive.</param>
+    <param>value the value to be stored in the bits of the range.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;size()&amp;gt;0 &amp;&amp; (from&amp;lt;0 || from&amp;gt;to || to&amp;gt;=size())&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="replaceFromToWith">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="int" name="fromUnit" />
+    <declaration type="int" name="fromOffset" />
+    <declaration type="int" name="toUnit" />
+    <declaration type="int" name="toOffset" />
+    <declaration type="int" name="bitsPerUnit" />
+    <declaration type="long" name="filler" />
+    <declaration type="int" name="bitIndex" />
+    <scope />
+    <scope />
+    <scope />
+    <comment>cached for speed</comment>
+    <comment>only one unit to do</comment>
+    <comment>slower: for (; bitIndex&lt;=to; ) QuickBitVector.put(theBits,bitIndex++,value);</comment>
+    <comment>treat leading partial unit, if any.</comment>
+    <comment>fix by Olivier Janssens</comment>
+    <comment>slower:
+for (int i=bitsPerUnit-fromOffset; --i &gt;= 0; ) {
+QuickBitVector.put(theBits,bitIndex++,value);
+}</comment>
+    <comment>there is a trailing partial unit</comment>
+    <comment>treat full units, if any.</comment>
+    <comment>treat trailing partial unit, if any.</comment>
+    <comment>slower:
+for (int i=toOffset+1; --i &gt;= 0; ) {
+QuickBitVector.put(theBits,bitIndex++,value);
+}</comment>
+  </method>
+  <javadoc>
+    <text>Changes the bit with index &lt;tt&gt;bitIndex&lt;/tt&gt; to the "set" (&lt;tt&gt;true&lt;/tt&gt;) state.</text>
+    <param>bitIndex   the index of the bit to be set.</param>
+    <throws>IndexOutOfBoundsException if &lt;tt&gt;bitIndex&amp;lt;0 || bitIndex&amp;gt;=size()&lt;/tt&gt;</throws>
+  </javadoc>
+  <method type="void" name="set" />
+  <javadoc>
+    <text>Shrinks or expands the receiver so that it holds &lt;tt&gt;newSize&lt;/tt&gt; bits.
+ * If the receiver is expanded, additional &lt;tt&gt;false&lt;/tt&gt; bits are added to the end.
+ * If the receiver is shrinked, all bits between the old size and the new size are lost; their memory is subject to garbage collection.
+ * (This method introduces a new backing array of elements. WARNING: if you have more than one BitVector or BitMatrix sharing identical backing elements, be sure you know what you are doing.)</text>
+    <param>newSize the number of bits the bit vector shall have.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size &amp;lt; 0&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="setSize">
+    <scope>
+      <declaration type="BitVector" name="newVector" />
+    </scope>
+  </method>
+  <javadoc>
+    <text>Returns the size of the receiver.</text>
+  </javadoc>
+  <method type="int" name="size" />
+  <javadoc>
+    <text>Returns a string representation of the receiver. For every index 
+ * for which the receiver contains a bit in the "set" (&lt;tt&gt;true&lt;/tt&gt;)
+ * state, the decimal representation of that index is included in 
+ * the result. Such indeces are listed in order from lowest to 
+ * highest, separated by ",&amp;nbsp;" (a comma and a space) and 
+ * surrounded by braces.</text>
+    <return>a string representation of this bit vector.</return>
+  </javadoc>
+  <method type="String" name="toString">
+    <declaration type="StringBuffer" name="buffer" />
+    <declaration type="String" name="separator" />
+    <scope>
+      <scope />
+    </scope>
+  </method>
+  <javadoc>
+    <text>Performs a logical &lt;b&gt;XOR&lt;/b&gt; of the receiver with another bit vector (A = A ^ B).
+ * The receiver is modified so that a bit in it has the
+ * value &lt;code&gt;true&lt;/code&gt; if and only if one of the following statements holds:
+ * &lt;ul&gt;
+ * &lt;li&gt;The bit initially has the value &lt;code&gt;true&lt;/code&gt;, and the 
+ * corresponding bit in the argument has the value &lt;code&gt;false&lt;/code&gt;.
+ * &lt;li&gt;The bit initially has the value &lt;code&gt;false&lt;/code&gt;, and the 
+ * corresponding bit in the argument has the value &lt;code&gt;true&lt;/code&gt;. 
+ * &lt;/ul&gt;</text>
+    <param>other   a bit vector.</param>
+    <throws>IllegalArgumentException if &lt;tt&gt;size() &amp;gt; other.size()&lt;/tt&gt;.</throws>
+  </javadoc>
+  <method type="void" name="xor">
+    <declaration type="long[]" name="theBits" />
+    <declaration type="long[]" name="otherBits" />
+    <comment>cached for speed.</comment>
+    <comment>cached for speed.</comment>
+  </method>
+  <comment>Copyright � 1999 CERN - European Organization for Nuclear Research.
+Permission to use, copy, modify, distribute and sell this software and its documentation for any purpose
+is hereby granted without fee, provided that the above copyright notice appear in all copies and
+that both that copyright notice and this permission notice appear in supporting documentation.
+CERN makes no representations about the suitability of this software for any purpose.
+It is provided "as is" without expressed or implied warranty.</comment>
+  <comment>Bits are packed into arrays of "units."  Currently a unit is a long,
+ which consists of 64 bits, requiring 6 address bits.  The choice of unit
+ is determined purely by performance concerns.</comment>
+  <comment>the size</comment>
+  <comment>IntProcedure for method indexOfFromTo(...)</comment>
+</class>

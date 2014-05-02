@@ -1,7 +1,10 @@
 package xmlparser;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Stack;
 
@@ -18,7 +21,6 @@ import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
-import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.TagElement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -49,6 +51,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 	@Override
 	public void beforeAllMethods(ITypeRoot rootNode,
 			CompilationUnit compilationUnit) {
+
 		// List<ASTNode> commentList1 = compilationUnit.getCommentList();
 		elements = new Stack<Element>();
 		methodDec = null;
@@ -72,6 +75,12 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		d = new Document();
 		root = new Element("class");
+
+		String classDef = (compilationUnit.getJavaElement().getElementName());
+		classDef = classDef.substring(0, classDef.indexOf('.'));
+
+		root.setAttribute("name", classDef);
+
 		elements.add(root);
 		d.setRootElement(root);
 		compilationUnit.accept(parser);
@@ -112,19 +121,39 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		// records end time
 		endTime = System.currentTimeMillis();
-		
+
 		XMLOutputter xml = new XMLOutputter();
 		xml.setFormat(Format.getPrettyFormat());
 		System.out.println(xml.outputString(d));
-		
+		String path = compUnit.getPath().toString();
+		path = path.substring(path.lastIndexOf("src/"), path.indexOf(".java"));
+
+		File dir = new File(path.substring(0, path.lastIndexOf('/')));
+
+		if (!dir.exists()) {
+			dir.mkdirs();
+		}
+		FileWriter fw = null;
+		try {
+			fw = new FileWriter(path + ".xml");
+
+			BufferedWriter bw = new BufferedWriter(fw);
+			bw.write(xml.outputString(d));
+			bw.close();
+			fw.close();
+
+		} catch (IOException e) {
+			System.out.println("Error");
+			e.printStackTrace();
+		}
+
 		// prints time taken
-		
+
 		System.out.println("\nEnd of " + getName() + ", \nTime Taken: "
 				+ (endTime - startTime) + "ms");
 		// create and run a test analysis
 		TestAnalysis analysis = new TestAnalysis();
-		analysis.runAnalysis(getReporter(), getInput(), compUnit, rootNode);
-
+		// analysis.runAnalysis(getReporter(), getInput(), compUnit, rootNode);
 
 		super.afterAllMethods(compUnit, rootNode);
 	}
@@ -141,7 +170,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 	}
 
 	/**
-	 * Comments other than method or field javadocs are added at the bottom of 
+	 * Comments other than method or field javadocs are added at the bottom of
 	 * their containing method or class
 	 */
 	private class XMLParser extends ASTVisitor {
@@ -149,20 +178,6 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		CompilationUnit compUnit;
 		String[] source;
 		int methodCount = 0;
-		boolean classNameSet = false;
-		
-		
-
-
-		@Override
-		public void endVisit(SimpleName node) {
-			if(!classNameSet){
-				root.setAttribute("name", node.toString());
-				classNameSet = true;
-			}
-			
-			super.endVisit(node);
-		}
 
 		public XMLParser(CompilationUnit c, String[] s) {
 			compUnit = c;
@@ -173,10 +188,15 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		public boolean visit(Block node) {
 			Element e;
 			if (methodDec != null) {
-				methodCount++;
+
 				e = new XMLMethod(methodCount);
-				Attribute type = new Attribute("type", methodDec
-						.getReturnType2().toString());
+				Attribute type;
+				if (methodDec.getReturnType2() != null) {
+					type = new Attribute("type", methodDec.getReturnType2()
+							.toString());
+				} else {
+					type = new Attribute("type", "constructor");
+				}
 				Attribute name = new Attribute("name", methodDec.getName()
 						.toString());
 				int startLine = compUnit.getLineNumber(node.getStartPosition());
@@ -184,7 +204,8 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				((XMLMethod) e).setType(type);
 				((XMLMethod) e).setMethodName(name);
 				((XMLMethod) e).setStartLine(startLine);
-				((XMLMethod) e).setEndLine(compUnit.getLineNumber(node.getStartPosition() + node.getLength()));
+				((XMLMethod) e).setEndLine(compUnit.getLineNumber(node
+						.getStartPosition() + node.getLength()));
 				methodDec = null;
 			} else {
 				e = new Element("scope");
@@ -196,10 +217,6 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			return super.visit(node);
 		}
 
-		
-		
-		
-		
 		@Override
 		public void endVisit(Block node) {
 			// removes block from stack
@@ -209,7 +226,29 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		@Override
 		public boolean visit(MethodDeclaration node) {
-			methodDec = node;
+			methodCount++;
+			if (node.getBody() != null) {
+				methodDec = node;
+			} else {
+				XMLMethod m = new XMLMethod(methodCount);
+				Attribute name = new Attribute("name", node.getName()
+						.toString());
+				Attribute type = null;
+				if (node.getReturnType2() != null) {
+					type = new Attribute("type", node.getReturnType2()
+							.toString());
+				} else {
+					type = new Attribute("type", "constructor");
+				}
+				m.setMethodName(name);
+				m.setType(type);
+				int startLine = compUnit.getLineNumber(node.getStartPosition());
+				m.setStartLine(startLine);
+				m.setEndLine(compUnit.getLineNumber(node.getStartPosition()
+						+ node.getLength()));
+				elements.peek().addContent(m);
+			}
+
 			return super.visit(node);
 		}
 
@@ -269,9 +308,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				boolean inMethod = false;
 				int startLineNumber = compUnit.getLineNumber(node
 						.getStartPosition());
-				
+
 				for (XMLMethod e : methodList) {
-					
+
 					if (startLineNumber >= e.getStartLine()
 							&& startLineNumber <= e.getEndLine()) {
 						e.addContent(javadoc);
@@ -291,33 +330,28 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		@Override
 		public boolean visit(LineComment node) {
 			int startLineNumber = compUnit.getLineNumber(node
-					.getStartPosition()) ;
-			String lineComment = source[startLineNumber-1].trim();
+					.getStartPosition());
+			String lineComment = source[startLineNumber - 1].trim();
 			lineComment = lineComment.substring(lineComment.indexOf("//"));
 
-			
-			
-			
 			Element comment = new Element("comment");
 			comment.addContent(lineComment.toString().replaceAll("//", ""));
-			boolean inMethod =false;
+			boolean inMethod = false;
 			for (XMLMethod e : methodList) {
-				
-				if (startLineNumber+1 >= e.getStartLine()
+
+				if (startLineNumber + 1 >= e.getStartLine()
 						&& startLineNumber <= e.getEndLine()) {
 					e.addContent(comment);
 					inMethod = true;
 					break;
 				}
 			}
-			if(!inMethod){
+			if (!inMethod) {
 				root.addContent(comment);
 			}
 			int start = node.getStartPosition();
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
-			
-			
 
 			return true;
 
@@ -327,13 +361,13 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		public boolean visit(BlockComment node) {
 
 			int startLineNumber = compUnit.getLineNumber(node
-					.getStartPosition()) ;
+					.getStartPosition());
 			int endLineNumber = compUnit.getLineNumber(node.getStartPosition()
-					+ node.getLength()) ;
+					+ node.getLength());
 
 			StringBuffer blockComment = new StringBuffer();
 
-			for (int lineCount = startLineNumber-1; lineCount <= endLineNumber-1; lineCount++) {
+			for (int lineCount = startLineNumber - 1; lineCount <= endLineNumber - 1; lineCount++) {
 
 				String blockCommentLine = source[lineCount].trim();
 				blockComment.append(blockCommentLine);
@@ -345,17 +379,17 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			comment.addContent(blockComment.toString().replaceAll("\\*", "")
 					.replaceAll("/", ""));
 
-			boolean inMethod =false;
+			boolean inMethod = false;
 			for (XMLMethod e : methodList) {
-			
-				if (startLineNumber+1 >= e.getStartLine()
+
+				if (startLineNumber + 1 >= e.getStartLine()
 						&& startLineNumber <= e.getEndLine()) {
 					e.addContent(comment);
 					inMethod = true;
 					break;
 				}
 			}
-			if(!inMethod){
+			if (!inMethod) {
 				root.addContent(comment);
 			}
 			int start = node.getStartPosition();

@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<class name="AdamsNordsieckTransformer">
+  <javadoc>
+    <text>Transformer to Nordsieck vectors for Adams integrators.
+ * &lt;p&gt;This class is used by {@link AdamsBashforthIntegrator Adams-Bashforth} and{@link AdamsMoultonIntegrator Adams-Moulton} integrators to convert between
+ * classical representation with several previous first derivatives and Nordsieck
+ * representation with higher order scaled derivatives.&lt;/p&gt;
+ * &lt;p&gt;We define scaled derivatives s&lt;sub&gt;i&lt;/sub&gt;(n) at step n as:
+ * &lt;pre&gt;
+ * s&lt;sub&gt;1&lt;/sub&gt;(n) = h y'&lt;sub&gt;n&lt;/sub&gt; for first derivative
+ * s&lt;sub&gt;2&lt;/sub&gt;(n) = h&lt;sup&gt;2&lt;/sup&gt;/2 y''&lt;sub&gt;n&lt;/sub&gt; for second derivative
+ * s&lt;sub&gt;3&lt;/sub&gt;(n) = h&lt;sup&gt;3&lt;/sup&gt;/6 y'''&lt;sub&gt;n&lt;/sub&gt; for third derivative
+ * ...
+ * s&lt;sub&gt;k&lt;/sub&gt;(n) = h&lt;sup&gt;k&lt;/sup&gt;/k! y&lt;sup&gt;(k)&lt;/sup&gt;&lt;sub&gt;n&lt;/sub&gt; for k&lt;sup&gt;th&lt;/sup&gt; derivative
+ * &lt;/pre&gt;&lt;/p&gt;
+ * &lt;p&gt;With the previous definition, the classical representation of multistep methods
+ * uses first derivatives only, i.e. it handles y&lt;sub&gt;n&lt;/sub&gt;, s&lt;sub&gt;1&lt;/sub&gt;(n) and
+ * q&lt;sub&gt;n&lt;/sub&gt; where q&lt;sub&gt;n&lt;/sub&gt; is defined as:
+ * &lt;pre&gt;
+ * q&lt;sub&gt;n&lt;/sub&gt; = [ s&lt;sub&gt;1&lt;/sub&gt;(n-1) s&lt;sub&gt;1&lt;/sub&gt;(n-2) ... s&lt;sub&gt;1&lt;/sub&gt;(n-(k-1)) ]&lt;sup&gt;T&lt;/sup&gt;
+ * &lt;/pre&gt;
+ * (we omit the k index in the notation for clarity).&lt;/p&gt;
+ * &lt;p&gt;Another possible representation uses the Nordsieck vector with
+ * higher degrees scaled derivatives all taken at the same step, i.e it handles y&lt;sub&gt;n&lt;/sub&gt;,
+ * s&lt;sub&gt;1&lt;/sub&gt;(n) and r&lt;sub&gt;n&lt;/sub&gt;) where r&lt;sub&gt;n&lt;/sub&gt; is defined as:
+ * &lt;pre&gt;
+ * r&lt;sub&gt;n&lt;/sub&gt; = [ s&lt;sub&gt;2&lt;/sub&gt;(n), s&lt;sub&gt;3&lt;/sub&gt;(n) ... s&lt;sub&gt;k&lt;/sub&gt;(n) ]&lt;sup&gt;T&lt;/sup&gt;
+ * &lt;/pre&gt;
+ * (here again we omit the k index in the notation for clarity)
+ * &lt;/p&gt;
+ * &lt;p&gt;Taylor series formulas show that for any index offset i, s&lt;sub&gt;1&lt;/sub&gt;(n-i) can be
+ * computed from s&lt;sub&gt;1&lt;/sub&gt;(n), s&lt;sub&gt;2&lt;/sub&gt;(n) ... s&lt;sub&gt;k&lt;/sub&gt;(n), the formula being exact
+ * for degree k polynomials.
+ * &lt;pre&gt;
+ * s&lt;sub&gt;1&lt;/sub&gt;(n-i) = s&lt;sub&gt;1&lt;/sub&gt;(n) + &amp;sum;&lt;sub&gt;j&amp;gt;1&lt;/sub&gt; j (-i)&lt;sup&gt;j-1&lt;/sup&gt; s&lt;sub&gt;j&lt;/sub&gt;(n)
+ * &lt;/pre&gt;
+ * The previous formula can be used with several values for i to compute the transform between
+ * classical representation and Nordsieck vector at step end. The transform between r&lt;sub&gt;n&lt;/sub&gt;
+ * and q&lt;sub&gt;n&lt;/sub&gt; resulting from the Taylor series formulas above is:
+ * &lt;pre&gt;
+ * q&lt;sub&gt;n&lt;/sub&gt; = s&lt;sub&gt;1&lt;/sub&gt;(n) u + P r&lt;sub&gt;n&lt;/sub&gt;
+ * &lt;/pre&gt;
+ * where u is the [ 1 1 ... 1 ]&lt;sup&gt;T&lt;/sup&gt; vector and P is the (k-1)&amp;times;(k-1) matrix built
+ * with the j (-i)&lt;sup&gt;j-1&lt;/sup&gt; terms:
+ * &lt;pre&gt;
+ * [  -2   3   -4    5  ... ]
+ * [  -4  12  -32   80  ... ]
+ * P =  [  -6  27 -108  405  ... ]
+ * [  -8  48 -256 1280  ... ]
+ * [          ...           ]
+ * &lt;/pre&gt;&lt;/p&gt;
+ * &lt;p&gt;Changing -i into +i in the formula above can be used to compute a similar transform between
+ * classical representation and Nordsieck vector at step start. The resulting matrix is simply
+ * the absolute value of matrix P.&lt;/p&gt;
+ * &lt;p&gt;For {@link AdamsBashforthIntegrator Adams-Bashforth} method, the Nordsieck vector
+ * at step n+1 is computed from the Nordsieck vector at step n as follows:
+ * &lt;ul&gt;
+ * &lt;li&gt;y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + s&lt;sub&gt;1&lt;/sub&gt;(n) + u&lt;sup&gt;T&lt;/sup&gt; r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+ * &lt;li&gt;s&lt;sub&gt;1&lt;/sub&gt;(n+1) = h f(t&lt;sub&gt;n+1&lt;/sub&gt;, y&lt;sub&gt;n+1&lt;/sub&gt;)&lt;/li&gt;
+ * &lt;li&gt;r&lt;sub&gt;n+1&lt;/sub&gt; = (s&lt;sub&gt;1&lt;/sub&gt;(n) - s&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u + P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+ * &lt;/ul&gt;
+ * where A is a rows shifting matrix (the lower left part is an identity matrix):
+ * &lt;pre&gt;
+ * [ 0 0   ...  0 0 | 0 ]
+ * [ ---------------+---]
+ * [ 1 0   ...  0 0 | 0 ]
+ * A = [ 0 1   ...  0 0 | 0 ]
+ * [       ...      | 0 ]
+ * [ 0 0   ...  1 0 | 0 ]
+ * [ 0 0   ...  0 1 | 0 ]
+ * &lt;/pre&gt;&lt;/p&gt;
+ * &lt;p&gt;For {@link AdamsMoultonIntegrator Adams-Moulton} method, the predicted Nordsieck vector
+ * at step n+1 is computed from the Nordsieck vector at step n as follows:
+ * &lt;ul&gt;
+ * &lt;li&gt;Y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + s&lt;sub&gt;1&lt;/sub&gt;(n) + u&lt;sup&gt;T&lt;/sup&gt; r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+ * &lt;li&gt;S&lt;sub&gt;1&lt;/sub&gt;(n+1) = h f(t&lt;sub&gt;n+1&lt;/sub&gt;, Y&lt;sub&gt;n+1&lt;/sub&gt;)&lt;/li&gt;
+ * &lt;li&gt;R&lt;sub&gt;n+1&lt;/sub&gt; = (s&lt;sub&gt;1&lt;/sub&gt;(n) - s&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u + P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+ * &lt;/ul&gt;
+ * From this predicted vector, the corrected vector is computed as follows:
+ * &lt;ul&gt;
+ * &lt;li&gt;y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + S&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ -1 +1 -1 +1 ... &amp;plusmn;1 ] r&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+ * &lt;li&gt;s&lt;sub&gt;1&lt;/sub&gt;(n+1) = h f(t&lt;sub&gt;n+1&lt;/sub&gt;, y&lt;sub&gt;n+1&lt;/sub&gt;)&lt;/li&gt;
+ * &lt;li&gt;r&lt;sub&gt;n+1&lt;/sub&gt; = R&lt;sub&gt;n+1&lt;/sub&gt; + (s&lt;sub&gt;1&lt;/sub&gt;(n+1) - S&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u&lt;/li&gt;
+ * &lt;/ul&gt;
+ * where the upper case Y&lt;sub&gt;n+1&lt;/sub&gt;, S&lt;sub&gt;1&lt;/sub&gt;(n+1) and R&lt;sub&gt;n+1&lt;/sub&gt; represent the
+ * predicted states whereas the lower case y&lt;sub&gt;n+1&lt;/sub&gt;, s&lt;sub&gt;n+1&lt;/sub&gt; and r&lt;sub&gt;n+1&lt;/sub&gt;
+ * represent the corrected states.&lt;/p&gt;
+ * &lt;p&gt;We observe that both methods use similar update formulas. In both cases a P&lt;sup&gt;-1&lt;/sup&gt;u
+ * vector and a P&lt;sup&gt;-1&lt;/sup&gt; A P matrix are used that do not depend on the state,
+ * they only depend on k. This class handles these transformations.&lt;/p&gt;</text>
+    <version>$Id: AdamsNordsieckTransformer.java 1416643 2012-12-03 19:37:14Z tn $</version>
+    <since>2.0</since>
+  </javadoc>
+  <javadoc>
+    <text>Cache for already computed coefficients.</text>
+  </javadoc>
+  <declaration type="Map&lt;Integer,AdamsNordsieckTransformer&gt;" name="CACHE" />
+  <javadoc>
+    <text>Update matrix for the higher order derivatives h&lt;sup&gt;2&lt;/sup&gt;/2y'', h&lt;sup&gt;3&lt;/sup&gt;/6 y''' ...</text>
+  </javadoc>
+  <declaration type="Array2DRowRealMatrix" name="update" />
+  <javadoc>
+    <text>Update coefficients of the higher order derivatives wrt y'.</text>
+  </javadoc>
+  <declaration type="double[]" name="c1" />
+  <javadoc>
+    <text>Simple constructor.</text>
+    <param>nSteps number of steps of the multistep method
+ * (excluding the one being computed)</param>
+  </javadoc>
+  <method type="constructor" name="AdamsNordsieckTransformer">
+    <declaration type="FieldMatrix&lt;BigFraction&gt;" name="bigP" />
+    <declaration type="FieldDecompositionSolver&lt;BigFraction&gt;" name="pSolver" />
+    <declaration type="BigFraction[]" name="u" />
+    <declaration type="BigFraction[]" name="bigC1" />
+    <declaration type="BigFraction[][]" name="shiftedP" />
+    <scope />
+    <declaration type="FieldMatrix&lt;BigFraction&gt;" name="bigMSupdate" />
+    <scope />
+    <comment>compute exact coefficients</comment>
+    <comment>update coefficients are computed by combining transform from</comment>
+    <comment>Nordsieck to multistep, then shifting rows to represent step advance</comment>
+    <comment>then applying inverse transform</comment>
+    <comment>shift rows</comment>
+    <comment>convert coefficients to double</comment>
+  </method>
+  <javadoc>
+    <text>Get the Nordsieck transformer for a given number of steps.</text>
+    <param>nSteps number of steps of the multistep method
+ * (excluding the one being computed)</param>
+    <return>Nordsieck transformer for the specified number of steps</return>
+  </javadoc>
+  <method type="AdamsNordsieckTransformer" name="getInstance">
+    <scope>
+      <declaration type="AdamsNordsieckTransformer" name="t" />
+      <scope />
+    </scope>
+  </method>
+  <javadoc>
+    <text>Get the number of steps of the method
+ * (excluding the one being computed).</text>
+    <return>number of steps of the method
+ * (excluding the one being computed)</return>
+  </javadoc>
+  <method type="int" name="getNSteps" />
+  <javadoc>
+    <text>Build the P matrix.
+ * &lt;p&gt;The P matrix general terms are shifted j (-i)&lt;sup&gt;j-1&lt;/sup&gt; terms:
+ * &lt;pre&gt;
+ * [  -2   3   -4    5  ... ]
+ * [  -4  12  -32   80  ... ]
+ * P =  [  -6  27 -108  405  ... ]
+ * [  -8  48 -256 1280  ... ]
+ * [          ...           ]
+ * &lt;/pre&gt;&lt;/p&gt;</text>
+    <param>nSteps number of steps of the multistep method
+ * (excluding the one being computed)</param>
+    <return>P matrix</return>
+  </javadoc>
+  <method type="FieldMatrix&lt;BigFraction&gt;" name="buildP">
+    <declaration type="BigFraction[][]" name="pData" />
+    <scope>
+      <declaration type="BigFraction[]" name="pI" />
+      <declaration type="int" name="factor" />
+      <declaration type="int" name="aj" />
+      <scope />
+    </scope>
+    <comment>build the P matrix elements from Taylor series formulas</comment>
+  </method>
+  <javadoc>
+    <text>Initialize the high order scaled derivatives at step start.</text>
+    <param>h step size to use for scaling</param>
+    <param>t first steps times</param>
+    <param>y first steps states</param>
+    <param>yDot first steps derivatives</param>
+    <return>Nordieck vector at first step (h&lt;sup&gt;2&lt;/sup&gt;/2 y''&lt;sub&gt;n&lt;/sub&gt;,
+ * h&lt;sup&gt;3&lt;/sup&gt;/6 y'''&lt;sub&gt;n&lt;/sub&gt; ... h&lt;sup&gt;k&lt;/sup&gt;/k! y&lt;sup&gt;(k)&lt;/sup&gt;&lt;sub&gt;n&lt;/sub&gt;)</return>
+  </javadoc>
+  <method type="Array2DRowRealMatrix" name="initializeHighOrderDerivatives">
+    <declaration type="double[][]" name="a" />
+    <declaration type="double[][]" name="b" />
+    <declaration type="double[]" name="y0" />
+    <declaration type="double[]" name="yDot0" />
+    <scope>
+      <declaration type="double" name="di" />
+      <declaration type="double" name="ratio" />
+      <declaration type="double" name="dikM1Ohk" />
+      <declaration type="double[]" name="aI" />
+      <declaration type="double[]" name="aDotI" />
+      <scope />
+      <declaration type="double[]" name="yI" />
+      <declaration type="double[]" name="yDotI" />
+      <declaration type="double[]" name="bI" />
+      <declaration type="double[]" name="bDotI" />
+      <scope />
+    </scope>
+    <declaration type="QRDecomposition" name="decomposition" />
+    <declaration type="RealMatrix" name="x" />
+    <comment>using Taylor series with di = ti - t0, we get:</comment>
+    <comment>y(ti)  - y(t0)  - di y'(t0) =   di^2 / h^2 s2 + ... +   di^k     / h^k sk + O(h^(k+1))</comment>
+    <comment>y'(ti) - y'(t0)             = 2 di   / h^2 s2 + ... + k di^(k-1) / h^k sk + O(h^k)</comment>
+    <comment>we write these relations for i = 1 to i= n-1 as a set of 2(n-1) linear</comment>
+    <comment>equations depending on the Nordsieck vector [s2 ... sk]</comment>
+    <comment>linear coefficients of equations</comment>
+    <comment>y(ti) - y(t0) - di y'(t0) and y'(ti) - y'(t0)</comment>
+    <comment>expected value of the previous equations</comment>
+    <comment>solve the rectangular system in the least square sense</comment>
+    <comment>to get the best estimate of the Nordsieck vector [s2 ... sk]</comment>
+  </method>
+  <javadoc>
+    <text>Update the high order scaled derivatives for Adams integrators (phase 1).
+ * &lt;p&gt;The complete update of high order derivatives has a form similar to:
+ * &lt;pre&gt;
+ * r&lt;sub&gt;n+1&lt;/sub&gt; = (s&lt;sub&gt;1&lt;/sub&gt;(n) - s&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u + P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt;
+ * &lt;/pre&gt;
+ * this method computes the P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt; part.&lt;/p&gt;</text>
+    <param>highOrder high order scaled derivatives
+ * (h&lt;sup&gt;2&lt;/sup&gt;/2 y'', ... h&lt;sup&gt;k&lt;/sup&gt;/k! y(k))</param>
+    <return>updated high order derivatives</return>
+    <see>#updateHighOrderDerivativesPhase2(double[],double[],Array2DRowRealMatrix)</see>
+  </javadoc>
+  <method type="Array2DRowRealMatrix" name="updateHighOrderDerivativesPhase1" />
+  <javadoc>
+    <text>Update the high order scaled derivatives Adams integrators (phase 2).
+ * &lt;p&gt;The complete update of high order derivatives has a form similar to:
+ * &lt;pre&gt;
+ * r&lt;sub&gt;n+1&lt;/sub&gt; = (s&lt;sub&gt;1&lt;/sub&gt;(n) - s&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u + P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt;
+ * &lt;/pre&gt;
+ * this method computes the (s&lt;sub&gt;1&lt;/sub&gt;(n) - s&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u part.&lt;/p&gt;
+ * &lt;p&gt;Phase 1 of the update must already have been performed.&lt;/p&gt;</text>
+    <param>start first order scaled derivatives at step start</param>
+    <param>end first order scaled derivatives at step end</param>
+    <param>highOrder high order scaled derivatives, will be modified
+ * (h&lt;sup&gt;2&lt;/sup&gt;/2 y'', ... h&lt;sup&gt;k&lt;/sup&gt;/k! y(k))</param>
+    <see>#updateHighOrderDerivativesPhase1(Array2DRowRealMatrix)</see>
+  </javadoc>
+  <method type="void" name="updateHighOrderDerivativesPhase2">
+    <declaration type="double[][]" name="data" />
+    <scope>
+      <declaration type="double[]" name="dataI" />
+      <declaration type="double" name="c1I" />
+      <scope />
+    </scope>
+  </method>
+  <comment>Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+      http:www.apache.orglicensesLICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.</comment>
+</class>
