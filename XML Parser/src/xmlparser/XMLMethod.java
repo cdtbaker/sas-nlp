@@ -33,6 +33,7 @@ public class XMLMethod extends Element{
 		return startLine;
 	}
 	public void setStartLine(int startLine) {
+		this.setAttribute("startLine", String.valueOf(startLine));
 		this.startLine = startLine;
 	}
 
@@ -40,6 +41,7 @@ public class XMLMethod extends Element{
 		return endLine;
 	}
 	public void setEndLine(int endLine) {
+		this.setAttribute("endLine", String.valueOf(endLine));
 		this.endLine = endLine;
 	}
 	public int getMethodNumber() {

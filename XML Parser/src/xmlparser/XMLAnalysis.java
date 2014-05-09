@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
 
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -17,14 +18,18 @@ import org.eclipse.jdt.core.dom.BlockComment;
 import org.eclipse.jdt.core.dom.Comment;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.TagElement;
+import org.eclipse.jdt.core.dom.Type;
+import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 import org.jdom2.Attribute;
+import org.jdom2.Content;
 import org.jdom2.Document;
 import org.jdom2.Element;
 import org.jdom2.output.Format;
@@ -44,8 +49,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 						// the AST Nodes; it is initialised in
 						// beforeAllMethods()
 
-	List<XMLMethod> methodList;
+	List<Element> eList;
 	Element root;
+	Element sourceS;
 
 	// Called before all methods
 	@Override
@@ -68,6 +74,18 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			System.exit(-1);
 		}
 
+		sourceS = new Element("source");
+		sourceS.setAttribute("package", StringEscapeUtils
+				.unescapeXml(compilationUnit.getPackage().toString()));
+		elements.push(sourceS);
+
+		List<ImportDeclaration> ids = (List<ImportDeclaration>) compilationUnit
+				.imports();
+		for (ImportDeclaration id : ids) {
+			Element el = new Element("import");
+			el.setAttribute("name", id.toString());
+			sourceS.addContent(el);
+		}
 		// Property: At this point, source exists and is not null.
 
 		// initialize the cvisitor with the source
@@ -81,16 +99,18 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		root.setAttribute("name", classDef);
 
-		elements.add(root);
-		d.setRootElement(root);
+		// elements.add(root);
+		d.setRootElement(sourceS);
 		compilationUnit.accept(parser);
 
 		// getList of methods
-		List<Element> el = root.getChildren();
-		methodList = new ArrayList<XMLMethod>();
+		List<Element> el = sourceS.getChildren("class");
+
+		eList = new ArrayList<Element>();
 		for (Element e : el) {
-			if (e instanceof XMLMethod) {
-				methodList.add((XMLMethod) e);
+			if (e instanceof Element) {
+				eList.add((Element) e);
+
 			}
 
 		}
@@ -128,24 +148,18 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		String path = compUnit.getPath().toString();
 		path = path.substring(path.lastIndexOf("src/"), path.indexOf(".java"));
 
-		File dir = new File(path.substring(0, path.lastIndexOf('/')));
-
-		if (!dir.exists()) {
-			dir.mkdirs();
-		}
-		FileWriter fw = null;
-		try {
-			fw = new FileWriter(path + ".xml");
-
-			BufferedWriter bw = new BufferedWriter(fw);
-			bw.write(xml.outputString(d));
-			bw.close();
-			fw.close();
-
-		} catch (IOException e) {
-			System.out.println("Error");
-			e.printStackTrace();
-		}
+		/*
+		 * File dir = new File(path.substring(0, path.lastIndexOf('/')));
+		 * 
+		 * if (!dir.exists()) { dir.mkdirs(); } FileWriter fw = null; try { fw =
+		 * new FileWriter(path + ".xml");
+		 * 
+		 * BufferedWriter bw = new BufferedWriter(fw);
+		 * bw.write(xml.outputString(d)); bw.close(); fw.close();
+		 * 
+		 * } catch (IOException e) { System.out.println("Error");
+		 * e.printStackTrace(); }
+		 */
 
 		// prints time taken
 
@@ -178,6 +192,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		CompilationUnit compUnit;
 		String[] source;
 		int methodCount = 0;
+		int lastLine = 0;
 
 		public XMLParser(CompilationUnit c, String[] s) {
 			compUnit = c;
@@ -185,8 +200,46 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		}
 
 		@Override
+		public boolean visit(TypeDeclaration node) {
+			Element e;
+			int startLine = compUnit.getLineNumber(node.getStartPosition());
+			int endLineNumber = compUnit.getLineNumber(node.getStartPosition()
+					+ node.getRoot().getLength());
+			
+			if (node.isInterface()) {
+				e = new Element("interface");
+			} else {
+				e = new Element("class");
+			}
+
+			e.setAttribute("name", node.getName().toString());
+
+			if (node.getSuperclassType() != null) {
+				e.setAttribute("extends", node.getSuperclassType().toString());
+			}
+			
+			e.setAttribute("startLine", String.valueOf(startLine));
+			e.setAttribute("endLine", String.valueOf(endLineNumber));
+			if (node.superInterfaceTypes() != null
+					&& node.superInterfaceTypes().size() > 0) {
+				for (Type t : (List<Type>) node.superInterfaceTypes()) {
+					Element i = new Element("implements");
+					i.setAttribute("name", t.toString());
+					e.addContent(i);
+				}
+			}
+			elements.peek().addContent(e);
+			elements.push(e);
+			return super.visit(node);
+
+		}
+
+		@Override
 		public boolean visit(Block node) {
 			Element e;
+			int startLine = compUnit.getLineNumber(node.getStartPosition());
+			int endLineNumber = compUnit.getLineNumber(node.getStartPosition()
+					+ node.getLength());
 			if (methodDec != null) {
 
 				e = new XMLMethod(methodCount);
@@ -199,7 +252,6 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				}
 				Attribute name = new Attribute("name", methodDec.getName()
 						.toString());
-				int startLine = compUnit.getLineNumber(node.getStartPosition());
 
 				((XMLMethod) e).setType(type);
 				((XMLMethod) e).setMethodName(name);
@@ -209,6 +261,8 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				methodDec = null;
 			} else {
 				e = new Element("scope");
+				e.setAttribute("startLine", String.valueOf(startLine));
+				e.setAttribute("endLine", String.valueOf(endLineNumber));
 			}
 			// adds block to previous top of stack
 			elements.peek().addContent(e);
@@ -221,6 +275,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		public void endVisit(Block node) {
 			// removes block from stack
 			elements.pop();
+
 			super.endVisit(node);
 		}
 
@@ -234,6 +289,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				Attribute name = new Attribute("name", node.getName()
 						.toString());
 				Attribute type = null;
+
 				if (node.getReturnType2() != null) {
 					type = new Attribute("type", node.getReturnType2()
 							.toString());
@@ -286,15 +342,102 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			return super.visit(node);
 		}
 
+		public List<Element> getScopes() {
+			List<Element> scopes = new ArrayList<Element>();
+
+			for (Content c : sourceS.getDescendants()) {
+				if (c instanceof Element
+						&& ((Element) c).getName().equals("scope")) {
+					scopes.add((Element) c);
+				}
+			}
+
+			return scopes;
+
+		}
+
+		public List<Element> getMethods() {
+			List<Element> methods = new ArrayList<Element>();
+
+			for (Content c : sourceS.getDescendants()) {
+				if (c instanceof Element
+						&& ((Element) c).getName().equals("method")) {
+					methods.add((Element) c);
+				}
+			}
+
+			return methods;
+
+		}
+
+		public List<Element> getClasses() {
+			List<Element> classes = new ArrayList<Element>();
+
+			for (Content c : sourceS.getDescendants()) {
+				if (c instanceof Element
+						&& ((Element) c).getName().equals("class")) {
+					classes.add((Element) c);
+				}
+			}
+
+			return classes;
+
+		}
+
+		public void addComment(Element comment, int start) {
+			boolean added = false;
+			for (Element e : getScopes()) {
+
+				if (start >= Integer.parseInt(e.getAttribute("startLine")
+						.getValue())
+						&& start <= Integer.parseInt(e.getAttribute("endLine")
+								.getValue())) {
+					e.addContent(comment);
+					added = true;
+					break;
+				}
+			}
+
+			if (!added) {
+				for (Element e : getMethods()) {
+
+					if (start >= Integer.parseInt(e.getAttribute("startLine")
+							.getValue())
+							&& start <= Integer.parseInt(e.getAttribute(
+									"endLine").getValue())) {
+						e.addContent(comment);
+						added = true;
+						break;
+					}
+				}
+			}
+
+			if (!added) {
+				for (Element e : getClasses()) {
+
+					if (start >= Integer.parseInt(e.getAttribute("startLine")
+							.getValue())
+							&& start <= Integer.parseInt(e.getAttribute(
+									"endLine").getValue())) {
+						e.addContent(comment);
+						added = true;
+						break;
+					}
+				}
+			}
+		}
+
 		@Override
 		public boolean visit(Javadoc node) {
+
 			Element javadoc = new Element("javadoc");
 			List<TagElement> tags = node.tags();
 			for (TagElement t : tags) {
 
 				if (t.getTagName() == null) {
 					Element tag = new Element("text");
-					tag.addContent(t.toString().substring(3));
+					tag.addContent(StringEscapeUtils.unescapeXml(t.toString()
+							.substring(3)));
 					javadoc.addContent(tag);
 				} else {
 					Element tag = new Element(t.getTagName().substring(1));
@@ -305,22 +448,11 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				}
 			}
 			if (node.getParent() == null) {
-				boolean inMethod = false;
+
 				int startLineNumber = compUnit.getLineNumber(node
 						.getStartPosition());
+				addComment(javadoc, startLineNumber);
 
-				for (XMLMethod e : methodList) {
-
-					if (startLineNumber >= e.getStartLine()
-							&& startLineNumber <= e.getEndLine()) {
-						e.addContent(javadoc);
-						inMethod = true;
-						break;
-					}
-				}
-				if (!inMethod) {
-					root.addContent(javadoc);
-				}
 			} else {
 				elements.peek().addContent(javadoc);
 			}
@@ -336,19 +468,10 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 			Element comment = new Element("comment");
 			comment.addContent(lineComment.toString().replaceAll("//", ""));
-			boolean inMethod = false;
-			for (XMLMethod e : methodList) {
+			boolean added = false;
 
-				if (startLineNumber + 1 >= e.getStartLine()
-						&& startLineNumber <= e.getEndLine()) {
-					e.addContent(comment);
-					inMethod = true;
-					break;
-				}
-			}
-			if (!inMethod) {
-				root.addContent(comment);
-			}
+			addComment(comment, startLineNumber);
+
 			int start = node.getStartPosition();
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
@@ -379,19 +502,8 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			comment.addContent(blockComment.toString().replaceAll("\\*", "")
 					.replaceAll("/", ""));
 
-			boolean inMethod = false;
-			for (XMLMethod e : methodList) {
+			addComment(comment, startLineNumber);
 
-				if (startLineNumber + 1 >= e.getStartLine()
-						&& startLineNumber <= e.getEndLine()) {
-					e.addContent(comment);
-					inMethod = true;
-					break;
-				}
-			}
-			if (!inMethod) {
-				root.addContent(comment);
-			}
 			int start = node.getStartPosition();
 			ASTNode withoutSignature = NodeFinder.perform(
 					node.getAlternateRoot(), start, 0);
