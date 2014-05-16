@@ -1,0 +1,1084 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.apache.commons.math3.linear">
+  <import name="java.io.Serializable" />
+  <import name="java.util.Arrays" />
+  <import name="org.apache.commons.math3.exception.DimensionMismatchException" />
+  <import name="org.apache.commons.math3.exception.NoDataException" />
+  <import name="org.apache.commons.math3.exception.NotStrictlyPositiveException" />
+  <import name="org.apache.commons.math3.exception.NullArgumentException" />
+  <import name="org.apache.commons.math3.exception.NumberIsTooSmallException" />
+  <import name="org.apache.commons.math3.exception.OutOfRangeException" />
+  <import name="org.apache.commons.math3.exception.util.LocalizedFormats" />
+  <import name="org.apache.commons.math3.util.FastMath" />
+  <import name="org.apache.commons.math3.util.MathUtils" />
+  <class name="BlockRealMatrix" extends="AbstractRealMatrix" startLine="33">
+    <implements name="Serializable" />
+    <javadoc>
+      <text>* Cache-friendly implementation of RealMatrix using a flat arrays to store
+ * square blocks of the matrix.
+ * <p>
+ * This implementation is specially designed to be cache-friendly. Square blocks are
+ * stored as small arrays and allow efficient traversal of data both in row major direction
+ * and columns major direction, one block at a time. This greatly increases performances
+ * for algorithms that use crossed directions loops like multiplication or transposition.
+ * </p>
+ * <p>
+ * The size of square blocks is a static parameter. It may be tuned according to the cache
+ * size of the target computer processor. As a rule of thumbs, it should be the largest
+ * value that allows three blocks to be simultaneously cached (this is necessary for example
+ * for matrix multiplication). The default value is to use 52x52 blocks which is well suited
+ * for processors with 64k L1 cache (one block holds 2704 values or 21632 bytes). This value
+ * could be lowered to 36x36 for processors with 32k L1 cache.
+ * </p>
+ * <p>
+ * The regular blocks represent {@link #BLOCK_SIZE} x {@link #BLOCK_SIZE} squares. Blocks
+ * at right hand side and bottom side which may be smaller to fit matrix dimensions. The square
+ * blocks are flattened in row major order in single dimension arrays which are therefore{@link #BLOCK_SIZE}<sup>2</sup> elements long for regular blocks. The blocks are themselves
+ * organized in row major order.
+ * </p>
+ * <p>
+ * As an example, for a block size of 52x52, a 100x60 matrix would be stored in 4 blocks.
+ * Block 0 would be a double[2704] array holding the upper left 52x52 square, block 1 would be
+ * a double[416] array holding the upper right 52x8 rectangle, block 2 would be a double[2496]
+ * array holding the lower left 48x52 rectangle and block 3 would be a double[384] array
+ * holding the lower right 48x8 rectangle.
+ * </p>
+ * <p>
+ * The layout complexity overhead versus simple mapping of matrices to java
+ * arrays is negligible for small matrices (about 1%). The gain from cache efficiency leads
+ * to up to 3-fold improvements for matrices of moderate to large size.
+ * </p></text>
+      <version>$Id: BlockRealMatrix.java 1416643 2012-12-03 19:37:14Z tn $</version>
+      <since>2.0</since>
+    </javadoc>
+    <javadoc>
+      <text>* Block size.</text>
+    </javadoc>
+    <declaration type="int" name="BLOCK_SIZE" />
+    <javadoc>
+      <text>* Serializable version identifier</text>
+    </javadoc>
+    <declaration type="long" name="serialVersionUID" />
+    <javadoc>
+      <text>* Blocks of matrix entries.</text>
+    </javadoc>
+    <declaration type="double" name="blocks" />
+    <javadoc>
+      <text>* Number of rows of the matrix.</text>
+    </javadoc>
+    <declaration type="int" name="rows" />
+    <javadoc>
+      <text>* Number of columns of the matrix.</text>
+    </javadoc>
+    <declaration type="int" name="columns" />
+    <javadoc>
+      <text>* Number of block rows of the matrix.</text>
+    </javadoc>
+    <declaration type="int" name="blockRows" />
+    <javadoc>
+      <text>* Number of block columns of the matrix.</text>
+    </javadoc>
+    <declaration type="int" name="blockColumns" />
+    <javadoc>
+      <text>* Create a new matrix with the supplied row and column dimensions.</text>
+      <param>rows  the number of rows in the new matrix</param>
+      <param>columns  the number of columns in the new matrix</param>
+      <throws>NotStrictlyPositiveException if row or column dimension is not
+ * positive.</throws>
+    </javadoc>
+    <method type="constructor" name="BlockRealMatrix" startLine="97" endLine="108">
+      <comment>number of blocks</comment>
+      <comment>allocate storage blocks, taking care of smaller ones at right and bottom</comment>
+    </method>
+    <javadoc>
+      <text>* Create a new dense matrix copying entries from raw layout data.
+ * <p>The input array <em>must</em> already be in raw layout.</p>
+ * <p>Calling this constructor is equivalent to call:
+ * <pre>matrix = new BlockRealMatrix(rawData.length, rawData[0].length,
+ * toBlocksLayout(rawData), false);</pre>
+ * </p></text>
+      <param>rawData data for new matrix, in raw layout</param>
+      <throws>DimensionMismatchException if the shape of {@code blockData} is
+ * inconsistent with block layout.</throws>
+      <throws>NotStrictlyPositiveException if row or column dimension is not
+ * positive.</throws>
+      <see>#BlockRealMatrix(int,int,double[][],boolean)</see>
+    </javadoc>
+    <method type="constructor" name="BlockRealMatrix" startLine="126" endLine="128" />
+    <javadoc>
+      <text>* Create a new dense matrix copying entries from block layout data.
+ * <p>The input array <em>must</em> already be in blocks layout.</p></text>
+      <param>rows Number of rows in the new matrix.</param>
+      <param>columns Number of columns in the new matrix.</param>
+      <param>blockData data for new matrix</param>
+      <param>copyArray Whether the input array will be copied or referenced.</param>
+      <throws>DimensionMismatchException if the shape of {@code blockData} is
+ * inconsistent with block layout.</throws>
+      <throws>NotStrictlyPositiveException if row or column dimension is not
+ * positive.</throws>
+      <see>#createBlocksLayout(int,int)</see>
+      <see>#toBlocksLayout(double[][])</see>
+      <see>#BlockRealMatrix(double[][])</see>
+    </javadoc>
+    <method type="constructor" name="BlockRealMatrix" startLine="148" endLine="178">
+      <scope startLine="157" endLine="160">
+        <comment>allocate storage blocks, taking care of smaller ones at right and bottom</comment>
+      </scope>
+      <scope startLine="160" endLine="163">
+        <comment>reference existing array</comment>
+      </scope>
+      <declaration type="int" name="index" />
+      <scope startLine="166" endLine="177">
+        <declaration type="int" name="iHeight" />
+        <scope startLine="168" endLine="176">
+          <scope startLine="169" endLine="172" />
+          <scope startLine="173" endLine="175" />
+        </scope>
+      </scope>
+      <comment>number of blocks</comment>
+    </method>
+    <javadoc>
+      <text>* Convert a data array from raw layout to blocks layout.
+ * <p>
+ * Raw layout is the straightforward layout where element at row i and
+ * column j is in array element <code>rawData[i][j]</code>. Blocks layout
+ * is the layout used in {@link BlockRealMatrix} instances, where the matrix
+ * is split in square blocks (except at right and bottom side where blocks may
+ * be rectangular to fit matrix size) and each block is stored in a flattened
+ * one-dimensional array.
+ * </p>
+ * <p>
+ * This method creates an array in blocks layout from an input array in raw layout.
+ * It can be used to provide the array argument of the {@link #BlockRealMatrix(int,int,double[][],boolean)} constructor.
+ * </p></text>
+      <param>rawData Data array in raw layout.</param>
+      <return>a new data array containing the same entries but in blocks layout.</return>
+      <throws>DimensionMismatchException if {@code rawData} is not rectangular.</throws>
+      <see>#createBlocksLayout(int,int)</see>
+      <see>#BlockRealMatrix(int,int,double[][],boolean)</see>
+    </javadoc>
+    <method type="double[][]" name="toBlocksLayout" startLine="202" endLine="243">
+      <declaration type="int" name="rows" />
+      <declaration type="int" name="columns" />
+      <declaration type="int" name="blockRows" />
+      <declaration type="int" name="blockColumns" />
+      <scope startLine="209" endLine="214">
+        <declaration type="int" name="length" />
+        <scope startLine="211" endLine="213" />
+      </scope>
+      <declaration type="double[][][]" name="blocks" />
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="219" endLine="240">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <declaration type="int" name="iHeight" />
+        <scope startLine="223" endLine="239">
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="int" name="jWidth" />
+          <declaration type="double[]" name="block" />
+          <declaration type="int" name="index" />
+          <scope startLine="234" endLine="237" />
+        </scope>
+        <comment>allocate new block</comment>
+        <comment>copy data</comment>
+      </scope>
+      <comment>safety checks</comment>
+      <comment>convert array</comment>
+    </method>
+    <javadoc>
+      <text>* Create a data array in blocks layout.
+ * <p>
+ * This method can be used to create the array argument of the {@link #BlockRealMatrix(int,int,double[][],boolean)} constructor.
+ * </p></text>
+      <param>rows Number of rows in the new matrix.</param>
+      <param>columns Number of columns in the new matrix.</param>
+      <return>a new data array in blocks layout.</return>
+      <see>#toBlocksLayout(double[][])</see>
+      <see>#BlockRealMatrix(int,int,double[][],boolean)</see>
+    </javadoc>
+    <method type="double[][]" name="createBlocksLayout" startLine="257" endLine="277">
+      <declaration type="int" name="blockRows" />
+      <declaration type="int" name="blockColumns" />
+      <declaration type="double[][][]" name="blocks" />
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="263" endLine="274">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <declaration type="int" name="iHeight" />
+        <scope startLine="267" endLine="273">
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="int" name="jWidth" />
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="createMatrix" startLine="283" endLine="285" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="copy" startLine="289" endLine="299">
+      <declaration type="BlockRealMatrix" name="copied" />
+      <scope startLine="294" endLine="296" />
+      <comment>create an empty matrix</comment>
+      <comment>copy the blocks</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="add" startLine="304" endLine="339">
+      <scope startLine="305" endLine="307" />
+      <scope startLine="307" endLine="338">
+        <declaration type="BlockRealMatrix" name="out" />
+        <declaration type="int" name="blockIndex" />
+        <scope startLine="315" endLine="335">
+          <scope startLine="316" endLine="334">
+            <declaration type="double[]" name="outBlock" />
+            <declaration type="double[]" name="tBlock" />
+            <declaration type="int" name="pStart" />
+            <declaration type="int" name="pEnd" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="int" name="k" />
+            <scope startLine="326" endLine="331">
+              <scope startLine="327" endLine="330" />
+            </scope>
+          </scope>
+        </scope>
+        <comment>safety check</comment>
+        <comment>perform addition block-wise, to ensure good cache behavior</comment>
+        <comment>perform addition on the current block</comment>
+        <comment>go to next block</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Compute the sum of this matrix and {@code m}.</text>
+      <param>m Matrix to be added.</param>
+      <return>{@code this} + m.</return>
+      <throws>MatrixDimensionMismatchException if {@code m} is not the same
+ * size as this matrix.</throws>
+    </javadoc>
+    <method type="BlockRealMatrix" name="add" startLine="350" endLine="367">
+      <declaration type="BlockRealMatrix" name="out" />
+      <scope startLine="357" endLine="364">
+        <declaration type="double[]" name="outBlock" />
+        <declaration type="double[]" name="tBlock" />
+        <declaration type="double[]" name="mBlock" />
+        <scope startLine="361" endLine="363" />
+      </scope>
+      <comment>safety check</comment>
+      <comment>perform addition block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="subtract" startLine="372" endLine="407">
+      <scope startLine="373" endLine="375" />
+      <scope startLine="375" endLine="406">
+        <declaration type="BlockRealMatrix" name="out" />
+        <declaration type="int" name="blockIndex" />
+        <scope startLine="383" endLine="403">
+          <scope startLine="384" endLine="402">
+            <declaration type="double[]" name="outBlock" />
+            <declaration type="double[]" name="tBlock" />
+            <declaration type="int" name="pStart" />
+            <declaration type="int" name="pEnd" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="int" name="k" />
+            <scope startLine="394" endLine="399">
+              <scope startLine="395" endLine="398" />
+            </scope>
+          </scope>
+        </scope>
+        <comment>safety check</comment>
+        <comment>perform subtraction block-wise, to ensure good cache behavior</comment>
+        <comment>perform subtraction on the current block</comment>
+        <comment>go to next block</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Subtract {@code m} from this matrix.</text>
+      <param>m Matrix to be subtracted.</param>
+      <return>{@code this} - m.</return>
+      <throws>MatrixDimensionMismatchException if {@code m} is not the
+ * same size as this matrix.</throws>
+    </javadoc>
+    <method type="BlockRealMatrix" name="subtract" startLine="418" endLine="435">
+      <declaration type="BlockRealMatrix" name="out" />
+      <scope startLine="425" endLine="432">
+        <declaration type="double[]" name="outBlock" />
+        <declaration type="double[]" name="tBlock" />
+        <declaration type="double[]" name="mBlock" />
+        <scope startLine="429" endLine="431" />
+      </scope>
+      <comment>safety check</comment>
+      <comment>perform subtraction block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="scalarAdd" startLine="439" endLine="453">
+      <declaration type="BlockRealMatrix" name="out" />
+      <scope startLine="444" endLine="450">
+        <declaration type="double[]" name="outBlock" />
+        <declaration type="double[]" name="tBlock" />
+        <scope startLine="447" endLine="449" />
+      </scope>
+      <comment>perform subtraction block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="RealMatrix" name="scalarMultiply" startLine="457" endLine="470">
+      <declaration type="BlockRealMatrix" name="out" />
+      <scope startLine="461" endLine="467">
+        <declaration type="double[]" name="outBlock" />
+        <declaration type="double[]" name="tBlock" />
+        <scope startLine="464" endLine="466" />
+      </scope>
+      <comment>perform subtraction block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="multiply" startLine="475" endLine="525">
+      <scope startLine="476" endLine="478" />
+      <scope startLine="478" endLine="524">
+        <declaration type="BlockRealMatrix" name="out" />
+        <declaration type="int" name="blockIndex" />
+        <scope startLine="486" endLine="521">
+          <declaration type="int" name="pStart" />
+          <declaration type="int" name="pEnd" />
+          <scope startLine="490" endLine="520">
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="double[]" name="outBlock" />
+            <scope startLine="498" endLine="517">
+              <declaration type="int" name="kWidth" />
+              <declaration type="double[]" name="tBlock" />
+              <declaration type="int" name="rStart" />
+              <declaration type="int" name="k" />
+              <scope startLine="503" endLine="516">
+                <declaration type="int" name="lStart" />
+                <declaration type="int" name="lEnd" />
+                <scope startLine="506" endLine="515">
+                  <declaration type="double" name="sum" />
+                  <declaration type="int" name="r" />
+                  <scope startLine="509" endLine="512" />
+                </scope>
+              </scope>
+            </scope>
+          </scope>
+        </scope>
+        <comment>safety check</comment>
+        <comment>perform multiplication block-wise, to ensure good cache behavior</comment>
+        <comment>select current block</comment>
+        <comment>perform multiplication on current block</comment>
+        <comment>go to next block</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Returns the result of postmultiplying this by {@code m}.</text>
+      <param>m Matrix to postmultiply by.</param>
+      <return>{@code this} * m.</return>
+      <throws>DimensionMismatchException if the matrices are not compatible.</throws>
+    </javadoc>
+    <method type="BlockRealMatrix" name="multiply" startLine="535" endLine="593">
+      <declaration type="BlockRealMatrix" name="out" />
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="543" endLine="590">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="548" endLine="589">
+          <declaration type="int" name="jWidth" />
+          <declaration type="int" name="jWidth2" />
+          <declaration type="int" name="jWidth3" />
+          <declaration type="int" name="jWidth4" />
+          <declaration type="double[]" name="outBlock" />
+          <scope startLine="558" endLine="586">
+            <declaration type="int" name="kWidth" />
+            <declaration type="double[]" name="tBlock" />
+            <declaration type="double[]" name="mBlock" />
+            <declaration type="int" name="k" />
+            <scope startLine="563" endLine="585">
+              <declaration type="int" name="lStart" />
+              <declaration type="int" name="lEnd" />
+              <scope startLine="566" endLine="584">
+                <declaration type="double" name="sum" />
+                <declaration type="int" name="l" />
+                <declaration type="int" name="n" />
+                <scope startLine="570" endLine="577" />
+                <scope startLine="578" endLine="581" />
+              </scope>
+            </scope>
+          </scope>
+        </scope>
+        <comment>select current block</comment>
+        <comment>perform multiplication on current block</comment>
+        <comment>go to next block</comment>
+      </scope>
+      <comment>safety check</comment>
+      <comment>perform multiplication block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double[][]" name="getData" startLine="597" endLine="621">
+      <declaration type="double[][]" name="data" />
+      <declaration type="int" name="lastColumns" />
+      <scope startLine="601" endLine="618">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <declaration type="int" name="regularPos" />
+        <declaration type="int" name="lastPos" />
+        <scope startLine="606" endLine="617">
+          <declaration type="double[]" name="dataP" />
+          <declaration type="int" name="blockIndex" />
+          <declaration type="int" name="dataPos" />
+          <scope startLine="610" endLine="613" />
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="getNorm" startLine="625" endLine="647">
+      <declaration type="double[]" name="colSums" />
+      <declaration type="double" name="maxColSum" />
+      <scope startLine="628" endLine="645">
+        <declaration type="int" name="jWidth" />
+        <scope startLine="631" endLine="641">
+          <declaration type="int" name="iHeight" />
+          <declaration type="double[]" name="block" />
+          <scope startLine="634" endLine="640">
+            <declaration type="double" name="sum" />
+            <scope startLine="636" endLine="638" />
+          </scope>
+        </scope>
+        <scope startLine="642" endLine="644" />
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="getFrobeniusNorm" startLine="651" endLine="659">
+      <declaration type="double" name="sum2" />
+      <scope startLine="653" endLine="657">
+        <scope startLine="654" endLine="656" />
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="getSubMatrix" startLine="666" endLine="755">
+      <declaration type="BlockRealMatrix" name="out" />
+      <declaration type="int" name="blockStartRow" />
+      <declaration type="int" name="rowsShift" />
+      <declaration type="int" name="blockStartColumn" />
+      <declaration type="int" name="columnsShift" />
+      <declaration type="int" name="pBlock" />
+      <scope startLine="682" endLine="752">
+        <declaration type="int" name="iHeight" />
+        <declaration type="int" name="qBlock" />
+        <scope startLine="685" endLine="750">
+          <declaration type="int" name="jWidth" />
+          <declaration type="int" name="outIndex" />
+          <declaration type="double[]" name="outBlock" />
+          <declaration type="int" name="index" />
+          <declaration type="int" name="width" />
+          <declaration type="int" name="heightExcess" />
+          <declaration type="int" name="widthExcess" />
+          <scope startLine="696" endLine="728">
+            <scope startLine="698" endLine="717">
+              <declaration type="int" name="width2" />
+            </scope>
+            <scope startLine="717" endLine="727" />
+          </scope>
+          <scope startLine="728" endLine="748">
+            <scope startLine="730" endLine="741">
+              <declaration type="int" name="width2" />
+            </scope>
+            <scope startLine="741" endLine="747" />
+          </scope>
+        </scope>
+        <comment>handle one block of the output matrix</comment>
+        <comment>the submatrix block spans on two blocks rows from the original matrix</comment>
+        <comment>the submatrix block spans on two blocks columns from the original matrix</comment>
+        <comment>the submatrix block spans on one block column from the original matrix</comment>
+        <comment>the submatrix block spans on one block row from the original matrix</comment>
+        <comment>the submatrix block spans on two blocks columns from the original matrix</comment>
+        <comment>the submatrix block spans on one block column from the original matrix</comment>
+      </scope>
+      <comment>safety checks</comment>
+      <comment>create the output matrix</comment>
+      <comment>compute blocks shifts</comment>
+      <comment>perform extraction block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* Copy a part of a block into another one
+ * <p>This method can be called only when the specified part fits in both
+ * blocks, no verification is done here.</p></text>
+      <param>srcBlock source block</param>
+      <param>srcWidth source block width ({@link #BLOCK_SIZE} or smaller)</param>
+      <param>srcStartRow start row in the source block</param>
+      <param>srcEndRow end row (exclusive) in the source block</param>
+      <param>srcStartColumn start column in the source block</param>
+      <param>srcEndColumn end column (exclusive) in the source block</param>
+      <param>dstBlock destination block</param>
+      <param>dstWidth destination block width ({@link #BLOCK_SIZE} or smaller)</param>
+      <param>dstStartRow start row in the destination block</param>
+      <param>dstStartColumn start column in the destination block</param>
+    </javadoc>
+    <method type="void" name="copyBlockPart" startLine="776" endLine="785">
+      <declaration type="int" name="length" />
+      <declaration type="int" name="srcPos" />
+      <declaration type="int" name="dstPos" />
+      <scope startLine="780" endLine="784" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setSubMatrix" startLine="792" endLine="838">
+      <declaration type="int" name="refLength" />
+      <scope startLine="796" endLine="798" />
+      <declaration type="int" name="endRow" />
+      <declaration type="int" name="endColumn" />
+      <scope startLine="802" endLine="806">
+        <scope startLine="803" endLine="805" />
+      </scope>
+      <declaration type="int" name="blockStartRow" />
+      <declaration type="int" name="blockEndRow" />
+      <declaration type="int" name="blockStartColumn" />
+      <declaration type="int" name="blockEndColumn" />
+      <scope startLine="815" endLine="837">
+        <declaration type="int" name="iHeight" />
+        <declaration type="int" name="firstRow" />
+        <declaration type="int" name="iStart" />
+        <declaration type="int" name="iEnd" />
+        <scope startLine="821" endLine="836">
+          <declaration type="int" name="jWidth" />
+          <declaration type="int" name="firstColumn" />
+          <declaration type="int" name="jStart" />
+          <declaration type="int" name="jEnd" />
+          <declaration type="int" name="jLength" />
+          <declaration type="double[]" name="block" />
+          <scope startLine="830" endLine="834" />
+        </scope>
+        <comment>handle one block, row by row</comment>
+      </scope>
+      <comment>safety checks</comment>
+      <comment>compute blocks bounds</comment>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="getRowMatrix" startLine="843" endLine="869">
+      <declaration type="BlockRealMatrix" name="out" />
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="iRow" />
+      <declaration type="int" name="outBlockIndex" />
+      <declaration type="int" name="outIndex" />
+      <declaration type="double[]" name="outBlock" />
+      <scope startLine="853" endLine="866">
+        <declaration type="int" name="jWidth" />
+        <declaration type="double[]" name="block" />
+        <declaration type="int" name="available" />
+        <scope startLine="857" endLine="862" />
+        <scope startLine="862" endLine="865" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setRowMatrix" startLine="874" endLine="880">
+      <scope startLine="875" endLine="877" />
+      <scope startLine="877" endLine="879" />
+    </method>
+    <javadoc>
+      <text>* Sets the entries in row number <code>row</code>
+ * as a row matrix.  Row indices start at 0.</text>
+      <param>row the row to be set</param>
+      <param>matrix row matrix (must have one row and the same number of columns
+ * as the instance)</param>
+      <throws>OutOfRangeException if the specified row index is invalid.</throws>
+      <throws>MatrixDimensionMismatchException if the matrix dimensions do
+ * not match one instance row.</throws>
+    </javadoc>
+    <method type="void" name="setRowMatrix" startLine="894" endLine="924">
+      <declaration type="int" name="nCols" />
+      <scope startLine="898" endLine="902" />
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="iRow" />
+      <declaration type="int" name="mBlockIndex" />
+      <declaration type="int" name="mIndex" />
+      <declaration type="double[]" name="mBlock" />
+      <scope startLine="910" endLine="923">
+        <declaration type="int" name="jWidth" />
+        <declaration type="double[]" name="block" />
+        <declaration type="int" name="available" />
+        <scope startLine="914" endLine="919" />
+        <scope startLine="919" endLine="922" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="getColumnMatrix" startLine="929" endLine="953">
+      <declaration type="BlockRealMatrix" name="out" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="jColumn" />
+      <declaration type="int" name="jWidth" />
+      <declaration type="int" name="outBlockIndex" />
+      <declaration type="int" name="outIndex" />
+      <declaration type="double[]" name="outBlock" />
+      <scope startLine="940" endLine="950">
+        <declaration type="int" name="iHeight" />
+        <declaration type="double[]" name="block" />
+        <scope startLine="943" endLine="949">
+          <scope startLine="944" endLine="947" />
+        </scope>
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setColumnMatrix" startLine="958" endLine="964">
+      <scope startLine="959" endLine="961" />
+      <scope startLine="961" endLine="963" />
+    </method>
+    <javadoc>
+      <text>* Sets the entries in column number <code>column</code>
+ * as a column matrix.  Column indices start at 0.</text>
+      <param>column the column to be set</param>
+      <param>matrix column matrix (must have one column and the same number of rows
+ * as the instance)</param>
+      <throws>OutOfRangeException if the specified column index is invalid.</throws>
+      <throws>MatrixDimensionMismatchException if the matrix dimensions do
+ * not match one instance column.</throws>
+    </javadoc>
+    <method type="void" name="setColumnMatrix" startLine="978" endLine="1006">
+      <declaration type="int" name="nRows" />
+      <scope startLine="982" endLine="986" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="jColumn" />
+      <declaration type="int" name="jWidth" />
+      <declaration type="int" name="mBlockIndex" />
+      <declaration type="int" name="mIndex" />
+      <declaration type="double[]" name="mBlock" />
+      <scope startLine="995" endLine="1005">
+        <declaration type="int" name="iHeight" />
+        <declaration type="double[]" name="block" />
+        <scope startLine="998" endLine="1004">
+          <scope startLine="999" endLine="1002" />
+        </scope>
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="RealVector" name="getRowVector" startLine="1011" endLine="1027">
+      <declaration type="double[]" name="outData" />
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="iRow" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1019" endLine="1024">
+        <declaration type="int" name="jWidth" />
+        <declaration type="double[]" name="block" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setRowVector" startLine="1032" endLine="1038">
+      <scope startLine="1033" endLine="1035" />
+      <scope startLine="1035" endLine="1037" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="RealVector" name="getColumnVector" startLine="1043" endLine="1061">
+      <declaration type="double[]" name="outData" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="jColumn" />
+      <declaration type="int" name="jWidth" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1052" endLine="1058">
+        <declaration type="int" name="iHeight" />
+        <declaration type="double[]" name="block" />
+        <scope startLine="1055" endLine="1057" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setColumnVector" startLine="1066" endLine="1072">
+      <scope startLine="1067" endLine="1069" />
+      <scope startLine="1069" endLine="1071" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double[]" name="getRow" startLine="1076" endLine="1092">
+      <declaration type="double[]" name="out" />
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="iRow" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1084" endLine="1089">
+        <declaration type="int" name="jWidth" />
+        <declaration type="double[]" name="block" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setRow" startLine="1097" endLine="1114">
+      <declaration type="int" name="nCols" />
+      <scope startLine="1100" endLine="1102" />
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="iRow" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1108" endLine="1113">
+        <declaration type="int" name="jWidth" />
+        <declaration type="double[]" name="block" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double[]" name="getColumn" startLine="1118" endLine="1136">
+      <declaration type="double[]" name="out" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="jColumn" />
+      <declaration type="int" name="jWidth" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1127" endLine="1133">
+        <declaration type="int" name="iHeight" />
+        <declaration type="double[]" name="block" />
+        <scope startLine="1130" endLine="1132" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setColumn" startLine="1141" endLine="1160">
+      <declaration type="int" name="nRows" />
+      <scope startLine="1144" endLine="1146" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="jColumn" />
+      <declaration type="int" name="jWidth" />
+      <declaration type="int" name="outIndex" />
+      <scope startLine="1153" endLine="1159">
+        <declaration type="int" name="iHeight" />
+        <declaration type="double[]" name="block" />
+        <scope startLine="1156" endLine="1158" />
+      </scope>
+      <comment>perform copy block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="getEntry" startLine="1165" endLine="1172">
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="k" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="setEntry" startLine="1177" endLine="1184">
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="k" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="addToEntry" startLine="1190" endLine="1197">
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="k" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="void" name="multiplyEntry" startLine="1203" endLine="1210">
+      <declaration type="int" name="iBlock" />
+      <declaration type="int" name="jBlock" />
+      <declaration type="int" name="k" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="BlockRealMatrix" name="transpose" startLine="1214" endLine="1246">
+      <declaration type="int" name="nRows" />
+      <declaration type="int" name="nCols" />
+      <declaration type="BlockRealMatrix" name="out" />
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="1221" endLine="1243">
+        <scope startLine="1222" endLine="1242">
+          <declaration type="double[]" name="outBlock" />
+          <declaration type="double[]" name="tBlock" />
+          <declaration type="int" name="pStart" />
+          <declaration type="int" name="pEnd" />
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="int" name="k" />
+          <scope startLine="1231" endLine="1239">
+            <declaration type="int" name="lInc" />
+            <declaration type="int" name="l" />
+            <scope startLine="1234" endLine="1238" />
+          </scope>
+        </scope>
+        <comment>transpose current block</comment>
+        <comment>go to next block</comment>
+      </scope>
+      <comment>perform transpose block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="int" name="getRowDimension" startLine="1250" endLine="1252" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="int" name="getColumnDimension" startLine="1256" endLine="1258" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double[]" name="operate" startLine="1263" endLine="1298">
+      <scope startLine="1264" endLine="1266" />
+      <declaration type="double[]" name="out" />
+      <scope startLine="1270" endLine="1295">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1273" endLine="1294">
+          <declaration type="double[]" name="block" />
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="int" name="k" />
+          <scope startLine="1278" endLine="1293">
+            <declaration type="double" name="sum" />
+            <declaration type="int" name="q" />
+            <scope startLine="1281" endLine="1288" />
+            <scope startLine="1289" endLine="1291" />
+          </scope>
+        </scope>
+      </scope>
+      <comment>perform multiplication block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double[]" name="preMultiply" startLine="1303" endLine="1343">
+      <scope startLine="1304" endLine="1306" />
+      <declaration type="double[]" name="out" />
+      <scope startLine="1310" endLine="1340">
+        <declaration type="int" name="jWidth" />
+        <declaration type="int" name="jWidth2" />
+        <declaration type="int" name="jWidth3" />
+        <declaration type="int" name="jWidth4" />
+        <declaration type="int" name="qStart" />
+        <declaration type="int" name="qEnd" />
+        <scope startLine="1317" endLine="1339">
+          <declaration type="double[]" name="block" />
+          <declaration type="int" name="pStart" />
+          <declaration type="int" name="pEnd" />
+          <scope startLine="1321" endLine="1338">
+            <declaration type="int" name="k" />
+            <declaration type="double" name="sum" />
+            <declaration type="int" name="p" />
+            <scope startLine="1325" endLine="1332" />
+            <scope startLine="1333" endLine="1336" />
+          </scope>
+        </scope>
+      </scope>
+      <comment>perform multiplication block-wise, to ensure good cache behavior</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInRowOrder" startLine="1347" endLine="1367">
+      <scope startLine="1349" endLine="1365">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1352" endLine="1364">
+          <scope startLine="1353" endLine="1363">
+            <declaration type="int" name="jWidth" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="double[]" name="block" />
+            <declaration type="int" name="k" />
+            <scope startLine="1359" endLine="1362" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInRowOrder" startLine="1371" endLine="1391">
+      <scope startLine="1373" endLine="1389">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1376" endLine="1388">
+          <scope startLine="1377" endLine="1387">
+            <declaration type="int" name="jWidth" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="double[]" name="block" />
+            <declaration type="int" name="k" />
+            <scope startLine="1383" endLine="1386" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInRowOrder" startLine="1398" endLine="1421">
+      <scope startLine="1401" endLine="1419">
+        <declaration type="int" name="p0" />
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1405" endLine="1418">
+          <scope startLine="1406" endLine="1417">
+            <declaration type="int" name="jWidth" />
+            <declaration type="int" name="q0" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="double[]" name="block" />
+            <declaration type="int" name="k" />
+            <scope startLine="1413" endLine="1416" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInRowOrder" startLine="1428" endLine="1451">
+      <scope startLine="1431" endLine="1449">
+        <declaration type="int" name="p0" />
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1435" endLine="1448">
+          <scope startLine="1436" endLine="1447">
+            <declaration type="int" name="jWidth" />
+            <declaration type="int" name="q0" />
+            <declaration type="int" name="qStart" />
+            <declaration type="int" name="qEnd" />
+            <declaration type="double[]" name="block" />
+            <declaration type="int" name="k" />
+            <scope startLine="1443" endLine="1446" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInOptimizedOrder" startLine="1455" endLine="1476">
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="1458" endLine="1474">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1461" endLine="1473">
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="double[]" name="block" />
+          <declaration type="int" name="k" />
+          <scope startLine="1466" endLine="1471">
+            <scope startLine="1467" endLine="1470" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInOptimizedOrder" startLine="1480" endLine="1501">
+      <declaration type="int" name="blockIndex" />
+      <scope startLine="1483" endLine="1499">
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1486" endLine="1498">
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="double[]" name="block" />
+          <declaration type="int" name="k" />
+          <scope startLine="1491" endLine="1496">
+            <scope startLine="1492" endLine="1495" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInOptimizedOrder" startLine="1509" endLine="1532">
+      <scope startLine="1512" endLine="1530">
+        <declaration type="int" name="p0" />
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1516" endLine="1529">
+          <declaration type="int" name="jWidth" />
+          <declaration type="int" name="q0" />
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="double[]" name="block" />
+          <scope startLine="1522" endLine="1528">
+            <declaration type="int" name="k" />
+            <scope startLine="1524" endLine="1527" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="double" name="walkInOptimizedOrder" startLine="1540" endLine="1563">
+      <scope startLine="1543" endLine="1561">
+        <declaration type="int" name="p0" />
+        <declaration type="int" name="pStart" />
+        <declaration type="int" name="pEnd" />
+        <scope startLine="1547" endLine="1560">
+          <declaration type="int" name="jWidth" />
+          <declaration type="int" name="q0" />
+          <declaration type="int" name="qStart" />
+          <declaration type="int" name="qEnd" />
+          <declaration type="double[]" name="block" />
+          <scope startLine="1553" endLine="1559">
+            <declaration type="int" name="k" />
+            <scope startLine="1555" endLine="1558" />
+          </scope>
+        </scope>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Get the height of a block.</text>
+      <param>blockRow row index (in block sense) of the block</param>
+      <return>height (number of rows) of the block</return>
+    </javadoc>
+    <method type="int" name="blockHeight" startLine="1570" endLine="1572" />
+    <javadoc>
+      <text>* Get the width of a block.</text>
+      <param>blockColumn column index (in block sense) of the block</param>
+      <return>width (number of columns) of the block</return>
+    </javadoc>
+    <method type="int" name="blockWidth" startLine="1579" endLine="1581" />
+  </class>
+</source>

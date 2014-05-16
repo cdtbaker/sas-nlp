@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Stack;
 
@@ -49,7 +50,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 						// the AST Nodes; it is initialised in
 						// beforeAllMethods()
 
-	List<Element> eList;
+	//List<Element> eList;
 	Element root;
 	Element sourceS;
 
@@ -75,15 +76,20 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		}
 
 		sourceS = new Element("source");
-		sourceS.setAttribute("package", StringEscapeUtils
-				.unescapeXml(compilationUnit.getPackage().toString()));
+		String packageName= "";
+		if(compilationUnit.getPackage() != null){
+			 packageName = compilationUnit
+				.getPackage().toString();
+		packageName = packageName.substring(8,packageName.length()-2);
+		}
+		sourceS.setAttribute("package", packageName);
 		elements.push(sourceS);
 
 		List<ImportDeclaration> ids = (List<ImportDeclaration>) compilationUnit
 				.imports();
 		for (ImportDeclaration id : ids) {
 			Element el = new Element("import");
-			el.setAttribute("name", id.toString());
+			el.setAttribute("name", id.toString().substring(7,id.getLength()-1));
 			sourceS.addContent(el);
 		}
 		// Property: At this point, source exists and is not null.
@@ -92,28 +98,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		parser = new XMLParser(compilationUnit, source.split("\n"));
 
 		d = new Document();
-		root = new Element("class");
 
-		String classDef = (compilationUnit.getJavaElement().getElementName());
-		classDef = classDef.substring(0, classDef.indexOf('.'));
-
-		root.setAttribute("name", classDef);
-
-		// elements.add(root);
 		d.setRootElement(sourceS);
 		compilationUnit.accept(parser);
-
-		// getList of methods
-		List<Element> el = sourceS.getChildren("class");
-
-		eList = new ArrayList<Element>();
-		for (Element e : el) {
-			if (e instanceof Element) {
-				eList.add((Element) e);
-
-			}
-
-		}
 
 		// To visite LineComment and BlockComment nodes, we need to call the
 		// accept method on them
@@ -131,7 +118,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		// records start time of analysis
 		startTime = System.currentTimeMillis();
-		System.out.println("Running: " + this.getName());
+		//System.out.println("Running: " + this.getName());
 		super.beforeAllMethods(rootNode, compilationUnit);
 	}
 
@@ -144,29 +131,35 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 		XMLOutputter xml = new XMLOutputter();
 		xml.setFormat(Format.getPrettyFormat());
-		System.out.println(xml.outputString(d));
+		//System.out.println(StringEscapeUtils.unescapeXml(xml.outputString(d)));
 		String path = compUnit.getPath().toString();
 		path = path.substring(path.lastIndexOf("src/"), path.indexOf(".java"));
 
-		/*
-		 * File dir = new File(path.substring(0, path.lastIndexOf('/')));
-		 * 
-		 * if (!dir.exists()) { dir.mkdirs(); } FileWriter fw = null; try { fw =
-		 * new FileWriter(path + ".xml");
-		 * 
-		 * BufferedWriter bw = new BufferedWriter(fw);
-		 * bw.write(xml.outputString(d)); bw.close(); fw.close();
-		 * 
-		 * } catch (IOException e) { System.out.println("Error");
-		 * e.printStackTrace(); }
-		 */
+		File dir = new File(path.substring(0, path.lastIndexOf('/')));
+
+		if (!dir.exists()) {
+			dir.mkdirs();
+		}
+		FileWriter fw = null;
+		try {
+			fw = new FileWriter(path + ".xml");
+
+			BufferedWriter bw = new BufferedWriter(fw);
+			bw.write(StringEscapeUtils.unescapeXml(xml.outputString(d)));
+			bw.close();
+			fw.close();
+
+		} catch (IOException e) {
+			System.out.println("Error");
+			e.printStackTrace();
+		}
 
 		// prints time taken
 
-		System.out.println("\nEnd of " + getName() + ", \nTime Taken: "
-				+ (endTime - startTime) + "ms");
+		//System.out.println("\nEnd of " + getName() + ", \nTime Taken: "
+			//	+ (endTime - startTime) + "ms");
 		// create and run a test analysis
-		TestAnalysis analysis = new TestAnalysis();
+		//TestAnalysis analysis = new TestAnalysis();
 		// analysis.runAnalysis(getReporter(), getInput(), compUnit, rootNode);
 
 		super.afterAllMethods(compUnit, rootNode);
@@ -192,7 +185,6 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		CompilationUnit compUnit;
 		String[] source;
 		int methodCount = 0;
-		int lastLine = 0;
 
 		public XMLParser(CompilationUnit c, String[] s) {
 			compUnit = c;
@@ -203,9 +195,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		public boolean visit(TypeDeclaration node) {
 			Element e;
 			int startLine = compUnit.getLineNumber(node.getStartPosition());
-			int endLineNumber = compUnit.getLineNumber(node.getStartPosition()
-					+ node.getRoot().getLength());
-			
+			//int endLineNumber = compUnit.getLineNumber(node.getStartPosition()
+			//		+ node.getRoot().getLength());
+
 			if (node.isInterface()) {
 				e = new Element("interface");
 			} else {
@@ -217,9 +209,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			if (node.getSuperclassType() != null) {
 				e.setAttribute("extends", node.getSuperclassType().toString());
 			}
-			
+
 			e.setAttribute("startLine", String.valueOf(startLine));
-			e.setAttribute("endLine", String.valueOf(endLineNumber));
+			// e.setAttribute("endLine", String.valueOf(endLineNumber));
 			if (node.superInterfaceTypes() != null
 					&& node.superInterfaceTypes().size() > 0) {
 				for (Type t : (List<Type>) node.superInterfaceTypes()) {
@@ -228,8 +220,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 					e.addContent(i);
 				}
 			}
-			elements.peek().addContent(e);
-			elements.push(e);
+			addBlock(e);
 			return super.visit(node);
 
 		}
@@ -264,13 +255,17 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 				e.setAttribute("startLine", String.valueOf(startLine));
 				e.setAttribute("endLine", String.valueOf(endLineNumber));
 			}
+			addBlock(e);
+			return super.visit(node);
+		}
+
+		public void addBlock(Element e){
 			// adds block to previous top of stack
 			elements.peek().addContent(e);
 			// pushes block to top of stack
 			elements.push(e);
-			return super.visit(node);
 		}
-
+		
 		@Override
 		public void endVisit(Block node) {
 			// removes block from stack
@@ -329,8 +324,10 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			if (node.fragments().get(0).toString().contains("[]")) {
 				typeS = typeS + "[]";
 			}
+
 			Element declaration = new Element("declaration");
 			Attribute type = new Attribute("type", typeS);
+
 			declaration.setAttribute(type);
 
 			String nameS = ((VariableDeclarationFragment) node.fragments().get(
@@ -413,14 +410,13 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			}
 
 			if (!added) {
+				List<Element> classes = getClasses();
+				Collections.reverse(classes);
 				for (Element e : getClasses()) {
 
 					if (start >= Integer.parseInt(e.getAttribute("startLine")
-							.getValue())
-							&& start <= Integer.parseInt(e.getAttribute(
-									"endLine").getValue())) {
+							.getValue())) {
 						e.addContent(comment);
-						added = true;
 						break;
 					}
 				}
@@ -436,8 +432,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 				if (t.getTagName() == null) {
 					Element tag = new Element("text");
-					tag.addContent(StringEscapeUtils.unescapeXml(t.toString()
-							.substring(3)));
+					tag.addContent(t.toString());
 					javadoc.addContent(tag);
 				} else {
 					Element tag = new Element(t.getTagName().substring(1));
@@ -468,8 +463,6 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 
 			Element comment = new Element("comment");
 			comment.addContent(lineComment.toString().replaceAll("//", ""));
-			boolean added = false;
-
 			addComment(comment, startLineNumber);
 
 			int start = node.getStartPosition();
@@ -500,13 +493,13 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			}
 			Element comment = new Element("comment");
 			comment.addContent(blockComment.toString().replaceAll("\\*", "")
-					.replaceAll("/", ""));
+					.replaceAll("/", "").replaceAll("/*", ""));
 
 			addComment(comment, startLineNumber);
 
-			int start = node.getStartPosition();
-			ASTNode withoutSignature = NodeFinder.perform(
-					node.getAlternateRoot(), start, 0);
+			//int start = node.getStartPosition();
+			/*ASTNode withoutSignature = NodeFinder.perform(
+					node.getAlternateRoot(), start, 0);*/
 
 			return true;
 		}

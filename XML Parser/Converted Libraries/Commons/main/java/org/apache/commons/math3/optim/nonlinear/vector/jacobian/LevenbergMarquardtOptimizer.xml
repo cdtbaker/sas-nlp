@@ -1,0 +1,641 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.apache.commons.math3.optim.nonlinear.vector.jacobian">
+  <import name="java.util.Arrays" />
+  <import name="org.apache.commons.math3.exception.ConvergenceException" />
+  <import name="org.apache.commons.math3.exception.MathUnsupportedOperationException" />
+  <import name="org.apache.commons.math3.exception.util.LocalizedFormats" />
+  <import name="org.apache.commons.math3.optim.PointVectorValuePair" />
+  <import name="org.apache.commons.math3.optim.ConvergenceChecker" />
+  <import name="org.apache.commons.math3.linear.RealMatrix" />
+  <import name="org.apache.commons.math3.util.Precision" />
+  <import name="org.apache.commons.math3.util.FastMath" />
+  <class name="LevenbergMarquardtOptimizer" extends="AbstractLeastSquaresOptimizer" startLine="30">
+    <javadoc>
+      <text>* This class solves a least-squares problem using the Levenberg-Marquardt
+ * algorithm.
+ * <br/>
+ * Constraints are not supported: the call to{@link #optimize(OptimizationData[]) optimize} will throw{@link MathUnsupportedOperationException} if bounds are passed to it.
+ * <p>This implementation <em>should</em> work even for over-determined systems
+ * (i.e. systems having more point than equations). Over-determined systems
+ * are solved by ignoring the point which have the smallest impact according
+ * to their jacobian column norm. Only the rank of the matrix and some loop bounds
+ * are changed to implement this.</p>
+ * <p>The resolution engine is a simple translation of the MINPACK <a
+ * href="http://www.netlib.org/minpack/lmder.f">lmder</a> routine with minor
+ * changes. The changes include the over-determined resolution, the use of
+ * inherited convergence checker and the Q.R. decomposition which has been
+ * rewritten following the algorithm described in the
+ * P. Lascaux and R. Theodor book <i>Analyse num&eacute;rique matricielle
+ * appliqu&eacute;e &agrave; l'art de l'ing&eacute;nieur</i>, Masson 1986.</p>
+ * <p>The authors of the original fortran version are:
+ * <ul>
+ * <li>Argonne National Laboratory. MINPACK project. March 1980</li>
+ * <li>Burton S. Garbow</li>
+ * <li>Kenneth E. Hillstrom</li>
+ * <li>Jorge J. More</li>
+ * </ul>
+ * The redistribution policy for MINPACK is available <a
+ * href="http://www.netlib.org/minpack/disclaimer">here</a>, for convenience, it
+ * is reproduced below.</p>
+ * <table border="0" width="80%" cellpadding="10" align="center" bgcolor="#E0E0E0">
+ * <tr><td>
+ * Minpack Copyright Notice (1999) University of Chicago.
+ * All rights reserved
+ * </td></tr>
+ * <tr><td>
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * <ol>
+ * <li>Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.</li>
+ * <li>Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following
+ * disclaimer in the documentation and/or other materials provided
+ * with the distribution.</li>
+ * <li>The end-user documentation included with the redistribution, if any,
+ * must include the following acknowledgment:
+ * <code>This product includes software developed by the University of
+ * Chicago, as Operator of Argonne National Laboratory.</code>
+ * Alternately, this acknowledgment may appear in the software itself,
+ * if and wherever such third-party acknowledgments normally appear.</li>
+ * <li><strong>WARRANTY DISCLAIMER. THE SOFTWARE IS SUPPLIED "AS IS"
+ * WITHOUT WARRANTY OF ANY KIND. THE COPYRIGHT HOLDER, THE
+ * UNITED STATES, THE UNITED STATES DEPARTMENT OF ENERGY, AND
+ * THEIR EMPLOYEES: (1) DISCLAIM ANY WARRANTIES, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO ANY IMPLIED WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE
+ * OR NON-INFRINGEMENT, (2) DO NOT ASSUME ANY LEGAL LIABILITY
+ * OR RESPONSIBILITY FOR THE ACCURACY, COMPLETENESS, OR
+ * USEFULNESS OF THE SOFTWARE, (3) DO NOT REPRESENT THAT USE OF
+ * THE SOFTWARE WOULD NOT INFRINGE PRIVATELY OWNED RIGHTS, (4)
+ * DO NOT WARRANT THAT THE SOFTWARE WILL FUNCTION
+ * UNINTERRUPTED, THAT IT IS ERROR-FREE OR THAT ANY ERRORS WILL
+ * BE CORRECTED.</strong></li>
+ * <li><strong>LIMITATION OF LIABILITY. IN NO EVENT WILL THE COPYRIGHT
+ * HOLDER, THE UNITED STATES, THE UNITED STATES DEPARTMENT OF
+ * ENERGY, OR THEIR EMPLOYEES: BE LIABLE FOR ANY INDIRECT,
+ * INCIDENTAL, CONSEQUENTIAL, SPECIAL OR PUNITIVE DAMAGES OF
+ * ANY KIND OR NATURE, INCLUDING BUT NOT LIMITED TO LOSS OF
+ * PROFITS OR LOSS OF DATA, FOR ANY REASON WHATSOEVER, WHETHER
+ * SUCH LIABILITY IS ASSERTED ON THE BASIS OF CONTRACT, TORT
+ * (INCLUDING NEGLIGENCE OR STRICT LIABILITY), OR OTHERWISE,
+ * EVEN IF ANY OF SAID PARTIES HAS BEEN WARNED OF THE
+ * POSSIBILITY OF SUCH LOSS OR DAMAGES.</strong></li>
+ * <ol></td></tr>
+ * </table></text>
+      <version>$Id: LevenbergMarquardtOptimizer.java 1462503 2013-03-29 15:48:27Z luc $</version>
+      <since>2.0</since>
+    </javadoc>
+    <javadoc>
+      <text>* Twice the "epsilon machine".</text>
+    </javadoc>
+    <declaration type="double" name="TWO_EPS" />
+    <javadoc>
+      <text>* Number of solved point.</text>
+    </javadoc>
+    <declaration type="int" name="solvedCols" />
+    <javadoc>
+      <text>* Diagonal elements of the R matrix in the Q.R. decomposition.</text>
+    </javadoc>
+    <declaration type="double[]" name="diagR" />
+    <javadoc>
+      <text>* Norms of the columns of the jacobian matrix.</text>
+    </javadoc>
+    <declaration type="double[]" name="jacNorm" />
+    <javadoc>
+      <text>* Coefficients of the Householder transforms vectors.</text>
+    </javadoc>
+    <declaration type="double[]" name="beta" />
+    <javadoc>
+      <text>* Columns permutation array.</text>
+    </javadoc>
+    <declaration type="int[]" name="permutation" />
+    <javadoc>
+      <text>* Rank of the jacobian matrix.</text>
+    </javadoc>
+    <declaration type="int" name="rank" />
+    <javadoc>
+      <text>* Levenberg-Marquardt parameter.</text>
+    </javadoc>
+    <declaration type="double" name="lmPar" />
+    <javadoc>
+      <text>* Parameters evolution direction associated with lmPar.</text>
+    </javadoc>
+    <declaration type="double[]" name="lmDir" />
+    <javadoc>
+      <text>* Positive input variable used in determining the initial step bound.</text>
+    </javadoc>
+    <declaration type="double" name="initialStepBoundFactor" />
+    <javadoc>
+      <text>* Desired relative error in the sum of squares.</text>
+    </javadoc>
+    <declaration type="double" name="costRelativeTolerance" />
+    <javadoc>
+      <text>* Desired relative error in the approximate solution parameters.</text>
+    </javadoc>
+    <declaration type="double" name="parRelativeTolerance" />
+    <javadoc>
+      <text>* Desired max cosine on the orthogonality between the function vector
+ * and the columns of the jacobian.</text>
+    </javadoc>
+    <declaration type="double" name="orthoTolerance" />
+    <javadoc>
+      <text>* Threshold for QR ranking.</text>
+    </javadoc>
+    <declaration type="double" name="qrRankingThreshold" />
+    <javadoc>
+      <text>* Weighted residuals.</text>
+    </javadoc>
+    <declaration type="double[]" name="weightedResidual" />
+    <javadoc>
+      <text>* Weighted Jacobian.</text>
+    </javadoc>
+    <declaration type="double[][]" name="weightedJacobian" />
+    <javadoc>
+      <text>* Build an optimizer for least squares problems with default values
+ * for all the tuning parameters (see the {@link #LevenbergMarquardtOptimizer(double,double,double,double,double)other contructor}.
+ * The default values for the algorithm settings are:
+ * <ul>
+ * <li>Initial step bound factor: 100</li>
+ * <li>Cost relative tolerance: 1e-10</li>
+ * <li>Parameters relative tolerance: 1e-10</li>
+ * <li>Orthogonality tolerance: 1e-10</li>
+ * <li>QR ranking threshold: {@link Precision#SAFE_MIN}</li>
+ * </ul></text>
+    </javadoc>
+    <method type="constructor" name="LevenbergMarquardtOptimizer" startLine="163" endLine="165" />
+    <javadoc>
+      <text>* Constructor that allows the specification of a custom convergence
+ * checker.
+ * Note that all the usual convergence checks will be <em>disabled</em>.
+ * The default values for the algorithm settings are:
+ * <ul>
+ * <li>Initial step bound factor: 100</li>
+ * <li>Cost relative tolerance: 1e-10</li>
+ * <li>Parameters relative tolerance: 1e-10</li>
+ * <li>Orthogonality tolerance: 1e-10</li>
+ * <li>QR ranking threshold: {@link Precision#SAFE_MIN}</li>
+ * </ul></text>
+      <param>checker Convergence checker.</param>
+    </javadoc>
+    <method type="constructor" name="LevenbergMarquardtOptimizer" startLine="182" endLine="184" />
+    <javadoc>
+      <text>* Constructor that allows the specification of a custom convergence
+ * checker, in addition to the standard ones.</text>
+      <param>initialStepBoundFactor Positive input variable used in
+ * determining the initial step bound. This bound is set to the
+ * product of initialStepBoundFactor and the euclidean norm of{@code diag * x} if non-zero, or else to {@code initialStepBoundFactor}itself. In most cases factor should lie in the interval{@code (0.1, 100.0)}. {@code 100} is a generally recommended value.</param>
+      <param>checker Convergence checker.</param>
+      <param>costRelativeTolerance Desired relative error in the sum of
+ * squares.</param>
+      <param>parRelativeTolerance Desired relative error in the approximate
+ * solution parameters.</param>
+      <param>orthoTolerance Desired max cosine on the orthogonality between
+ * the function vector and the columns of the Jacobian.</param>
+      <param>threshold Desired threshold for QR ranking. If the squared norm
+ * of a column vector is smaller or equal to this threshold during QR
+ * decomposition, it is considered to be a zero vector and hence the rank
+ * of the matrix is reduced.</param>
+    </javadoc>
+    <method type="constructor" name="LevenbergMarquardtOptimizer" startLine="213" endLine="220" />
+    <javadoc>
+      <text>* Build an optimizer for least squares problems with default values
+ * for some of the tuning parameters (see the {@link #LevenbergMarquardtOptimizer(double,double,double,double,double)other contructor}.
+ * The default values for the algorithm settings are:
+ * <ul>
+ * <li>Initial step bound factor}: 100</li>
+ * <li>QR ranking threshold}: {@link Precision#SAFE_MIN}</li>
+ * </ul></text>
+      <param>costRelativeTolerance Desired relative error in the sum of
+ * squares.</param>
+      <param>parRelativeTolerance Desired relative error in the approximate
+ * solution parameters.</param>
+      <param>orthoTolerance Desired max cosine on the orthogonality between
+ * the function vector and the columns of the Jacobian.</param>
+    </javadoc>
+    <method type="constructor" name="LevenbergMarquardtOptimizer" startLine="242" endLine="246" />
+    <javadoc>
+      <text>* The arguments control the behaviour of the default convergence checking
+ * procedure.
+ * Additional criteria can defined through the setting of a {@link ConvergenceChecker}.</text>
+      <param>initialStepBoundFactor Positive input variable used in
+ * determining the initial step bound. This bound is set to the
+ * product of initialStepBoundFactor and the euclidean norm of{@code diag * x} if non-zero, or else to {@code initialStepBoundFactor}itself. In most cases factor should lie in the interval{@code (0.1, 100.0)}. {@code 100} is a generally recommended value.</param>
+      <param>costRelativeTolerance Desired relative error in the sum of
+ * squares.</param>
+      <param>parRelativeTolerance Desired relative error in the approximate
+ * solution parameters.</param>
+      <param>orthoTolerance Desired max cosine on the orthogonality between
+ * the function vector and the columns of the Jacobian.</param>
+      <param>threshold Desired threshold for QR ranking. If the squared norm
+ * of a column vector is smaller or equal to this threshold during QR
+ * decomposition, it is considered to be a zero vector and hence the rank
+ * of the matrix is reduced.</param>
+    </javadoc>
+    <method type="constructor" name="LevenbergMarquardtOptimizer" startLine="275" endLine="282">
+      <comment>No custom convergence criterion.</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="PointVectorValuePair" name="doOptimize" startLine="286" endLine="534">
+      <declaration type="int" name="nR" />
+      <declaration type="double[]" name="currentPoint" />
+      <declaration type="int" name="nC" />
+      <declaration type="double" name="delta" />
+      <declaration type="double" name="xNorm" />
+      <declaration type="double[]" name="diag" />
+      <declaration type="double[]" name="oldX" />
+      <declaration type="double[]" name="oldRes" />
+      <declaration type="double[]" name="oldObj" />
+      <declaration type="double[]" name="qtf" />
+      <declaration type="double[]" name="work1" />
+      <declaration type="double[]" name="work2" />
+      <declaration type="double[]" name="work3" />
+      <declaration type="RealMatrix" name="weightMatrixSqrt" />
+      <declaration type="double[]" name="currentObjective" />
+      <declaration type="double[]" name="currentResiduals" />
+      <declaration type="PointVectorValuePair" name="current" />
+      <declaration type="double" name="currentCost" />
+      <declaration type="boolean" name="firstIteration" />
+      <declaration type="ConvergenceChecker<PointVectorValuePair>" name="checker" />
+      <scope startLine="325" endLine="533">
+        <declaration type="PointVectorValuePair" name="previous" />
+        <scope startLine="334" endLine="336" />
+        <scope startLine="343" endLine="346">
+          <declaration type="int" name="pk" />
+        </scope>
+        <scope startLine="348" endLine="365">
+          <scope startLine="352" endLine="360">
+            <declaration type="double" name="dk" />
+            <scope startLine="354" endLine="356" />
+            <declaration type="double" name="xk" />
+          </scope>
+        </scope>
+        <declaration type="double" name="maxCosine" />
+        <scope startLine="369" endLine="381">
+          <scope startLine="370" endLine="380">
+            <declaration type="int" name="pj" />
+            <declaration type="double" name="s" />
+            <scope startLine="373" endLine="379">
+              <declaration type="double" name="sum" />
+              <scope startLine="375" endLine="377" />
+            </scope>
+          </scope>
+        </scope>
+        <scope startLine="382" endLine="386" />
+        <scope startLine="389" endLine="391" />
+        <scope startLine="394" endLine="532">
+          <scope startLine="397" endLine="400">
+            <declaration type="int" name="pj" />
+          </scope>
+          <declaration type="double" name="previousCost" />
+          <declaration type="double[]" name="tmpVec" />
+          <declaration type="double" name="lmNorm" />
+          <scope startLine="414" endLine="420">
+            <declaration type="int" name="pj" />
+            <declaration type="double" name="s" />
+          </scope>
+          <scope startLine="423" endLine="425" />
+          <declaration type="double" name="actRed" />
+          <scope startLine="435" endLine="438">
+            <declaration type="double" name="r" />
+          </scope>
+          <scope startLine="442" endLine="449">
+            <declaration type="int" name="pj" />
+            <declaration type="double" name="dirJ" />
+            <scope startLine="446" endLine="448" />
+          </scope>
+          <declaration type="double" name="coeff1" />
+          <scope startLine="451" endLine="453" />
+          <declaration type="double" name="pc2" />
+          <declaration type="double" name="coeff2" />
+          <declaration type="double" name="preRed" />
+          <declaration type="double" name="dirDer" />
+          <scope startLine="464" endLine="472">
+            <declaration type="double" name="tmp" />
+            <scope startLine="467" endLine="469" />
+          </scope>
+          <scope startLine="472" endLine="475" />
+          <scope startLine="478" endLine="493">
+            <scope startLine="482" endLine="485">
+              <declaration type="double" name="xK" />
+            </scope>
+            <scope startLine="489" endLine="492" />
+          </scope>
+          <scope startLine="493" endLine="508">
+            <scope startLine="496" endLine="499">
+              <declaration type="int" name="pj" />
+            </scope>
+          </scope>
+          <scope startLine="514" endLine="517" />
+          <scope startLine="522" endLine="525" />
+          <scope startLine="525" endLine="528" />
+          <scope startLine="528" endLine="531" />
+        </scope>
+        <comment>QR decomposition of the jacobian matrix</comment>
+        <comment>compute Qt.res</comment>
+        <comment>now we don't need Q anymore,</comment>
+        <comment>so let jacobian contain the R matrix with its diagonal elements</comment>
+        <comment>scale the point according to the norms of the columns</comment>
+        <comment>of the initial jacobian</comment>
+        <comment>initialize the step bound delta</comment>
+        <comment>check orthogonality between function vector and jacobian columns</comment>
+        <comment>Convergence has been reached.</comment>
+        <comment>rescale if necessary</comment>
+        <comment>Inner loop.</comment>
+        <comment>save the state</comment>
+        <comment>determine the Levenberg-Marquardt parameter</comment>
+        <comment>compute the new point and the norm of the evolution direction</comment>
+        <comment>on the first iteration, adjust the initial step bound.</comment>
+        <comment>Evaluate the function at x + p and calculate its norm.</comment>
+        <comment>compute the scaled actual reduction</comment>
+        <comment>compute the scaled predicted reduction</comment>
+        <comment>and the scaled directional derivative</comment>
+        <comment>ratio of the actual to the predicted reduction</comment>
+        <comment>update the step bound</comment>
+        <comment>test for successful iteration.</comment>
+        <comment>successful iteration, update the norm</comment>
+        <comment>tests for convergence.</comment>
+        <comment>failed iteration, reset the previous values</comment>
+        <comment>Reset "current" to previous values.</comment>
+        <comment>Default convergence criteria.</comment>
+        <comment>tests for termination and stringent tolerances</comment>
+      </scope>
+      <comment>Number of observed data.</comment>
+      <comment>Number of parameters.</comment>
+      <comment>arrays shared with the other private methods</comment>
+      <comment>local point</comment>
+      <comment>Evaluate the function at the starting point and calculate its norm.</comment>
+      <comment>Outer loop.</comment>
+    </method>
+    <javadoc>
+      <text>* Determine the Levenberg-Marquardt parameter.
+ * <p>This implementation is a translation in Java of the MINPACK
+ * <a href="http://www.netlib.org/minpack/lmpar.f">lmpar</a>
+ * routine.</p>
+ * <p>This method sets the lmPar and lmDir attributes.</p>
+ * <p>The authors of the original fortran function are:</p>
+ * <ul>
+ * <li>Argonne National Laboratory. MINPACK project. March 1980</li>
+ * <li>Burton  S. Garbow</li>
+ * <li>Kenneth E. Hillstrom</li>
+ * <li>Jorge   J. More</li>
+ * </ul>
+ * <p>Luc Maisonobe did the Java translation.</p></text>
+      <param>qy array containing qTy</param>
+      <param>delta upper bound on the euclidean norm of diagR * lmDir</param>
+      <param>diag diagonal matrix</param>
+      <param>work1 work array</param>
+      <param>work2 work array</param>
+      <param>work3 work array</param>
+    </javadoc>
+    <method type="void" name="determineLMParameter" startLine="559" endLine="705">
+      <declaration type="int" name="nC" />
+      <scope startLine="564" endLine="566" />
+      <scope startLine="567" endLine="569" />
+      <scope startLine="570" endLine="577">
+        <declaration type="int" name="pk" />
+        <declaration type="double" name="ypk" />
+        <scope startLine="573" endLine="575" />
+      </scope>
+      <declaration type="double" name="dxNorm" />
+      <scope startLine="582" endLine="587">
+        <declaration type="int" name="pj" />
+        <declaration type="double" name="s" />
+      </scope>
+      <declaration type="double" name="fp" />
+      <scope startLine="590" endLine="593" />
+      <declaration type="double" name="sum2" />
+      <declaration type="double" name="parl" />
+      <scope startLine="600" endLine="617">
+        <scope startLine="601" endLine="604">
+          <declaration type="int" name="pj" />
+        </scope>
+        <scope startLine="606" endLine="615">
+          <declaration type="int" name="pj" />
+          <declaration type="double" name="sum" />
+          <scope startLine="609" endLine="611" />
+          <declaration type="double" name="s" />
+        </scope>
+      </scope>
+      <scope startLine="621" endLine="629">
+        <declaration type="int" name="pj" />
+        <declaration type="double" name="sum" />
+        <scope startLine="624" endLine="626" />
+      </scope>
+      <declaration type="double" name="gNorm" />
+      <declaration type="double" name="paru" />
+      <scope startLine="632" endLine="634" />
+      <scope startLine="639" endLine="641" />
+      <scope startLine="643" endLine="704">
+        <scope startLine="646" endLine="648" />
+        <declaration type="double" name="sPar" />
+        <scope startLine="650" endLine="653">
+          <declaration type="int" name="pj" />
+        </scope>
+        <scope startLine="657" endLine="662">
+          <declaration type="int" name="pj" />
+          <declaration type="double" name="s" />
+        </scope>
+        <declaration type="double" name="previousFP" />
+        <scope startLine="670" endLine="672" />
+        <scope startLine="675" endLine="678">
+          <declaration type="int" name="pj" />
+        </scope>
+        <scope startLine="679" endLine="686">
+          <declaration type="int" name="pj" />
+          <declaration type="double" name="tmp" />
+          <scope startLine="683" endLine="685" />
+        </scope>
+        <scope startLine="688" endLine="691">
+          <declaration type="double" name="s" />
+        </scope>
+        <declaration type="double" name="correction" />
+        <scope startLine="695" endLine="697" />
+        <scope startLine="697" endLine="699" />
+        <comment>evaluate the function at the current value of lmPar</comment>
+        <comment>if the function is small enough, accept the current value</comment>
+        <comment>of lmPar, also test for the exceptional cases where parl is zero</comment>
+        <comment>compute the Newton correction</comment>
+        <comment>depending on the sign of the function, update parl or paru.</comment>
+        <comment>compute an improved estimate for lmPar</comment>
+      </scope>
+      <comment>compute and store in x the gauss-newton direction, if the</comment>
+      <comment>jacobian is rank-deficient, obtain a least squares solution</comment>
+      <comment>evaluate the function at the origin, and test</comment>
+      <comment>for acceptance of the Gauss-Newton direction</comment>
+      <comment>if the jacobian is not rank deficient, the Newton step provides</comment>
+      <comment>a lower bound, parl, for the zero of the function,</comment>
+      <comment>otherwise set this bound to zero</comment>
+      <comment>calculate an upper bound, paru, for the zero of the function</comment>
+      <comment>if the input par lies outside of the interval (parl,paru),</comment>
+      <comment>set par to the closer endpoint</comment>
+    </method>
+    <javadoc>
+      <text>* Solve a*x = b and d*x = 0 in the least squares sense.
+ * <p>This implementation is a translation in Java of the MINPACK
+ * <a href="http://www.netlib.org/minpack/qrsolv.f">qrsolv</a>
+ * routine.</p>
+ * <p>This method sets the lmDir and lmDiag attributes.</p>
+ * <p>The authors of the original fortran function are:</p>
+ * <ul>
+ * <li>Argonne National Laboratory. MINPACK project. March 1980</li>
+ * <li>Burton  S. Garbow</li>
+ * <li>Kenneth E. Hillstrom</li>
+ * <li>Jorge   J. More</li>
+ * </ul>
+ * <p>Luc Maisonobe did the Java translation.</p></text>
+      <param>qy array containing qTy</param>
+      <param>diag diagonal matrix</param>
+      <param>lmDiag diagonal elements associated with lmDir</param>
+      <param>work work array</param>
+    </javadoc>
+    <method type="void" name="determineLMDirection" startLine="728" endLine="826">
+      <scope startLine="732" endLine="739">
+        <declaration type="int" name="pj" />
+        <scope startLine="734" endLine="736" />
+      </scope>
+      <scope startLine="742" endLine="798">
+        <declaration type="int" name="pj" />
+        <declaration type="double" name="dpj" />
+        <scope startLine="748" endLine="750" />
+        <declaration type="double" name="qtbpj" />
+        <scope startLine="757" endLine="792">
+          <declaration type="int" name="pk" />
+          <scope startLine="762" endLine="791">
+            <declaration type="double" name="sin" />
+            <declaration type="double" name="cos" />
+            <declaration type="double" name="rkk" />
+            <scope startLine="767" endLine="771">
+              <declaration type="double" name="cotan" />
+            </scope>
+            <scope startLine="771" endLine="775">
+              <declaration type="double" name="tan" />
+            </scope>
+            <declaration type="double" name="temp" />
+            <scope startLine="785" endLine="790">
+              <declaration type="double" name="rik" />
+              <declaration type="double" name="temp2" />
+            </scope>
+          </scope>
+        </scope>
+        <comment>prepare the row of d to be eliminated, locating the</comment>
+        <comment>diagonal element using p from the Q.R. factorization</comment>
+        <comment>the transformations to eliminate the row of d</comment>
+        <comment>modify only a single element of Qty</comment>
+        <comment>beyond the first n, which is initially zero.</comment>
+        <comment>determine a Givens rotation which eliminates the</comment>
+        <comment>appropriate element in the current row of d</comment>
+        <comment>compute the modified diagonal element of R and</comment>
+        <comment>the modified element of (Qty,0)</comment>
+        <comment>accumulate the tranformation in the row of s</comment>
+        <comment>store the diagonal element of s and restore</comment>
+        <comment>the corresponding diagonal element of R</comment>
+      </scope>
+      <declaration type="int" name="nSing" />
+      <scope startLine="803" endLine="810">
+        <scope startLine="804" endLine="806" />
+        <scope startLine="807" endLine="809" />
+      </scope>
+      <scope startLine="811" endLine="820">
+        <scope startLine="812" endLine="819">
+          <declaration type="int" name="pj" />
+          <declaration type="double" name="sum" />
+          <scope startLine="815" endLine="817" />
+        </scope>
+      </scope>
+      <scope startLine="823" endLine="825" />
+      <comment>copy R and Qty to preserve input and initialize s</comment>
+      <comment>in particular, save the diagonal elements of R in lmDir</comment>
+      <comment>eliminate the diagonal matrix d using a Givens rotation</comment>
+      <comment>solve the triangular system for z, if the system is</comment>
+      <comment>singular, then obtain a least squares solution</comment>
+      <comment>permute the components of z back to components of lmDir</comment>
+    </method>
+    <javadoc>
+      <text>* Decompose a matrix A as A.P = Q.R using Householder transforms.
+ * <p>As suggested in the P. Lascaux and R. Theodor book
+ * <i>Analyse num&eacute;rique matricielle appliqu&eacute;e &agrave;
+ * l'art de l'ing&eacute;nieur</i> (Masson, 1986), instead of representing
+ * the Householder transforms with u<sub>k</sub> unit vectors such that:
+ * <pre>
+ * H<sub>k</sub> = I - 2u<sub>k</sub>.u<sub>k</sub><sup>t</sup>
+ * </pre>
+ * we use <sub>k</sub> non-unit vectors such that:
+ * <pre>
+ * H<sub>k</sub> = I - beta<sub>k</sub>v<sub>k</sub>.v<sub>k</sub><sup>t</sup>
+ * </pre>
+ * where v<sub>k</sub> = a<sub>k</sub> - alpha<sub>k</sub> e<sub>k</sub>.
+ * The beta<sub>k</sub> coefficients are provided upon exit as recomputing
+ * them from the v<sub>k</sub> vectors would be costly.</p>
+ * <p>This decomposition handles rank deficient cases since the tranformations
+ * are performed in non-increasing columns norms order thanks to columns
+ * pivoting. The diagonal elements of the R matrix are therefore also in
+ * non-increasing absolute values order.</p></text>
+      <param>jacobian Weighted Jacobian matrix at the current point.</param>
+      <exception>ConvergenceException if the decomposition cannot be performed</exception>
+    </javadoc>
+    <method type="void" name="qrDecomposition" startLine="852" endLine="923">
+      <declaration type="int" name="nR" />
+      <declaration type="int" name="nC" />
+      <scope startLine="861" endLine="869">
+        <declaration type="double" name="norm2" />
+        <scope startLine="864" endLine="867">
+          <declaration type="double" name="akk" />
+        </scope>
+      </scope>
+      <scope startLine="872" endLine="921">
+        <declaration type="int" name="nextColumn" />
+        <declaration type="double" name="ak2" />
+        <scope startLine="877" endLine="891">
+          <declaration type="double" name="norm2" />
+          <scope startLine="879" endLine="882">
+            <declaration type="double" name="aki" />
+          </scope>
+          <scope startLine="883" endLine="886" />
+          <scope startLine="887" endLine="890" />
+        </scope>
+        <scope startLine="892" endLine="895" />
+        <declaration type="int" name="pk" />
+        <declaration type="double" name="akk" />
+        <declaration type="double" name="alpha" />
+        <declaration type="double" name="betak" />
+        <scope startLine="911" endLine="920">
+          <declaration type="double" name="gamma" />
+          <scope startLine="913" endLine="915" />
+          <scope startLine="917" endLine="919" />
+        </scope>
+        <comment>select the column with the greatest norm on active components</comment>
+        <comment>choose alpha such that Hk.u = alpha ek</comment>
+        <comment>transform the current column</comment>
+        <comment>transform the remaining columns</comment>
+      </scope>
+      <comment>Code in this class assumes that the weighted Jacobian is -(W^(1/2) J),</comment>
+      <comment>hence the multiplication by -1.</comment>
+      <comment>initializations</comment>
+      <comment>transform the matrix column after column</comment>
+    </method>
+    <javadoc>
+      <text>* Compute the product Qt.y for some Q.R. decomposition.</text>
+      <param>y vector to multiply (will be overwritten with the result)</param>
+    </javadoc>
+    <method type="void" name="qTy" startLine="930" endLine="945">
+      <declaration type="int" name="nR" />
+      <declaration type="int" name="nC" />
+      <scope startLine="934" endLine="944">
+        <declaration type="int" name="pk" />
+        <declaration type="double" name="gamma" />
+        <scope startLine="937" endLine="939" />
+        <scope startLine="941" endLine="943" />
+      </scope>
+    </method>
+    <javadoc>
+      <throws>MathUnsupportedOperationException if bounds were passed to the{@link #optimize(OptimizationData[]) optimize} method.</throws>
+    </javadoc>
+    <method type="void" name="checkParameters" startLine="951" endLine="956">
+      <scope startLine="953" endLine="955" />
+    </method>
+  </class>
+</source>

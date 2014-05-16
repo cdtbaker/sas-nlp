@@ -1,0 +1,985 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.apache.commons.math3.optim.nonlinear.scalar.noderiv">
+  <import name="java.util.ArrayList" />
+  <import name="java.util.Arrays" />
+  <import name="java.util.List" />
+  <import name="org.apache.commons.math3.exception.DimensionMismatchException" />
+  <import name="org.apache.commons.math3.exception.NotPositiveException" />
+  <import name="org.apache.commons.math3.exception.NotStrictlyPositiveException" />
+  <import name="org.apache.commons.math3.exception.OutOfRangeException" />
+  <import name="org.apache.commons.math3.exception.TooManyEvaluationsException" />
+  <import name="org.apache.commons.math3.linear.Array2DRowRealMatrix" />
+  <import name="org.apache.commons.math3.linear.EigenDecomposition" />
+  <import name="org.apache.commons.math3.linear.MatrixUtils" />
+  <import name="org.apache.commons.math3.linear.RealMatrix" />
+  <import name="org.apache.commons.math3.optim.ConvergenceChecker" />
+  <import name="org.apache.commons.math3.optim.OptimizationData" />
+  <import name="org.apache.commons.math3.optim.nonlinear.scalar.GoalType" />
+  <import name="org.apache.commons.math3.optim.PointValuePair" />
+  <import name="org.apache.commons.math3.optim.nonlinear.scalar.MultivariateOptimizer" />
+  <import name="org.apache.commons.math3.random.RandomGenerator" />
+  <import name="org.apache.commons.math3.util.MathArrays" />
+  <class name="CMAESOptimizer" extends="MultivariateOptimizer" startLine="40">
+    <javadoc>
+      <text>* <p>An implementation of the active Covariance Matrix Adaptation Evolution Strategy (CMA-ES)
+ * for non-linear, non-convex, non-smooth, global function minimization.
+ * The CMA-Evolution Strategy (CMA-ES) is a reliable stochastic optimization method
+ * which should be applied if derivative-based methods, e.g. quasi-Newton BFGS or
+ * conjugate gradient, fail due to a rugged search landscape (e.g. noise, local
+ * optima, outlier, etc.) of the objective function. Like a
+ * quasi-Newton method, the CMA-ES learns and applies a variable metric
+ * on the underlying search space. Unlike a quasi-Newton method, the
+ * CMA-ES neither estimates nor uses gradients, making it considerably more
+ * reliable in terms of finding a good, or even close to optimal, solution.</p>
+ * <p>In general, on smooth objective functions the CMA-ES is roughly ten times
+ * slower than BFGS (counting objective function evaluations, no gradients provided).
+ * For up to <math>N=10</math> variables also the derivative-free simplex
+ * direct search method (Nelder and Mead) can be faster, but it is
+ * far less reliable than CMA-ES.</p>
+ * <p>The CMA-ES is particularly well suited for non-separable
+ * and/or badly conditioned problems. To observe the advantage of CMA compared
+ * to a conventional evolution strategy, it will usually take about
+ * <math>30 N</math> function evaluations. On difficult problems the complete
+ * optimization (a single run) is expected to take <em>roughly</em> between
+ * <math>30 N</math> and <math>300 N<sup>2</sup></math>
+ * function evaluations.</p>
+ * <p>This implementation is translated and adapted from the Matlab version
+ * of the CMA-ES algorithm as implemented in module {@code cmaes.m} version 3.51.</p>
+ * For more information, please refer to the following links:
+ * <ul>
+ * <li><a href="http://www.lri.fr/~hansen/cmaes.m">Matlab code</a></li>
+ * <li><a href="http://www.lri.fr/~hansen/cmaesintro.html">Introduction to CMA-ES</a></li>
+ * <li><a href="http://en.wikipedia.org/wiki/CMA-ES">Wikipedia</a></li>
+ * </ul></text>
+      <version>$Id: CMAESOptimizer.java 1462503 2013-03-29 15:48:27Z luc $</version>
+      <since>3.0</since>
+    </javadoc>
+    <javadoc>
+      <text>* Population size, offspring number. The primary strategy parameter to play
+ * with, which can be increased from its default value. Increasing the
+ * population size improves global search properties in exchange to speed.
+ * Speed decreases, as a rule, at most linearly with increasing population
+ * size. It is advisable to begin with the default small population size.</text>
+    </javadoc>
+    <declaration type="int" name="lambda" />
+    <javadoc>
+      <text>* Covariance update mechanism, default is active CMA. isActiveCMA = true
+ * turns on "active CMA" with a negative update of the covariance matrix and
+ * checks for positive definiteness. OPTS.CMA.active = 2 does not check for
+ * pos. def. and is numerically faster. Active CMA usually speeds up the
+ * adaptation.</text>
+    </javadoc>
+    <declaration type="boolean" name="isActiveCMA" />
+    <javadoc>
+      <text>* Determines how often a new random offspring is generated in case it is
+ * not feasible / beyond the defined limits, default is 0.</text>
+    </javadoc>
+    <declaration type="int" name="checkFeasableCount" />
+    <javadoc>
+      <see>Sigma</see>
+    </javadoc>
+    <declaration type="double[]" name="inputSigma" />
+    <javadoc>
+      <text>* Number of objective variables/problem dimension</text>
+    </javadoc>
+    <declaration type="int" name="dimension" />
+    <javadoc>
+      <text>* Defines the number of initial iterations, where the covariance matrix
+ * remains diagonal and the algorithm has internally linear time complexity.
+ * diagonalOnly = 1 means keeping the covariance matrix always diagonal and
+ * this setting also exhibits linear space complexity. This can be
+ * particularly useful for dimension > 100.</text>
+      <see><a href="http://hal.archives-ouvertes.fr/inria-00287367/en">A Simple Modification in CMA-ES</a></see>
+    </javadoc>
+    <declaration type="int" name="diagonalOnly" />
+    <javadoc>
+      <text>* Number of objective variables/problem dimension</text>
+    </javadoc>
+    <declaration type="boolean" name="isMinimize" />
+    <javadoc>
+      <text>* Indicates whether statistic data is collected.</text>
+    </javadoc>
+    <declaration type="boolean" name="generateStatistics" />
+    <javadoc>
+      <text>* Maximal number of iterations allowed.</text>
+    </javadoc>
+    <declaration type="int" name="maxIterations" />
+    <javadoc>
+      <text>* Limit for fitness value.</text>
+    </javadoc>
+    <declaration type="double" name="stopFitness" />
+    <javadoc>
+      <text>* Stop if x-changes larger stopTolUpX.</text>
+    </javadoc>
+    <declaration type="double" name="stopTolUpX" />
+    <javadoc>
+      <text>* Stop if x-change smaller stopTolX.</text>
+    </javadoc>
+    <declaration type="double" name="stopTolX" />
+    <javadoc>
+      <text>* Stop if fun-changes smaller stopTolFun.</text>
+    </javadoc>
+    <declaration type="double" name="stopTolFun" />
+    <javadoc>
+      <text>* Stop if back fun-changes smaller stopTolHistFun.</text>
+    </javadoc>
+    <declaration type="double" name="stopTolHistFun" />
+    <javadoc>
+      <text>* Number of parents/points for recombination.</text>
+    </javadoc>
+    <declaration type="int" name="mu" />
+    <javadoc>
+      <text>* log(mu + 0.5), stored for efficiency.</text>
+    </javadoc>
+    <declaration type="double" name="logMu2" />
+    <javadoc>
+      <text>* Array for weighted recombination.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="weights" />
+    <javadoc>
+      <text>* Variance-effectiveness of sum w_i x_i.</text>
+    </javadoc>
+    <declaration type="double" name="mueff" />
+    <javadoc>
+      <text>* Overall standard deviation - search volume.</text>
+    </javadoc>
+    <declaration type="double" name="sigma" />
+    <javadoc>
+      <text>* Cumulation constant.</text>
+    </javadoc>
+    <declaration type="double" name="cc" />
+    <javadoc>
+      <text>* Cumulation constant for step-size.</text>
+    </javadoc>
+    <declaration type="double" name="cs" />
+    <javadoc>
+      <text>* Damping for step-size.</text>
+    </javadoc>
+    <declaration type="double" name="damps" />
+    <javadoc>
+      <text>* Learning rate for rank-one update.</text>
+    </javadoc>
+    <declaration type="double" name="ccov1" />
+    <javadoc>
+      <text>* Learning rate for rank-mu update'</text>
+    </javadoc>
+    <declaration type="double" name="ccovmu" />
+    <javadoc>
+      <text>* Expectation of ||N(0,I)|| == norm(randn(N,1)).</text>
+    </javadoc>
+    <declaration type="double" name="chiN" />
+    <javadoc>
+      <text>* Learning rate for rank-one update - diagonalOnly</text>
+    </javadoc>
+    <declaration type="double" name="ccov1Sep" />
+    <javadoc>
+      <text>* Learning rate for rank-mu update - diagonalOnly</text>
+    </javadoc>
+    <declaration type="double" name="ccovmuSep" />
+    <javadoc>
+      <text>* Objective variables.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="xmean" />
+    <javadoc>
+      <text>* Evolution path.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="pc" />
+    <javadoc>
+      <text>* Evolution path for sigma.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="ps" />
+    <javadoc>
+      <text>* Norm of ps, stored for efficiency.</text>
+    </javadoc>
+    <declaration type="double" name="normps" />
+    <javadoc>
+      <text>* Coordinate system.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="B" />
+    <javadoc>
+      <text>* Scaling.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="D" />
+    <javadoc>
+      <text>* B*D, stored for efficiency.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="BD" />
+    <javadoc>
+      <text>* Diagonal of sqrt(D), stored for efficiency.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="diagD" />
+    <javadoc>
+      <text>* Covariance matrix.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="C" />
+    <javadoc>
+      <text>* Diagonal of C, used for diagonalOnly.</text>
+    </javadoc>
+    <declaration type="RealMatrix" name="diagC" />
+    <javadoc>
+      <text>* Number of iterations already performed.</text>
+    </javadoc>
+    <declaration type="int" name="iterations" />
+    <javadoc>
+      <text>* History queue of best values.</text>
+    </javadoc>
+    <declaration type="double[]" name="fitnessHistory" />
+    <javadoc>
+      <text>* Size of history queue of best values.</text>
+    </javadoc>
+    <declaration type="int" name="historySize" />
+    <javadoc>
+      <text>* Random generator.</text>
+    </javadoc>
+    <declaration type="RandomGenerator" name="random" />
+    <javadoc>
+      <text>* History of sigma values.</text>
+    </javadoc>
+    <declaration type="List<Double>" name="statisticsSigmaHistory" />
+    <javadoc>
+      <text>* History of mean matrix.</text>
+    </javadoc>
+    <declaration type="List<RealMatrix>" name="statisticsMeanHistory" />
+    <javadoc>
+      <text>* History of fitness values.</text>
+    </javadoc>
+    <declaration type="List<Double>" name="statisticsFitnessHistory" />
+    <javadoc>
+      <text>* History of D matrix.</text>
+    </javadoc>
+    <declaration type="List<RealMatrix>" name="statisticsDHistory" />
+    <javadoc>
+      <param>maxIterations Maximal number of iterations.</param>
+      <param>stopFitness Whether to stop if objective function value is smaller than{@code stopFitness}.</param>
+      <param>isActiveCMA Chooses the covariance matrix update method.</param>
+      <param>diagonalOnly Number of initial iterations, where the covariance matrix
+ * remains diagonal.</param>
+      <param>checkFeasableCount Determines how often new random objective variables are
+ * generated in case they are out of bounds.</param>
+      <param>random Random generator.</param>
+      <param>generateStatistics Whether statistic data is collected.</param>
+      <param>checker Convergence checker.</param>
+      <since>3.1</since>
+    </javadoc>
+    <method type="constructor" name="CMAESOptimizer" startLine="230" endLine="239" />
+    <javadoc>
+      <return>History of sigma values.</return>
+    </javadoc>
+    <method type="List<Double>" name="getStatisticsSigmaHistory" startLine="244" endLine="246" />
+    <javadoc>
+      <return>History of mean matrix.</return>
+    </javadoc>
+    <method type="List<RealMatrix>" name="getStatisticsMeanHistory" startLine="251" endLine="253" />
+    <javadoc>
+      <return>History of fitness values.</return>
+    </javadoc>
+    <method type="List<Double>" name="getStatisticsFitnessHistory" startLine="258" endLine="260" />
+    <javadoc>
+      <return>History of D matrix.</return>
+    </javadoc>
+    <method type="List<RealMatrix>" name="getStatisticsDHistory" startLine="265" endLine="267" />
+    <class name="Sigma" startLine="269">
+      <implements name="OptimizationData" />
+      <javadoc>
+        <text>* Input sigma values.
+ * They define the initial coordinate-wise standard deviations for
+ * sampling new search points around the initial guess.
+ * It is suggested to set them to the estimated distance from the
+ * initial to the desired optimum.
+ * Small values induce the search to be more local (and very small
+ * values are more likely to find a local optimum close to the initial
+ * guess).
+ * Too small values might however lead to early termination.</text>
+      </javadoc>
+      <javadoc>
+        <text>* Sigma values.</text>
+      </javadoc>
+      <declaration type="double[]" name="sigma" />
+      <javadoc>
+        <param>s Sigma values.</param>
+        <throws>NotPositiveException if any of the array entries is smaller
+ * than zero.</throws>
+      </javadoc>
+      <method type="constructor" name="Sigma" startLine="290" endLine="298">
+        <scope startLine="291" endLine="295">
+          <scope startLine="292" endLine="294" />
+        </scope>
+      </method>
+      <javadoc>
+        <return>the sigma values.</return>
+      </javadoc>
+      <method type="double[]" name="getSigma" startLine="303" endLine="305" />
+      <class name="PopulationSize" startLine="308">
+        <implements name="OptimizationData" />
+        <javadoc>
+          <text>* Population size.
+ * The number of offspring is the primary strategy parameter.
+ * In the absence of better clues, a good default could be an
+ * integer close to {@code 4 + 3 ln(n)}, where {@code n} is the
+ * number of optimized parameters.
+ * Increasing the population size improves global search properties
+ * at the expense of speed (which in general decreases at most
+ * linearly with increasing population size).</text>
+        </javadoc>
+        <javadoc>
+          <text>* Population size.</text>
+        </javadoc>
+        <declaration type="int" name="lambda" />
+        <javadoc>
+          <param>size Population size.</param>
+          <throws>NotStrictlyPositiveException if {@code size <= 0}.</throws>
+        </javadoc>
+        <method type="constructor" name="PopulationSize" startLine="327" endLine="332">
+          <scope startLine="328" endLine="330" />
+        </method>
+        <javadoc>
+          <return>the population size.</return>
+        </javadoc>
+        <method type="int" name="getPopulationSize" startLine="337" endLine="339" />
+        <javadoc>
+          <text>* {@inheritDoc}</text>
+          <param>optData Optimization data. In addition to those documented in{@link MultivariateOptimizer#parseOptimizationData(OptimizationData[])MultivariateOptimizer}, this method will register the following data:
+ * <ul>
+ * <li>{@link Sigma}</li>
+ * <li>{@link PopulationSize}</li>
+ * </ul></param>
+          <return>{@inheritDoc}</return>
+          <throws>TooManyEvaluationsException if the maximal number of
+ * evaluations is exceeded.</throws>
+          <throws>DimensionMismatchException if the initial guess, target, and weight
+ * arguments have inconsistent dimensions.</throws>
+        </javadoc>
+        <method type="PointValuePair" name="optimize" startLine="361" endLine="364">
+          <comment>Set up base class and perform computation.</comment>
+        </method>
+        <javadoc>
+          <text>* {@inheritDoc}</text>
+        </javadoc>
+        <method type="PointValuePair" name="doOptimize" startLine="368" endLine="512">
+          <declaration type="FitnessFunction" name="fitfun" />
+          <declaration type="double[]" name="guess" />
+          <declaration type="double" name="bestValue" />
+          <declaration type="PointValuePair" name="optimum" />
+          <declaration type="PointValuePair" name="lastResult" />
+          <scope startLine="387" endLine="510">
+            <declaration type="RealMatrix" name="arz" />
+            <declaration type="RealMatrix" name="arx" />
+            <declaration type="double[]" name="fitness" />
+            <scope startLine="395" endLine="418">
+              <declaration type="RealMatrix" name="arxk" />
+              <scope startLine="397" endLine="411">
+                <scope startLine="398" endLine="401" />
+                <scope startLine="401" endLine="404" />
+                <scope startLine="406" endLine="408" />
+              </scope>
+              <scope startLine="413" endLine="415" />
+              <scope startLine="415" endLine="417" />
+            </scope>
+            <declaration type="int[]" name="arindex" />
+            <declaration type="RealMatrix" name="xold" />
+            <declaration type="RealMatrix" name="bestArx" />
+            <declaration type="RealMatrix" name="bestArz" />
+            <declaration type="RealMatrix" name="zmean" />
+            <declaration type="boolean" name="hsig" />
+            <scope startLine="428" endLine="430" />
+            <scope startLine="430" endLine="432" />
+            <declaration type="double" name="bestFitness" />
+            <declaration type="double" name="worstFitness" />
+            <scope startLine="437" endLine="446">
+              <scope startLine="443" endLine="445" />
+            </scope>
+            <scope startLine="449" endLine="451" />
+            <declaration type="double[]" name="sqrtDiagC" />
+            <declaration type="double[]" name="pcCol" />
+            <scope startLine="454" endLine="461">
+              <scope startLine="455" endLine="457" />
+              <scope startLine="458" endLine="460" />
+            </scope>
+            <scope startLine="462" endLine="466">
+              <scope startLine="463" endLine="465" />
+            </scope>
+            <declaration type="double" name="historyBest" />
+            <declaration type="double" name="historyWorst" />
+            <scope startLine="471" endLine="473" />
+            <scope startLine="475" endLine="477" />
+            <scope startLine="479" endLine="481" />
+            <scope startLine="483" endLine="492">
+              <declaration type="PointValuePair" name="current" />
+              <scope startLine="488" endLine="490" />
+            </scope>
+            <scope startLine="494" endLine="496" />
+            <scope startLine="498" endLine="500" />
+            <scope startLine="504" endLine="509" />
+            <comment>Generate and evaluate lambda offspring</comment>
+            <comment>generate random offspring</comment>
+            <comment>m + sig * Normal(0,C)</comment>
+            <comment>regenerate random arguments for row</comment>
+            <comment>compute fitness</comment>
+            <comment>Sort by fitness and compute weighted mean into xmean</comment>
+            <comment>Calculate new xmean, this is selection and recombination</comment>
+            <comment>for speed up of Eq. (2) and (3)</comment>
+            <comment>Adapt step size sigma - Eq. (5)</comment>
+            <comment>handle termination criteria</comment>
+            <comment>Break, if fitness is good enough</comment>
+            <comment>condition number of the covariance matrix exceeds 1e14</comment>
+            <comment>user defined termination</comment>
+            <comment>Adjust step size in case of equal function values (flat fitness)</comment>
+            <comment>store best in history</comment>
+          </scope>
+          <comment>-------------------- Initialization --------------------------------</comment>
+          <comment>number of objective variables/problem dimension</comment>
+          <comment>-------------------- Generation Loop --------------------------------</comment>
+        </method>
+        <javadoc>
+          <text>* Scans the list of (required and optional) optimization data that
+ * characterize the problem.</text>
+          <param>optData Optimization data. The following data will be looked for:
+ * <ul>
+ * <li>{@link Sigma}</li>
+ * <li>{@link PopulationSize}</li>
+ * </ul></param>
+        </javadoc>
+        <method type="void" name="parseOptimizationData" startLine="525" endLine="543">
+          <scope startLine="531" endLine="540">
+            <scope startLine="532" endLine="535" />
+            <scope startLine="536" endLine="539" />
+          </scope>
+          <comment>Allow base class to register its own data.</comment>
+          <comment>The existing values (as set by the previous call) are reused if</comment>
+          <comment>not provided in the argument list.</comment>
+        </method>
+        <javadoc>
+          <text>* Checks dimensions and values of boundaries and inputSigma if defined.</text>
+        </javadoc>
+        <method type="void" name="checkParameters" startLine="548" endLine="563">
+          <declaration type="double[]" name="init" />
+          <declaration type="double[]" name="lB" />
+          <declaration type="double[]" name="uB" />
+          <scope startLine="553" endLine="562">
+            <scope startLine="554" endLine="556" />
+            <scope startLine="557" endLine="561">
+              <scope startLine="558" endLine="560" />
+            </scope>
+          </scope>
+        </method>
+        <javadoc>
+          <text>* Initialization of the dynamic search parameters</text>
+          <param>guess Initial guess for the arguments of the fitness function.</param>
+        </javadoc>
+        <method type="void" name="initializeCMA" startLine="570" endLine="634">
+          <scope startLine="571" endLine="573" />
+          <declaration type="double[][]" name="sigmaArray" />
+          <scope startLine="576" endLine="578" />
+          <declaration type="RealMatrix" name="insigma" />
+          <declaration type="double" name="sumw" />
+          <declaration type="double" name="sumwq" />
+          <scope startLine="594" endLine="598">
+            <declaration type="double" name="w" />
+          </scope>
+          <scope startLine="631" endLine="633" />
+          <comment>initialize sigma</comment>
+          <comment>overall standard deviation</comment>
+          <comment>initialize termination criteria</comment>
+          <comment>initialize selection strategy parameters</comment>
+          <comment>number of parents/points for recombination</comment>
+          <comment>variance-effectiveness of sum w_i x_i</comment>
+          <comment>initialize dynamic strategy parameters and constants</comment>
+          <comment>minor increment</comment>
+          <comment>intialize CMA internal values - updated each generation</comment>
+          <comment>objective variables</comment>
+          <comment>evolution paths for C and sigma</comment>
+          <comment>B defines the coordinate system</comment>
+          <comment>diagonal D defines the scaling</comment>
+          <comment>covariance</comment>
+          <comment>history of fitness values</comment>
+        </method>
+        <javadoc>
+          <text>* Update of the evolution paths ps and pc.</text>
+          <param>zmean Weighted row matrix of the gaussian random numbers generating
+ * the current offspring.</param>
+          <param>xold xmean matrix of the previous generation.</param>
+          <return>hsig flag indicating a small correction.</return>
+        </javadoc>
+        <method type="boolean" name="updateEvolutionPaths" startLine="644" endLine="657">
+          <declaration type="boolean" name="hsig" />
+          <scope startLine="653" endLine="655" />
+        </method>
+        <javadoc>
+          <text>* Update of the covariance matrix C for diagonalOnly > 0</text>
+          <param>hsig Flag indicating a small correction.</param>
+          <param>bestArz Fitness-sorted matrix of the gaussian random values of the
+ * current offspring.</param>
+        </javadoc>
+        <method type="void" name="updateCovarianceDiagonalOnly" startLine="667" endLine="684">
+          <declaration type="double" name="oldFac" />
+          <scope startLine="677" endLine="683">
+            <comment>full covariance matrix from now on</comment>
+          </scope>
+          <comment>minor correction if hsig==false</comment>
+          <comment>regard old matrix</comment>
+          <comment>plus rank one update</comment>
+          <comment>plus rank mu update</comment>
+          <comment>replaces eig(C)</comment>
+        </method>
+        <javadoc>
+          <text>* Update of the covariance matrix C.</text>
+          <param>hsig Flag indicating a small correction.</param>
+          <param>bestArx Fitness-sorted matrix of the argument vectors producing the
+ * current offspring.</param>
+          <param>arz Unsorted matrix containing the gaussian random values of the
+ * current offspring.</param>
+          <param>arindex Indices indicating the fitness-order of the current offspring.</param>
+          <param>xold xmean matrix of the previous generation.</param>
+        </javadoc>
+        <method type="void" name="updateCovariance" startLine="699" endLine="756">
+          <declaration type="double" name="negccov" />
+          <scope startLine="701" endLine="754">
+            <declaration type="RealMatrix" name="arpos" />
+            <declaration type="RealMatrix" name="roneu" />
+            <declaration type="double" name="oldFac" />
+            <scope startLine="709" endLine="746">
+              <declaration type="double" name="negminresidualvariance" />
+              <declaration type="double" name="negalphaold" />
+              <declaration type="int[]" name="arReverseIndex" />
+              <declaration type="RealMatrix" name="arzneg" />
+              <declaration type="RealMatrix" name="arnorms" />
+              <declaration type="int[]" name="idxnorms" />
+              <declaration type="RealMatrix" name="arnormsSorted" />
+              <declaration type="int[]" name="idxReverse" />
+              <declaration type="RealMatrix" name="arnormsReverse" />
+              <declaration type="int[]" name="idxInv" />
+              <declaration type="RealMatrix" name="arnormsInv" />
+              <declaration type="double" name="negcovMax" />
+              <scope startLine="732" endLine="734" />
+              <declaration type="RealMatrix" name="artmp" />
+              <declaration type="RealMatrix" name="Cneg" />
+            </scope>
+            <scope startLine="746" endLine="753" />
+            <comment>mu difference vectors</comment>
+            <comment>rank one update</comment>
+            <comment>minor correction if hsig==false</comment>
+            <comment>Adapt covariance matrix C active CMA</comment>
+            <comment>keep at least 0.66 in all directions, small popsize are most</comment>
+            <comment>critical</comment>
+            <comment>where to make up for the variance loss</comment>
+            <comment>prepare vectors, compute negative updating matrix Cneg</comment>
+            <comment>check and set learning rate negccov</comment>
+            <comment>regard old matrix</comment>
+            <comment>plus rank one update</comment>
+            <comment>plus rank mu update</comment>
+            <comment>Adapt covariance matrix C - nonactive</comment>
+            <comment>regard old matrix</comment>
+            <comment>plus rank one update</comment>
+            <comment>plus rank mu update</comment>
+          </scope>
+        </method>
+        <javadoc>
+          <text>* Update B and D from C.</text>
+          <param>negccov Negative covariance factor.</param>
+        </javadoc>
+        <method type="void" name="updateBD" startLine="763" endLine="792">
+          <scope startLine="765" endLine="791">
+            <declaration type="EigenDecomposition" name="eig" />
+            <scope startLine="773" endLine="782">
+              <scope startLine="774" endLine="778">
+                <scope startLine="775" endLine="777" />
+              </scope>
+              <declaration type="double" name="tfac" />
+            </scope>
+            <scope startLine="783" endLine="787">
+              <declaration type="double" name="tfac" />
+            </scope>
+            <comment>to achieve O(N^2)</comment>
+            <comment>enforce symmetry to prevent complex numbers</comment>
+            <comment>eigen decomposition, B==normalized eigenvectors</comment>
+            <comment>D contains standard deviations now</comment>
+            <comment>O(n^2)</comment>
+          </scope>
+        </method>
+        <javadoc>
+          <text>* Pushes the current best fitness value in a history queue.</text>
+          <param>vals History queue.</param>
+          <param>val Current best fitness value.</param>
+        </javadoc>
+        <method type="void" name="push" startLine="800" endLine="805">
+          <scope startLine="801" endLine="803" />
+        </method>
+        <javadoc>
+          <text>* Sorts fitness values.</text>
+          <param>doubles Array of values to be sorted.</param>
+          <return>a sorted array of indices pointing into doubles.</return>
+        </javadoc>
+        <method type="int[]" name="sortedIndices" startLine="813" endLine="824">
+          <declaration type="DoubleIndex[]" name="dis" />
+          <scope startLine="815" endLine="817" />
+          <declaration type="int[]" name="indices" />
+          <scope startLine="820" endLine="822" />
+        </method>
+        <class name="DoubleIndex" startLine="826">
+          <implements name="Comparable<DoubleIndex>" />
+          <javadoc>
+            <text>* Used to sort fitness values. Sorting is always in lower value first
+ * order.</text>
+          </javadoc>
+          <javadoc>
+            <text>* Value to compare.</text>
+          </javadoc>
+          <declaration type="double" name="value" />
+          <javadoc>
+            <text>* Index into sorted array.</text>
+          </javadoc>
+          <declaration type="int" name="index" />
+          <javadoc>
+            <param>value Value to compare.</param>
+            <param>index Index into sorted array.</param>
+          </javadoc>
+          <method type="constructor" name="DoubleIndex" startLine="840" endLine="843" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+          </javadoc>
+          <method type="int" name="compareTo" startLine="846" endLine="848" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+          </javadoc>
+          <method type="boolean" name="equals" startLine="852" endLine="863">
+            <scope startLine="854" endLine="856" />
+            <scope startLine="858" endLine="860" />
+          </method>
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+          </javadoc>
+          <method type="int" name="hashCode" startLine="867" endLine="870">
+            <declaration type="long" name="bits" />
+          </method>
+          <class name="FitnessFunction" startLine="873">
+            <javadoc>
+              <text>* Normalizes fitness values to the range [0,1]. Adds a penalty to the
+ * fitness value if out of range. The penalty is adjusted by calling
+ * setValueRange().</text>
+            </javadoc>
+            <javadoc>
+              <text>* Determines the penalty for boundary violations</text>
+            </javadoc>
+            <declaration type="double" name="valueRange" />
+            <javadoc>
+              <text>* Flag indicating whether the objective variables are forced into their
+ * bounds if defined</text>
+            </javadoc>
+            <declaration type="boolean" name="isRepairMode" />
+            <javadoc>
+              <text>* Simple constructor.</text>
+            </javadoc>
+            <method type="constructor" name="FitnessFunction" startLine="889" endLine="892" />
+            <javadoc>
+              <param>point Normalized objective variables.</param>
+              <return>the objective value + penalty for violated bounds.</return>
+            </javadoc>
+            <method type="double" name="value" startLine="898" endLine="908">
+              <declaration type="double" name="value" />
+              <scope startLine="900" endLine="904">
+                <declaration type="double[]" name="repaired" />
+              </scope>
+              <scope startLine="904" endLine="906" />
+            </method>
+            <javadoc>
+              <param>x Normalized objective variables.</param>
+              <return>{@code true} if in bounds.</return>
+            </javadoc>
+            <method type="boolean" name="isFeasible" startLine="914" endLine="927">
+              <declaration type="double[]" name="lB" />
+              <declaration type="double[]" name="uB" />
+              <scope startLine="918" endLine="925">
+                <scope startLine="919" endLine="921" />
+                <scope startLine="922" endLine="924" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>valueRange Adjusts the penalty computation.</param>
+            </javadoc>
+            <method type="void" name="setValueRange" startLine="932" endLine="934" />
+            <javadoc>
+              <param>x Normalized objective variables.</param>
+              <return>the repaired (i.e. all in bounds) objective variables.</return>
+            </javadoc>
+            <method type="double[]" name="repair" startLine="940" endLine="955">
+              <declaration type="double[]" name="lB" />
+              <declaration type="double[]" name="uB" />
+              <declaration type="double[]" name="repaired" />
+              <scope startLine="945" endLine="953">
+                <scope startLine="946" endLine="948" />
+                <scope startLine="948" endLine="950" />
+                <scope startLine="950" endLine="952" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>x Normalized objective variables.</param>
+              <param>repaired Repaired objective variables.</param>
+              <return>Penalty value according to the violation of the bounds.</return>
+            </javadoc>
+            <method type="double" name="penalty" startLine="962" endLine="969">
+              <declaration type="double" name="penalty" />
+              <scope startLine="964" endLine="967">
+                <declaration type="double" name="diff" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix</param>
+              <return>Matrix representing the element-wise logarithm of m.</return>
+            </javadoc>
+            <method type="RealMatrix" name="log" startLine="978" endLine="986">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="980" endLine="984">
+                <scope startLine="981" endLine="983" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>Matrix representing the element-wise square root of m.</return>
+            </javadoc>
+            <method type="RealMatrix" name="sqrt" startLine="992" endLine="1000">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="994" endLine="998">
+                <scope startLine="995" endLine="997" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>Matrix representing the element-wise square of m.</return>
+            </javadoc>
+            <method type="RealMatrix" name="square" startLine="1006" endLine="1015">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1008" endLine="1013">
+                <scope startLine="1009" endLine="1012">
+                  <declaration type="double" name="e" />
+                </scope>
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix 1.</param>
+              <param>n Input matrix 2.</param>
+              <return>the matrix where the elements of m and n are element-wise multiplied.</return>
+            </javadoc>
+            <method type="RealMatrix" name="times" startLine="1022" endLine="1030">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1024" endLine="1028">
+                <scope startLine="1025" endLine="1027" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix 1.</param>
+              <param>n Input matrix 2.</param>
+              <return>Matrix where the elements of m and n are element-wise divided.</return>
+            </javadoc>
+            <method type="RealMatrix" name="divide" startLine="1037" endLine="1045">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1039" endLine="1043">
+                <scope startLine="1040" endLine="1042" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <param>cols Columns to select.</param>
+              <return>Matrix representing the selected columns.</return>
+            </javadoc>
+            <method type="RealMatrix" name="selectColumns" startLine="1052" endLine="1060">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1054" endLine="1058">
+                <scope startLine="1055" endLine="1057" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <param>k Diagonal position.</param>
+              <return>Upper triangular part of matrix.</return>
+            </javadoc>
+            <method type="RealMatrix" name="triu" startLine="1067" endLine="1075">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1069" endLine="1073">
+                <scope startLine="1070" endLine="1072" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>Row matrix representing the sums of the rows.</return>
+            </javadoc>
+            <method type="RealMatrix" name="sumRows" startLine="1081" endLine="1091">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1083" endLine="1089">
+                <declaration type="double" name="sum" />
+                <scope startLine="1085" endLine="1087" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>the diagonal n-by-n matrix if m is a column matrix or the column
+ * matrix representing the diagonal if m is a n-by-n matrix.</return>
+            </javadoc>
+            <method type="RealMatrix" name="diag" startLine="1098" endLine="1112">
+              <scope startLine="1099" endLine="1105">
+                <declaration type="double[][]" name="d" />
+                <scope startLine="1101" endLine="1103" />
+              </scope>
+              <scope startLine="1105" endLine="1111">
+                <declaration type="double[][]" name="d" />
+                <scope startLine="1107" endLine="1109" />
+              </scope>
+            </method>
+            <javadoc>
+              <text>* Copies a column from m1 to m2.</text>
+              <param>m1 Source matrix.</param>
+              <param>col1 Source column.</param>
+              <param>m2 Target matrix.</param>
+              <param>col2 Target column.</param>
+            </javadoc>
+            <method type="void" name="copyColumn" startLine="1123" endLine="1127">
+              <scope startLine="1124" endLine="1126" />
+            </method>
+            <javadoc>
+              <param>n Number of rows.</param>
+              <param>m Number of columns.</param>
+              <return>n-by-m matrix filled with 1.</return>
+            </javadoc>
+            <method type="RealMatrix" name="ones" startLine="1134" endLine="1140">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1136" endLine="1138" />
+            </method>
+            <javadoc>
+              <param>n Number of rows.</param>
+              <param>m Number of columns.</param>
+              <return>n-by-m matrix of 0 values out of diagonal, and 1 values on
+ * the diagonal.</return>
+            </javadoc>
+            <method type="RealMatrix" name="eye" startLine="1148" endLine="1156">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1150" endLine="1154">
+                <scope startLine="1151" endLine="1153" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>n Number of rows.</param>
+              <param>m Number of columns.</param>
+              <return>n-by-m matrix of zero values.</return>
+            </javadoc>
+            <method type="RealMatrix" name="zeros" startLine="1163" endLine="1165" />
+            <javadoc>
+              <param>mat Input matrix.</param>
+              <param>n Number of row replicates.</param>
+              <param>m Number of column replicates.</param>
+              <return>a matrix which replicates the input matrix in both directions.</return>
+            </javadoc>
+            <method type="RealMatrix" name="repmat" startLine="1173" endLine="1183">
+              <declaration type="int" name="rd" />
+              <declaration type="int" name="cd" />
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1177" endLine="1181">
+                <scope startLine="1178" endLine="1180" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>start Start value.</param>
+              <param>end End value.</param>
+              <param>step Step size.</param>
+              <return>a sequence as column matrix.</return>
+            </javadoc>
+            <method type="RealMatrix" name="sequence" startLine="1191" endLine="1200">
+              <declaration type="int" name="size" />
+              <declaration type="double[][]" name="d" />
+              <declaration type="double" name="value" />
+              <scope startLine="1195" endLine="1198" />
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>the maximum of the matrix element values.</return>
+            </javadoc>
+            <method type="double" name="max" startLine="1206" endLine="1217">
+              <declaration type="double" name="max" />
+              <scope startLine="1208" endLine="1215">
+                <scope startLine="1209" endLine="1214">
+                  <declaration type="double" name="e" />
+                  <scope startLine="1211" endLine="1213" />
+                </scope>
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input matrix.</param>
+              <return>the minimum of the matrix element values.</return>
+            </javadoc>
+            <method type="double" name="min" startLine="1223" endLine="1234">
+              <declaration type="double" name="min" />
+              <scope startLine="1225" endLine="1232">
+                <scope startLine="1226" endLine="1231">
+                  <declaration type="double" name="e" />
+                  <scope startLine="1228" endLine="1230" />
+                </scope>
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input array.</param>
+              <return>the maximum of the array values.</return>
+            </javadoc>
+            <method type="double" name="max" startLine="1240" endLine="1248">
+              <declaration type="double" name="max" />
+              <scope startLine="1242" endLine="1246">
+                <scope startLine="1243" endLine="1245" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>m Input array.</param>
+              <return>the minimum of the array values.</return>
+            </javadoc>
+            <method type="double" name="min" startLine="1254" endLine="1262">
+              <declaration type="double" name="min" />
+              <scope startLine="1256" endLine="1260">
+                <scope startLine="1257" endLine="1259" />
+              </scope>
+            </method>
+            <javadoc>
+              <param>indices Input index array.</param>
+              <return>the inverse of the mapping defined by indices.</return>
+            </javadoc>
+            <method type="int[]" name="inverse" startLine="1268" endLine="1274">
+              <declaration type="int[]" name="inverse" />
+              <scope startLine="1270" endLine="1272" />
+            </method>
+            <javadoc>
+              <param>indices Input index array.</param>
+              <return>the indices in inverse order (last is first).</return>
+            </javadoc>
+            <method type="int[]" name="reverse" startLine="1280" endLine="1286">
+              <declaration type="int[]" name="reverse" />
+              <scope startLine="1282" endLine="1284" />
+            </method>
+            <javadoc>
+              <param>size Length of random array.</param>
+              <return>an array of Gaussian random numbers.</return>
+            </javadoc>
+            <method type="double[]" name="randn" startLine="1292" endLine="1298">
+              <declaration type="double[]" name="randn" />
+              <scope startLine="1294" endLine="1296" />
+            </method>
+            <javadoc>
+              <param>size Number of rows.</param>
+              <param>popSize Population size.</param>
+              <return>a 2-dimensional matrix of Gaussian random numbers.</return>
+            </javadoc>
+            <method type="RealMatrix" name="randn1" startLine="1305" endLine="1313">
+              <declaration type="double[][]" name="d" />
+              <scope startLine="1307" endLine="1311">
+                <scope startLine="1308" endLine="1310" />
+              </scope>
+            </method>
+          </class>
+        </class>
+      </class>
+    </class>
+    <comment>global search parameters</comment>
+    <comment>population size</comment>
+    <comment>termination criteria</comment>
+    <comment>selection strategy parameters</comment>
+    <comment />
+    <comment />
+    <comment>dynamic strategy parameters and constants</comment>
+    <comment>CMA internal values - updated each generation</comment>
+    <comment>-----Matrix utility functions similar to the Matlab build in functions------</comment>
+  </class>
+</source>

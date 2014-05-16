@@ -1,0 +1,586 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.apache.commons.math3.random">
+  <import name="java.io.BufferedReader" />
+  <import name="java.io.File" />
+  <import name="java.io.FileInputStream" />
+  <import name="java.io.IOException" />
+  <import name="java.io.InputStream" />
+  <import name="java.io.InputStreamReader" />
+  <import name="java.net.URL" />
+  <import name="java.nio.charset.Charset" />
+  <import name="java.util.ArrayList" />
+  <import name="java.util.List" />
+  <import name="org.apache.commons.math3.distribution.AbstractRealDistribution" />
+  <import name="org.apache.commons.math3.distribution.NormalDistribution" />
+  <import name="org.apache.commons.math3.distribution.RealDistribution" />
+  <import name="org.apache.commons.math3.exception.MathIllegalStateException" />
+  <import name="org.apache.commons.math3.exception.MathInternalError" />
+  <import name="org.apache.commons.math3.exception.NullArgumentException" />
+  <import name="org.apache.commons.math3.exception.OutOfRangeException" />
+  <import name="org.apache.commons.math3.exception.ZeroException" />
+  <import name="org.apache.commons.math3.exception.util.LocalizedFormats" />
+  <import name="org.apache.commons.math3.stat.descriptive.StatisticalSummary" />
+  <import name="org.apache.commons.math3.stat.descriptive.SummaryStatistics" />
+  <import name="org.apache.commons.math3.util.FastMath" />
+  <import name="org.apache.commons.math3.util.MathUtils" />
+  <class name="EmpiricalDistribution" extends="AbstractRealDistribution" startLine="45">
+    <javadoc>
+      <text>* <p>Represents an <a href="http://http://en.wikipedia.org/wiki/Empirical_distribution_function">
+ * empirical probability distribution</a> -- a probability distribution derived
+ * from observed data without making any assumptions about the functional form
+ * of the population distribution that the data come from.</p>
+ * <p>An <code>EmpiricalDistribution</code> maintains data structures, called
+ * <i>distribution digests</i>, that describe empirical distributions and
+ * support the following operations: <ul>
+ * <li>loading the distribution from a file of observed data values</li>
+ * <li>dividing the input data into "bin ranges" and reporting bin frequency
+ * counts (data for histogram)</li>
+ * <li>reporting univariate statistics describing the full set of data values
+ * as well as the observations within each bin</li>
+ * <li>generating random values from the distribution</li>
+ * </ul>
+ * Applications can use <code>EmpiricalDistribution</code> to build grouped
+ * frequency histograms representing the input data or to generate random values
+ * "like" those in the input file -- i.e., the values generated will follow the
+ * distribution of the values in the file.</p>
+ * <p>The implementation uses what amounts to the
+ * <a href="http://nedwww.ipac.caltech.edu/level5/March02/Silverman/Silver2_6.html">
+ * Variable Kernel Method</a> with Gaussian smoothing:<p>
+ * <strong>Digesting the input file</strong>
+ * <ol><li>Pass the file once to compute min and max.</li>
+ * <li>Divide the range from min-max into <code>binCount</code> "bins."</li>
+ * <li>Pass the data file again, computing bin counts and univariate
+ * statistics (mean, std dev.) for each of the bins </li>
+ * <li>Divide the interval (0,1) into subintervals associated with the bins,
+ * with the length of a bin's subinterval proportional to its count.</li></ol>
+ * <strong>Generating random values from the distribution</strong><ol>
+ * <li>Generate a uniformly distributed value in (0,1) </li>
+ * <li>Select the subinterval to which the value belongs.
+ * <li>Generate a random Gaussian value with mean = mean of the associated
+ * bin and std dev = std dev of associated bin.</li></ol></p>
+ * <p>EmpiricalDistribution implements the {@link RealDistribution} interface
+ * as follows.  Given x within the range of values in the dataset, let B
+ * be the bin containing x and let K be the within-bin kernel for B.  Let P(B-)
+ * be the sum of the probabilities of the bins below B and let K(B) be the
+ * mass of B under K (i.e., the integral of the kernel density over B).  Then
+ * set P(X < x) = P(B-) + P(B) * K(x) / K(B) where K(x) is the kernel distribution
+ * evaluated at x. This results in a cdf that matches the grouped frequency
+ * distribution at the bin endpoints and interpolates within bins using
+ * within-bin kernels.</p>
+ * <strong>USAGE NOTES:</strong><ul>
+ * <li>The <code>binCount</code> is set by default to 1000.  A good rule of thumb
+ * is to set the bin count to approximately the length of the input file divided
+ * by 10. </li>
+ * <li>The input file <i>must</i> be a plain text file containing one valid numeric
+ * entry per line.</li>
+ * </ul></p></text>
+      <version>$Id: EmpiricalDistribution.java 1457372 2013-03-17 04:28:04Z psteitz $</version>
+    </javadoc>
+    <javadoc>
+      <text>* Default bin count</text>
+    </javadoc>
+    <declaration type="int" name="DEFAULT_BIN_COUNT" />
+    <javadoc>
+      <text>* Character set for file input</text>
+    </javadoc>
+    <declaration type="String" name="FILE_CHARSET" />
+    <javadoc>
+      <text>* Serializable version identifier</text>
+    </javadoc>
+    <declaration type="long" name="serialVersionUID" />
+    <javadoc>
+      <text>* RandomDataGenerator instance to use in repeated calls to getNext()</text>
+    </javadoc>
+    <declaration type="RandomDataGenerator" name="randomData" />
+    <javadoc>
+      <text>* List of SummaryStatistics objects characterizing the bins</text>
+    </javadoc>
+    <declaration type="List<SummaryStatistics>" name="binStats" />
+    <javadoc>
+      <text>* Sample statistics</text>
+    </javadoc>
+    <declaration type="SummaryStatistics" name="sampleStats" />
+    <javadoc>
+      <text>* Max loaded value</text>
+    </javadoc>
+    <declaration type="double" name="max" />
+    <javadoc>
+      <text>* Min loaded value</text>
+    </javadoc>
+    <declaration type="double" name="min" />
+    <javadoc>
+      <text>* Grid size</text>
+    </javadoc>
+    <declaration type="double" name="delta" />
+    <javadoc>
+      <text>* number of bins</text>
+    </javadoc>
+    <declaration type="int" name="binCount" />
+    <javadoc>
+      <text>* is the distribution loaded?</text>
+    </javadoc>
+    <declaration type="boolean" name="loaded" />
+    <javadoc>
+      <text>* upper bounds of subintervals in (0,1) "belonging" to the bins</text>
+    </javadoc>
+    <declaration type="double[]" name="upperBounds" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with the default bin count.</text>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="143" endLine="145" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with the specified bin count.</text>
+      <param>binCount number of bins</param>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="152" endLine="154" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with the specified bin count using the
+ * provided {@link RandomGenerator} as the source of random data.</text>
+      <param>binCount number of bins</param>
+      <param>generator random data generator (may be null, resulting in default JDK generator)</param>
+      <since>3.0</since>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="164" endLine="166" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with default bin count using the
+ * provided {@link RandomGenerator} as the source of random data.</text>
+      <param>generator random data generator (may be null, resulting in default JDK generator)</param>
+      <since>3.0</since>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="175" endLine="177" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with the specified bin count using the
+ * provided {@link RandomDataImpl} instance as the source of random data.</text>
+      <param>binCount number of bins</param>
+      <param>randomData random data generator (may be null, resulting in default JDK generator)</param>
+      <since>3.0</since>
+      <deprecated>As of 3.1. Please use {@link #EmpiricalDistribution(int,RandomGenerator)} instead.</deprecated>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="189" endLine="191" />
+    <javadoc>
+      <text>* Creates a new EmpiricalDistribution with default bin count using the
+ * provided {@link RandomDataImpl} as the source of random data.</text>
+      <param>randomData random data generator (may be null, resulting in default JDK generator)</param>
+      <since>3.0</since>
+      <deprecated>As of 3.1. Please use {@link #EmpiricalDistribution(RandomGenerator)} instead.</deprecated>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="202" endLine="204" />
+    <javadoc>
+      <text>* Private constructor to allow lazy initialisation of the RNG contained
+ * in the {@link #randomData} instance variable.</text>
+      <param>binCount number of bins</param>
+      <param>randomData Random data generator.</param>
+    </javadoc>
+    <method type="constructor" name="EmpiricalDistribution" startLine="214" endLine="219" />
+    <javadoc>
+      <text>* Computes the empirical distribution from the provided
+ * array of numbers.</text>
+      <param>in the input data array</param>
+      <exception>NullArgumentException if in is null</exception>
+    </javadoc>
+    <method type="void" name="load" startLine="228" endLine="240">
+      <declaration type="DataAdapter" name="da" />
+      <scope startLine="230" endLine="234">
+        <comment>new adapter for the second pass</comment>
+      </scope>
+      <scope startLine="234" endLine="237">
+        <comment>Can't happen</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Computes the empirical distribution using data read from a URL.
+ * <p>The input file <i>must</i> be an ASCII text file containing one
+ * valid numeric entry per line.</p></text>
+      <param>url url of the input file</param>
+      <throws>IOException if an IO error occurs</throws>
+      <throws>NullArgumentException if url is null</throws>
+      <throws>ZeroException if URL contains no data</throws>
+    </javadoc>
+    <method type="void" name="load" startLine="254" endLine="276">
+      <declaration type="Charset" name="charset" />
+      <declaration type="BufferedReader" name="in" />
+      <scope startLine="259" endLine="269">
+        <declaration type="DataAdapter" name="da" />
+        <scope startLine="262" endLine="264" />
+        <comment>new adapter for the second pass</comment>
+      </scope>
+      <scope startLine="269" endLine="275">
+        <scope startLine="270" endLine="272" />
+        <scope startLine="272" endLine="274" />
+        <comment>NOPMD</comment>
+        <comment>ignore</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Computes the empirical distribution from the input file.
+ * <p>The input file <i>must</i> be an ASCII text file containing one
+ * valid numeric entry per line.</p></text>
+      <param>file the input file</param>
+      <throws>IOException if an IO error occurs</throws>
+      <throws>NullArgumentException if file is null</throws>
+    </javadoc>
+    <method type="void" name="load" startLine="288" endLine="308">
+      <declaration type="Charset" name="charset" />
+      <declaration type="InputStream" name="is" />
+      <declaration type="BufferedReader" name="in" />
+      <scope startLine="293" endLine="301">
+        <declaration type="DataAdapter" name="da" />
+        <comment>new adapter for second pass</comment>
+      </scope>
+      <scope startLine="301" endLine="307">
+        <scope startLine="302" endLine="304" />
+        <scope startLine="304" endLine="306" />
+        <comment>NOPMD</comment>
+        <comment>ignore</comment>
+      </scope>
+    </method>
+    <class name="DataAdapter" startLine="310">
+      <javadoc>
+        <text>* Provides methods for computing <code>sampleStats</code> and
+ * <code>beanStats</code> abstracting the source of data.</text>
+      </javadoc>
+      <method name="computeBinStats" type="void" startLine="316" endLine="321" />
+      <javadoc>
+        <text>* Compute bin stats.</text>
+        <throws>IOException  if an error occurs computing bin stats</throws>
+      </javadoc>
+      <method name="computeStats" type="void" startLine="323" endLine="328" />
+      <javadoc>
+        <text>* Compute sample statistics.</text>
+        <throws>IOException if an error occurs computing sample stats</throws>
+      </javadoc>
+      <class name="StreamDataAdapter" extends="DataAdapter" startLine="332">
+        <javadoc>
+          <text>* <code>DataAdapter</code> for data provided through some input stream</text>
+        </javadoc>
+        <javadoc>
+          <text>* Input stream providing access to the data</text>
+        </javadoc>
+        <declaration type="BufferedReader" name="inputStream" />
+        <javadoc>
+          <text>* Create a StreamDataAdapter from a BufferedReader</text>
+          <param>in BufferedReader input stream</param>
+        </javadoc>
+        <method type="constructor" name="StreamDataAdapter" startLine="345" endLine="348" />
+        <javadoc>
+          <text>* {@inheritDoc}</text>
+        </javadoc>
+        <method type="void" name="computeBinStats" startLine="352" endLine="363">
+          <declaration type="String" name="str" />
+          <declaration type="double" name="val" />
+          <scope startLine="355" endLine="359">
+            <declaration type="SummaryStatistics" name="stats" />
+          </scope>
+        </method>
+        <javadoc>
+          <text>* {@inheritDoc}</text>
+        </javadoc>
+        <method type="void" name="computeStats" startLine="367" endLine="377">
+          <declaration type="String" name="str" />
+          <declaration type="double" name="val" />
+          <scope startLine="371" endLine="374" />
+        </method>
+        <class name="ArrayDataAdapter" extends="DataAdapter" startLine="380">
+          <javadoc>
+            <text>* <code>DataAdapter</code> for data provided as array of doubles.</text>
+          </javadoc>
+          <javadoc>
+            <text>* Array of input  data values</text>
+          </javadoc>
+          <declaration type="double[]" name="inputArray" />
+          <javadoc>
+            <text>* Construct an ArrayDataAdapter from a double[] array</text>
+            <param>in double[] array holding the data</param>
+            <throws>NullArgumentException if in is null</throws>
+          </javadoc>
+          <method type="constructor" name="ArrayDataAdapter" startLine="394" endLine="398" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+          </javadoc>
+          <method type="void" name="computeStats" startLine="402" endLine="407">
+            <scope startLine="404" endLine="406" />
+          </method>
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+          </javadoc>
+          <method type="void" name="computeBinStats" startLine="411" endLine="417">
+            <scope startLine="412" endLine="416">
+              <declaration type="SummaryStatistics" name="stats" />
+            </scope>
+          </method>
+          <javadoc>
+            <text>* Fills binStats array (second pass through data file).</text>
+            <param>da object providing access to the data</param>
+            <throws>IOException  if an IO error occurs</throws>
+          </javadoc>
+          <method type="void" name="fillBinStats" startLine="427" endLine="454">
+            <scope startLine="434" endLine="436" />
+            <scope startLine="437" endLine="440">
+              <declaration type="SummaryStatistics" name="stats" />
+            </scope>
+            <scope startLine="449" endLine="452" />
+            <comment>Set up grid</comment>
+            <comment>Initialize binStats ArrayList</comment>
+            <comment>Filling data in binStats Array</comment>
+            <comment>Assign upperBounds based on bin counts</comment>
+          </method>
+          <javadoc>
+            <text>* Returns the index of the bin to which the given value belongs</text>
+            <param>value  the value whose bin we are trying to find</param>
+            <return>the index of the bin containing the value</return>
+          </javadoc>
+          <method type="int" name="findBin" startLine="462" endLine="466" />
+          <javadoc>
+            <text>* Generates a random value from this distribution.
+ * <strong>Preconditions:</strong><ul>
+ * <li>the distribution must be loaded before invoking this method</li></ul></text>
+            <return>the random value.</return>
+            <throws>MathIllegalStateException if the distribution has not been loaded</throws>
+          </javadoc>
+          <method type="double" name="getNextValue" startLine="475" endLine="498">
+            <scope startLine="477" endLine="479" />
+            <declaration type="double" name="x" />
+            <scope startLine="485" endLine="496">
+              <scope startLine="486" endLine="495">
+                <declaration type="SummaryStatistics" name="stats" />
+                <scope startLine="488" endLine="494">
+                  <scope startLine="489" endLine="491" />
+                  <scope startLine="491" endLine="493" />
+                </scope>
+              </scope>
+              <comment>more than one obs</comment>
+              <comment>only one obs in bin</comment>
+            </scope>
+            <comment>Start with a uniformly distributed random number in (0,1)</comment>
+            <comment>Use this to select the bin and generate a Gaussian within the bin</comment>
+          </method>
+          <javadoc>
+            <text>* Returns a {@link StatisticalSummary} describing this distribution.
+ * <strong>Preconditions:</strong><ul>
+ * <li>the distribution must be loaded before invoking this method</li></ul></text>
+            <return>the sample statistics</return>
+            <throws>IllegalStateException if the distribution has not been loaded</throws>
+          </javadoc>
+          <method type="StatisticalSummary" name="getSampleStats" startLine="508" endLine="510" />
+          <javadoc>
+            <text>* Returns the number of bins.</text>
+            <return>the number of bins.</return>
+          </javadoc>
+          <method type="int" name="getBinCount" startLine="517" endLine="519" />
+          <javadoc>
+            <text>* Returns a List of {@link SummaryStatistics} instances containing
+ * statistics describing the values in each of the bins.  The list is
+ * indexed on the bin number.</text>
+            <return>List of bin statistics.</return>
+          </javadoc>
+          <method type="List<SummaryStatistics>" name="getBinStats" startLine="528" endLine="530" />
+          <javadoc>
+            <text>* <p>Returns a fresh copy of the array of upper bounds for the bins.
+ * Bins are: <br/>
+ * [min,upperBounds[0]],(upperBounds[0],upperBounds[1]],...,
+ * (upperBounds[binCount-2], upperBounds[binCount-1] = max].</p>
+ * <p>Note: In versions 1.0-2.0 of commons-math, this method
+ * incorrectly returned the array of probability generator upper
+ * bounds now returned by {@link #getGeneratorUpperBounds()}.</p></text>
+            <return>array of bin upper bounds</return>
+            <since>2.1</since>
+          </javadoc>
+          <method type="double[]" name="getUpperBounds" startLine="545" endLine="552">
+            <declaration type="double[]" name="binUpperBounds" />
+            <scope startLine="547" endLine="549" />
+          </method>
+          <javadoc>
+            <text>* <p>Returns a fresh copy of the array of upper bounds of the subintervals
+ * of [0,1] used in generating data from the empirical distribution.
+ * Subintervals correspond to bins with lengths proportional to bin counts.</p>
+ * <p>In versions 1.0-2.0 of commons-math, this array was (incorrectly) returned
+ * by {@link #getUpperBounds()}.</p></text>
+            <since>2.1</since>
+            <return>array of upper bounds of subintervals used in data generation</return>
+          </javadoc>
+          <method type="double[]" name="getGeneratorUpperBounds" startLine="565" endLine="570">
+            <declaration type="int" name="len" />
+            <declaration type="double[]" name="out" />
+          </method>
+          <javadoc>
+            <text>* Property indicating whether or not the distribution has been loaded.</text>
+            <return>true if the distribution has been loaded</return>
+          </javadoc>
+          <method type="boolean" name="isLoaded" startLine="577" endLine="579" />
+          <javadoc>
+            <text>* Reseeds the random number generator used by {@link #getNextValue()}.</text>
+            <param>seed random generator seed</param>
+            <since>3.0</since>
+          </javadoc>
+          <method type="void" name="reSeed" startLine="587" endLine="589" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="probability" startLine="597" endLine="599" />
+          <javadoc>
+            <text>* {@inheritDoc}<p>Returns the kernel density normalized so that its integral over each bin
+ * equals the bin mass.</p>
+ * <p>Algorithm description: <ol>
+ * <li>Find the bin B that x belongs to.</li>
+ * <li>Compute K(B) = the mass of B with respect to the within-bin kernel (i.e., the
+ * integral of the kernel density over B).</li>
+ * <li>Return k(x) * P(B) / K(B), where k is the within-bin kernel density
+ * and P(B) is the mass of B.</li></ol></p></text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="density" startLine="615" endLine="622">
+            <scope startLine="616" endLine="618" />
+            <declaration type="int" name="binIndex" />
+            <declaration type="RealDistribution" name="kernel" />
+          </method>
+          <javadoc>
+            <text>* {@inheritDoc}<p>Algorithm description:<ol>
+ * <li>Find the bin B that x belongs to.</li>
+ * <li>Compute P(B) = the mass of B and P(B-) = the combined mass of the bins below B.</li>
+ * <li>Compute K(B) = the probability mass of B with respect to the within-bin kernel
+ * and K(B-) = the kernel distribution evaluated at the lower endpoint of B</li>
+ * <li>Return P(B-) + P(B) * [K(x) - K(B-)] / K(B) where
+ * K(x) is the within-bin kernel distribution function evaluated at x.</li></ol></p></text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="cumulativeProbability" startLine="637" endLine="653">
+            <scope startLine="638" endLine="640" />
+            <scope startLine="640" endLine="642" />
+            <declaration type="int" name="binIndex" />
+            <declaration type="double" name="pBminus" />
+            <declaration type="double" name="pB" />
+            <declaration type="double[]" name="binBounds" />
+            <declaration type="double" name="kB" />
+            <declaration type="double" name="lower" />
+            <declaration type="RealDistribution" name="kernel" />
+            <declaration type="double" name="withinBinCum" />
+          </method>
+          <javadoc>
+            <text>* {@inheritDoc}<p>Algorithm description:<ol>
+ * <li>Find the smallest i such that the sum of the masses of the bins
+ * through i is at least p.</li>
+ * <li>
+ * Let K be the within-bin kernel distribution for bin i.</br>
+ * Let K(B) be the mass of B under K. <br/>
+ * Let K(B-) be K evaluated at the lower endpoint of B (the combined
+ * mass of the bins below B under K).<br/>
+ * Let P(B) be the probability of bin i.<br/>
+ * Let P(B-) be the sum of the bin masses below bin i. <br/>
+ * Let pCrit = p - P(B-)<br/>
+ * <li>Return the inverse of K evaluated at <br/>
+ * K(B-) + pCrit * K(B) / P(B) </li>
+ * </ol></p></text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="inverseCumulativeProbability" startLine="675" endLine="705">
+            <scope startLine="676" endLine="678" />
+            <scope startLine="680" endLine="682" />
+            <scope startLine="684" endLine="686" />
+            <declaration type="int" name="i" />
+            <scope startLine="689" endLine="691" />
+            <declaration type="RealDistribution" name="kernel" />
+            <declaration type="double" name="kB" />
+            <declaration type="double[]" name="binBounds" />
+            <declaration type="double" name="lower" />
+            <declaration type="double" name="kBminus" />
+            <declaration type="double" name="pB" />
+            <declaration type="double" name="pBminus" />
+            <declaration type="double" name="pCrit" />
+            <scope startLine="701" endLine="703" />
+          </method>
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="getNumericalMean" startLine="711" endLine="713" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="getNumericalVariance" startLine="719" endLine="721" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="getSupportLowerBound" startLine="727" endLine="729" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="getSupportUpperBound" startLine="735" endLine="737" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="boolean" name="isSupportLowerBoundInclusive" startLine="743" endLine="745" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="boolean" name="isSupportUpperBoundInclusive" startLine="751" endLine="753" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="boolean" name="isSupportConnected" startLine="759" endLine="761" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="double" name="sample" startLine="768" endLine="770" />
+          <javadoc>
+            <text>* {@inheritDoc}</text>
+            <since>3.1</since>
+          </javadoc>
+          <method type="void" name="reseedRandomGenerator" startLine="777" endLine="779" />
+          <javadoc>
+            <text>* The probability of bin i.</text>
+            <param>i the index of the bin</param>
+            <return>the probability that selection begins in bin i</return>
+          </javadoc>
+          <method type="double" name="pB" startLine="787" endLine="790" />
+          <javadoc>
+            <text>* The combined probability of the bins up to but not including bin i.</text>
+            <param>i the index of the bin</param>
+            <return>the probability that selection begins in a bin below bin i.</return>
+          </javadoc>
+          <method type="double" name="pBminus" startLine="798" endLine="800" />
+          <javadoc>
+            <text>* Mass of bin i under the within-bin kernel of the bin.</text>
+            <param>i index of the bin</param>
+            <return>the difference in the within-bin kernel cdf between the
+ * upper and lower endpoints of bin i</return>
+          </javadoc>
+          <method type="double" name="kB" startLine="810" endLine="815">
+            <declaration type="double[]" name="binBounds" />
+            <declaration type="RealDistribution" name="kernel" />
+          </method>
+          <javadoc>
+            <text>* The within-bin kernel of the bin that x belongs to.</text>
+            <param>x the value to locate within a bin</param>
+            <return>the within-bin kernel of the bin containing x</return>
+          </javadoc>
+          <method type="RealDistribution" name="k" startLine="823" endLine="826">
+            <declaration type="int" name="binIndex" />
+          </method>
+          <javadoc>
+            <text>* The combined probability of the bins up to and including binIndex.</text>
+            <param>binIndex maximum bin index</param>
+            <return>sum of the probabilities of bins through binIndex</return>
+          </javadoc>
+          <method type="double" name="cumBinP" startLine="834" endLine="836" />
+          <javadoc>
+            <text>* The within-bin smoothing kernel.</text>
+            <param>bStats summary statistics for the bin</param>
+            <return>within-bin kernel parameterized by bStats</return>
+          </javadoc>
+          <method type="RealDistribution" name="getKernel" startLine="844" endLine="849">
+            <comment>Default to Gaussian</comment>
+          </method>
+        </class>
+      </class>
+    </class>
+    <comment>Distribution methods ---------------------------</comment>
+  </class>
+</source>

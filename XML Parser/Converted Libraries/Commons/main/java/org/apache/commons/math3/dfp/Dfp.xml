@@ -1,0 +1,1601 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.apache.commons.math3.dfp">
+  <import name="java.util.Arrays" />
+  <import name="org.apache.commons.math3.RealFieldElement" />
+  <import name="org.apache.commons.math3.exception.DimensionMismatchException" />
+  <import name="org.apache.commons.math3.util.FastMath" />
+  <class name="Dfp" startLine="26">
+    <implements name="RealFieldElement<Dfp>" />
+    <javadoc>
+      <text>* Decimal floating point library for Java
+ * <p>Another floating point class.  This one is built using radix 10000
+ * which is 10<sup>4</sup>, so its almost decimal.</p>
+ * <p>The design goals here are:
+ * <ol>
+ * <li>Decimal math, or close to it</li>
+ * <li>Settable precision (but no mix between numbers using different settings)</li>
+ * <li>Portability.  Code should be kept as portable as possible.</li>
+ * <li>Performance</li>
+ * <li>Accuracy  - Results should always be +/- 1 ULP for basic
+ * algebraic operation</li>
+ * <li>Comply with IEEE 854-1987 as much as possible.
+ * (See IEEE 854-1987 notes below)</li>
+ * </ol></p>
+ * <p>Trade offs:
+ * <ol>
+ * <li>Memory foot print.  I'm using more memory than necessary to
+ * represent numbers to get better performance.</li>
+ * <li>Digits are bigger, so rounding is a greater loss.  So, if you
+ * really need 12 decimal digits, better use 4 base 10000 digits
+ * there can be one partially filled.</li>
+ * </ol></p>
+ * <p>Numbers are represented  in the following form:
+ * <pre>
+ * n  =  sign &times; mant &times; (radix)<sup>exp</sup>;</p>
+ * </pre>
+ * where sign is &plusmn;1, mantissa represents a fractional number between
+ * zero and one.  mant[0] is the least significant digit.
+ * exp is in the range of -32767 to 32768</p>
+ * <p>IEEE 854-1987  Notes and differences</p>
+ * <p>IEEE 854 requires the radix to be either 2 or 10.  The radix here is
+ * 10000, so that requirement is not met, but  it is possible that a
+ * subclassed can be made to make it behave as a radix 10
+ * number.  It is my opinion that if it looks and behaves as a radix
+ * 10 number then it is one and that requirement would be met.</p>
+ * <p>The radix of 10000 was chosen because it should be faster to operate
+ * on 4 decimal digits at once instead of one at a time.  Radix 10 behavior
+ * can be realized by adding an additional rounding step to ensure that
+ * the number of decimal digits represented is constant.</p>
+ * <p>The IEEE standard specifically leaves out internal data encoding,
+ * so it is reasonable to conclude that such a subclass of this radix
+ * 10000 system is merely an encoding of a radix 10 system.</p>
+ * <p>IEEE 854 also specifies the existence of "sub-normal" numbers.  This
+ * class does not contain any such entities.  The most significant radix
+ * 10000 digit is always non-zero.  Instead, we support "gradual underflow"
+ * by raising the underflow flag for numbers less with exponent less than
+ * expMin, but don't flush to zero until the exponent reaches MIN_EXP-digits.
+ * Thus the smallest number we can represent would be:
+ * 1E(-(MIN_EXP-digits-1)*4),  eg, for digits=5, MIN_EXP=-32767, that would
+ * be 1e-131092.</p>
+ * <p>IEEE 854 defines that the implied radix point lies just to the right
+ * of the most significant digit and to the left of the remaining digits.
+ * This implementation puts the implied radix point to the left of all
+ * digits including the most significant one.  The most significant digit
+ * here is the one just to the right of the radix point.  This is a fine
+ * detail and is really only a matter of definition.  Any side effects of
+ * this can be rendered invisible by a subclass.</p></text>
+      <see>DfpField</see>
+      <version>$Id: Dfp.java 1462423 2013-03-29 07:25:18Z luc $</version>
+      <since>2.2</since>
+    </javadoc>
+    <javadoc>
+      <text>* The radix, or base of this system.  Set to 10000</text>
+    </javadoc>
+    <declaration type="int" name="RADIX" />
+    <javadoc>
+      <text>* The minimum exponent before underflow is signaled.  Flush to zero
+ * occurs at minExp-DIGITS</text>
+    </javadoc>
+    <declaration type="int" name="MIN_EXP" />
+    <javadoc>
+      <text>* The maximum exponent before overflow is signaled and results flushed
+ * to infinity</text>
+    </javadoc>
+    <declaration type="int" name="MAX_EXP" />
+    <javadoc>
+      <text>* The amount under/overflows are scaled by before going to trap handler</text>
+    </javadoc>
+    <declaration type="int" name="ERR_SCALE" />
+    <javadoc>
+      <text>* Indicator value for normal finite numbers.</text>
+    </javadoc>
+    <declaration type="byte" name="FINITE" />
+    <javadoc>
+      <text>* Indicator value for Infinity.</text>
+    </javadoc>
+    <declaration type="byte" name="INFINITE" />
+    <javadoc>
+      <text>* Indicator value for signaling NaN.</text>
+    </javadoc>
+    <declaration type="byte" name="SNAN" />
+    <javadoc>
+      <text>* Indicator value for quiet NaN.</text>
+    </javadoc>
+    <declaration type="byte" name="QNAN" />
+    <javadoc>
+      <text>* String for NaN representation.</text>
+    </javadoc>
+    <declaration type="String" name="NAN_STRING" />
+    <javadoc>
+      <text>* String for positive infinity representation.</text>
+    </javadoc>
+    <declaration type="String" name="POS_INFINITY_STRING" />
+    <javadoc>
+      <text>* String for negative infinity representation.</text>
+    </javadoc>
+    <declaration type="String" name="NEG_INFINITY_STRING" />
+    <javadoc>
+      <text>* Name for traps triggered by addition.</text>
+    </javadoc>
+    <declaration type="String" name="ADD_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by multiplication.</text>
+    </javadoc>
+    <declaration type="String" name="MULTIPLY_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by division.</text>
+    </javadoc>
+    <declaration type="String" name="DIVIDE_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by square root.</text>
+    </javadoc>
+    <declaration type="String" name="SQRT_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by alignment.</text>
+    </javadoc>
+    <declaration type="String" name="ALIGN_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by truncation.</text>
+    </javadoc>
+    <declaration type="String" name="TRUNC_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by nextAfter.</text>
+    </javadoc>
+    <declaration type="String" name="NEXT_AFTER_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by lessThan.</text>
+    </javadoc>
+    <declaration type="String" name="LESS_THAN_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by greaterThan.</text>
+    </javadoc>
+    <declaration type="String" name="GREATER_THAN_TRAP" />
+    <javadoc>
+      <text>* Name for traps triggered by newInstance.</text>
+    </javadoc>
+    <declaration type="String" name="NEW_INSTANCE_TRAP" />
+    <javadoc>
+      <text>* Mantissa.</text>
+    </javadoc>
+    <declaration type="int[]" name="mant" />
+    <javadoc>
+      <text>* Sign bit: 1 for positive, -1 for negative.</text>
+    </javadoc>
+    <declaration type="byte" name="sign" />
+    <javadoc>
+      <text>* Exponent.</text>
+    </javadoc>
+    <declaration type="int" name="exp" />
+    <javadoc>
+      <text>* Indicator for non-finite / non-number values.</text>
+    </javadoc>
+    <declaration type="byte" name="nans" />
+    <javadoc>
+      <text>* Factory building similar Dfp's.</text>
+    </javadoc>
+    <declaration type="DfpField" name="field" />
+    <javadoc>
+      <text>* Makes an instance with a value of zero.</text>
+      <param>field field to which this instance belongs</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="183" endLine="189" />
+    <javadoc>
+      <text>* Create an instance from a byte value.</text>
+      <param>field field to which this instance belongs</param>
+      <param>x value to convert to an instance</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="195" endLine="197" />
+    <javadoc>
+      <text>* Create an instance from an int value.</text>
+      <param>field field to which this instance belongs</param>
+      <param>x value to convert to an instance</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="203" endLine="205" />
+    <javadoc>
+      <text>* Create an instance from a long value.</text>
+      <param>field field to which this instance belongs</param>
+      <param>x value to convert to an instance</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="211" endLine="252">
+      <declaration type="boolean" name="isLongMin" />
+      <scope startLine="219" endLine="224">
+        <comment>special case for Long.MIN_VALUE (-9223372036854775808)</comment>
+        <comment>we must shift it before taking its absolute value</comment>
+      </scope>
+      <scope startLine="227" endLine="230" />
+      <scope startLine="230" endLine="232" />
+      <scope startLine="235" endLine="240" />
+      <scope startLine="242" endLine="251">
+        <scope startLine="245" endLine="250">
+          <scope startLine="246" endLine="249" />
+        </scope>
+        <comment>remove the shift added for Long.MIN_VALUE</comment>
+        <comment>we know in this case that fixing the last digit is sufficient</comment>
+      </scope>
+      <comment>initialize as if 0</comment>
+      <comment>set the sign</comment>
+    </method>
+    <javadoc>
+      <text>* Create an instance from a double value.</text>
+      <param>field field to which this instance belongs</param>
+      <param>x value to convert to an instance</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="258" endLine="319">
+      <declaration type="long" name="bits" />
+      <declaration type="long" name="mantissa" />
+      <declaration type="int" name="exponent" />
+      <scope startLine="271" endLine="289">
+        <scope startLine="273" endLine="279">
+          <scope startLine="275" endLine="277" />
+        </scope>
+        <scope startLine="284" endLine="287" />
+        <comment>Zero or sub-normal</comment>
+        <comment>make sure 0 has the right sign</comment>
+        <comment>Normalize the subnormal number</comment>
+      </scope>
+      <scope startLine="291" endLine="304">
+        <scope startLine="293" endLine="296" />
+        <scope startLine="296" endLine="299" />
+        <scope startLine="299" endLine="302" />
+        <comment>infinity or NAN</comment>
+      </scope>
+      <declaration type="Dfp" name="xdfp" />
+      <scope startLine="310" endLine="312" />
+      <comment>initialize as if 0</comment>
+      <comment>Divide by 2^52, then add one</comment>
+    </method>
+    <javadoc>
+      <text>* Copy constructor.</text>
+      <param>d instance to copy</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="324" endLine="330" />
+    <javadoc>
+      <text>* Create an instance from a String representation.</text>
+      <param>field field to which this instance belongs</param>
+      <param>s string representation of the instance</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="336" endLine="535">
+      <declaration type="boolean" name="decimalFound" />
+      <declaration type="int" name="rsize" />
+      <declaration type="int" name="offset" />
+      <declaration type="char[]" name="striped" />
+      <scope startLine="351" endLine="355" />
+      <scope startLine="357" endLine="361" />
+      <scope startLine="363" endLine="367" />
+      <declaration type="int" name="p" />
+      <scope startLine="371" endLine="373">
+        <comment>try upper case?</comment>
+      </scope>
+      <declaration type="String" name="fpdecimal" />
+      <declaration type="int" name="sciexp" />
+      <scope startLine="377" endLine="398">
+        <declaration type="String" name="fpexp" />
+        <declaration type="boolean" name="negative" />
+        <scope startLine="384" endLine="393">
+          <scope startLine="386" endLine="389" />
+          <scope startLine="390" endLine="392" />
+        </scope>
+        <scope startLine="395" endLine="397" />
+        <comment>scientific notation</comment>
+      </scope>
+      <scope startLine="398" endLine="401">
+        <comment>normal case</comment>
+      </scope>
+      <scope startLine="404" endLine="406" />
+      <declaration type="int" name="decimalPos" />
+      <scope startLine="413" endLine="431">
+        <scope startLine="414" endLine="416" />
+        <scope startLine="418" endLine="420" />
+        <scope startLine="422" endLine="424" />
+        <scope startLine="428" endLine="430" />
+      </scope>
+      <declaration type="int" name="q" />
+      <declaration type="int" name="significantDigits" />
+      <scope startLine="440" endLine="466">
+        <scope startLine="441" endLine="443" />
+        <scope startLine="446" endLine="448" />
+        <scope startLine="450" endLine="455" />
+        <scope startLine="457" endLine="460" />
+        <comment>Don't want to run pass the end of the array</comment>
+      </scope>
+      <scope startLine="470" endLine="482">
+        <scope startLine="471" endLine="481">
+          <scope startLine="473" endLine="475" />
+          <scope startLine="476" endLine="478" />
+          <scope startLine="478" endLine="480" />
+        </scope>
+      </scope>
+      <scope startLine="485" endLine="487" />
+      <scope startLine="490" endLine="492" />
+      <scope startLine="498" endLine="503">
+        <scope startLine="499" endLine="501" />
+      </scope>
+      <declaration type="int" name="i" />
+      <scope startLine="511" endLine="515">
+        <scope startLine="512" endLine="514" />
+      </scope>
+      <scope startLine="519" endLine="525" />
+      <scope startLine="530" endLine="533">
+        <comment>Is there possible another digit?</comment>
+      </scope>
+      <comment>initialize as if 0</comment>
+      <comment>size of radix in decimal digits</comment>
+      <comment>Starting offset into Striped</comment>
+      <comment>Check some special cases</comment>
+      <comment>Check for scientific notation</comment>
+      <comment>If there is a minus sign in the number then it is negative</comment>
+      <comment>First off, find all of the leading zeros, trailing zeros, and significant digits</comment>
+      <comment>Move p to first significant digit</comment>
+      <comment>Copy the string onto Stripped</comment>
+      <comment>If the decimal point has been found then get rid of trailing zeros.</comment>
+      <comment>special case of numbers like "0.00000"</comment>
+      <comment>Implicit decimal point at end of number if not present</comment>
+      <comment>Find the number of significant trailing zeros</comment>
+      <comment>set q to point to first sig digit</comment>
+      <comment>Make sure the decimal is on a mod 10000 boundary</comment>
+      <comment>Make the mantissa length right by adding zeros at the end if necessary</comment>
+      <comment>Ok, now we know how many trailing zeros there are,</comment>
+      <comment>and where the least significant digit is</comment>
+    </method>
+    <javadoc>
+      <text>* Creates an instance with a non-finite value.</text>
+      <param>field field to which this instance belongs</param>
+      <param>sign sign of the Dfp to create</param>
+      <param>nans code of the value, must be one of {@link #INFINITE},{@link #SNAN},  {@link #QNAN}</param>
+    </javadoc>
+    <method type="constructor" name="Dfp" startLine="543" endLine="549" />
+    <javadoc>
+      <text>* Create an instance with a value of 0.
+ * Use this internally in preference to constructors to facilitate subclasses</text>
+      <return>a new instance with a value of 0</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="555" endLine="557" />
+    <javadoc>
+      <text>* Create an instance from a byte value.</text>
+      <param>x value to convert to an instance</param>
+      <return>a new instance with value x</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="563" endLine="565" />
+    <javadoc>
+      <text>* Create an instance from an int value.</text>
+      <param>x value to convert to an instance</param>
+      <return>a new instance with value x</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="571" endLine="573" />
+    <javadoc>
+      <text>* Create an instance from a long value.</text>
+      <param>x value to convert to an instance</param>
+      <return>a new instance with value x</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="579" endLine="581" />
+    <javadoc>
+      <text>* Create an instance from a double value.</text>
+      <param>x value to convert to an instance</param>
+      <return>a new instance with value x</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="587" endLine="589" />
+    <javadoc>
+      <text>* Create an instance by copying an existing one.
+ * Use this internally in preference to constructors to facilitate subclasses.</text>
+      <param>d instance to copy</param>
+      <return>a new instance with the same value as d</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="596" endLine="608">
+      <scope startLine="599" endLine="604">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <comment>make sure we don't mix number with different precision</comment>
+    </method>
+    <javadoc>
+      <text>* Create an instance from a String representation.
+ * Use this internally in preference to constructors to facilitate subclasses.</text>
+      <param>s string representation of the instance</param>
+      <return>a new instance parsed from specified string</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="615" endLine="617" />
+    <javadoc>
+      <text>* Creates an instance with a non-finite value.</text>
+      <param>sig sign of the Dfp to create</param>
+      <param>code code of the value, must be one of {@link #INFINITE},{@link #SNAN},  {@link #QNAN}</param>
+      <return>a new instance with a non-finite value</return>
+    </javadoc>
+    <method type="Dfp" name="newInstance" startLine="625" endLine="627" />
+    <javadoc>
+      <text>* Get the {@link org.apache.commons.math3.Field Field} (really a {@link DfpField}) to which the instance belongs.
+ * <p>
+ * The field is linked to the number of digits and acts as a factory
+ * for {@link Dfp} instances.
+ * </p></text>
+      <return>{@link org.apache.commons.math3.Field Field} (really a {@link DfpField}) to which the instance belongs</return>
+    </javadoc>
+    <method type="DfpField" name="getField" startLine="636" endLine="638" />
+    <javadoc>
+      <text>* Get the number of radix digits of the instance.</text>
+      <return>number of radix digits</return>
+    </javadoc>
+    <method type="int" name="getRadixDigits" startLine="643" endLine="645" />
+    <javadoc>
+      <text>* Get the constant 0.</text>
+      <return>a Dfp with value zero</return>
+    </javadoc>
+    <method type="Dfp" name="getZero" startLine="650" endLine="652" />
+    <javadoc>
+      <text>* Get the constant 1.</text>
+      <return>a Dfp with value one</return>
+    </javadoc>
+    <method type="Dfp" name="getOne" startLine="657" endLine="659" />
+    <javadoc>
+      <text>* Get the constant 2.</text>
+      <return>a Dfp with value two</return>
+    </javadoc>
+    <method type="Dfp" name="getTwo" startLine="664" endLine="666" />
+    <javadoc>
+      <text>* Shift the mantissa left, and adjust the exponent to compensate.</text>
+    </javadoc>
+    <method type="void" name="shiftLeft" startLine="670" endLine="676">
+      <scope startLine="671" endLine="673" />
+    </method>
+    <javadoc>
+      <text>* Shift the mantissa right, and adjust the exponent to compensate.</text>
+    </javadoc>
+    <method type="void" name="shiftRight" startLine="682" endLine="688">
+      <scope startLine="683" endLine="685" />
+    </method>
+    <javadoc>
+      <text>* Make our exp equal to the supplied one, this may cause rounding.
+ * Also causes de-normalized numbers.  These numbers are generally
+ * dangerous because most routines assume normalized numbers.
+ * Align doesn't round, so it will return the last digit destroyed
+ * by shifting right.</text>
+      <param>e desired exponent</param>
+      <return>last digit destroyed by shifting right</return>
+    </javadoc>
+    <method type="int" name="align" startLine="698" endLine="749">
+      <declaration type="int" name="lostdigit" />
+      <declaration type="boolean" name="inexact" />
+      <declaration type="int" name="diff" />
+      <declaration type="int" name="adiff" />
+      <scope startLine="705" endLine="707" />
+      <scope startLine="709" endLine="711" />
+      <scope startLine="713" endLine="722">
+        <comment>Special case</comment>
+      </scope>
+      <scope startLine="724" endLine="740">
+        <scope startLine="725" endLine="737">
+          <scope startLine="730" endLine="732" />
+        </scope>
+        <scope startLine="737" endLine="739" />
+        <comment>Keep track of loss -- only signal inexact after losing 2 digits.
+ the first lost digit is returned to add() and may be incorporated
+ into the result.</comment>
+      </scope>
+      <scope startLine="742" endLine="745" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is less than x.</text>
+      <param>x number to check instance against</param>
+      <return>true if instance is less than x and neither are NaN, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="lessThan" startLine="755" endLine="774">
+      <scope startLine="758" endLine="764">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <scope startLine="767" endLine="771" />
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>if a nan is involved, signal invalid and return false</comment>
+    </method>
+    <javadoc>
+      <text>* Check if instance is greater than x.</text>
+      <param>x number to check instance against</param>
+      <return>true if instance is greater than x and neither are NaN, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="greaterThan" startLine="780" endLine="799">
+      <scope startLine="783" endLine="789">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <scope startLine="792" endLine="796" />
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>if a nan is involved, signal invalid and return false</comment>
+    </method>
+    <javadoc>
+      <text>* Check if instance is less than or equal to 0.</text>
+      <return>true if instance is not NaN and less than or equal to 0, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="negativeOrNull" startLine="804" endLine="814">
+      <scope startLine="806" endLine="810" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is strictly less than 0.</text>
+      <return>true if instance is not NaN and less than or equal to 0, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="strictlyNegative" startLine="819" endLine="829">
+      <scope startLine="821" endLine="825" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is greater than or equal to 0.</text>
+      <return>true if instance is not NaN and greater than or equal to 0, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="positiveOrNull" startLine="834" endLine="844">
+      <scope startLine="836" endLine="840" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is strictly greater than 0.</text>
+      <return>true if instance is not NaN and greater than or equal to 0, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="strictlyPositive" startLine="849" endLine="859">
+      <scope startLine="851" endLine="855" />
+    </method>
+    <javadoc>
+      <text>* Get the absolute value of instance.</text>
+      <return>absolute value of instance</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="abs" startLine="865" endLine="869">
+      <declaration type="Dfp" name="result" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is infinite.</text>
+      <return>true if instance is infinite</return>
+    </javadoc>
+    <method type="boolean" name="isInfinite" startLine="874" endLine="876" />
+    <javadoc>
+      <text>* Check if instance is not a number.</text>
+      <return>true if instance is not a number</return>
+    </javadoc>
+    <method type="boolean" name="isNaN" startLine="881" endLine="883" />
+    <javadoc>
+      <text>* Check if instance is equal to zero.</text>
+      <return>true if instance is equal to zero</return>
+    </javadoc>
+    <method type="boolean" name="isZero" startLine="888" endLine="898">
+      <scope startLine="890" endLine="894" />
+    </method>
+    <javadoc>
+      <text>* Check if instance is equal to x.</text>
+      <param>other object to check instance against</param>
+      <return>true if instance is equal to x and neither are NaN, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="equals" startLine="905" endLine="918">
+      <scope startLine="907" endLine="914">
+        <declaration type="Dfp" name="x" />
+        <scope startLine="909" endLine="911" />
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Gets a hashCode for the instance.</text>
+      <return>a hash code value for this object</return>
+    </javadoc>
+    <method type="int" name="hashCode" startLine="925" endLine="927" />
+    <javadoc>
+      <text>* Check if instance is not equal to x.</text>
+      <param>x number to check instance against</param>
+      <return>true if instance is not equal to x and neither are NaN, false otherwise</return>
+    </javadoc>
+    <method type="boolean" name="unequal" startLine="933" endLine="939">
+      <scope startLine="934" endLine="936" />
+    </method>
+    <javadoc>
+      <text>* Compare two instances.</text>
+      <param>a first instance in comparison</param>
+      <param>b second instance in comparison</param>
+      <return>-1 if a<b, 1 if a>b and 0 if a==b
+ * Note this method does not properly handle NaNs or numbers with different precision.</return>
+    </javadoc>
+    <method type="int" name="compare" startLine="947" endLine="999">
+      <scope startLine="950" endLine="952" />
+      <scope startLine="954" endLine="960">
+        <scope startLine="955" endLine="957" />
+        <scope startLine="957" endLine="959" />
+      </scope>
+      <scope startLine="963" endLine="965" />
+      <scope startLine="967" endLine="969" />
+      <scope startLine="971" endLine="973" />
+      <scope startLine="976" endLine="984">
+        <scope startLine="977" endLine="979" />
+        <scope startLine="981" endLine="983" />
+      </scope>
+      <scope startLine="987" endLine="995">
+        <scope startLine="988" endLine="990" />
+        <scope startLine="992" endLine="994" />
+      </scope>
+      <comment>Ignore the sign of zero</comment>
+      <comment>deal with the infinities</comment>
+      <comment>Handle special case when a or b is zero, by ignoring the exponents</comment>
+      <comment>compare the mantissas</comment>
+    </method>
+    <javadoc>
+      <text>* Round to nearest integer using the round-half-even method.
+ * That is round to nearest integer unless both are equidistant.
+ * In which case round to the even one.</text>
+      <return>rounded value</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="rint" startLine="1007" endLine="1009" />
+    <javadoc>
+      <text>* Round to an integer using the round floor mode.
+ * That is, round toward -Infinity</text>
+      <return>rounded value</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="floor" startLine="1016" endLine="1018" />
+    <javadoc>
+      <text>* Round to an integer using the round ceil mode.
+ * That is, round toward +Infinity</text>
+      <return>rounded value</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="ceil" startLine="1025" endLine="1027" />
+    <javadoc>
+      <text>* Returns the IEEE remainder.</text>
+      <param>d divisor</param>
+      <return>this less n &times; d, where n is the integer closest to this/d</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="remainder" startLine="1034" endLine="1045">
+      <declaration type="Dfp" name="result" />
+      <scope startLine="1039" endLine="1041" />
+      <comment>IEEE 854-1987 says that if the result is zero, then it carries the sign of this</comment>
+    </method>
+    <javadoc>
+      <text>* Does the integer conversions with the specified rounding.</text>
+      <param>rmode rounding mode to use</param>
+      <return>truncated value</return>
+    </javadoc>
+    <method type="Dfp" name="trunc" startLine="1051" endLine="1135">
+      <declaration type="boolean" name="changed" />
+      <scope startLine="1054" endLine="1056" />
+      <scope startLine="1058" endLine="1060" />
+      <scope startLine="1062" endLine="1065">
+        <comment>a is zero</comment>
+      </scope>
+      <scope startLine="1069" endLine="1074">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <scope startLine="1080" endLine="1082" />
+      <declaration type="Dfp" name="result" />
+      <scope startLine="1088" endLine="1091" />
+      <scope startLine="1093" endLine="1132">
+        <scope startLine="1096" endLine="1099" />
+        <scope startLine="1103" endLine="1106" />
+        <declaration type="Dfp" name="half" />
+        <declaration type="Dfp" name="a" />
+        <scope startLine="1114" endLine="1118" />
+        <scope startLine="1121" endLine="1125" />
+        <comment>then we must increment the mantissa by one</comment>
+        <comment>then we must increment the mantissa by one</comment>
+        <comment>difference between this and result</comment>
+        <comment>force positive (take abs)</comment>
+        <javadoc>
+          <text>* If exactly equal to 1/2 and odd then increment</text>
+        </javadoc>
+        <comment>signal inexact</comment>
+      </scope>
+      <comment>If the exponent is less than zero then we can certainly
+ return zero</comment>
+      <comment>If the exponent is greater than or equal to digits, then it
+ must already be an integer since there is no precision left
+ for any fractional part</comment>
+      <comment>General case:  create another dfp, result, that contains the
+ a with the fractional part lopped off.</comment>
+    </method>
+    <javadoc>
+      <text>* Convert this to an integer.
+ * If greater than 2147483647, it returns 2147483647. If less than -2147483648 it returns -2147483648.</text>
+      <return>converted number</return>
+    </javadoc>
+    <method type="int" name="intValue" startLine="1141" endLine="1164">
+      <declaration type="Dfp" name="rounded" />
+      <declaration type="int" name="result" />
+      <scope startLine="1147" endLine="1149" />
+      <scope startLine="1151" endLine="1153" />
+      <scope startLine="1155" endLine="1157" />
+      <scope startLine="1159" endLine="1161" />
+    </method>
+    <javadoc>
+      <text>* Get the exponent of the greatest power of 10000 that is
+ * less than or equal to the absolute value of this.  I.E.  if
+ * this is 10<sup>6</sup> then log10K would return 1.</text>
+      <return>integer base 10000 logarithm</return>
+    </javadoc>
+    <method type="int" name="log10K" startLine="1171" endLine="1173" />
+    <javadoc>
+      <text>* Get the specified  power of 10000.</text>
+      <param>e desired power</param>
+      <return>10000<sup>e</sup></return>
+    </javadoc>
+    <method type="Dfp" name="power10K" startLine="1179" endLine="1183">
+      <declaration type="Dfp" name="d" />
+    </method>
+    <javadoc>
+      <text>* Get the exponent of the greatest power of 10 that is less than or equal to abs(this).</text>
+      <return>integer base 10 logarithm</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="int" name="intLog10" startLine="1189" endLine="1200">
+      <scope startLine="1190" endLine="1192" />
+      <scope startLine="1193" endLine="1195" />
+      <scope startLine="1196" endLine="1198" />
+    </method>
+    <javadoc>
+      <text>* Return the specified  power of 10.</text>
+      <param>e desired power</param>
+      <return>10<sup>e</sup></return>
+    </javadoc>
+    <method type="Dfp" name="power10" startLine="1206" endLine="1229">
+      <declaration type="Dfp" name="d" />
+      <scope startLine="1209" endLine="1211" />
+      <scope startLine="1211" endLine="1213" />
+    </method>
+    <javadoc>
+      <text>* Negate the mantissa of this by computing the complement.
+ * Leaves the sign bit unchanged, used internally by add.
+ * Denormalized numbers are handled properly here.</text>
+      <param>extra ???</param>
+      <return>???</return>
+    </javadoc>
+    <method type="int" name="complement" startLine="1237" endLine="1253">
+      <scope startLine="1240" endLine="1242" />
+      <declaration type="int" name="rh" />
+      <scope startLine="1246" endLine="1250">
+        <declaration type="int" name="r" />
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Add x to this.</text>
+      <param>x number to add</param>
+      <return>sum of this and x</return>
+    </javadoc>
+    <method type="Dfp" name="add" startLine="1259" endLine="1402">
+      <scope startLine="1262" endLine="1267">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <scope startLine="1270" endLine="1298">
+        <scope startLine="1271" endLine="1273" />
+        <scope startLine="1275" endLine="1277" />
+        <scope startLine="1279" endLine="1281" />
+        <scope startLine="1283" endLine="1285" />
+        <scope startLine="1287" endLine="1289" />
+        <scope startLine="1291" endLine="1297">
+          <declaration type="Dfp" name="result" />
+        </scope>
+      </scope>
+      <declaration type="Dfp" name="a" />
+      <declaration type="Dfp" name="b" />
+      <declaration type="Dfp" name="result" />
+      <declaration type="byte" name="asign" />
+      <declaration type="byte" name="bsign" />
+      <declaration type="byte" name="rsign" />
+      <scope startLine="1316" endLine="1318" />
+      <scope startLine="1323" endLine="1325" />
+      <scope startLine="1327" endLine="1329" />
+      <declaration type="int" name="aextradigit" />
+      <declaration type="int" name="bextradigit" />
+      <scope startLine="1334" endLine="1336" />
+      <scope startLine="1336" endLine="1338" />
+      <scope startLine="1341" endLine="1347">
+        <scope startLine="1342" endLine="1344" />
+        <scope startLine="1344" endLine="1346" />
+      </scope>
+      <declaration type="int" name="rh" />
+      <scope startLine="1351" endLine="1355">
+        <declaration type="int" name="r" />
+      </scope>
+      <scope startLine="1362" endLine="1370">
+        <declaration type="int" name="lostdigit" />
+        <declaration type="int" name="excp" />
+        <scope startLine="1367" endLine="1369" />
+      </scope>
+      <scope startLine="1373" endLine="1383">
+        <scope startLine="1374" endLine="1376" />
+        <scope startLine="1378" endLine="1382" />
+      </scope>
+      <scope startLine="1386" endLine="1393">
+        <scope startLine="1389" endLine="1392" />
+        <comment>Unless adding 2 negative zeros, sign is positive</comment>
+        <comment>Per IEEE 854-1987 Section 6.3</comment>
+      </scope>
+      <declaration type="int" name="excp" />
+      <scope startLine="1397" endLine="1399" />
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>handle special cases</comment>
+      <comment>copy this and the arg</comment>
+      <comment>initialize the result object</comment>
+      <comment>Make all numbers positive, but remember their sign</comment>
+      <comment>The result will be signed like the arg with greatest magnitude</comment>
+      <comment>Handle special case when a or b is zero, by setting the exponent
+of the zero number equal to the other one.  This avoids an alignment
+which would cause catastropic loss of precision</comment>
+      <comment>align number with the smaller exponent</comment>
+      <comment>complement the smaller of the two if the signs are different</comment>
+      <comment>add the mantissas</comment>
+      <comment>int rh = 0;  acts as a carry</comment>
+      <comment>handle overflow -- note, when asign!=bsign an overflow is
+ normal and should be ignored.</comment>
+      <comment>normalize the result</comment>
+      <comment>result is zero if after normalization the most sig. digit is zero</comment>
+      <comment>Call round to test for overunder flows</comment>
+    </method>
+    <javadoc>
+      <text>* Returns a number that is this number with the sign bit reversed.</text>
+      <return>the opposite of this</return>
+    </javadoc>
+    <method type="Dfp" name="negate" startLine="1407" endLine="1411">
+      <declaration type="Dfp" name="result" />
+    </method>
+    <javadoc>
+      <text>* Subtract x from this.</text>
+      <param>x number to subtract</param>
+      <return>difference of this and a</return>
+    </javadoc>
+    <method type="Dfp" name="subtract" startLine="1417" endLine="1419" />
+    <javadoc>
+      <text>* Round this given the next digit n using the current rounding mode.</text>
+      <param>n ???</param>
+      <return>the IEEE flag if an exception occurred</return>
+    </javadoc>
+    <method type="int" name="round" startLine="1425" endLine="1498">
+      <declaration type="boolean" name="inc" />
+      <scope startLine="1462" endLine="1475">
+        <declaration type="int" name="rh" />
+        <scope startLine="1465" endLine="1469">
+          <declaration type="int" name="r" />
+        </scope>
+        <scope startLine="1471" endLine="1474" />
+        <comment>increment if necessary</comment>
+      </scope>
+      <scope startLine="1478" endLine="1482">
+        <comment>Gradual Underflow</comment>
+      </scope>
+      <scope startLine="1484" endLine="1488">
+        <comment>Overflow</comment>
+      </scope>
+      <scope startLine="1490" endLine="1494">
+        <comment>Inexact</comment>
+      </scope>
+      <comment>round up if n!=0</comment>
+      <comment>round half up</comment>
+      <comment>round half down</comment>
+      <comment>round half-even</comment>
+      <comment>round half-odd</comment>
+      <comment>round ceil</comment>
+      <comment>round floor</comment>
+      <comment>check for exceptional cases and raise signals if necessary</comment>
+    </method>
+    <javadoc>
+      <text>* Multiply this by x.</text>
+      <param>x multiplicand</param>
+      <return>product of this and x</return>
+    </javadoc>
+    <method type="Dfp" name="multiply" startLine="1504" endLine="1604">
+      <scope startLine="1507" endLine="1512">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <declaration type="Dfp" name="result" />
+      <scope startLine="1517" endLine="1552">
+        <scope startLine="1518" endLine="1520" />
+        <scope startLine="1522" endLine="1524" />
+        <scope startLine="1526" endLine="1530" />
+        <scope startLine="1532" endLine="1536" />
+        <scope startLine="1538" endLine="1542" />
+        <scope startLine="1545" endLine="1551" />
+      </scope>
+      <declaration type="int[]" name="product" />
+      <scope startLine="1556" endLine="1566">
+        <declaration type="int" name="rh" />
+        <scope startLine="1558" endLine="1564">
+          <declaration type="int" name="r" />
+        </scope>
+        <comment>acts as a carry</comment>
+        <comment>multiply the 2 digits</comment>
+        <comment>add to the product digit with carry in</comment>
+      </scope>
+      <declaration type="int" name="md" />
+      <scope startLine="1570" endLine="1575">
+        <scope startLine="1571" endLine="1574" />
+      </scope>
+      <scope startLine="1578" endLine="1580" />
+      <scope startLine="1586" endLine="1589">
+        <comment>if result is zero, set exp to zero</comment>
+      </scope>
+      <declaration type="int" name="excp" />
+      <scope startLine="1592" endLine="1594" />
+      <scope startLine="1594" endLine="1596">
+        <comment>has no effect except to check status</comment>
+      </scope>
+      <scope startLine="1598" endLine="1600" />
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>handle special cases</comment>
+      <comment>Big enough to hold even the largest result</comment>
+      <comment>Find the most sig digit</comment>
+      <comment>default, in case result is zero</comment>
+      <comment>Copy the digits into the result</comment>
+      <comment>Fixup the exponent.</comment>
+    </method>
+    <javadoc>
+      <text>* Multiply this by a single digit x.</text>
+      <param>x multiplicand</param>
+      <return>product of this and x</return>
+    </javadoc>
+    <method type="Dfp" name="multiply" startLine="1610" endLine="1616">
+      <scope startLine="1611" endLine="1613" />
+      <scope startLine="1613" endLine="1615" />
+    </method>
+    <javadoc>
+      <text>* Multiply this by a single digit 0&lt;=x&lt;radix.
+ * There are speed advantages in this special case.</text>
+      <param>x multiplicand</param>
+      <return>product of this and x</return>
+    </javadoc>
+    <method type="Dfp" name="multiplyFast" startLine="1623" endLine="1679">
+      <declaration type="Dfp" name="result" />
+      <scope startLine="1627" endLine="1644">
+        <scope startLine="1628" endLine="1630" />
+        <scope startLine="1632" endLine="1635" />
+        <scope startLine="1637" endLine="1643" />
+      </scope>
+      <scope startLine="1647" endLine="1653" />
+      <declaration type="int" name="rh" />
+      <scope startLine="1656" endLine="1660">
+        <declaration type="int" name="r" />
+      </scope>
+      <declaration type="int" name="lostdigit" />
+      <scope startLine="1663" endLine="1667" />
+      <scope startLine="1669" endLine="1671">
+        <comment>if result is zero, set exp to zero</comment>
+      </scope>
+      <declaration type="int" name="excp" />
+      <scope startLine="1674" endLine="1676" />
+      <comment>handle special cases</comment>
+      <comment>range check x</comment>
+    </method>
+    <javadoc>
+      <text>* Divide this by divisor.</text>
+      <param>divisor divisor</param>
+      <return>quotient of this by divisor</return>
+    </javadoc>
+    <method type="Dfp" name="divide" startLine="1685" endLine="1893">
+      <declaration type="int[]" name="dividend" />
+      <declaration type="int[]" name="quotient" />
+      <declaration type="int[]" name="remainder" />
+      <declaration type="int" name="qd" />
+      <declaration type="int" name="nsqd" />
+      <declaration type="int" name="trial" />
+      <declaration type="int" name="minadj" />
+      <declaration type="boolean" name="trialgood" />
+      <declaration type="int" name="md" />
+      <declaration type="int" name="excp" />
+      <scope startLine="1698" endLine="1703">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <declaration type="Dfp" name="result" />
+      <scope startLine="1708" endLine="1736">
+        <scope startLine="1709" endLine="1711" />
+        <scope startLine="1713" endLine="1715" />
+        <scope startLine="1717" endLine="1721" />
+        <scope startLine="1723" endLine="1727" />
+        <scope startLine="1729" endLine="1735" />
+      </scope>
+      <scope startLine="1739" endLine="1746" />
+      <scope startLine="1762" endLine="1766" />
+      <scope startLine="1770" endLine="1858">
+        <declaration type="int" name="divMsb" />
+        <declaration type="int" name="min" />
+        <declaration type="int" name="max" />
+        <scope startLine="1779" endLine="1835">
+          <declaration type="int" name="rh" />
+          <scope startLine="1785" endLine="1790">
+            <declaration type="int" name="dm" />
+            <declaration type="int" name="r" />
+          </scope>
+          <scope startLine="1794" endLine="1798">
+            <declaration type="int" name="r" />
+          </scope>
+          <scope startLine="1801" endLine="1805" />
+          <scope startLine="1811" endLine="1814" />
+          <scope startLine="1819" endLine="1826">
+            <scope startLine="1820" endLine="1822" />
+            <scope startLine="1823" endLine="1825" />
+          </scope>
+          <scope startLine="1828" endLine="1830" />
+          <scope startLine="1832" endLine="1834" />
+        </scope>
+        <scope startLine="1839" endLine="1841" />
+        <scope startLine="1843" endLine="1846" />
+        <scope startLine="1848" endLine="1851" />
+        <scope startLine="1855" endLine="1857" />
+        <comment>Determine outer limits of our quotient digit</comment>
+        <comment>r =  most sig 2 digits of dividend</comment>
+        <comment>try the mean</comment>
+        <comment>Multiply by divisor and store as remainder</comment>
+        <comment>subtract the remainder from the dividend</comment>
+        <comment>carry in to aid the subtraction</comment>
+        <comment>Lets analyze what we have here</comment>
+        <comment>trial is too big -- negative remainder</comment>
+        <comment>find out how far off the remainder is telling us we are</comment>
+        <comment>update the minimum</comment>
+        <comment>May have a good one here, check more thoroughly.  Basically
+its a good one if it is less than the divisor</comment>
+        <comment>assume false</comment>
+        <comment>Great we have a digit!</comment>
+        <comment>We have enough for this mode</comment>
+        <comment>We have enough digits</comment>
+        <comment>move the remainder into the dividend while left shifting</comment>
+      </scope>
+      <scope startLine="1862" endLine="1867">
+        <scope startLine="1863" endLine="1866" />
+      </scope>
+      <scope startLine="1870" endLine="1872" />
+      <scope startLine="1878" endLine="1880">
+        <comment>if result is zero, set exp to zero</comment>
+      </scope>
+      <scope startLine="1882" endLine="1884" />
+      <scope startLine="1884" endLine="1886" />
+      <scope startLine="1888" endLine="1890" />
+      <comment>current status of the dividend</comment>
+      <comment>quotient</comment>
+      <comment>remainder</comment>
+      <comment>current quotient digit we're working with</comment>
+      <comment>number of significant quotient digits we have</comment>
+      <comment>trial quotient digit</comment>
+      <comment>minimum adjustment</comment>
+      <comment>Flag to indicate a good trail digit</comment>
+      <comment>most sig digit in result</comment>
+      <comment>exceptions</comment>
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>handle special cases</comment>
+      <comment>Test for divide by zero</comment>
+      <comment>one extra digit needed</comment>
+      <comment>two extra digits needed 1 for overflow, 1 for rounding</comment>
+      <comment>one extra digit needed</comment>
+      <comment>Initialize our most significant digits to zero</comment>
+      <comment>copy our mantissa into the dividend, initialize the
+quotient while we are at it</comment>
+      <comment>outer loop.  Once per quotient digit</comment>
+      <comment>Find the most sig digit</comment>
+      <comment>default</comment>
+      <comment>Copy the digits into the result</comment>
+      <comment>Fixup the exponent.</comment>
+    </method>
+    <javadoc>
+      <text>* Divide by a single digit less than radix.
+ * Special case, so there are speed advantages. 0 &lt;= divisor &lt; radix</text>
+      <param>divisor divisor</param>
+      <return>quotient of this by divisor</return>
+    </javadoc>
+    <method type="Dfp" name="divide" startLine="1900" endLine="1958">
+      <scope startLine="1903" endLine="1911">
+        <scope startLine="1904" endLine="1906" />
+        <scope startLine="1908" endLine="1910" />
+      </scope>
+      <scope startLine="1914" endLine="1921">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <scope startLine="1924" endLine="1930">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <declaration type="Dfp" name="result" />
+      <declaration type="int" name="rl" />
+      <scope startLine="1935" endLine="1940">
+        <declaration type="int" name="r" />
+        <declaration type="int" name="rh" />
+      </scope>
+      <scope startLine="1942" endLine="1949">
+        <declaration type="int" name="r" />
+        <declaration type="int" name="rh" />
+        <comment>normalize</comment>
+        <comment>compute the next digit and put it in</comment>
+      </scope>
+      <declaration type="int" name="excp" />
+      <scope startLine="1952" endLine="1954" />
+      <comment>Handle special cases</comment>
+      <comment>Test for divide by zero</comment>
+      <comment>range check divisor</comment>
+      <comment>do the rounding</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+    </javadoc>
+    <method type="Dfp" name="reciprocal" startLine="1961" endLine="1963" />
+    <javadoc>
+      <text>* Compute the square root.</text>
+      <return>square root of the instance</return>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="sqrt" startLine="1969" endLine="2060">
+      <scope startLine="1972" endLine="1975">
+        <comment>if zero</comment>
+      </scope>
+      <scope startLine="1977" endLine="1995">
+        <scope startLine="1978" endLine="1981" />
+        <scope startLine="1983" endLine="1985" />
+        <scope startLine="1987" endLine="1994">
+          <declaration type="Dfp" name="result" />
+        </scope>
+        <comment>if positive infinity</comment>
+      </scope>
+      <scope startLine="1997" endLine="2006">
+        <declaration type="Dfp" name="result" />
+        <comment>if negative</comment>
+      </scope>
+      <declaration type="Dfp" name="x" />
+      <scope startLine="2011" endLine="2013" />
+      <declaration type="Dfp" name="dx" />
+      <declaration type="Dfp" name="px" />
+      <declaration type="Dfp" name="ppx" />
+      <scope startLine="2037" endLine="2056">
+        <scope startLine="2046" endLine="2049" />
+        <scope startLine="2053" endLine="2055" />
+        <comment>alternating between two values</comment>
+        <comment>if dx is zero, break.  Note testing the most sig digit</comment>
+        <comment>is a sufficient test since dx is normalized</comment>
+      </scope>
+      <comment>check for unusual cases</comment>
+      <comment>Lets make a reasonable guess as to the size of the square root</comment>
+      <comment>Coarsely estimate the mantissa</comment>
+      <comment>Now that we have the first pass estimate, compute the rest
+by the formula dx = (y - xx)  (2x);</comment>
+    </method>
+    <javadoc>
+      <text>* Get a string representation of the instance.</text>
+      <return>string representation of the instance</return>
+    </javadoc>
+    <method type="String" name="toString" startLine="2066" endLine="2082">
+      <scope startLine="2067" endLine="2074">
+        <scope startLine="2069" endLine="2071" />
+        <scope startLine="2071" endLine="2073" />
+        <comment>if non-finite exceptional cases</comment>
+      </scope>
+      <scope startLine="2076" endLine="2078" />
+    </method>
+    <javadoc>
+      <text>* Convert an instance to a string using scientific notation.</text>
+      <return>string representation of the instance in scientific notation</return>
+    </javadoc>
+    <method type="String" name="dfp2sci" startLine="2087" endLine="2163">
+      <declaration type="char[]" name="rawdigits" />
+      <declaration type="char[]" name="outputbuffer" />
+      <declaration type="int" name="p" />
+      <declaration type="int" name="q" />
+      <declaration type="int" name="e" />
+      <declaration type="int" name="ae" />
+      <declaration type="int" name="shf" />
+      <scope startLine="2098" endLine="2103" />
+      <scope startLine="2106" endLine="2110">
+        <scope startLine="2107" endLine="2109" />
+      </scope>
+      <scope startLine="2115" endLine="2117" />
+      <scope startLine="2119" endLine="2127">
+        <scope startLine="2124" endLine="2126" />
+        <comment>there are non zero digits...</comment>
+      </scope>
+      <scope startLine="2127" endLine="2134" />
+      <scope startLine="2142" endLine="2144" />
+      <scope startLine="2147" endLine="2149">
+        <comment>nothing to do</comment>
+      </scope>
+      <scope startLine="2151" endLine="2153" />
+      <scope startLine="2155" endLine="2159" />
+      <comment>Get all the digits</comment>
+      <comment>Find the first non-zero one</comment>
+      <comment>Now do the conversion</comment>
+      <comment>Find the msd of the exponent</comment>
+      <comment>Find the largest p such that p < e</comment>
+    </method>
+    <javadoc>
+      <text>* Convert an instance to a string using normal notation.</text>
+      <return>string representation of the instance in normal notation</return>
+    </javadoc>
+    <method type="String" name="dfp2string" startLine="2168" endLine="2236">
+      <declaration type="char[]" name="buffer" />
+      <declaration type="int" name="p" />
+      <declaration type="int" name="q" />
+      <declaration type="int" name="e" />
+      <declaration type="boolean" name="pointInserted" />
+      <scope startLine="2177" endLine="2181" />
+      <scope startLine="2183" endLine="2189" />
+      <scope startLine="2191" endLine="2200">
+        <scope startLine="2196" endLine="2199" />
+      </scope>
+      <scope startLine="2202" endLine="2208" />
+      <scope startLine="2210" endLine="2213">
+        <comment>Ensure we have a radix point!</comment>
+      </scope>
+      <scope startLine="2217" endLine="2219" />
+      <scope startLine="2220" endLine="2222" />
+      <scope startLine="2225" endLine="2227" />
+      <scope startLine="2230" endLine="2232" />
+      <comment>Suppress leading zeros</comment>
+      <comment>Suppress trailing zeros</comment>
+      <comment>Insert sign</comment>
+    </method>
+    <javadoc>
+      <text>* Raises a trap.  This does not set the corresponding flag however.</text>
+      <param>type the trap type</param>
+      <param>what - name of routine trap occurred in</param>
+      <param>oper - input operator to function</param>
+      <param>result - the result computed prior to the trap</param>
+      <return>The suggested return value from the trap handler</return>
+    </javadoc>
+    <method type="Dfp" name="dotrap" startLine="2245" endLine="2302">
+      <declaration type="Dfp" name="def" />
+      <scope startLine="2256" endLine="2261">
+        <comment>normal case, we are finite, non-zero</comment>
+      </scope>
+      <scope startLine="2263" endLine="2267">
+        <comment>0/0</comment>
+      </scope>
+      <scope startLine="2269" endLine="2272" />
+      <scope startLine="2274" endLine="2277" />
+      <scope startLine="2281" endLine="2284" />
+      <scope startLine="2284" endLine="2286">
+        <comment>gradual underflow</comment>
+      </scope>
+    </method>
+    <javadoc>
+      <text>* Trap handler.  Subclasses may override this to provide trap
+ * functionality per IEEE 854-1987.</text>
+      <param>type  The exception type - e.g. FLAG_OVERFLOW</param>
+      <param>what  The name of the routine we were in e.g. divide()</param>
+      <param>oper  An operand to this function if any</param>
+      <param>def   The default return value if trap not enabled</param>
+      <param>result    The result that is specified to be delivered per
+ * IEEE 854, if any</param>
+      <return>the value that should be return by the operation triggering the trap</return>
+    </javadoc>
+    <method type="Dfp" name="trap" startLine="2315" endLine="2317" />
+    <javadoc>
+      <text>* Returns the type - one of FINITE, INFINITE, SNAN, QNAN.</text>
+      <return>type of the number</return>
+    </javadoc>
+    <method type="int" name="classify" startLine="2322" endLine="2324" />
+    <javadoc>
+      <text>* Creates an instance that is the same as x except that it has the sign of y.
+ * abs(x) = dfp.copysign(x, dfp.one)</text>
+      <param>x number to get the value from</param>
+      <param>y number to get the sign from</param>
+      <return>a number with the value of x and the sign of y</return>
+    </javadoc>
+    <method type="Dfp" name="copysign" startLine="2332" endLine="2336">
+      <declaration type="Dfp" name="result" />
+    </method>
+    <javadoc>
+      <text>* Returns the next number greater than this one in the direction of x.
+ * If this==x then simply returns this.</text>
+      <param>x direction where to look at</param>
+      <return>closest number next to instance in the direction of x</return>
+    </javadoc>
+    <method type="Dfp" name="nextAfter" startLine="2343" endLine="2409">
+      <scope startLine="2346" endLine="2351">
+        <declaration type="Dfp" name="result" />
+      </scope>
+      <declaration type="boolean" name="up" />
+      <scope startLine="2355" endLine="2357" />
+      <scope startLine="2359" endLine="2361" />
+      <scope startLine="2363" endLine="2365" />
+      <declaration type="Dfp" name="inc" />
+      <declaration type="Dfp" name="result" />
+      <scope startLine="2369" endLine="2379">
+        <scope startLine="2374" endLine="2376" />
+      </scope>
+      <scope startLine="2379" endLine="2395">
+        <scope startLine="2384" endLine="2386" />
+        <scope startLine="2386" endLine="2388" />
+        <scope startLine="2390" endLine="2392" />
+      </scope>
+      <scope startLine="2397" endLine="2400" />
+      <scope startLine="2402" endLine="2405" />
+      <comment>make sure we don't mix number with different precision</comment>
+      <comment>if this is greater than x</comment>
+    </method>
+    <javadoc>
+      <text>* Convert the instance into a double.</text>
+      <return>a double approximating the instance</return>
+      <see>#toSplitDouble()</see>
+    </javadoc>
+    <method type="double" name="toDouble" startLine="2415" endLine="2499">
+      <scope startLine="2417" endLine="2423">
+        <scope startLine="2418" endLine="2420" />
+        <scope startLine="2420" endLine="2422" />
+      </scope>
+      <scope startLine="2425" endLine="2427" />
+      <declaration type="Dfp" name="y" />
+      <declaration type="boolean" name="negate" />
+      <declaration type="int" name="cmp0" />
+      <scope startLine="2432" endLine="2434" />
+      <scope startLine="2434" endLine="2437" />
+      <declaration type="int" name="exponent" />
+      <scope startLine="2442" endLine="2444" />
+      <declaration type="Dfp" name="tempDfp" />
+      <scope startLine="2447" endLine="2450" />
+      <scope startLine="2456" endLine="2458" />
+      <scope startLine="2460" endLine="2462" />
+      <scope startLine="2464" endLine="2466" />
+      <declaration type="String" name="str" />
+      <declaration type="long" name="mantissa" />
+      <scope startLine="2474" endLine="2478">
+        <comment>Handle special case where we round up to next power of two</comment>
+      </scope>
+      <scope startLine="2481" endLine="2483" />
+      <scope startLine="2485" endLine="2488" />
+      <declaration type="long" name="bits" />
+      <declaration type="double" name="x" />
+      <scope startLine="2493" endLine="2495" />
+      <comment>Find the exponent, first estimate by integer log10, then adjust.
+Should be faster than doing a natural logarithm.</comment>
+      <comment>We have the exponent, now work on the mantissa</comment>
+      <comment>Its going to be subnormal, so make adjustments</comment>
+    </method>
+    <javadoc>
+      <text>* Convert the instance into a split double.</text>
+      <return>an array of two doubles which sum represent the instance</return>
+      <see>#toDouble()</see>
+    </javadoc>
+    <method type="double[]" name="toSplitDouble" startLine="2505" endLine="2513">
+      <declaration type="double[]" name="split" />
+      <declaration type="long" name="mask" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="double" name="getReal" startLine="2518" endLine="2520" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="add" startLine="2525" endLine="2527" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="subtract" startLine="2532" endLine="2534" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="multiply" startLine="2539" endLine="2541" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="divide" startLine="2546" endLine="2548" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="remainder" startLine="2553" endLine="2555" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="long" name="round" startLine="2560" endLine="2562" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="signum" startLine="2567" endLine="2573">
+      <scope startLine="2568" endLine="2570" />
+      <scope startLine="2570" endLine="2572" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="copySign" startLine="2578" endLine="2583">
+      <scope startLine="2579" endLine="2581">
+        <comment>Sign is currently OK</comment>
+      </scope>
+      <comment>flip sign</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="copySign" startLine="2588" endLine="2594">
+      <declaration type="long" name="sb" />
+      <scope startLine="2590" endLine="2592">
+        <comment>Sign is currently OK</comment>
+      </scope>
+      <comment>flip sign</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="scalb" startLine="2599" endLine="2601" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="hypot" startLine="2606" endLine="2608" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="cbrt" startLine="2613" endLine="2615" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="rootN" startLine="2620" endLine="2624" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="pow" startLine="2629" endLine="2631" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="pow" startLine="2636" endLine="2638" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="pow" startLine="2643" endLine="2645" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="exp" startLine="2650" endLine="2652" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="expm1" startLine="2657" endLine="2659" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="log" startLine="2664" endLine="2666" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="log1p" startLine="2671" endLine="2673" />
+    <javadoc>
+      <text>* Get the exponent of the greatest power of 10 that is less than or equal to abs(this).</text>
+      <return>integer base 10 logarithm</return>
+      <deprecated>as of 3.2, replaced by {@link #intLog10()}, in 4.0 the return type
+ * will be changed to Dfp</deprecated>
+    </javadoc>
+    <method type="int" name="log10" startLine="2682" endLine="2684" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="cos" startLine="2697" endLine="2699" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="sin" startLine="2704" endLine="2706" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="tan" startLine="2711" endLine="2713" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="acos" startLine="2718" endLine="2720" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="asin" startLine="2725" endLine="2727" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="atan" startLine="2732" endLine="2734" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="atan2" startLine="2740" endLine="2759">
+      <declaration type="Dfp" name="r" />
+      <scope startLine="2745" endLine="2750">
+        <comment>compute atan2(y, x) = 2 atan(y / (r + x))</comment>
+      </scope>
+      <scope startLine="2750" endLine="2757">
+        <declaration type="Dfp" name="tmp" />
+        <declaration type="Dfp" name="pmPi" />
+        <comment>compute atan2(y, x) = +/- pi - 2 atan(y / (r - x))</comment>
+      </scope>
+      <comment>compute r = sqrt(x^2+y^2)</comment>
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="cosh" startLine="2764" endLine="2766" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="sinh" startLine="2771" endLine="2773" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="tanh" startLine="2778" endLine="2782">
+      <declaration type="Dfp" name="ePlus" />
+      <declaration type="Dfp" name="eMinus" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="acosh" startLine="2787" endLine="2789" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="asinh" startLine="2794" endLine="2796" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="atanh" startLine="2801" endLine="2803" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2809" endLine="2818">
+      <scope startLine="2810" endLine="2812" />
+      <declaration type="Dfp" name="r" />
+      <scope startLine="2814" endLine="2816" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2824" endLine="2833">
+      <scope startLine="2825" endLine="2827" />
+      <declaration type="Dfp" name="r" />
+      <scope startLine="2829" endLine="2831" />
+    </method>
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2838" endLine="2840" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2845" endLine="2847" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2854" endLine="2856" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2863" endLine="2865" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2871" endLine="2873" />
+    <javadoc>
+      <text>* {@inheritDoc}</text>
+      <since>3.2</since>
+    </javadoc>
+    <method type="Dfp" name="linearCombination" startLine="2879" endLine="2881" />
+    <comment>Note that shiftRight() does not call round() as that round() itself
+uses shiftRight()</comment>
+    <comment>TODO: deactivate this implementation (and return type) in 4.0</comment>
+    <comment>TODO: activate this implementation (and return type) in 4.0</comment>
+    <comment>/** {@inheritDoc}</comment>
+    <comment>* @since 3.2</comment>
+    <comment>*/</comment>
+    <comment>public Dfp log10() {</comment>
+    <comment>return DfpMath.log(this).divide(DfpMath.log(newInstance(10)));</comment>
+    <comment>}</comment>
+  </class>
+</source>

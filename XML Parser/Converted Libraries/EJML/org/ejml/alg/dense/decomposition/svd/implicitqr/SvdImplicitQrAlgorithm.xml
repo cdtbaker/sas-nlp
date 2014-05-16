@@ -1,0 +1,470 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<source package="org.ejml.alg.dense.decomposition.svd.implicitqr">
+  <import name="org.ejml.UtilEjml" />
+  <import name="org.ejml.alg.dense.decomposition.eig.EigenvalueSmall" />
+  <import name="org.ejml.data.DenseMatrix64F" />
+  <import name="org.ejml.simple.SimpleMatrix" />
+  <import name="java.util.Random" />
+  <class name="SvdImplicitQrAlgorithm" startLine="29">
+    <javadoc>
+      <text>* <p>
+ * Computes the QR decomposition of a bidiagonal matrix.  Internally this matrix is stored as
+ * two arrays.  Shifts can either be provided to it or it can generate the shifts on its own.
+ * It optionally computes the U and V matrices.  This comparability allows it to be used to
+ * compute singular values and associated matrices efficiently.<br>
+ * <br>
+ * A = U*S*V<sup>T</sup><br>
+ * where A is the original m by n matrix.
+ * </p>
+ * <p>
+ * Based off of the outline provided in:<br>
+ * <br>
+ * David S. Watkins, "Fundamentals of Matrix Computations," Second Edition. Page 404-411
+ * </p>
+ * <p>
+ * Note: To watch it process the matrix step by step uncomment commented out code.
+ * </p></text>
+      <author>Peter Abeles</author>
+    </javadoc>
+    <declaration type="Random" name="rand" />
+    <declaration type="DenseMatrix64F" name="Ut" />
+    <declaration type="DenseMatrix64F" name="Vt" />
+    <declaration type="int" name="totalSteps" />
+    <declaration type="double" name="maxValue" />
+    <declaration type="int" name="N" />
+    <declaration type="EigenvalueSmall" name="eigenSmall" />
+    <declaration type="int" name="numExceptional" />
+    <declaration type="int" name="nextExceptional" />
+    <declaration type="double" name="diag" />
+    <declaration type="double" name="off" />
+    <declaration type="double" name="bulge" />
+    <declaration type="int" name="x1" />
+    <declaration type="int" name="x2" />
+    <declaration type="int" name="steps" />
+    <declaration type="int" name="splits" />
+    <declaration type="int" name="numSplits" />
+    <declaration type="int" name="exceptionalThresh" />
+    <declaration type="int" name="maxIterations" />
+    <declaration type="boolean" name="followScript" />
+    <declaration type="int" name="giveUpOnKnown" />
+    <declaration type="double" name="values" />
+    <declaration type="boolean" name="fastValues" />
+    <declaration type="boolean" name="findingZeros" />
+    <declaration type="double" name="c" />
+    <method type="constructor" name="SvdImplicitQrAlgorithm" startLine="122" endLine="124" />
+    <method type="constructor" name="SvdImplicitQrAlgorithm" startLine="126" endLine="128" />
+    <method type="DenseMatrix64F" name="getUt" startLine="130" endLine="132" />
+    <method type="void" name="setUt" startLine="134" endLine="136" />
+    <method type="DenseMatrix64F" name="getVt" startLine="138" endLine="140" />
+    <method type="void" name="setVt" startLine="142" endLine="144" />
+    <javadoc />
+    <method type="void" name="setMatrix" startLine="149" endLine="166">
+      <scope startLine="155" endLine="165">
+        <declaration type="double" name="a" />
+        <declaration type="double" name="b" />
+        <scope startLine="159" endLine="161" />
+        <scope startLine="162" endLine="164" />
+      </scope>
+    </method>
+    <method type="double[]" name="swapDiag" startLine="168" endLine="172">
+      <declaration type="double[]" name="ret" />
+    </method>
+    <method type="double[]" name="swapOff" startLine="174" endLine="178">
+      <declaration type="double[]" name="ret" />
+    </method>
+    <method type="void" name="setMaxValue" startLine="180" endLine="182" />
+    <method type="void" name="initParam" startLine="184" endLine="202">
+      <scope startLine="190" endLine="192" />
+    </method>
+    <method type="boolean" name="process" startLine="204" endLine="209" />
+    <javadoc>
+      <text>* Perform a sequence of steps based off of the singular values provided.</text>
+      <param>values</param>
+      <return />
+    </javadoc>
+    <method type="boolean" name="process" startLine="217" endLine="223" />
+    <method type="boolean" name="_process" startLine="225" endLine="264">
+      <scope startLine="229" endLine="261">
+        <scope startLine="231" endLine="233" />
+        <scope startLine="235" endLine="242" />
+        <scope startLine="242" endLine="247" />
+        <scope startLine="247" endLine="249" />
+        <scope startLine="249" endLine="258">
+          <scope startLine="251" endLine="257">
+            <scope startLine="252" endLine="254" />
+            <scope startLine="254" endLine="256" />
+          </scope>
+        </scope>
+        <comment>if it has cycled too many times give up</comment>
+        <comment>System.out.println("steps = "+steps+"  script = "+followScript+" at "+x1);</comment>
+        <comment>System.out.println("Split");</comment>
+        <comment>see if it is done processing this submatrix</comment>
+        <comment>There are analytical solutions to this case. Just compute them directly.</comment>
+        <comment>perform a step</comment>
+        <comment>printMatrix();</comment>
+      </scope>
+      <comment>it is a zero matrix</comment>
+    </method>
+    <javadoc>
+      <text>* Here the lambda in the implicit step is determined dynamically.  At first
+ * it selects zeros to quickly reveal singular values that are zero or close to zero.
+ * Then it computes it using a Wilkinson shift.</text>
+    </javadoc>
+    <method type="void" name="performDynamicStep" startLine="271" endLine="291">
+      <scope startLine="273" endLine="280">
+        <scope startLine="274" endLine="276" />
+        <scope startLine="276" endLine="279">
+          <declaration type="double" name="scale" />
+        </scope>
+      </scope>
+      <scope startLine="280" endLine="290">
+        <declaration type="double" name="scale" />
+        <declaration type="double" name="lambda" />
+        <comment>For very large and very small numbers the only way to prevent overflow/underflow</comment>
+        <comment>is to have a common scale between the wilkinson shift and the implicit single step</comment>
+        <comment>What happens if you don't is that when the wilkinson shift returns the value it</comment>
+        <comment>computed it multiplies it by the scale twice, which will cause an overflow</comment>
+        <comment>use the wilkinson shift to perform a step</comment>
+      </scope>
+      <comment>initially look for singular values of zero</comment>
+    </method>
+    <javadoc>
+      <text>* Shifts are performed based upon singular values computed previously.  If it does not converge
+ * using one of those singular values it uses a Wilkinson shift instead.</text>
+    </javadoc>
+    <method type="void" name="performScriptedStep" startLine="297" endLine="307">
+      <declaration type="double" name="scale" />
+      <scope startLine="299" endLine="302">
+        <comment>give up on the script</comment>
+      </scope>
+      <scope startLine="302" endLine="306">
+        <declaration type="double" name="s" />
+        <comment>use previous singular value to step</comment>
+      </scope>
+    </method>
+    <method type="void" name="incrementSteps" startLine="309" endLine="312" />
+    <method type="boolean" name="isOffZero" startLine="314" endLine="318">
+      <declaration type="double" name="bottom" />
+    </method>
+    <method type="boolean" name="isDiagonalZero" startLine="320" endLine="326">
+      <declaration type="double" name="bottom" />
+      <comment>return Math.abs(diag[i]) <= maxValue* UtilEjml.EPS;</comment>
+    </method>
+    <method type="void" name="resetSteps" startLine="328" endLine="332" />
+    <javadoc>
+      <text>* Tells it to process the submatrix at the next split.  Should be called after the
+ * current submatrix has been processed.</text>
+    </javadoc>
+    <method type="boolean" name="nextSplit" startLine="338" endLine="348" />
+    <javadoc>
+      <text>* Given the lambda value perform an implicit QR step on the matrix.
+ * B^T*B-lambda*I</text>
+      <param>lambda Stepping factor.</param>
+    </javadoc>
+    <method type="void" name="performImplicitSingleStep" startLine="357" endLine="371">
+      <scope startLine="360" endLine="365" />
+    </method>
+    <javadoc>
+      <text>* Multiplied a transpose orthogonal matrix Q by the specified rotator.  This is used
+ * to update the U and V matrices.  Updating the transpose of the matrix is faster
+ * since it only modifies the rows.</text>
+      <param>Q Orthogonal matrix</param>
+      <param>m Coordinate of rotator.</param>
+      <param>n Coordinate of rotator.</param>
+      <param>c cosine of rotator.</param>
+      <param>s sine of rotator.</param>
+    </javadoc>
+    <method type="void" name="updateRotator" startLine="385" endLine="405">
+      <declaration type="int" name="rowA" />
+      <declaration type="int" name="rowB" />
+      <declaration type="int" name="endA" />
+      <scope startLine="399" endLine="404">
+        <declaration type="double" name="a" />
+        <declaration type="double" name="b" />
+      </scope>
+      <comment>for( int i = 0; i < Q.numCols; i++ ) {</comment>
+      <comment>double a = Q.get(rowA+i);</comment>
+      <comment>double b = Q.get(rowB+i);</comment>
+      <comment>Q.set( rowA+i, c*a + s*b);</comment>
+      <comment>Q.set( rowB+i, -s*a + c*b);</comment>
+      <comment>}</comment>
+      <comment>System.out.println("------ AFter Update Rotator "+m+" "+n);</comment>
+      <comment>Q.print();</comment>
+      <comment>System.out.println();</comment>
+    </method>
+    <method type="double" name="computeBulgeScale" startLine="407" endLine="418">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b12" />
+      <comment />
+      <comment>double b22 = diag[x1+1];</comment>
+      <comment />
+      <comment>double scale = Math.max( Math.abs(b11) , Math.abs(b12));</comment>
+      <comment />
+      <comment>return Math.max(scale,Math.abs(b22));</comment>
+    </method>
+    <javadoc>
+      <text>* Performs a similar transform on B<sup>T</sup>B-pI</text>
+    </javadoc>
+    <method type="void" name="createBulge" startLine="423" endLine="463">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b12" />
+      <declaration type="double" name="b22" />
+      <scope startLine="428" endLine="431" />
+      <scope startLine="431" endLine="440">
+        <declaration type="double" name="u1" />
+        <declaration type="double" name="u2" />
+        <declaration type="double" name="gamma" />
+        <comment>normalize to improve resistance to overflow/underflow</comment>
+      </scope>
+      <scope startLine="455" endLine="462">
+        <comment>SimpleMatrix.wrap(Ut).mult(B).mult(SimpleMatrix.wrap(Vt).transpose()).print();</comment>
+        <comment>printMatrix();</comment>
+        <comment>System.out.println("bulge = "+bulge);</comment>
+        <comment>System.out.println();</comment>
+      </scope>
+      <comment>multiply the rotator on the top left.</comment>
+      <comment>SimpleMatrix Q = createQ(x1, c, s, false);</comment>
+      <comment>B=B.mult(Q);</comment>
+      <comment />
+      <comment>B.print();</comment>
+      <comment>printMatrix();</comment>
+      <comment>System.out.println("  bulge = "+bulge);</comment>
+    </method>
+    <javadoc>
+      <text>* Computes a rotator that will set run to zero (?)</text>
+    </javadoc>
+    <method type="void" name="computeRotator" startLine="469" endLine="488">
+      <scope startLine="476" endLine="482">
+        <declaration type="double" name="k" />
+        <declaration type="double" name="bottom" />
+      </scope>
+      <scope startLine="482" endLine="487">
+        <declaration type="double" name="t" />
+        <declaration type="double" name="bottom" />
+      </scope>
+      <comment>double gamma = Math.sqrt(rise*rise + run*run);</comment>
+      <comment />
+      <comment>c = rise/gamma;</comment>
+      <comment>s = run/gamma;</comment>
+      <comment>See page 384 of Fundamentals of Matrix Computations 2nd</comment>
+    </method>
+    <method type="void" name="removeBulgeLeft" startLine="490" endLine="523">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b12" />
+      <declaration type="double" name="b22" />
+      <scope startLine="502" endLine="506">
+        <declaration type="double" name="b23" />
+      </scope>
+      <scope startLine="515" endLine="522">
+        <comment>SimpleMatrix.wrap(Ut).mult(B).mult(SimpleMatrix.wrap(Vt).transpose()).print();</comment>
+        <comment>printMatrix();</comment>
+        <comment>System.out.println("bulge = "+bulge);</comment>
+        <comment>System.out.println();</comment>
+      </scope>
+      <comment>apply rotator on the left</comment>
+      <comment>SimpleMatrix Q = createQ(x1, c, s, true);</comment>
+      <comment>B=Q.mult(B);</comment>
+      <comment />
+      <comment>B.print();</comment>
+      <comment>printMatrix();</comment>
+      <comment>System.out.println("  bulge = "+bulge);</comment>
+    </method>
+    <method type="void" name="removeBulgeRight" startLine="525" endLine="556">
+      <declaration type="double" name="b12" />
+      <declaration type="double" name="b22" />
+      <declaration type="double" name="b23" />
+      <declaration type="double" name="b33" />
+      <scope startLine="548" endLine="555">
+        <comment>SimpleMatrix.wrap(Ut).mult(B).mult(SimpleMatrix.wrap(Vt).transpose()).print();</comment>
+        <comment>printMatrix();</comment>
+        <comment>System.out.println("bulge = "+bulge);</comment>
+        <comment>System.out.println();</comment>
+      </scope>
+      <comment>apply rotator on the right</comment>
+      <comment>SimpleMatrix Q = createQ(x1+1, c, s, false);</comment>
+      <comment>B=B.mult(Q);</comment>
+      <comment />
+      <comment>B.print();</comment>
+      <comment>printMatrix();</comment>
+      <comment>System.out.println("  bulge = "+bulge);</comment>
+    </method>
+    <method type="void" name="setSubmatrix" startLine="559" endLine="562" />
+    <javadoc>
+      <text>* Selects the Wilkinson's shift for B<sup>T</sup>B.  See page 410.  It is guaranteed to converge
+ * and converges fast in practice.</text>
+      <param>scale Scale factor used to help prevent overflow/underflow</param>
+      <return>Shifting factor lambda/(scale*scale)</return>
+    </javadoc>
+    <method type="double" name="selectWilkinsonShift" startLine="571" endLine="601">
+      <declaration type="double" name="a11" />
+      <scope startLine="575" endLine="585">
+        <declaration type="double" name="d1" />
+        <declaration type="double" name="o1" />
+        <declaration type="double" name="d2" />
+        <declaration type="double" name="o2" />
+      </scope>
+      <scope startLine="585" endLine="594">
+        <declaration type="double" name="a" />
+        <declaration type="double" name="b" />
+        <declaration type="double" name="c" />
+      </scope>
+      <declaration type="double" name="diff0" />
+      <declaration type="double" name="diff1" />
+      <comment>return the eigenvalue closest to a22</comment>
+    </method>
+    <javadoc>
+      <text>* Computes the eigenvalue of the 2 by 2 matrix B<sup>T</sup>B</text>
+    </javadoc>
+    <method type="void" name="eigenBB_2x2" startLine="606" endLine="635">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b12" />
+      <declaration type="double" name="b22" />
+      <declaration type="double" name="absA" />
+      <declaration type="double" name="absB" />
+      <declaration type="double" name="absC" />
+      <declaration type="double" name="scale" />
+      <declaration type="double" name="sgn" />
+      <comment>normalize to reduce overflow</comment>
+      <comment>see if it is a pathological case.  the diagonal must already be zero</comment>
+      <comment>and the eigenvalues are all zero.  so just return</comment>
+    </method>
+    <javadoc>
+      <text>* Checks to see if either the diagonal element or off diagonal element is zero.  If one is
+ * then it performs a split or pushes it off the matrix.</text>
+      <return>True if there was a zero.</return>
+    </javadoc>
+    <method type="boolean" name="checkForAndHandleZeros" startLine="644" endLine="668">
+      <scope startLine="646" endLine="654">
+        <scope startLine="647" endLine="653" />
+        <comment>System.out.println("steps at split = "+steps);</comment>
+      </scope>
+      <scope startLine="657" endLine="666">
+        <scope startLine="658" endLine="665" />
+        <comment>System.out.println("steps at split = "+steps);</comment>
+      </scope>
+      <comment>check for zeros along off diagonal</comment>
+      <comment>check for zeros along diagonal</comment>
+    </method>
+    <javadoc>
+      <text>* If there is a zero on the diagonal element, the off diagonal element needs pushed
+ * off so that all the algorithms assumptions are two and so that it can split the matrix.</text>
+    </javadoc>
+    <method type="void" name="pushRight" startLine="674" endLine="686">
+      <declaration type="int" name="end" />
+      <scope startLine="682" endLine="684" />
+      <comment>B = createB();</comment>
+      <comment>B.print();</comment>
+      <comment>}</comment>
+    </method>
+    <javadoc>
+      <text>* Start pushing the element off to the right.</text>
+    </javadoc>
+    <method type="void" name="rotatorPushRight" startLine="692" endLine="726">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b21" />
+      <scope startLine="702" endLine="706">
+        <declaration type="double" name="b22" />
+      </scope>
+      <scope startLine="706" endLine="708" />
+      <scope startLine="718" endLine="725">
+        <comment>SimpleMatrix.wrap(Ut).mult(B).mult(SimpleMatrix.wrap(Vt).transpose()).print();</comment>
+        <comment>printMatrix();</comment>
+        <comment>System.out.println("bulge = "+bulge);</comment>
+        <comment>System.out.println();</comment>
+      </scope>
+      <comment>apply rotator on the right</comment>
+      <comment>SimpleMatrix Q = createQ(m,m+1, c, s, true);</comment>
+      <comment>B=Q.mult(B);</comment>
+      <comment />
+      <comment>B.print();</comment>
+      <comment>printMatrix();</comment>
+      <comment>System.out.println("  bulge = "+bulge);</comment>
+      <comment>System.out.println();</comment>
+    </method>
+    <javadoc>
+      <text>* Used to finish up pushing the bulge off the matrix.</text>
+    </javadoc>
+    <method type="void" name="rotatorPushRight2" startLine="732" endLine="762">
+      <declaration type="double" name="b11" />
+      <declaration type="double" name="b12" />
+      <scope startLine="740" endLine="744">
+        <declaration type="double" name="b22" />
+      </scope>
+      <scope startLine="754" endLine="761">
+        <comment>SimpleMatrix.wrap(Ut).mult(B).mult(SimpleMatrix.wrap(Vt).transpose()).print();</comment>
+        <comment>printMatrix();</comment>
+        <comment>System.out.println("bulge = "+bulge);</comment>
+        <comment>System.out.println();</comment>
+      </scope>
+      <comment>SimpleMatrix Q = createQ(m,m+offset, c, s, true);</comment>
+      <comment>B=Q.mult(B);</comment>
+      <comment />
+      <comment>B.print();</comment>
+      <comment>printMatrix();</comment>
+      <comment>System.out.println("  bulge = "+bulge);</comment>
+      <comment>System.out.println();</comment>
+    </method>
+    <javadoc>
+      <text>* It is possible for the QR algorithm to get stuck in a loop because of symmetries.  This happens
+ * more often with larger matrices.  By taking a random step it can break the symmetry and finish.</text>
+    </javadoc>
+    <method type="void" name="exceptionShift" startLine="768" endLine="778">
+      <declaration type="double" name="mag" />
+      <declaration type="double" name="angle" />
+      <comment>allow more convergence time</comment>
+      <comment>(numExceptional+1)*</comment>
+    </method>
+    <javadoc>
+      <text>* Creates a Q matrix for debugging purposes.</text>
+    </javadoc>
+    <method type="SimpleMatrix" name="createQ" startLine="783" endLine="785" />
+    <javadoc>
+      <text>* Creates a Q matrix for debugging purposes.</text>
+    </javadoc>
+    <method type="SimpleMatrix" name="createQ" startLine="790" endLine="802">
+      <declaration type="SimpleMatrix" name="Q" />
+      <scope startLine="793" endLine="796" />
+      <scope startLine="796" endLine="799" />
+    </method>
+    <method type="SimpleMatrix" name="createB" startLine="804" endLine="814">
+      <declaration type="SimpleMatrix" name="B" />
+      <scope startLine="807" endLine="810" />
+    </method>
+    <method type="void" name="printMatrix" startLine="816" endLine="827">
+      <scope startLine="818" endLine="820" />
+      <scope startLine="823" endLine="825" />
+    </method>
+    <method type="int" name="getNumberOfSingularValues" startLine="830" endLine="832" />
+    <method type="double" name="getSingularValue" startLine="834" endLine="836" />
+    <method type="void" name="setFastValues" startLine="838" endLine="840" />
+    <method type="double[]" name="getSingularValues" startLine="843" endLine="845" />
+    <method type="double[]" name="getDiag" startLine="847" endLine="849" />
+    <method type="double[]" name="getOff" startLine="851" endLine="853" />
+    <method type="double" name="getMaxValue" startLine="855" endLine="857" />
+    <comment>used in exceptional shifts</comment>
+    <comment>U and V matrices in singular value decomposition.  Stored in the transpose</comment>
+    <comment>to reduce cache jumps</comment>
+    <comment>number of times it has performed an implicit step, the most costly part of the</comment>
+    <comment>algorithm</comment>
+    <comment>max value in original matrix.  used to test for zeros</comment>
+    <comment>matrix's size</comment>
+    <comment>used to compute eigenvalues directly</comment>
+    <comment>how many exception shifts has it performed</comment>
+    <comment>the step number of the last exception shift</comment>
+    <comment>diagonal elements in the matrix</comment>
+    <comment>the off diagonal elements</comment>
+    <comment>value of the bulge</comment>
+    <comment>the submatrix its working on</comment>
+    <comment>how many cycles has it run through looking for the current singular value</comment>
+    <comment>where splits are performed</comment>
+    <comment>After this many iterations it will perform an exceptional</comment>
+    <comment>should the steps use a sequence of predefined lambdas?</comment>
+    <comment>--------- variables for scripted step</comment>
+    <comment>if following a sequence of steps, this is the point at which it decides its</comment>
+    <comment>going no where and needs to use a different step</comment>
+    <comment>can it compute singularvalues directly</comment>
+    <comment>if not in scripted mode is it looking for new zeros first?</comment>
+    <comment>for debugging</comment>
+    <comment>SimpleMatrix B;</comment>
+  </class>
+</source>
