@@ -12,6 +12,7 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.BlockComment;
 import org.eclipse.jdt.core.dom.Comment;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
@@ -106,6 +107,7 @@ public class XMLFromSource {
 
 			@Override
 			public boolean visit(TypeDeclaration node) {
+				checkForComments(node);
 				if (node.isInterface()) {
 					JMLInterface in = new JMLInterface(node.getName()
 							.toString());
@@ -113,9 +115,9 @@ public class XMLFromSource {
 						String name = ((SimpleType) n).getName().toString();
 						in.addSuperInterface(name);
 					}
+					addComments(in);
 					b.addBlock(in);
 				} else {
-
 					JMLClass jc = new JMLClass(node.getName().toString());
 					if (node.getSuperclassType() != null) {
 						jc.addSuperclass(node.getSuperclassType().toString());
@@ -123,6 +125,7 @@ public class XMLFromSource {
 					if (lineNumbers) {
 						jc.addAttribute("line", getLineNumber(node));
 					}
+					addComments(jc);
 					b.addBlock(jc);
 					for (Object n : node.superInterfaceTypes()) {
 						String name = ((SimpleType) n).getName().toString();
@@ -137,10 +140,10 @@ public class XMLFromSource {
 				if (node.getBody() != null) {
 					md = node;
 					checkForComments(node);
-				}else{
+				} else {
 					String name = node.getName().toString();
 					String type = node.getReturnType2().toString();
-					JMLMethod m = new JMLMethod(name,type);
+					JMLMethod m = new JMLMethod(name, type);
 					b.addLine(m);
 				}
 				return super.visit(node);
@@ -157,10 +160,16 @@ public class XMLFromSource {
 					ASTNode withoutSignature = NodeFinder.perform(
 							((Comment) com).getAlternateRoot(),
 							((Comment) com).getStartPosition(), 0);
-					if (node.equals(withoutSignature.getParent())) {
+					if (withoutSignature.getParent().toString()
+							.equals(node.toString())) {
 						commentsToAdd.add(new JMLComment(
 								getCommentText((ASTNode) com)));
-
+						commentsToAdd.get(commentsToAdd.size() - 1)
+								.addAttribute(
+										"line",
+										String.valueOf(1 + c
+												.getLineNumber(withoutSignature
+														.getStartPosition())));
 					}
 				}
 			}
@@ -170,10 +179,26 @@ public class XMLFromSource {
 				int end = c.getLineNumber(comment.getLength()) + start - 1;
 
 				StringBuilder sb = new StringBuilder();
-				for (int i = start - 1; i < end; i++) {
-					sb.append(source[i]);
+				if (comment instanceof BlockComment
+						|| comment instanceof Javadoc) {
+					for (int i = start - 1; i < end - 1; i++) {
+						sb.append(source[i].trim().replaceAll("\\*", "")
+								.replaceAll("/", ""));
+						if (i != end - 2) {
+							sb.append("\n");
+						}
+					}
+				} else {
+					sb.append(source[start - 1].trim().substring(2));
 				}
 				return sb.toString();
+			}
+
+			public void addComments(JMLElement m) {
+				for (JMLElement com : commentsToAdd) {
+					m.addContent(com);
+				}
+				commentsToAdd.clear();
 			}
 
 			@Override
@@ -190,10 +215,7 @@ public class XMLFromSource {
 						m.addAttribute("line", getLineNumber(node));
 					}
 					b.addBlock(m);
-					for (JMLElement com : commentsToAdd) {
-						m.addContent(com);
-					}
-					commentsToAdd.clear();
+					addComments(m);
 					md = null;
 				} else {
 					JMLScope scope = new JMLScope();
@@ -239,16 +261,20 @@ public class XMLFromSource {
 				List<TagElement> tags = node.tags();
 				JMLJavadoc j = null;
 				if (!tags.isEmpty()) {
-					j = new JMLJavadoc(tags.get(0).toString());
+					j = new JMLJavadoc(tags.get(0).toString().trim()
+							.substring(2));
 				} else {
 					j = new JMLJavadoc("");
 				}
 				for (int i = 1; i < tags.size(); i++) {
 					j.addContent(new JavadocTag(tags.get(i).getTagName(), tags
 							.get(i).toString()
-							.replaceAll(tags.get(i).getTagName() + " ", "")));
+							.replaceAll(tags.get(i).getTagName() + " ", "")
+							.trim().substring(1)));
 
 				}
+				j.addAttribute("line", String.valueOf(c.getLineNumber(node
+						.getStartPosition())));
 				b.addLine(j);
 				return super.visit(node);
 			}
