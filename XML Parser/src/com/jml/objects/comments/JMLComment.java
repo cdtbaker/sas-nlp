@@ -9,5 +9,6 @@ public class JMLComment extends JMLElement{
 			this.addContent((text));	
 		
 	}
+	
 
 }

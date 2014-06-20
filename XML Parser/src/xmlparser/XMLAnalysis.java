@@ -1,29 +1,15 @@
 package xmlparser;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Stack;
 
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.jdt.core.dom.ASTNode;
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.Block;
-import org.eclipse.jdt.core.dom.BlockComment;
 import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.FieldDeclaration;
-import org.eclipse.jdt.core.dom.Javadoc;
-import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.NodeFinder;
-import org.eclipse.jdt.core.dom.TagElement;
-import org.eclipse.jdt.core.dom.Type;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
-import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
-import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
-import org.jdom2.Attribute;
-import org.jdom2.Content;
 import org.jdom2.Document;
 import org.jdom2.Element;
 
@@ -117,9 +103,26 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		
 		//XML Constructed by external class
 		try {
+			
 			JMLElement r =com.jml.builder.XMLFromSource.createXML(compilationUnit, rootNode.getSource(),true);
 			com.jml.output.XMLOutputter o = new com.jml.output.XMLOutputter(r);
-			System.out.println(o.getString());
+			String path = rootNode.getPath().toString();
+			path = path.substring(path.lastIndexOf("src/"), path.indexOf(".java"));
+			File dir = new File(path.substring(0, path.lastIndexOf('/')));
+
+			if (!dir.exists()) {
+				dir.mkdirs();
+			}
+			try {
+				BufferedWriter bw = new BufferedWriter(new FileWriter(path));
+				bw.write(o.getString());
+				bw.close();
+				
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
 		} catch (JavaModelException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

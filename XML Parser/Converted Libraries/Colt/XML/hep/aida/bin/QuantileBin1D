@@ -1,0 +1,912 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="hep.aida.bin">
+        <import package="cern.colt.list.DoubleArrayList"/>
+        <import package="cern.jet.random.engine.RandomEngine"/>
+        <import package="cern.jet.stat.quantile.DoubleQuantileFinder"/>
+        <import package="cern.jet.stat.quantile.QuantileFinderFactory"/>
+        <class name="QuantileBin1D" extends="MightyStaticBin1D" line="7">
+            <javadoc line="7">
+                1-dimensional non-rebinnable bin holding &lt;tt&gt;double&lt;/tt&gt; elements with scalable quantile operations defined upon;
+                 * Using little main memory, quickly computes approximate quantiles over very large data sequences with and even without a-priori knowledge of the number of elements to be filled;
+                 * Conceptually a strongly lossily compressed multiset (or bag);
+                 * Guarantees to respect the worst case approximation error specified upon instance construction.
+                 * First see the &lt;a href=&quot;package-summary.html&quot;&gt;package summary&lt;/a&gt; and javadoc &lt;a href=&quot;package-tree.html&quot;&gt;tree view&lt;/a&gt; to get the broad picture.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Motivation and Problem:&lt;/b&gt;
+                 * Intended to help scale applications requiring quantile computation.
+                 * Quantile computation on very large data sequences is problematic, for the following reasons:
+                 * Computing quantiles requires sorting the data sequence.
+                 * To sort a data sequence the entire data sequence needs to be available.
+                 * Thus, data cannot be thrown away during filling (as done by static bins like {@link StaticBin1D} and {@link MightyStaticBin1D}).
+                 * It needs to be kept, either in main memory or on disk.
+                 * There is often not enough main memory available.
+                 * Thus, during filling data needs to be streamed onto disk.
+                 * Sorting disk resident data is prohibitively time consuming.
+                 * As a consequence, traditional methods either need very large memories (like {@link DynamicBin1D}) or time consuming disk based sorting.
+                 * &lt;p&gt;
+                 * This class proposes to efficiently solve the problem, at the expense of producing approximate rather than exact results.
+                 * It can deal with infinitely many elements without resorting to disk.
+                 * The main memory requirements are smaller than for any other known approximate technique by an order of magnitude.
+                 * They get even smaller if an upper limit on the maximum number of elements ever to be added is known a-priori.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Approximation error:&lt;/b&gt;
+                 * The approximation guarantees are parametrizable and explicit but probabilistic, and apply for arbitrary value distributions and arrival distributions of the data sequence.
+                 * In other words, this class guarantees to respect the worst case approximation error specified upon instance construction to a certain probability.
+                 * Of course, if it is specified that the approximation error should not exceed some number &lt;i&gt;very close&lt;/i&gt; to zero,
+                 * this class will potentially consume just as much memory as any of the traditional exact techniques would do.
+                 * However, for errors larger than 10&lt;sup&gt;-5&lt;/sup&gt;, its memory requirements are modest, as shown by the table below.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Main memory requirements:&lt;/b&gt;
+                 * Given in megabytes, assuming a single element (&lt;tt&gt;double&lt;/tt&gt;) takes 8 byte.
+                 * The number of elements required is then &lt;tt&gt;MB*1024*1024/8&lt;/tt&gt;.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Parameters:&lt;/b&gt;
+                 * &lt;ul&gt;
+                 * &lt;li&gt;&lt;i&gt;epsilon&lt;/i&gt; - the maximum allowed approximation error on quantiles; in &lt;tt&gt;[0.0,1.0]&lt;/tt&gt;.
+                 * To get exact rather than approximate quantiles, set &lt;tt&gt;epsilon=0.0&lt;/tt&gt;;
+                 * &lt;li&gt;&lt;i&gt;delta&lt;/i&gt; - the probability allowed that the approximation error fails to be smaller than epsilon; in &lt;tt&gt;[0.0,1.0]&lt;/tt&gt;.
+                 * To avoid probabilistic answers, set &lt;tt&gt;delta=0.0&lt;/tt&gt;.
+                 * For example, &lt;tt&gt;delta = 0.0001&lt;/tt&gt; is equivalent to a confidence of &lt;tt&gt;99.99%&lt;/tt&gt;.
+                 * &lt;li&gt;&lt;i&gt;quantiles&lt;/i&gt; - the number of quantiles to be computed; in &lt;tt&gt;[0,Integer.MAX_VALUE]&lt;/tt&gt;.
+                 * &lt;li&gt;&lt;i&gt;is N known?&lt;/i&gt; - specifies whether the exact size of the dataset over which quantiles are to be computed is known.
+                 * &lt;li&gt;N&lt;sub&gt;max&lt;/sub&gt; - the exact dataset size, if known. Otherwise, an upper limit on the dataset size. If no upper limit is known set to infinity (&lt;tt&gt;Long.MAX_VALUE&lt;/tt&gt;).
+                 * &lt;/ul&gt;
+                 * N&lt;sub&gt;max&lt;/sub&gt;=inf - we are sure that exactly (&lt;i&gt;known&lt;/i&gt;) or less than (&lt;i&gt;unknown&lt;/i&gt;) infinity elements will be added.
+                 * &lt;br&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;6&lt;/sup&gt; - we are sure that exactly (&lt;i&gt;known&lt;/i&gt;) or less than (&lt;i&gt;unknown&lt;/i&gt;) 10&lt;sup&gt;6&lt;/sup&gt; elements will be added.
+                 * &lt;br&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt; - we are sure that exactly (&lt;i&gt;known&lt;/i&gt;) or less than (&lt;i&gt;unknown&lt;/i&gt;) 10&lt;sup&gt;7&lt;/sup&gt; elements will be added.
+                 * &lt;br&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;8&lt;/sup&gt; - we are sure that exactly (&lt;i&gt;known&lt;/i&gt;) or less than (&lt;i&gt;unknown&lt;/i&gt;) 10&lt;sup&gt;8&lt;/sup&gt; elements will be added.
+                 * &lt;p&gt;
+                 * &lt;table width=&quot;75%&quot; border=&quot;1&quot; cellpadding=&quot;6&quot; cellspacing=&quot;0&quot; align=&quot;center&quot;&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;20%&quot; nowrap colspan=&quot;13&quot; bgcolor=&quot;#33CC66&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot; size=&quot;5&quot;&gt;Required main memory 
+                 * [MB]&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;#quantiles&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;/div&gt;
+                 * &lt;div align=&quot;center&quot;&gt;&lt;/div&gt;
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;epsilon&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;delta&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;1%&quot; nowrap rowspan=&quot;31&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N unknown&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;1%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#C0C0C0&quot; rowspan=&quot;31&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N known&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;6&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;8&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;6&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;8&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td nowrap bgcolor=&quot;#C0C0C0&quot; colspan=&quot;3&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;any&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;any&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;infinity&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;76&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;762&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;infinity&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;76&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;762&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap rowspan=&quot;6&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;any&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap rowspan=&quot;6&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap rowspan=&quot;6&quot; bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;infinity&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.003&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.005&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.006&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.003&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.005&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.006&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -2&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.05&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.31&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.05&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -3&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.7&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -4&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;26.9&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;205&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -6&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;25.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;63.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1758&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;25.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;63.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td nowrap bgcolor=&quot;#C0C0C0&quot; colspan=&quot;3&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;8&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;100&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -2&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.033&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.021&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.038&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.021&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.04&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.024&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.020&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -3&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.48&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.32&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.54&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.37&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -4&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;4.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;5.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;86&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;63&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;94&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;70&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td nowrap bgcolor=&quot;#C0C0C0&quot; colspan=&quot;3&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;8&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10000&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -2&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.04&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.04&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.04&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.04&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.02&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.03&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -3&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.52&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.21&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.35&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.21&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.56&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.21&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.38&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.12&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.21&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.3&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -4&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.0&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.64&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;5.0&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.64&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;7.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.64&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;5.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;0.64&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;1.2&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.1&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot; rowspan=&quot;2&quot;&gt; 
+                 * &lt;div align=&quot;center&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/div&gt;
+                 * &lt;font color=&quot;#000000&quot;&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -1&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;90&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;67&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FFCCCC&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;10&lt;sup&gt; -5&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;96&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;8%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;71&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;2.5&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;6.4&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;19%&quot; nowrap bgcolor=&quot;#66CCFF&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;11.6&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;19%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; colspan=&quot;3&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td width=&quot;34%&quot; nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;td width=&quot;45%&quot; nowrap colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;7%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FF9966&quot; rowspan=&quot;2&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;#quantiles&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FF9966&quot; rowspan=&quot;2&quot;&gt;epsilon&lt;/td&gt;
+                 * &lt;td width=&quot;6%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; bgcolor=&quot;#FF9966&quot; rowspan=&quot;2&quot;&gt;delta&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;6&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;8&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;7%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;6&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;9%&quot; nowrap bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;8&lt;/sup&gt;&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td nowrap colspan=&quot;4&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N unknown&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td nowrap colspan=&quot;4&quot; bgcolor=&quot;#FF9966&quot;&gt;&lt;font color=&quot;#000000&quot;&gt;N known&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr align=&quot;center&quot; valign=&quot;middle&quot;&gt; 
+                 * &lt;td width=&quot;20%&quot; nowrap align=&quot;center&quot; valign=&quot;middle&quot; colspan=&quot;13&quot; bgcolor=&quot;#33CC66&quot;&gt;&lt;font color=&quot;#000000&quot; size=&quot;5&quot;&gt;Required 
+                 * main memory [MB]&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;/table&gt;
+                 * &lt;p&gt;
+                 * &lt;b&gt;Implementation:&lt;/b&gt;
+                 * &lt;p&gt;
+                 * After: Gurmeet Singh Manku, Sridhar Rajagopalan and Bruce G. Lindsay,
+                 * Random Sampling Techniques for Space Efficient Online Computation of Order Statistics of Large Datasets.
+                 * Proc. of the 1999 ACM SIGMOD Int. Conf. on Management of Data,
+                 * Paper available &lt;A HREF=&quot;http://www-cad.eecs.berkeley.edu/~manku/papers/unknown.ps.gz&quot;&gt; here&lt;/A&gt;.
+                 * &lt;p&gt;
+                 * and
+                 * &lt;p&gt;
+                 * Gurmeet Singh Manku, Sridhar Rajagopalan and Bruce G. Lindsay, 
+                 * Approximate Medians and other Quantiles in One Pass and with Limited Memory,
+                 * Proc. of the 1998 ACM SIGMOD Int. Conf. on Management of Data,
+                 * Paper available &lt;A HREF=&quot;http://www-cad.eecs.berkeley.edu/~manku/papers/quantiles.ps.gz&quot;&gt; here&lt;/A&gt;.
+                 * &lt;p&gt;
+                 * The broad picture is as follows. Two concepts are used: &lt;i&gt;Shrinking&lt;/i&gt; and &lt;i&gt;Sampling&lt;/i&gt;.
+                 * Shrinking takes a data sequence, sorts it and produces a shrinked data sequence by picking every k-th element and throwing away all the rest.
+                 * The shrinked data sequence is an approximation to the original data sequence.
+                 * &lt;p&gt;
+                 * Imagine a large data sequence (residing on disk or being generated in memory on the fly) and a main memory &lt;i&gt;block&lt;/i&gt; of &lt;tt&gt;n=b*k&lt;/tt&gt; elements (&lt;tt&gt;b&lt;/tt&gt; is the number of buffers, &lt;tt&gt;k&lt;/tt&gt; is the number of elements per buffer). 
+                 * Fill elements from the data sequence into the block until it is full or the data sequence is exhausted.
+                 * When the block (or a subset of buffers) is full and the data sequence is not exhausted, apply shrinking to lossily compress a number of buffers into one single buffer.
+                 * Repeat these steps until all elements of the data sequence have been consumed.
+                 * Now the block is a shrinked approximation of the original data sequence. 
+                 * Treating it as if it would be the original data sequence, we can determine quantiles in main memory.
+                 * &lt;p&gt;
+                 * Now, the whole thing boils down to the question of: Can we choose &lt;tt&gt;b&lt;/tt&gt; and &lt;tt&gt;k&lt;/tt&gt; (the number of buffers and the buffer size) such that &lt;tt&gt;b*k&lt;/tt&gt; is minimized, 
+                 * yet quantiles determined upon the block are &lt;i&gt;guaranteed&lt;/i&gt; to be away from the true quantiles no more than some &lt;tt&gt;epsilon&lt;/tt&gt;?
+                 * It turns out, we can. It also turns out that the required main memory block size &lt;tt&gt;n=b*k&lt;/tt&gt; is usually moderate (see the table above).
+                 * &lt;p&gt;
+                 * The theme can be combined with random sampling to further reduce main memory requirements, at the expense of probabilistic guarantees.
+                 * Sampling filters the data sequence and feeds only selected elements to the algorithm outlined above.
+                 * Sampling is turned on or off, depending on the parametrization.
+                 * &lt;p&gt;
+                 * This quick overview does not go into important details, such as assigning proper &lt;i&gt;weights&lt;/i&gt; to buffers, how to choose subsets of buffers to shrink, etc. 
+                 * For more information consult the papers cited above.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Time Performance:&lt;/b&gt;
+                 * &lt;p&gt;
+                 * &lt;div align=&quot;center&quot;&gt;Pentium Pro 200 Mhz, SunJDK 1.2.2, NT, java -classic,&lt;br&gt;
+                 * filling 10 &lt;sup&gt;4&lt;/sup&gt; elements at a time, reading 100 percentiles at a time,&lt;br&gt;
+                 * hasSumOfLogarithms()=false, hasSumOfInversions()=false, getMaxOrderForSumOfPowers()=2&lt;br&gt;
+                 * &lt;/div&gt;
+                 * &lt;center&gt;
+                 * &lt;table border cellpadding=&quot;6&quot; cellspacing=&quot;0&quot; align=&quot;center&quot; width=&quot;623&quot;&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; height=&quot;50&quot; colspan=&quot;9&quot; bgcolor=&quot;#33CC66&quot; nowrap&gt; &lt;font size=&quot;5&quot;&gt;Performance&lt;/font&gt;&lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;56&quot; height=&quot;100&quot; rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot; nowrap&gt; 
+                 * Quantiles&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;44&quot; height=&quot;100&quot; rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot; nowrap&gt; 
+                 * Epsilon&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;32&quot; height=&quot;100&quot; rowspan=&quot;2&quot; bgcolor=&quot;#FF9966&quot; nowrap&gt; 
+                 * Delta&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;1&quot; height=&quot;150&quot; rowspan=&quot;7&quot; nowrap&gt;&amp;nbsp; &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; height=&quot;50&quot; colspan=&quot;2&quot; bgcolor=&quot;#33CC66&quot; nowrap&gt; &lt;font size=&quot;5&quot;&gt;Filling&lt;/font&gt; 
+                 * &lt;br&gt;
+                 * [#elements/sec] &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;1&quot; height=&quot;150&quot; rowspan=&quot;7&quot; nowrap&gt;&amp;nbsp; &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; height=&quot;50&quot; colspan=&quot;2&quot; bgcolor=&quot;#33CC66&quot;&gt; &lt;font size=&quot;5&quot;&gt;Quantile 
+                 * computation&lt;/font&gt;&lt;br&gt;
+                 * [#quantiles/sec] &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot; bgcolor=&quot;#FF9966&quot; nowrap&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;75&quot; height=&quot;50&quot; nowrap valign=&quot;middle&quot;&gt; &lt;font color=&quot;#000000&quot;&gt;N 
+                 * unknown,&lt;br&gt;
+                 * N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;77&quot; height=&quot;50&quot; nowrap valign=&quot;middle&quot;&gt; &lt;font color=&quot;#000000&quot;&gt;N 
+                 * known,&lt;br&gt;
+                 * N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt; &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;106&quot; height=&quot;50&quot; nowrap valign=&quot;middle&quot;&gt; &lt;font color=&quot;#000000&quot;&gt;N 
+                 * unknown,&lt;br&gt;
+                 * N&lt;sub&gt;max&lt;/sub&gt;=inf&lt;/font&gt;&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;103&quot; height=&quot;50&quot; nowrap valign=&quot;middle&quot;&gt; &lt;font color=&quot;#000000&quot;&gt;N 
+                 * known,&lt;br&gt;
+                 * N&lt;sub&gt;max&lt;/sub&gt;=10&lt;sup&gt;7&lt;/sup&gt;&lt;/font&gt; &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; height=&quot;31&quot; colspan=&quot;3&quot; nowrap&gt;&amp;nbsp; &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; height=&quot;31&quot; colspan=&quot;2&quot; nowrap&gt;&amp;nbsp; &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; height=&quot;31&quot; colspan=&quot;2&quot; nowrap&gt;&amp;nbsp; &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;56&quot; rowspan=&quot;4&quot; bgcolor=&quot;#FFCCCC&quot; nowrap&gt; 10&lt;sup&gt;4&lt;/sup&gt;&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;44&quot; bgcolor=&quot;#FFCCCC&quot; nowrap&gt; 10 &lt;sup&gt; -1&lt;/sup&gt;&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;32&quot; bgcolor=&quot;#FFCCCC&quot; nowrap rowspan=&quot;4&quot;&gt; 10 &lt;sup&gt; 
+                 * -1&lt;/sup&gt; &lt;/td&gt;
+                 * &lt;td width=&quot;75&quot; bgcolor=&quot;#66CCFF&quot; nowrap align=&quot;center&quot;&gt; 
+                 * &lt;p&gt;1600000&lt;/p&gt;
+                 * &lt;/td&gt;
+                 * &lt;td width=&quot;77&quot; bgcolor=&quot;#66CCFF&quot; nowrap align=&quot;center&quot;&gt;1300000&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;106&quot; bgcolor=&quot;#66CCFF&quot; nowrap&gt;250000 &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;103&quot; bgcolor=&quot;#66CCFF&quot; nowrap&gt;130000 &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;44&quot; bgcolor=&quot;#FFCCCC&quot;&gt; 10 &lt;sup&gt; -2&lt;/sup&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;75&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;360000&lt;/td&gt;
+                 * &lt;td width=&quot;77&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;1200000&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;106&quot; bgcolor=&quot;#66CCFF&quot;&gt;50000 &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;103&quot; bgcolor=&quot;#66CCFF&quot;&gt;20000 &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;44&quot; bgcolor=&quot;#FFCCCC&quot;&gt; 10 &lt;sup&gt; -3&lt;/sup&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;75&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;150000&lt;/td&gt;
+                 * &lt;td width=&quot;77&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;200000&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;106&quot; bgcolor=&quot;#66CCFF&quot;&gt;3600 &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;103&quot; bgcolor=&quot;#66CCFF&quot;&gt;3000 &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;tr valign=&quot;middle&quot;&gt; 
+                 * &lt;td align=&quot;center&quot; width=&quot;44&quot; bgcolor=&quot;#FFCCCC&quot;&gt; 10 &lt;sup&gt; -4&lt;/sup&gt;&lt;/td&gt;
+                 * &lt;td width=&quot;75&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;120000&lt;/td&gt;
+                 * &lt;td width=&quot;77&quot; bgcolor=&quot;#66CCFF&quot; align=&quot;center&quot;&gt;170000&lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;106&quot; bgcolor=&quot;#66CCFF&quot;&gt;80 &lt;/td&gt;
+                 * &lt;td align=&quot;center&quot; width=&quot;103&quot; bgcolor=&quot;#66CCFF&quot;&gt;1000 &lt;/td&gt;
+                 * &lt;/tr&gt;
+                 * &lt;/table&gt;
+                 * &lt;/center&gt;                
+                <@see>
+                    e cern.jet.stat.quantile                    
+                </@see>
+                <@author>
+                    r wolfgang.hoschek@cern.ch                    
+                </@author>
+                <@version>
+                    n 0.9, 03-Jul-99                    
+                </@version>
+            </javadoc>
+            <declaration name="finder" type="DoubleQuantileFinder" line="558"/>
+            <javadoc line="559">
+                Not public; for use by subclasses only!
+                 * Constructs and returns an empty bin.                
+            </javadoc>
+            <method name="QuantileBin1D" type="constructor" line="563"/>
+            <javadoc line="566">
+                Equivalent to &lt;tt&gt;new QuantileBin1D(false, Long.MAX_VALUE, epsilon, 0.001, 10000, new cern.jet.random.engine.DRand(new java.util.Date())&lt;/tt&gt;.                
+            </javadoc>
+            <method name="QuantileBin1D" type="constructor" line="569"/>
+            <javadoc line="572">
+                Equivalent to &lt;tt&gt;new QuantileBin1D(known_N, N, epsilon, delta, quantiles, randomGenerator, false, false, 2)&lt;/tt&gt;.                
+            </javadoc>
+            <method name="QuantileBin1D" type="constructor" line="575"/>
+            <javadoc line="578">
+                Constructs and returns an empty bin that, under the given constraints, minimizes the amount of memory needed.
+                 * Some applications exactly know in advance over how many elements quantiles are to be computed.
+                 * Provided with such information the main memory requirements of this class are small.
+                 * Other applications don&apos;t know in advance over how many elements quantiles are to be computed.
+                 * However, some of them can give an upper limit, which will reduce main memory requirements.
+                 * For example, if elements are selected from a database and filled into histograms, it is usually not known in advance how many elements are being filled, but one may know that at most &lt;tt&gt;S&lt;/tt&gt; elements, the number of elements in the database, are filled.
+                 * A third type of application knowns nothing at all about the number of elements to be filled;
+                 * from zero to infinitely many elements may actually be filled.
+                 * This method efficiently supports all three types of applications.                
+                <@param>
+                    m known_N specifies whether the number of elements over which quantiles are to be computed is known or not.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m N if <tt>known_N==true</tt>, the number of elements over which quantiles are to be computed.
+                     * if <tt>known_N==false</tt>, the upper limit on the number of elements over which quantiles are to be computed.
+                     * In other words, the maximum number of elements ever to be added.
+                     * If such an upper limit is a-priori unknown, then set <tt>N = Long.MAX_VALUE</tt>.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m epsilon the approximation error which is guaranteed not to be exceeded (e.g. <tt>0.001</tt>) (<tt>0 &lt;= epsilon &lt;= 1</tt>). 
+                     * To get exact rather than approximate quantiles, set <tt>epsilon=0.0</tt>;
+                     * <p>                    
+                </@param>
+                <@param>
+                    m delta the allowed probability that the actual approximation error exceeds <tt>epsilon</tt> (e.g. 0.0001) (0 &lt;= delta &lt;= 1). 
+                     * To avoid probabilistic answers, set <tt>delta=0.0</tt>.
+                     * For example, <tt>delta = 0.0001</tt> is equivalent to a confidence of <tt>99.99%</tt>.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m quantiles the number of quantiles to be computed (e.g. <tt>100</tt>) (<tt>quantiles &gt;= 1</tt>). 
+                     * If unknown in advance, set this number large, e.g. <tt>quantiles &gt;= 10000</tt>.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m generator a uniform random number generator.
+                     * Set this parameter to <tt>null</tt> to use a default generator seeded with the current time.
+                     * <p>
+                     * The next three parameters specify additional capabilities unrelated to quantile computation.
+                     * They are identical to the one's defined in the constructor of the parent class {@link MightyStaticBin1D}.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m hasSumOfLogarithms  Tells whether {@link #sumOfLogarithms()} can return meaningful results.
+                     * Set this parameter to <tt>false</tt> if measures of sum of logarithms, geometric mean and product are not required.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m hasSumOfInversions  Tells whether {@link #sumOfInversions()} can return meaningful results.
+                     * Set this parameter to <tt>false</tt> if measures of sum of inversions, harmonic mean and sumOfPowers(-1) are not required.
+                     * <p>                    
+                </@param>
+                <@param>
+                    m maxOrderForSumOfPowers  The maximum order <tt>k</tt> for which {@link #sumOfPowers(int)} can return meaningful results.
+                     * Set this parameter to at least 3 if the skew is required, to at least 4 if the kurtosis is required.
+                     * In general, if moments are required set this parameter at least as large as the largest required moment.
+                     * This method always substitutes <tt>Math.max(2,maxOrderForSumOfPowers)</tt> for the parameter passed in.
+                     * Thus, <tt>sumOfPowers(0..2)</tt> always returns meaningful results.                    
+                </@param>
+            </javadoc>
+            <method name="QuantileBin1D" type="constructor" line="625"/>
+            <javadoc line="630">
+                Adds the part of the specified list between indexes &lt;tt&gt;from&lt;/tt&gt; (inclusive) and &lt;tt&gt;to&lt;/tt&gt; (inclusive) to the receiver.                
+                <@param>
+                    m list the list of which elements shall be added.                    
+                </@param>
+                <@param>
+                    m from the index of the first element to be added (inclusive).                    
+                </@param>
+                <@param>
+                    m to the index of the last element to be added (inclusive).                    
+                </@param>
+                <@throws>
+                    s IndexOutOfBoundsException if <tt>list.size()&gt;0 && (from&lt;0 || from&gt;to || to&gt;=list.size())</tt>.                    
+                </@throws>
+            </javadoc>
+            <method name="addAllOfFromTo" type="void" line="638"/>
+            <javadoc line="642">
+                Removes all elements from the receiver.
+                 * The receiver will be empty after this call returns.                
+            </javadoc>
+            <method name="clear" type="void" line="646"/>
+            <javadoc line="650">
+                Returns a deep copy of the receiver.                
+                <@return>
+                    n a deep copy of the receiver.                    
+                </@return>
+            </javadoc>
+            <method name="clone" type="Object" line="655">
+                <declaration name="clone" type="QuantileBin1D" line="656"/>
+            </method>
+            <javadoc line="660">
+                Computes the deviations from the receiver&apos;s measures to another bin&apos;s measures.                
+                <@param>
+                    m other the other bin to compare with                    
+                </@param>
+                <@return>
+                    n a summary of the deviations.                    
+                </@return>
+            </javadoc>
+            <method name="compareWith" type="String" line="665">
+                <declaration name="buf" type="StringBuffer" line="666"/>
+                <scope line="667">
+                    <declaration name="q" type="QuantileBin1D" line="668"/>
+                </scope>
+            </method>
+            <javadoc line="675">
+                Returns the median.                
+            </javadoc>
+            <method name="median" type="double" line="678"/>
+            <javadoc line="681">
+                Computes and returns the phi-quantile.                
+                <@param>
+                    m phi the percentage for which the quantile is to be computed.
+                     * phi must be in the interval <tt>(0.0,1.0]</tt>.                    
+                </@param>
+                <@return>
+                    n the phi quantile element.                    
+                </@return>
+            </javadoc>
+            <method name="quantile" type="double" line="687"/>
+            <javadoc line="690">
+                Returns how many percent of the elements contained in the receiver are &lt;tt&gt;&amp;lt;= element&lt;/tt&gt;.
+                 * Does linear interpolation if the element is not contained but lies in between two contained elements.                
+                <@param>
+                    m the element to search for.                    
+                </@param>
+                <@return>
+                    n the percentage <tt>phi</tt> of elements <tt>&lt;= element</tt> (<tt>0.0 &lt;= phi &lt;=1.0)</tt>.                    
+                </@return>
+            </javadoc>
+            <method name="quantileInverse" type="double" line="697"/>
+            <javadoc line="700">
+                Returns the quantiles of the specified percentages.
+                 * For implementation reasons considerably more efficient than calling {@link #quantile(double)} various times.                
+                <@param>
+                    m percentages the percentages for which quantiles are to be computed.
+                     * Each percentage must be in the interval <tt>(0.0,1.0]</tt>. <tt>percentages</tt> must be sorted ascending.                    
+                </@param>
+                <@return>
+                    n the quantiles.                    
+                </@return>
+            </javadoc>
+            <method name="quantiles" type="DoubleArrayList" line="707"/>
+            <javadoc line="710">
+                Returns how many elements are contained in the range &lt;tt&gt;[minElement,maxElement]&lt;/tt&gt;.
+                 * Does linear interpolation if one or both of the parameter elements are not contained.
+                 * Returns exact or approximate results, depending on the parametrization of this class or subclasses.                
+                <@param>
+                    m minElement the minimum element to search for.                    
+                </@param>
+                <@param>
+                    m maxElement the maximum element to search for.                    
+                </@param>
+                <@return>
+                    n the number of elements in the range.                    
+                </@return>
+            </javadoc>
+            <method name="sizeOfRange" type="int" line="719"/>
+            <javadoc line="722">
+                Divides (rebins) a copy of the receiver at the given &lt;i&gt;percentage boundaries&lt;/i&gt; into bins and returns these bins, such that each bin &lt;i&gt;approximately&lt;/i&gt; reflects the data elements of its range.
+                 * The receiver is not physically rebinned (divided); it stays unaffected by this operation.
+                 * The returned bins are such that &lt;i&gt;if&lt;/i&gt; one would have filled elements into multiple bins
+                 * instead of one single all encompassing bin only, those multiple bins would have &lt;i&gt;approximately&lt;/i&gt; the same statistics measures as the one&apos;s returned by this method.
+                 * &lt;p&gt;
+                 * The &lt;tt&gt;split(...)&lt;/tt&gt; methods are particularly well suited for real-time interactive rebinning (the famous &quot;scrolling slider&quot; effect).
+                 * &lt;p&gt;
+                 * Passing equi-distant percentages like &lt;tt&gt;(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)&lt;/tt&gt; into this method will yield bins of an &lt;i&gt;equi-depth histogram&lt;/i&gt;, i.e. a histogram with bin boundaries adjusted such that each bin contains the same number of elements, in this case 20% each.
+                 * Equi-depth histograms can be useful if, for example, not enough properties of the data to be captured are known a-priori to be able to define reasonable bin boundaries (partitions).
+                 * For example, when guesses about minimas and maximas are strongly unreliable.
+                 * Or when chances are that by focussing too much on one particular area other important areas and characters of a data set may be missed.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Implementation:&lt;/b&gt;
+                 * &lt;p&gt;
+                 * The receiver is divided into &lt;tt&gt;s = percentages.size()-1&lt;/tt&gt; intervals (bins).
+                 * For each interval &lt;tt&gt;I&lt;/tt&gt;, its minimum and maximum elements are determined based upon quantile computation.
+                 * Further, each interval &lt;tt&gt;I&lt;/tt&gt; is split into &lt;tt&gt;k&lt;/tt&gt; equi-percent-distant subintervals (sub-bins).
+                 * In other words, an interval is split into subintervals such that each subinterval contains the same number of elements.
+                 * &lt;p&gt;
+                 * For each subinterval &lt;tt&gt;S&lt;/tt&gt;, its minimum and maximum are determined, again, based upon quantile computation.
+                 * They yield an approximate arithmetic mean &lt;tt&gt;am = (min+max)/2&lt;/tt&gt; of the subinterval.
+                 * A subinterval is treated as if it would contain only elements equal to the mean &lt;tt&gt;am&lt;/tt&gt;.
+                 * Thus, if the subinterval contains, say, &lt;tt&gt;n&lt;/tt&gt; elements, it is assumed to consist of &lt;tt&gt;n&lt;/tt&gt; mean elements &lt;tt&gt;(am,am,...,am)&lt;/tt&gt;.
+                 * A subinterval&apos;s sum of elements, sum of squared elements, sum of inversions, etc. are then approximated using such a sequence of mean elements.
+                 * &lt;p&gt;
+                 * Finally, the statistics measures of an interval &lt;tt&gt;I&lt;/tt&gt; are computed by summing up (integrating) the measures of its subintervals.
+                 * &lt;p&gt;
+                 * &lt;b&gt;Accuracy&lt;/b&gt;:
+                 * &lt;p&gt;
+                 * Depending on the accuracy of quantile computation and the number of subintervals per interval (the resolution).
+                 * Objects of this class compute exact or approximate quantiles, depending on the parameters used upon instance construction.
+                 * Objects of subclasses may &lt;i&gt;always&lt;/i&gt; compute exact quantiles, as is the case for {@link DynamicBin1D}.
+                 * Most importantly for this class &lt;tt&gt;QuantileBin1D&lt;/tt&gt;, a reasonably small epsilon (e.g. 0.01, perhaps 0.001) should be used upon instance construction.
+                 * The confidence parameter &lt;tt&gt;delta&lt;/tt&gt; is less important, you may find &lt;tt&gt;delta=0.00001&lt;/tt&gt; appropriate.
+                 * &lt;br&gt;
+                 * The larger the resolution, the smaller the approximation error, up to some limit.
+                 * Integrating over only a few subintervals per interval will yield very crude approximations.
+                 * If the resolution is set to a reasonably large number, say 10..100, more small subintervals are integrated, resulting in more accurate results.
+                 * &lt;br&gt;
+                 * Note that for good accuracy, the number of quantiles computable with the given approximation guarantees should upon instance construction be specified, so as to satisfy
+                 * &lt;p&gt;
+                 * &lt;tt&gt;quantiles &gt; resolution * (percentages.size()-1)&lt;/tt&gt;
+                 * &lt;p&gt;
+                 * &lt;p&gt;
+                 * &lt;b&gt;Example:&lt;/b&gt;
+                 * &lt;p&gt;
+                 * &lt;tt&gt;resolution=2, percentList = (0.0, 0.1, 0.2, 0.5, 0.9, 1.0)&lt;/tt&gt; means the receiver is to be split into 5 bins:
+                 * &lt;br&gt;
+                 * &lt;ul&gt;
+                 * &lt;li&gt;bin 0 ranges from &lt;tt&gt;[0%..10%)&lt;/tt&gt; and holds the smallest 10% of the sorted elements.
+                 * &lt;li&gt;bin 1 ranges from &lt;tt&gt;[10%..20%)&lt;/tt&gt; and holds the next smallest 10% of the sorted elements.
+                 * &lt;li&gt;bin 2 ranges from &lt;tt&gt;[20%..50%)&lt;/tt&gt; and holds the next smallest 30% of the sorted elements.
+                 * &lt;li&gt;bin 3 ranges from &lt;tt&gt;[50%..90%)&lt;/tt&gt; and holds the next smallest 40% of the sorted elements.
+                 * &lt;li&gt;bin 4 ranges from &lt;tt&gt;[90%..100%)&lt;/tt&gt; and holds the largest 10% of the sorted elements.
+                 * &lt;/ul&gt;
+                 * &lt;p&gt;
+                 * The statistics measures for each bin are to be computed at a resolution of 2 subbins per bin.
+                 * Thus, the statistics measures of a bin are the integrated measures over 2 subbins, each containing the same amount of elements:
+                 * &lt;ul&gt;
+                 * &lt;li&gt;bin 0 has a subbin ranging from &lt;tt&gt;[ 0%.. 5%)&lt;/tt&gt; and a subbin ranging from &lt;tt&gt;[ 5%..10%)&lt;/tt&gt;.
+                 * &lt;li&gt;bin 1 has a subbin ranging from &lt;tt&gt;[10%..15%)&lt;/tt&gt; and a subbin ranging from &lt;tt&gt;[15%..20%)&lt;/tt&gt;.
+                 * &lt;li&gt;bin 2 has a subbin ranging from &lt;tt&gt;[20%..35%)&lt;/tt&gt; and a subbin ranging from &lt;tt&gt;[35%..50%)&lt;/tt&gt;.
+                 * &lt;li&gt;bin 3 has a subbin ranging from &lt;tt&gt;[50%..70%)&lt;/tt&gt; and a subbin ranging from &lt;tt&gt;[70%..90%)&lt;/tt&gt;.
+                 * &lt;li&gt;bin 4 has a subbin ranging from &lt;tt&gt;[90%..95%)&lt;/tt&gt; and a subbin ranging from &lt;tt&gt;[95%..100%)&lt;/tt&gt;.
+                 * &lt;/ul&gt;
+                 * &lt;p&gt;
+                 * Lets concentrate on the subbins of bin 0.
+                 * &lt;ul&gt;
+                 * &lt;li&gt;Assume the subbin &lt;tt&gt;A=[0%..5%)&lt;/tt&gt; has a minimum of &lt;tt&gt;300&lt;/tt&gt; and a maximum of &lt;tt&gt;350&lt;/tt&gt; (0% of all elements are less than 300, 5% of all elements are less than 350).
+                 * &lt;li&gt;Assume the subbin &lt;tt&gt;B=[5%..10%)&lt;/tt&gt; has a minimum of &lt;tt&gt;350&lt;/tt&gt; and a maximum of &lt;tt&gt;550&lt;/tt&gt; (5% of all elements are less than 350, 10% of all elements are less than 550).
+                 * &lt;/ul&gt;
+                 * &lt;p&gt;
+                 * Assume the entire data set consists of &lt;tt&gt;N=100&lt;/tt&gt; elements.
+                 * &lt;ul&gt;
+                 * &lt;li&gt;Then subbin A has an approximate mean of &lt;tt&gt;300+350 / 2 = 325&lt;/tt&gt;, 
+                 * a size of &lt;tt&gt;N*(5%-0%) = 100*5% = 5&lt;/tt&gt; elements, an approximate sum of &lt;tt&gt;325 * 100*5% = 1625&lt;/tt&gt;, an approximate sum of squares of &lt;tt&gt;325&lt;sup&gt;2&lt;/sup&gt; * 100*5% = 528125&lt;/tt&gt;, an approximate sum of inversions of &lt;tt&gt;(1.0/325) * 100*5% = 0.015&lt;/tt&gt;, etc.
+                 * &lt;li&gt;Analogously, subbin B has an approximate mean of &lt;tt&gt;350+550 / 2 = 450&lt;/tt&gt;,
+                 * a size of &lt;tt&gt;N*(10%-5%) = 100*5% = 5&lt;/tt&gt; elements, an approximate sum of &lt;tt&gt;450 * 100*5% = 2250&lt;/tt&gt;, an approximate sum of squares of &lt;tt&gt;450&lt;sup&gt;2&lt;/sup&gt; * 100*5% = 1012500&lt;/tt&gt;, an approximate sum of inversions of &lt;tt&gt;(1.0/450) * 100*5% = 0.01&lt;/tt&gt;, etc.
+                 * &lt;/ul&gt;
+                 * &lt;p&gt;
+                 * Finally, the statistics measures of bin 0 are computed by summing up (integrating) the measures of its subintervals:
+                 * Bin 0 has a size of &lt;tt&gt;N*(10%-0%)=10&lt;/tt&gt; elements (we knew that already), sum of &lt;tt&gt;1625+2250=3875&lt;/tt&gt;, sum of squares of &lt;tt&gt;528125+1012500=1540625&lt;/tt&gt;, sum of inversions of &lt;tt&gt;0.015+0.01=0.025&lt;/tt&gt;, etc.
+                 * From these follow other measures such as &lt;tt&gt;mean=3875/10=387.5, rms = sqrt(1540625 / 10)=392.5&lt;/tt&gt;, etc.
+                 * The other bins are computes analogously.                
+                <@param>
+                    m percentages the percentage boundaries at which the receiver shall be split.                    
+                </@param>
+                <@param>
+                    m resolution a measure of accuracy; the desired number of subintervals per interval.                    
+                </@param>
+            </javadoc>
+            <method name="splitApproximately" type="MightyStaticBin1D[]" line="812">
+                <comment line="813">
+                    percentages = [p0, p1, p2, ..., p(size-2), p(size-1)]
+                    defines bins [p0,p1), [p1,p2), ..., [p(size-2),p(size-1))
+                    each bin is divided into k equi-percent-distant sub bins (subintervals).
+                    e.g. k = 2 means &quot;compute&quot; with a resolution (accuracy) of 2 subbins (subintervals) per bin,
+                    
+                    percentages = [0.1, 0.2, 0.3, ..., 0.9, 1.0] means
+                    bin 0 holds the first 0.1-0.0=10% of the sorted elements,
+                    bin 1 holds the next  0.2-0.1=10% of the sorted elements,
+                    ...
+                    
+                    bins =          [0.1, 0.2), [0.2, 0.3), ..., [0.9, 1.0)
+                    subBins = [0.1,    0.15,     0.2,     0.25,    0.3,    ....]                    
+                </comment>
+                <comment line="813">
+                    construct subintervals                    
+                </comment>
+                <comment line="813">
+                    compute quantile elements;                    
+                </comment>
+                <comment line="813">
+                    collect summary statistics for each bin.                    
+                </comment>
+                <comment line="813">
+                    one bin&apos;s statistics are the integrated statistics of its subintervals.                    
+                </comment>
+                <comment line="813">
+                    xOrderForSumOfPowers = Math.min(10,maxOrderForSumOfPowers); // don&apos;t compute tons of measures                    
+                </comment>
+                <declaration name="percentSize" type="int" line="832"/>
+                <declaration name="percent" type="double[]" line="835"/>
+                <declaration name="noOfBins" type="int" line="836"/>
+                <declaration name="subBins" type="double[]" line="840"/>
+                <declaration name="c" type="int" line="842"/>
+                <scope line="844">
+                    <declaration name="step" type="double" line="845"/>
+                    <scope line="846"/>
+                </scope>
+                <declaration name="quantiles" type="double[]" line="852"/>
+                <declaration name="splitBins" type="MightyStaticBin1D[]" line="856"/>
+                <declaration name="maxOrderForSumOfPowers" type="int" line="857"/>
+                <declaration name="dataSize" type="int" line="860"/>
+                <scope line="862">
+                    <declaration name="step" type="double" line="863"/>
+                    <declaration name="binSum" type="double" line="864"/>
+                    <declaration name="binSumOfSquares" type="double" line="865"/>
+                    <declaration name="binSumOfLogarithms" type="double" line="866"/>
+                    <declaration name="binSumOfInversions" type="double" line="867"/>
+                    <declaration name="binSumOfPowers" type="double[]" line="868"/>
+                    <scope line="869"/>
+                    <declaration name="binMin" type="double" line="873"/>
+                    <declaration name="safe_min" type="double" line="874"/>
+                    <declaration name="subIntervalSize" type="double" line="875"/>
+                    <scope line="877">
+                        <declaration name="binMax" type="double" line="878"/>
+                        <declaration name="binMean" type="double" line="879"/>
+                        <scope line="882"/>
+                        <scope line="885"/>
+                        <scope line="890"/>
+                    </scope>
+                    <declaration name="binSize" type="int" line="899"/>
+                    <declaration name="binMax" type="double" line="900"/>
+                    <scope line="905"/>
+                </scope>
+            </method>
+            <javadoc line="930">
+                Divides (rebins) a copy of the receiver at the given &lt;i&gt;interval boundaries&lt;/i&gt; into bins and returns these bins, such that each bin &lt;i&gt;approximately&lt;/i&gt; reflects the data elements of its range.
+                 * For each interval boundary of the axis (including -infinity and +infinity), computes the percentage (quantile inverse) of elements less than the boundary.
+                 * Then lets {@link #splitApproximately(DoubleArrayList,int)} do the real work.                
+                <@param>
+                    m axis an axis defining interval boundaries.                    
+                </@param>
+                <@param>
+                    m resolution a measure of accuracy; the desired number of subintervals per interval.                    
+                </@param>
+            </javadoc>
+            <method name="splitApproximately" type="MightyStaticBin1D[]" line="939">
+                <declaration name="percentages" type="DoubleArrayList" line="940"/>
+                <scope line="943"/>
+            </method>
+            <javadoc line="949">
+                Returns a String representation of the receiver.                
+            </javadoc>
+            <method name="toString" type="String" line="952">
+                <comment line="953">
+                    buf.append(&quot;10%, 25%, 50%, 75%, 90% Quantiles: &quot;+quantile(0.1) + &quot;, &quot;+ quantile(0.25) + &quot;, &quot;+ quantile(0.5) + &quot;, &quot; + quantile(0.75) + &quot;, &quot; + quantile(0.9));                    
+                </comment>
+                <declaration name="buf" type="StringBuffer" line="953"/>
+            </method>
+        </class>
+    </source>

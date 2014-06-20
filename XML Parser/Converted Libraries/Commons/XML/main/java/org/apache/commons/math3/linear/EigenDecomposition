@@ -1,0 +1,800 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.linear">
+        <import package="org.apache.commons.math3.complex.Complex"/>
+        <import package="org.apache.commons.math3.exception.MathArithmeticException"/>
+        <import package="org.apache.commons.math3.exception.MathUnsupportedOperationException"/>
+        <import package="org.apache.commons.math3.exception.MaxCountExceededException"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.util.LocalizedFormats"/>
+        <import package="org.apache.commons.math3.util.Precision"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <class name="EigenDecomposition" line="29">
+            <javadoc line="29">
+                Calculates the eigen decomposition of a real matrix.
+                 * &lt;p&gt;The eigen decomposition of matrix A is a set of two matrices:
+                 * V and D such that A = V &amp;times; D &amp;times; V&lt;sup&gt;T&lt;/sup&gt;.
+                 * A, V and D are all m &amp;times; m matrices.&lt;/p&gt;
+                 * &lt;p&gt;This class is similar in spirit to the &lt;code&gt;EigenvalueDecomposition&lt;/code&gt;
+                 * class from the &lt;a href=&quot;http://math.nist.gov/javanumerics/jama/&quot;&gt;JAMA&lt;/a&gt;
+                 * library, with the following changes:&lt;/p&gt;
+                 * &lt;ul&gt;
+                 * &lt;li&gt;a {@link #getVT() getVt} method has been added,&lt;/li&gt;
+                 * &lt;li&gt;two {@link #getRealEigenvalue(int) getRealEigenvalue} and {@link #getImagEigenvalue(int)getImagEigenvalue} methods to pick up a single eigenvalue have been added,&lt;/li&gt;
+                 * &lt;li&gt;a {@link #getEigenvector(int) getEigenvector} method to pick up a single
+                 * eigenvector has been added,&lt;/li&gt;
+                 * &lt;li&gt;a {@link #getDeterminant() getDeterminant} method has been added.&lt;/li&gt;
+                 * &lt;li&gt;a {@link #getSolver() getSolver} method has been added.&lt;/li&gt;
+                 * &lt;/ul&gt;
+                 * &lt;p&gt;
+                 * As of 3.1, this class supports general real matrices (both symmetric and non-symmetric):
+                 * &lt;/p&gt;
+                 * &lt;p&gt;
+                 * If A is symmetric, then A = V*D*V&apos; where the eigenvalue matrix D is diagonal and the eigenvector
+                 * matrix V is orthogonal, i.e. A = V.multiply(D.multiply(V.transpose())) and
+                 * V.multiply(V.transpose()) equals the identity matrix.
+                 * &lt;/p&gt;
+                 * &lt;p&gt;
+                 * If A is not symmetric, then the eigenvalue matrix D is block diagonal with the real eigenvalues
+                 * in 1-by-1 blocks and any complex eigenvalues, lambda + i*mu, in 2-by-2 blocks:
+                 * &lt;pre&gt;
+                 * [lambda, mu    ]
+                 * [   -mu, lambda]
+                 * &lt;/pre&gt;
+                 * The columns of V represent the eigenvectors in the sense that A*V = V*D,
+                 * i.e. A.multiply(V) equals V.multiply(D).
+                 * The matrix V may be badly conditioned, or even singular, so the validity of the equation
+                 * A = V*D*inverse(V) depends upon the condition of V.
+                 * &lt;/p&gt;
+                 * &lt;p&gt;
+                 * This implementation is based on the paper by A. Drubrulle, R.S. Martin and
+                 * J.H. Wilkinson &quot;The Implicit QL Algorithm&quot; in Wilksinson and Reinsch (1971)
+                 * Handbook for automatic computation, vol. 2, Linear algebra, Springer-Verlag,
+                 * New-York
+                 * &lt;/p&gt;                
+                <@see>
+                    e <a href="http://mathworld.wolfram.com/EigenDecomposition.html">MathWorld</a>                    
+                </@see>
+                <@see>
+                    e <a href="http://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix">Wikipedia</a>                    
+                </@see>
+                <@version>
+                    n $Id: EigenDecomposition.java 1452595 2013-03-04 23:29:39Z tn $                    
+                </@version>
+                <@since>
+                    e 2.0 (changed to concrete class in 3.0)                    
+                </@since>
+            </javadoc>
+            <declaration name="EPSILON" type="double" line="78"/>
+            <javadoc line="78">
+                Internally used epsilon criteria.                
+            </javadoc>
+            <declaration name="maxIter" type="byte" line="80"/>
+            <javadoc line="80">
+                Maximum number of iterations accepted in the implicit QL transformation                
+            </javadoc>
+            <declaration name="main" type="double[]" line="82"/>
+            <javadoc line="82">
+                Main diagonal of the tridiagonal matrix.                
+            </javadoc>
+            <declaration name="secondary" type="double[]" line="84"/>
+            <javadoc line="84">
+                Secondary diagonal of the tridiagonal matrix.                
+            </javadoc>
+            <declaration name="transformer" type="TriDiagonalTransformer" line="86"/>
+            <javadoc line="86">
+                Transformer to tridiagonal (may be null if matrix is already
+                 * tridiagonal).                
+            </javadoc>
+            <declaration name="realEigenvalues" type="double[]" line="91"/>
+            <javadoc line="91">
+                Real part of the realEigenvalues.                
+            </javadoc>
+            <declaration name="imagEigenvalues" type="double[]" line="93"/>
+            <javadoc line="93">
+                Imaginary part of the realEigenvalues.                
+            </javadoc>
+            <declaration name="eigenvectors" type="ArrayRealVector[]" line="95"/>
+            <javadoc line="95">
+                Eigenvectors.                
+            </javadoc>
+            <declaration name="cachedV" type="RealMatrix" line="97"/>
+            <javadoc line="97">
+                Cached value of V.                
+            </javadoc>
+            <declaration name="cachedD" type="RealMatrix" line="99"/>
+            <javadoc line="99">
+                Cached value of D.                
+            </javadoc>
+            <declaration name="cachedVt" type="RealMatrix" line="101"/>
+            <javadoc line="101">
+                Cached value of Vt.                
+            </javadoc>
+            <declaration name="isSymmetric" type="boolean" line="103"/>
+            <javadoc line="103">
+                Whether the matrix is symmetric.                
+            </javadoc>
+            <javadoc line="106">
+                Calculates the eigen decomposition of the given real matrix.
+                 * &lt;p&gt;
+                 * Supports decomposition of a general matrix since 3.1.                
+                <@param>
+                    m matrix Matrix to decompose.                    
+                </@param>
+                <@throws>
+                    s MaxCountExceededException if the algorithm fails to converge.                    
+                </@throws>
+                <@throws>
+                    s MathArithmeticException if the decomposition of a general matrix
+                     * results in a matrix with zero norm                    
+                </@throws>
+                <@since>
+                    e 3.1                    
+                </@since>
+            </javadoc>
+            <method name="EigenDecomposition" type="constructor" line="118">
+                <declaration name="symTol" type="double" line="119"/>
+                <scope line="121"/>
+                <scope line="124">
+                    <declaration name="t" type="SchurTransformer" line="125"/>
+                </scope>
+            </method>
+            <javadoc line="130">
+                Calculates the eigen decomposition of the given real matrix.                
+                <@param>
+                    m matrix Matrix to decompose.                    
+                </@param>
+                <@param>
+                    m splitTolerance Dummy parameter (present for backward
+                     * compatibility only).                    
+                </@param>
+                <@throws>
+                    s MathArithmeticException  if the decomposition of a general matrix
+                     * results in a matrix with zero norm                    
+                </@throws>
+                <@throws>
+                    s MaxCountExceededException if the algorithm fails to converge.                    
+                </@throws>
+                <@deprecated>
+                    d in 3.1 (to be removed in 4.0) due to unused parameter                    
+                </@deprecated>
+            </javadoc>
+            <method name="EigenDecomposition" type="constructor" line="144"/>
+            <javadoc line="148">
+                Calculates the eigen decomposition of the symmetric tridiagonal
+                 * matrix.  The Householder matrix is assumed to be the identity matrix.                
+                <@param>
+                    m main Main diagonal of the symmetric tridiagonal form.                    
+                </@param>
+                <@param>
+                    m secondary Secondary of the tridiagonal form.                    
+                </@param>
+                <@throws>
+                    s MaxCountExceededException if the algorithm fails to converge.                    
+                </@throws>
+                <@since>
+                    e 3.1                    
+                </@since>
+            </javadoc>
+            <method name="EigenDecomposition" type="constructor" line="157">
+                <declaration name="size" type="int" line="162"/>
+                <declaration name="z" type="double[][]" line="163"/>
+                <scope line="164"/>
+            </method>
+            <javadoc line="170">
+                Calculates the eigen decomposition of the symmetric tridiagonal
+                 * matrix.  The Householder matrix is assumed to be the identity matrix.                
+                <@param>
+                    m main Main diagonal of the symmetric tridiagonal form.                    
+                </@param>
+                <@param>
+                    m secondary Secondary of the tridiagonal form.                    
+                </@param>
+                <@param>
+                    m splitTolerance Dummy parameter (present for backward
+                     * compatibility only).                    
+                </@param>
+                <@throws>
+                    s MaxCountExceededException if the algorithm fails to converge.                    
+                </@throws>
+                <@deprecated>
+                    d in 3.1 (to be removed in 4.0) due to unused parameter                    
+                </@deprecated>
+            </javadoc>
+            <method name="EigenDecomposition" type="constructor" line="183"/>
+            <javadoc line="187">
+                Gets the matrix V of the decomposition.
+                 * V is an orthogonal matrix, i.e. its transpose is also its inverse.
+                 * The columns of V are the eigenvectors of the original matrix.
+                 * No assumption is made about the orientation of the system axes formed
+                 * by the columns of V (e.g. in a 3-dimension space, V can form a left-
+                 * or right-handed system).                
+                <@return>
+                    n the V matrix.                    
+                </@return>
+            </javadoc>
+            <method name="getV" type="RealMatrix" line="197">
+                <comment line="198">
+                    return the cached matrix                    
+                </comment>
+                <scope line="199">
+                    <declaration name="m" type="int" line="200"/>
+                    <scope line="202"/>
+                </scope>
+            </method>
+            <javadoc line="210">
+                Gets the block diagonal matrix D of the decomposition.
+                 * D is a block diagonal matrix.
+                 * Real eigenvalues are on the diagonal while complex values are on
+                 * 2x2 blocks { {real +imaginary}, {-imaginary, real} }.                
+                <@return>
+                    n the D matrix.                    
+                </@return>
+                <@see>
+                    e #getRealEigenvalues()                    
+                </@see>
+                <@see>
+                    e #getImagEigenvalues()                    
+                </@see>
+            </javadoc>
+            <method name="getD" type="RealMatrix" line="221">
+                <scope line="223">
+                    <scope line="227">
+                        <scope line="228"/>
+                        <scope line="230"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="238">
+                Gets the transpose of the matrix V of the decomposition.
+                 * V is an orthogonal matrix, i.e. its transpose is also its inverse.
+                 * The columns of V are the eigenvectors of the original matrix.
+                 * No assumption is made about the orientation of the system axes formed
+                 * by the columns of V (e.g. in a 3-dimension space, V can form a left-
+                 * or right-handed system).                
+                <@return>
+                    n the transpose of the V matrix.                    
+                </@return>
+            </javadoc>
+            <method name="getVT" type="RealMatrix" line="248">
+                <comment line="249">
+                    return the cached matrix                    
+                </comment>
+                <scope line="250">
+                    <declaration name="m" type="int" line="251"/>
+                    <scope line="253"/>
+                </scope>
+            </method>
+            <javadoc line="262">
+                Returns whether the calculated eigen values are complex or real.
+                 * &lt;p&gt;The method performs a zero check for each element of the{@link #getImagEigenvalues()} array and returns {@code true} if any
+                 * element is not equal to zero.                
+                <@return>
+                    n {@code true} if the eigen values are complex, {@code false} otherwise                    
+                </@return>
+                <@since>
+                    e 3.1                    
+                </@since>
+            </javadoc>
+            <method name="hasComplexEigenvalues" type="boolean" line="271">
+                <scope line="272">
+                    <scope line="273"/>
+                </scope>
+            </method>
+            <javadoc line="280">
+                Gets a copy of the real parts of the eigenvalues of the original matrix.                
+                <@return>
+                    n a copy of the real parts of the eigenvalues of the original matrix.                    
+                </@return>
+                <@see>
+                    e #getD()                    
+                </@see>
+                <@see>
+                    e #getRealEigenvalue(int)                    
+                </@see>
+                <@see>
+                    e #getImagEigenvalues()                    
+                </@see>
+            </javadoc>
+            <method name="getRealEigenvalues" type="double[]" line="289"/>
+            <javadoc line="293">
+                Returns the real part of the i&lt;sup&gt;th&lt;/sup&gt; eigenvalue of the original
+                 * matrix.                
+                <@param>
+                    m i index of the eigenvalue (counting from 0)                    
+                </@param>
+                <@return>
+                    n real part of the i<sup>th</sup> eigenvalue of the original
+                     * matrix.                    
+                </@return>
+                <@see>
+                    e #getD()                    
+                </@see>
+                <@see>
+                    e #getRealEigenvalues()                    
+                </@see>
+                <@see>
+                    e #getImagEigenvalue(int)                    
+                </@see>
+            </javadoc>
+            <method name="getRealEigenvalue" type="double" line="305"/>
+            <javadoc line="309">
+                Gets a copy of the imaginary parts of the eigenvalues of the original
+                 * matrix.                
+                <@return>
+                    n a copy of the imaginary parts of the eigenvalues of the original
+                     * matrix.                    
+                </@return>
+                <@see>
+                    e #getD()                    
+                </@see>
+                <@see>
+                    e #getImagEigenvalue(int)                    
+                </@see>
+                <@see>
+                    e #getRealEigenvalues()                    
+                </@see>
+            </javadoc>
+            <method name="getImagEigenvalues" type="double[]" line="320"/>
+            <javadoc line="324">
+                Gets the imaginary part of the i&lt;sup&gt;th&lt;/sup&gt; eigenvalue of the original
+                 * matrix.                
+                <@param>
+                    m i Index of the eigenvalue (counting from 0).                    
+                </@param>
+                <@return>
+                    n the imaginary part of the i<sup>th</sup> eigenvalue of the original
+                     * matrix.                    
+                </@return>
+                <@see>
+                    e #getD()                    
+                </@see>
+                <@see>
+                    e #getImagEigenvalues()                    
+                </@see>
+                <@see>
+                    e #getRealEigenvalue(int)                    
+                </@see>
+            </javadoc>
+            <method name="getImagEigenvalue" type="double" line="336"/>
+            <javadoc line="340">
+                Gets a copy of the i&lt;sup&gt;th&lt;/sup&gt; eigenvector of the original matrix.                
+                <@param>
+                    m i Index of the eigenvector (counting from 0).                    
+                </@param>
+                <@return>
+                    n a copy of the i<sup>th</sup> eigenvector of the original matrix.                    
+                </@return>
+                <@see>
+                    e #getD()                    
+                </@see>
+            </javadoc>
+            <method name="getEigenvector" type="RealVector" line="347"/>
+            <javadoc line="351">
+                Computes the determinant of the matrix.                
+                <@return>
+                    n the determinant of the matrix.                    
+                </@return>
+            </javadoc>
+            <method name="getDeterminant" type="double" line="356">
+                <declaration name="determinant" type="double" line="357"/>
+                <scope line="358"/>
+            </method>
+            <javadoc line="364">
+                Computes the square-root of the matrix.
+                 * This implementation assumes that the matrix is symmetric and positive
+                 * definite.                
+                <@return>
+                    n the square-root of the matrix.                    
+                </@return>
+                <@throws>
+                    s MathUnsupportedOperationException if the matrix is not
+                     * symmetric or not positive definite.                    
+                </@throws>
+                <@since>
+                    e 3.1                    
+                </@since>
+            </javadoc>
+            <method name="getSquareRoot" type="RealMatrix" line="374">
+                <scope line="375"/>
+                <declaration name="sqrtEigenValues" type="double[]" line="379"/>
+                <scope line="380">
+                    <declaration name="eigen" type="double" line="381"/>
+                    <scope line="382"/>
+                </scope>
+                <declaration name="sqrtEigen" type="RealMatrix" line="387"/>
+                <declaration name="v" type="RealMatrix" line="388"/>
+                <declaration name="vT" type="RealMatrix" line="389"/>
+            </method>
+            <javadoc line="394">
+                Gets a solver for finding the A &amp;times; X = B solution in exact
+                 * linear sense.
+                 * &lt;p&gt;
+                 * Since 3.1, eigen decomposition of a general matrix is supported,
+                 * but the {@link DecompositionSolver} only supports real eigenvalues.                
+                <@return>
+                    n a solver                    
+                </@return>
+                <@throws>
+                    s MathUnsupportedOperationException if the decomposition resulted in
+                     * complex eigenvalues                    
+                </@throws>
+            </javadoc>
+            <method name="getSolver" type="DecompositionSolver" line="405">
+                <scope line="406"/>
+            </method>
+            <class name="Solver" line="412">
+                <implements interface="DecompositionSolver"/>
+                <javadoc line="412">
+                    Specialized solver.                    
+                </javadoc>
+                <declaration name="realEigenvalues" type="double[]" line="414"/>
+                <javadoc line="414">
+                    Real part of the realEigenvalues.                    
+                </javadoc>
+                <declaration name="imagEigenvalues" type="double[]" line="416"/>
+                <javadoc line="416">
+                    Imaginary part of the realEigenvalues.                    
+                </javadoc>
+                <declaration name="eigenvectors" type="ArrayRealVector[]" line="418"/>
+                <javadoc line="418">
+                    Eigenvectors.                    
+                </javadoc>
+                <javadoc line="421">
+                    Builds a solver from decomposed matrix.                    
+                    <@param>
+                        m realEigenvalues Real parts of the eigenvalues.                        
+                    </@param>
+                    <@param>
+                        m imagEigenvalues Imaginary parts of the eigenvalues.                        
+                    </@param>
+                    <@param>
+                        m eigenvectors Eigenvectors.                        
+                    </@param>
+                </javadoc>
+                <method name="Solver" type="constructor" line="430"/>
+                <javadoc line="436">
+                    Solves the linear equation A &amp;times; X = B for symmetric matrices A.
+                     * &lt;p&gt;
+                     * This method only finds exact linear solutions, i.e. solutions for
+                     * which ||A &amp;times; X - B|| is exactly 0.
+                     * &lt;/p&gt;                    
+                    <@param>
+                        m b Right-hand side of the equation A &times; X = B.                        
+                    </@param>
+                    <@return>
+                        n a Vector X that minimizes the two norm of A &times; X - B.                        
+                    </@return>
+                    <@throws>
+                        s DimensionMismatchException if the matrices dimensions do not match.                        
+                    </@throws>
+                    <@throws>
+                        s SingularMatrixException if the decomposed matrix is singular.                        
+                    </@throws>
+                </javadoc>
+                <method name="solve" type="RealVector" line="449">
+                    <scope line="450"/>
+                    <declaration name="m" type="int" line="454"/>
+                    <scope line="455"/>
+                    <declaration name="bp" type="double[]" line="459"/>
+                    <scope line="460">
+                        <declaration name="v" type="ArrayRealVector" line="461"/>
+                        <declaration name="vData" type="double[]" line="462"/>
+                        <declaration name="s" type="double" line="463"/>
+                        <scope line="464"/>
+                    </scope>
+                </method>
+                <javadoc line="472">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="solve" type="RealMatrix" line="473">
+                    <scope line="475"/>
+                    <declaration name="m" type="int" line="479"/>
+                    <scope line="480"/>
+                    <declaration name="nColB" type="int" line="484"/>
+                    <declaration name="bp" type="double[][]" line="485"/>
+                    <declaration name="tmpCol" type="double[]" line="486"/>
+                    <scope line="487">
+                        <scope line="488"/>
+                        <scope line="492">
+                            <declaration name="v" type="ArrayRealVector" line="493"/>
+                            <declaration name="vData" type="double[]" line="494"/>
+                            <declaration name="s" type="double" line="495"/>
+                            <scope line="496"/>
+                            <scope line="500"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="510">
+                    Checks whether the decomposed matrix is non-singular.                    
+                    <@return>
+                        n true if the decomposed matrix is non-singular.                        
+                    </@return>
+                </javadoc>
+                <method name="isNonSingular" type="boolean" line="515">
+                    <scope line="516">
+                        <scope line="518"/>
+                    </scope>
+                </method>
+                <javadoc line="525">
+                    Get the inverse of the decomposed matrix.                    
+                    <@return>
+                        n the inverse matrix.                        
+                    </@return>
+                    <@throws>
+                        s SingularMatrixException if the decomposed matrix is singular.                        
+                    </@throws>
+                </javadoc>
+                <method name="getInverse" type="RealMatrix" line="531">
+                    <scope line="532"/>
+                    <declaration name="m" type="int" line="536"/>
+                    <declaration name="invData" type="double[][]" line="537"/>
+                    <scope line="539">
+                        <declaration name="invI" type="double[]" line="540"/>
+                        <scope line="541">
+                            <declaration name="invIJ" type="double" line="542"/>
+                            <scope line="543">
+                                <declaration name="vK" type="double[]" line="544"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <javadoc line="554">
+                Transforms the matrix to tridiagonal form.                
+                <@param>
+                    m matrix Matrix to transform.                    
+                </@param>
+            </javadoc>
+            <method name="transformToTridiagonal" type="void" line="559">
+                <comment line="560">
+                    transform the matrix to tridiagonal                    
+                </comment>
+            </method>
+            <javadoc line="566">
+                Find eigenvalues and eigenvectors (Dubrulle et al., 1971)                
+                <@param>
+                    m householderMatrix Householder matrix of the transformation
+                     * to tridiagonal form.                    
+                </@param>
+            </javadoc>
+            <method name="findEigenVectors" type="void" line="572">
+                <comment line="573">
+                    Determine the largest main and secondary value in absolute term.                    
+                </comment>
+                <comment line="573">
+                    Make null any main and secondary value too small to be significant                    
+                </comment>
+                <comment line="573">
+                    Sort the eigen values (and vectors) in increase order                    
+                </comment>
+                <comment line="573">
+                    Determine the largest eigen value in absolute term.                    
+                </comment>
+                <comment line="573">
+                    Make null any eigen value too small to be significant                    
+                </comment>
+                <declaration name="z" type="double[][]" line="573"/>
+                <declaration name="n" type="int" line="574"/>
+                <declaration name="e" type="double[]" line="577"/>
+                <scope line="578"/>
+                <declaration name="maxAbsoluteValue" type="double" line="586"/>
+                <scope line="587">
+                    <scope line="588"/>
+                    <scope line="591"/>
+                </scope>
+                <scope line="596">
+                    <scope line="597">
+                        <scope line="598"/>
+                        <scope line="601"/>
+                    </scope>
+                </scope>
+                <scope line="607">
+                    <declaration name="its" type="int" line="608"/>
+                    <declaration name="m" type="int" line="609"/>
+                    <scope line="610">
+                        <scope line="611">
+                            <declaration name="delta" type="double" line="612"/>
+                            <scope line="614"/>
+                        </scope>
+                        <scope line="618">
+                            <scope line="619"/>
+                            <declaration name="q" type="double" line="624"/>
+                            <declaration name="t" type="double" line="625"/>
+                            <scope line="626"/>
+                            <scope line="628"/>
+                            <declaration name="u" type="double" line="631"/>
+                            <declaration name="s" type="double" line="632"/>
+                            <declaration name="c" type="double" line="633"/>
+                            <declaration name="i" type="int" line="634"/>
+                            <scope line="635">
+                                <declaration name="p" type="double" line="636"/>
+                                <declaration name="h" type="double" line="637"/>
+                                <scope line="638"/>
+                                <scope line="644"/>
+                                <scope line="651"/>
+                                <scope line="661"/>
+                            </scope>
+                            <scope line="667"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="678">
+                    <declaration name="k" type="int" line="679"/>
+                    <declaration name="p" type="double" line="680"/>
+                    <scope line="681">
+                        <scope line="682"/>
+                    </scope>
+                    <scope line="687">
+                        <scope line="690"/>
+                    </scope>
+                </scope>
+                <scope line="700">
+                    <scope line="701"/>
+                </scope>
+                <scope line="706">
+                    <scope line="707">
+                        <scope line="708"/>
+                    </scope>
+                </scope>
+                <declaration name="tmp" type="double[]" line="714"/>
+                <scope line="715">
+                    <scope line="716"/>
+                </scope>
+            </method>
+            <javadoc line="723">
+                Transforms the matrix to Schur form and calculates the eigenvalues.                
+                <@param>
+                    m matrix Matrix to transform.                    
+                </@param>
+                <@return>
+                    n the {@link SchurTransformer Shur transform} for this matrix                    
+                </@return>
+            </javadoc>
+            <method name="transformToSchur" type="SchurTransformer" line="729">
+                <declaration name="schurTransform" type="SchurTransformer" line="730"/>
+                <declaration name="matT" type="double[][]" line="731"/>
+                <scope line="736">
+                    <scope line="738"/>
+                    <scope line="740">
+                        <declaration name="x" type="double" line="741"/>
+                        <declaration name="p" type="double" line="742"/>
+                        <declaration name="z" type="double" line="743"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="754">
+                Performs a division of two complex numbers.                
+                <@param>
+                    m xr real part of the first number                    
+                </@param>
+                <@param>
+                    m xi imaginary part of the first number                    
+                </@param>
+                <@param>
+                    m yr real part of the second number                    
+                </@param>
+                <@param>
+                    m yi imaginary part of the second number                    
+                </@param>
+                <@return>
+                    n result of the complex division                    
+                </@return>
+            </javadoc>
+            <method name="cdiv" type="Complex" line="764"/>
+            <javadoc line="768">
+                Find eigenvectors from a matrix transformed to Schur form.                
+                <@param>
+                    m schur the schur transformation of the matrix                    
+                </@param>
+                <@throws>
+                    s MathArithmeticException if the Schur form has a norm of zero                    
+                </@throws>
+            </javadoc>
+            <method name="findEigenVectorsFromSchur" type="void" line="775">
+                <comment line="776">
+                    compute matrix norm                    
+                </comment>
+                <comment line="776">
+                    we can not handle a matrix with zero norm                    
+                </comment>
+                <comment line="776">
+                    Backsubstitute to find vectors of upper triangular form                    
+                </comment>
+                <comment line="776">
+                    Vectors of isolated roots                    
+                </comment>
+                <comment line="776">
+                    Back transformation to get eigenvectors of original matrix                    
+                </comment>
+                <declaration name="matrixT" type="double[][]" line="776"/>
+                <declaration name="matrixP" type="double[][]" line="777"/>
+                <declaration name="n" type="int" line="779"/>
+                <declaration name="norm" type="double" line="782"/>
+                <scope line="783">
+                    <scope line="784"/>
+                </scope>
+                <scope line="790"/>
+                <declaration name="r" type="double" line="796"/>
+                <declaration name="s" type="double" line="797"/>
+                <declaration name="z" type="double" line="798"/>
+                <scope line="800">
+                    <declaration name="p" type="double" line="801"/>
+                    <declaration name="q" type="double" line="802"/>
+                    <scope line="804">
+                        <declaration name="l" type="int" line="806"/>
+                        <scope line="808">
+                            <declaration name="w" type="double" line="809"/>
+                            <scope line="811"/>
+                            <scope line="814"/>
+                            <scope line="817">
+                                <scope line="819">
+                                    <scope line="820"/>
+                                    <scope line="822"/>
+                                </scope>
+                                <scope line="825">
+                                    <declaration name="x" type="double" line="827"/>
+                                    <declaration name="y" type="double" line="828"/>
+                                    <declaration name="t" type="double" line="831"/>
+                                    <scope line="833"/>
+                                    <scope line="835"/>
+                                </scope>
+                                <declaration name="t" type="double" line="841"/>
+                                <scope line="842">
+                                    <scope line="843"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="849">
+                        <declaration name="l" type="int" line="851"/>
+                        <scope line="854"/>
+                        <scope line="857">
+                            <declaration name="result" type="Complex" line="858"/>
+                        </scope>
+                        <scope line="867">
+                            <declaration name="ra" type="double" line="868"/>
+                            <declaration name="sa" type="double" line="869"/>
+                            <scope line="870"/>
+                            <declaration name="w" type="double" line="874"/>
+                            <scope line="876"/>
+                            <scope line="880">
+                                <scope line="882">
+                                    <declaration name="c" type="Complex" line="883"/>
+                                </scope>
+                                <scope line="886">
+                                    <declaration name="x" type="double" line="888"/>
+                                    <declaration name="y" type="double" line="889"/>
+                                    <declaration name="vr" type="double" line="890"/>
+                                    <declaration name="vi" type="double" line="892"/>
+                                    <scope line="893"/>
+                                    <declaration name="c" type="Complex" line="898"/>
+                                    <scope line="903"/>
+                                    <scope line="908">
+                                        <declaration name="c2" type="Complex" line="909"/>
+                                    </scope>
+                                </scope>
+                                <declaration name="t" type="double" line="917"/>
+                                <scope line="919">
+                                    <scope line="920"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="931">
+                    <scope line="932">
+                        <scope line="933"/>
+                    </scope>
+                </scope>
+                <scope line="940">
+                    <scope line="941">
+                        <scope line="943"/>
+                    </scope>
+                </scope>
+                <declaration name="tmp" type="double[]" line="951"/>
+                <scope line="952">
+                    <scope line="953"/>
+                </scope>
+            </method>
+        </class>
+    </source>

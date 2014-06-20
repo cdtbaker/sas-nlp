@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -20,7 +21,6 @@ import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
-import org.eclipse.jdt.core.dom.SimpleType;
 import org.eclipse.jdt.core.dom.TagElement;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -107,12 +107,22 @@ public class XMLFromSource {
 
 			@Override
 			public boolean visit(TypeDeclaration node) {
+
 				checkForComments(node);
 				if (node.isInterface()) {
 					JMLInterface in = new JMLInterface(node.getName()
 							.toString());
 					for (Object n : node.superInterfaceTypes()) {
-						String name = ((SimpleType) n).getName().toString();
+						String name = "";
+						// name = n.toString();
+						name = StringEscapeUtils.escapeXml(n.toString());
+						/*
+						 * if (n instanceof ParameterizedType) { name =
+						 * ((SimpleType
+						 * )((ParameterizedType)n).getType()).getName
+						 * ().toString(); } else if (n instanceof SimpleType) {
+						 * name = ((SimpleType) n).getName().toString(); }
+						 */
 						in.addSuperInterface(name);
 					}
 					addComments(in);
@@ -128,7 +138,16 @@ public class XMLFromSource {
 					addComments(jc);
 					b.addBlock(jc);
 					for (Object n : node.superInterfaceTypes()) {
-						String name = ((SimpleType) n).getName().toString();
+						String name = "";
+						// name = n.toString();
+						name = StringEscapeUtils.escapeXml(n.toString());
+						/*
+						 * if (n instanceof ParameterizedType) { name =
+						 * ((SimpleType
+						 * )((ParameterizedType)n).getType()).getName
+						 * ().toString(); } else if (n instanceof SimpleType) {
+						 * name = ((SimpleType) n).getName().toString(); }
+						 */
 						b.addLine(new JMLSuperInterface(name));
 					}
 				}
@@ -144,6 +163,10 @@ public class XMLFromSource {
 					String name = node.getName().toString();
 					String type = node.getReturnType2().toString();
 					JMLMethod m = new JMLMethod(name, type);
+					if (lineNumbers) {
+						m.addAttribute("line", getLineNumber(node));
+					}
+
 					b.addLine(m);
 				}
 				return super.visit(node);
@@ -160,16 +183,37 @@ public class XMLFromSource {
 					ASTNode withoutSignature = NodeFinder.perform(
 							((Comment) com).getAlternateRoot(),
 							((Comment) com).getStartPosition(), 0);
-					if (withoutSignature.getParent().toString()
-							.equals(node.toString())) {
-						commentsToAdd.add(new JMLComment(
-								getCommentText((ASTNode) com)));
-						commentsToAdd.get(commentsToAdd.size() - 1)
-								.addAttribute(
-										"line",
-										String.valueOf(1 + c
-												.getLineNumber(withoutSignature
-														.getStartPosition())));
+
+					if (node instanceof TypeDeclaration) {
+						if (withoutSignature.getParent() != null
+								&& withoutSignature.getParent().toString()
+										.equals(node.getParent().toString())) {
+
+							commentsToAdd.add(new JMLComment(
+									getCommentText((ASTNode) com)));
+							commentsToAdd
+									.get(commentsToAdd.size() - 1)
+									.addAttribute(
+											"line",
+											String.valueOf(1 + c
+													.getLineNumber(withoutSignature
+															.getStartPosition())));
+						}
+					} else {
+						if (withoutSignature.getParent() != null
+								&& withoutSignature.getParent().toString()
+										.equals(node.toString())) {
+
+							commentsToAdd.add(new JMLComment(
+									getCommentText((ASTNode) com)));
+							commentsToAdd
+									.get(commentsToAdd.size() - 1)
+									.addAttribute(
+											"line",
+											String.valueOf(1 + c
+													.getLineNumber(withoutSignature
+															.getStartPosition())));
+						}
 					}
 				}
 			}
@@ -191,7 +235,7 @@ public class XMLFromSource {
 				} else {
 					sb.append(source[start - 1].trim().substring(2));
 				}
-				return sb.toString();
+				return StringEscapeUtils.escapeXml(sb.toString());
 			}
 
 			public void addComments(JMLElement m) {
@@ -261,16 +305,15 @@ public class XMLFromSource {
 				List<TagElement> tags = node.tags();
 				JMLJavadoc j = null;
 				if (!tags.isEmpty()) {
-					j = new JMLJavadoc(tags.get(0).toString().trim()
-							.substring(2));
+					j = new JMLJavadoc(StringEscapeUtils.escapeXml(tags.get(0)
+							.toString().trim().substring(2)));
 				} else {
 					j = new JMLJavadoc("");
 				}
 				for (int i = 1; i < tags.size(); i++) {
 					j.addContent(new JavadocTag(tags.get(i).getTagName(), tags
-							.get(i).toString()
-							.replaceAll(tags.get(i).getTagName() + " ", "")
-							.trim().substring(1)));
+							.get(i).toString().trim()
+							.substring(1 + tags.get(i).getTagName().length())));
 
 				}
 				j.addAttribute("line", String.valueOf(c.getLineNumber(node
@@ -284,6 +327,8 @@ public class XMLFromSource {
 				String type = node.getType().toString();
 				String name = ((VariableDeclarationFragment) node.fragments()
 						.get(0)).getName().toString();
+				name = StringEscapeUtils.escapeXml(name);
+				type = StringEscapeUtils.escapeXml(type);
 				JMLVariable v = new JMLVariable(name, type);
 				if (lineNumbers) {
 					v.addAttribute("line", getLineNumber(node));
@@ -298,7 +343,8 @@ public class XMLFromSource {
 				String type = node.getType().toString();
 				String name = ((VariableDeclarationFragment) node.fragments()
 						.get(0)).getName().toString();
-
+				name = StringEscapeUtils.escapeXml(name);
+				type = StringEscapeUtils.escapeXml(type);
 				JMLVariable v = new JMLVariable(name, type);
 				if (lineNumbers) {
 					v.addAttribute("line", getLineNumber(node));
