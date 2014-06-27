@@ -11,14 +11,14 @@ public class XMLBuilder {
 
 	private Stack<JMLElement> eStack;
 	private JMLElement root;
-	
+
 	public XMLBuilder(String packageName) {
 		eStack = new Stack<JMLElement>();
 		this.root = new JMLSource(packageName);
 		eStack.push(root);
 	}
-	
-	public JMLElement getRoot(){
+
+	public JMLElement getRoot() {
 		return root;
 	}
 

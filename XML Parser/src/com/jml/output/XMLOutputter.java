@@ -56,12 +56,12 @@ public class XMLOutputter {
 			StringElement se = (StringElement) e;
 			String[] st = se.getString().trim().split("\n");
 			for (int j = 0; j < st.length; j++) {
-				
+
 				s.append(st[j]);
 				if (j < st.length - 1) {
 					s.append("\n");
 				}
-				s.append(tab(i-1));
+				s.append(tab(i - 1));
 			}
 		}
 

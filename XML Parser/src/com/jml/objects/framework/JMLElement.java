@@ -31,19 +31,17 @@ public class JMLElement extends Element {
 	public void addAttribute(String k, String v) {
 		attributes.add(new Attribute(k, v));
 	}
-	
-	public String getName(){
+
+	public String getName() {
 		return name;
 	}
-	
-	public List<Element> children(){
+
+	public List<Element> children() {
 		return children;
 	}
-	
-	public List<Attribute> attributes(){
+
+	public List<Attribute> attributes() {
 		return attributes;
 	}
-
-
 
 }

@@ -1,14 +1,14 @@
 package com.jml.objects.framework;
 
-public class StringElement extends Element{
+public class StringElement extends Element {
 
 	protected String s;
-	
-	public StringElement(String s){
+
+	public StringElement(String s) {
 		this.s = s;
 	}
-	
-	public String getString(){
+
+	public String getString() {
 		return s;
 	}
 }

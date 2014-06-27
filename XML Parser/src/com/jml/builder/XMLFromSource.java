@@ -21,13 +21,18 @@ import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.ParameterizedType;
+import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.TagElement;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
 import com.jml.objects.classlevel.JMLClass;
 import com.jml.objects.classlevel.JMLInterface;
+import com.jml.objects.classlevel.JMLSuperClass;
 import com.jml.objects.classlevel.JMLSuperInterface;
 import com.jml.objects.comments.JMLComment;
 import com.jml.objects.comments.JMLJavadoc;
@@ -112,43 +117,84 @@ public class XMLFromSource {
 				if (node.isInterface()) {
 					JMLInterface in = new JMLInterface(node.getName()
 							.toString());
+
 					for (Object n : node.superInterfaceTypes()) {
-						String name = "";
-						// name = n.toString();
-						name = StringEscapeUtils.escapeXml(n.toString());
-						/*
-						 * if (n instanceof ParameterizedType) { name =
-						 * ((SimpleType
-						 * )((ParameterizedType)n).getType()).getName
-						 * ().toString(); } else if (n instanceof SimpleType) {
-						 * name = ((SimpleType) n).getName().toString(); }
-						 */
-						in.addSuperInterface(name);
+						Type t = (Type) n;
+						String name = t.toString();
+						int index = name.indexOf('<');
+						if (index > -1) {
+							name = name.substring(0, index);
+						}
+
+						JMLSuperInterface si = new JMLSuperInterface(name);
+						if (t.isParameterizedType()) {
+							ParameterizedType pt = (ParameterizedType) t;
+							for (Object o : pt.typeArguments()) {
+								Type ta = (Type) o;
+								si.addTypeParam(ta.toString());
+							}
+						}
+						in.addContent(si);
 					}
 					addComments(in);
 					b.addBlock(in);
+
+					for (Object o : node.typeParameters()) {
+						TypeParameter tp = (TypeParameter) o;
+						String name = tp.getName().toString();
+						in.addTypeParam(name);
+
+					}
+
 				} else {
 					JMLClass jc = new JMLClass(node.getName().toString());
 					if (node.getSuperclassType() != null) {
-						jc.addSuperclass(node.getSuperclassType().toString());
+						String name = node.getSuperclassType().toString();
+						int index = name.indexOf('<');
+						if (index > -1) {
+							name = name.substring(0, index);
+						}
+						JMLSuperClass sc = new JMLSuperClass(name);
+						if (node.getSuperclassType().isParameterizedType()) {
+							ParameterizedType pt = (ParameterizedType) node
+									.getSuperclassType();
+							for (Object o : pt.typeArguments()) {
+								Type t = (Type) o;
+								sc.addTypeParam(t.toString());
+							}
+						}
+						jc.addContent(sc);
 					}
 					if (lineNumbers) {
 						jc.addAttribute("line", getLineNumber(node));
 					}
 					addComments(jc);
 					b.addBlock(jc);
+
+					for (Object o : node.typeParameters()) {
+						TypeParameter tp = (TypeParameter) o;
+						String name = tp.getName().toString();
+						jc.addTypeParam(name);
+
+					}
+
 					for (Object n : node.superInterfaceTypes()) {
-						String name = "";
-						// name = n.toString();
-						name = StringEscapeUtils.escapeXml(n.toString());
-						/*
-						 * if (n instanceof ParameterizedType) { name =
-						 * ((SimpleType
-						 * )((ParameterizedType)n).getType()).getName
-						 * ().toString(); } else if (n instanceof SimpleType) {
-						 * name = ((SimpleType) n).getName().toString(); }
-						 */
-						b.addLine(new JMLSuperInterface(name));
+						Type t = (Type) n;
+						String name = t.toString();
+						int index = name.indexOf('<');
+						if (index > -1) {
+							name = name.substring(0, index);
+						}
+
+						JMLSuperInterface si = new JMLSuperInterface(name);
+						if (t.isParameterizedType()) {
+							ParameterizedType pt = (ParameterizedType) t;
+							for (Object o : pt.typeArguments()) {
+								Type ta = (Type) o;
+								si.addTypeParam(ta.toString());
+							}
+						}
+						jc.addContent(si);
 					}
 				}
 				return super.visit(node);
@@ -188,7 +234,6 @@ public class XMLFromSource {
 						if (withoutSignature.getParent() != null
 								&& withoutSignature.getParent().toString()
 										.equals(node.getParent().toString())) {
-
 							commentsToAdd.add(new JMLComment(
 									getCommentText((ASTNode) com)));
 							commentsToAdd
@@ -248,6 +293,7 @@ public class XMLFromSource {
 			@Override
 			public boolean visit(Block node) {
 				if (md != null) {
+
 					JMLMethod m = null;
 					if (md.getReturnType2() != null) {
 						m = new JMLMethod(md.getName().toString(), md
@@ -260,6 +306,14 @@ public class XMLFromSource {
 					}
 					b.addBlock(m);
 					addComments(m);
+
+					for (Object o : md.parameters()) {
+						SingleVariableDeclaration svd = (SingleVariableDeclaration) o;
+						String type = svd.getType().toString();
+						String name = svd.getName().toString();
+						m.addParam(type, name);
+					}
+
 					md = null;
 				} else {
 					JMLScope scope = new JMLScope();
@@ -305,15 +359,17 @@ public class XMLFromSource {
 				List<TagElement> tags = node.tags();
 				JMLJavadoc j = null;
 				if (!tags.isEmpty()) {
-					j = new JMLJavadoc(StringEscapeUtils.escapeXml(tags.get(0)
-							.toString().trim().substring(2)));
+					j = new JMLJavadoc(StringEscapeUtils.escapeXml(
+							tags.get(0).toString().trim().substring(2))
+							.replaceAll("\\*", ""));
 				} else {
 					j = new JMLJavadoc("");
 				}
 				for (int i = 1; i < tags.size(); i++) {
 					j.addContent(new JavadocTag(tags.get(i).getTagName(), tags
 							.get(i).toString().trim()
-							.substring(1 + tags.get(i).getTagName().length())));
+							.substring(1 + tags.get(i).getTagName().length())
+							.replaceAll("\\*", "")));
 
 				}
 				j.addAttribute("line", String.valueOf(c.getLineNumber(node
@@ -345,6 +401,7 @@ public class XMLFromSource {
 						.get(0)).getName().toString();
 				name = StringEscapeUtils.escapeXml(name);
 				type = StringEscapeUtils.escapeXml(type);
+
 				JMLVariable v = new JMLVariable(name, type);
 				if (lineNumbers) {
 					v.addAttribute("line", getLineNumber(node));
