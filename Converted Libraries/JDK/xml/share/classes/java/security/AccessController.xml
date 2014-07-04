@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.security">
+        <import package="sun.security.util.Debug"/>
+        <class name="AccessController" line="30">
+            <javadoc line="30">
+                &lt;p&gt; The AccessController class is used for access control operations
+                  and decisions.
+                  &lt;p&gt; More specifically, the AccessController class is used for
+                  three purposes:
+                  &lt;ul&gt;
+                  &lt;li&gt; to decide whether an access to a critical system
+                  resource is to be allowed or denied, based on the security policy
+                  currently in effect,&lt;p&gt;
+                  &lt;li&gt;to mark code as being &quot;privileged&quot;, thus affecting subsequent
+                  access determinations, and&lt;p&gt;
+                  &lt;li&gt;to obtain a &quot;snapshot&quot; of the current calling context so
+                  access-control decisions from a different context can be made with
+                  respect to the saved context. &lt;/ul&gt;
+                  &lt;p&gt; The {@link #checkPermission(Permission) checkPermission} method
+                  determines whether the access request indicated by a specified
+                  permission should be granted or denied. A sample call appears
+                  below. In this example, &lt;code&gt;checkPermission&lt;/code&gt; will determine
+                  whether or not to grant &quot;read&quot; access to the file named &quot;testFile&quot; in
+                  the &quot;/temp&quot; directory.
+                  &lt;pre&gt;
+                  FilePermission perm = new FilePermission(&quot;/temp/testFile&quot;, &quot;read&quot;);
+                  AccessController.checkPermission(perm);
+                  &lt;/pre&gt;
+                  &lt;p&gt; If a requested access is allowed,
+                  &lt;code&gt;checkPermission&lt;/code&gt; returns quietly. If denied, an
+                  AccessControlException is
+                  thrown. AccessControlException can also be thrown if the requested
+                  permission is of an incorrect type or contains an invalid value.
+                  Such information is given whenever possible.
+                  Suppose the current thread traversed m callers, in the order of caller 1
+                  to caller 2 to caller m. Then caller m invoked the
+                  &lt;code&gt;checkPermission&lt;/code&gt; method.
+                  The &lt;code&gt;checkPermission &lt;/code&gt;method determines whether access
+                  is granted or denied based on the following algorithm:
+                  &lt;pre&gt; {@code}for (int i = m; i &gt; 0; i--) 
+                  if (caller i&apos;s domain does not have the permission)
+                  throw AccessControlException
+                  else if (caller i is marked as privileged) {
+                  if (a context was specified in the call to doPrivileged)
+                  context.checkPermission(permission)
+                  return;
+                  }
+                  };
+                  // Next, check the context inherited when the thread was created.
+                  // Whenever a new thread is created, the AccessControlContext at
+                  // that time is stored and associated with the new thread, as the
+                  // &quot;inherited&quot; context.
+                  inheritedContext.checkPermission(permission);
+                  }&lt;/pre&gt;
+                  &lt;p&gt; A caller can be marked as being &quot;privileged&quot;
+                  (see {@link #doPrivileged(PrivilegedAction) doPrivileged} and below).
+                  When making access control decisions, the &lt;code&gt;checkPermission&lt;/code&gt;
+                  method stops checking if it reaches a caller that
+                  was marked as &quot;privileged&quot; via a &lt;code&gt;doPrivileged&lt;/code&gt;
+                  call without a context argument (see below for information about a
+                  context argument). If that caller&apos;s domain has the
+                  specified permission, no further checking is done and
+                  &lt;code&gt;checkPermission&lt;/code&gt;
+                  returns quietly, indicating that the requested access is allowed.
+                  If that domain does not have the specified permission, an exception
+                  is thrown, as usual.
+                  &lt;p&gt; The normal use of the &quot;privileged&quot; feature is as follows. If you
+                  don&apos;t need to return a value from within the &quot;privileged&quot; block, do
+                  the following:
+                  &lt;pre&gt; {@code}somemethod() 
+                  ...normal code here...
+                  AccessController.doPrivileged(new PrivilegedAction&lt;Void&gt;() {
+                  public Void run() {
+                  // privileged code goes here, for example:
+                  System.loadLibrary(&quot;awt&quot;);
+                  return null; // nothing to return
+                  }
+                  });
+                  ...normal code here...
+                  }}&lt;/pre&gt;
+                  &lt;p&gt;
+                  PrivilegedAction is an interface with a single method, named
+                  &lt;code&gt;run&lt;/code&gt;.
+                  The above example shows creation of an implementation
+                  of that interface; a concrete implementation of the
+                  &lt;code&gt;run&lt;/code&gt; method is supplied.
+                  When the call to &lt;code&gt;doPrivileged&lt;/code&gt; is made, an
+                  instance of the PrivilegedAction implementation is passed
+                  to it. The &lt;code&gt;doPrivileged&lt;/code&gt; method calls the
+                  &lt;code&gt;run&lt;/code&gt; method from the PrivilegedAction
+                  implementation after enabling privileges, and returns the
+                  &lt;code&gt;run&lt;/code&gt; method&apos;s return value as the
+                  &lt;code&gt;doPrivileged&lt;/code&gt; return value (which is
+                  ignored in this example).
+                  &lt;p&gt; If you need to return a value, you can do something like the following:
+                  &lt;pre&gt; {@code}somemethod() 
+                  ...normal code here...
+                  String user = AccessController.doPrivileged(
+                  new PrivilegedAction&lt;String&gt;() {
+                  public String run() {
+                  return System.getProperty(&quot;user.name&quot;);
+                  }
+                  });
+                  ...normal code here...
+                  }}&lt;/pre&gt;
+                  &lt;p&gt;If the action performed in your &lt;code&gt;run&lt;/code&gt; method could
+                  throw a &quot;checked&quot; exception (those listed in the &lt;code&gt;throws&lt;/code&gt; clause
+                  of a method), then you need to use the
+                  &lt;code&gt;PrivilegedExceptionAction&lt;/code&gt; interface instead of the
+                  &lt;code&gt;PrivilegedAction&lt;/code&gt; interface:
+                  &lt;pre&gt; {@code}somemethod() throws FileNotFoundException 
+                  ...normal code here...
+                  try {
+                  FileInputStream fis = AccessController.doPrivileged(
+                  new PrivilegedExceptionAction&lt;FileInputStream&gt;() {
+                  public FileInputStream run() throws FileNotFoundException {
+                  return new FileInputStream(&quot;someFile&quot;);
+                  }
+                  });
+                  } catch (PrivilegedActionException e) {
+                  // e.getException() should be an instance of FileNotFoundException,
+                  // as only &quot;checked&quot; exceptions will be &quot;wrapped&quot; in a
+                  // PrivilegedActionException.
+                  throw (FileNotFoundException) e.getException();
+                  }
+                  ...normal code here...
+                  }}&lt;/pre&gt;
+                  &lt;p&gt; Be very careful in your use of the &quot;privileged&quot; construct, and
+                  always remember to make the privileged code section as small as possible.
+                  &lt;p&gt; Note that &lt;code&gt;checkPermission&lt;/code&gt; always performs security checks
+                  within the context of the currently executing thread.
+                  Sometimes a security check that should be made within a given context
+                  will actually need to be done from within a
+                  &lt;i&gt;different&lt;/i&gt; context (for example, from within a worker thread).
+                  The {@link #getContext() getContext} method and
+                  AccessControlContext class are provided
+                  for this situation. The &lt;code&gt;getContext&lt;/code&gt; method takes a &quot;snapshot&quot;
+                  of the current calling context, and places
+                  it in an AccessControlContext object, which it returns. A sample call is
+                  the following:
+                  &lt;pre&gt;
+                  AccessControlContext acc = AccessController.getContext()
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  AccessControlContext itself has a &lt;code&gt;checkPermission&lt;/code&gt; method
+                  that makes access decisions based on the context &lt;i&gt;it&lt;/i&gt; encapsulates,
+                  rather than that of the current execution thread.
+                  Code within a different context can thus call that method on the
+                  previously-saved AccessControlContext object. A sample call is the
+                  following:
+                  &lt;pre&gt;
+                  acc.checkPermission(permission)
+                  &lt;/pre&gt;
+                  &lt;p&gt; There are also times where you don&apos;t know a priori which permissions
+                  to check the context against. In these cases you can use the
+                  doPrivileged method that takes a context:
+                  &lt;pre&gt; {@code}somemethod() 
+                  AccessController.doPrivileged(new PrivilegedAction&lt;Object&gt;() {
+                  public Object run() {
+                  // Code goes here. Any permission checks within this
+                  // run method will require that the intersection of the
+                  // callers protection domain and the snapshot&apos;s
+                  // context have the desired permission.
+                  }
+                  }, acc);
+                  ...normal code here...
+                  }}&lt;/pre&gt;                
+                <see>
+                    AccessControlContext                    
+                </see>
+                <author>
+                    Li Gong                    
+                </author>
+                <author>
+                    Roland Schemers                    
+                </author>
+            </javadoc>
+            <javadoc line="239">
+                Don&apos;t allow anyone to instantiate an AccessController                
+            </javadoc>
+            <method name="AccessController" type="constructor" line="242"/>
+            <method name="doPrivileged" type="T" line="244"/>
+            <javadoc line="244">
+                Performs the specified &lt;code&gt;PrivilegedAction&lt;/code&gt; with privileges
+                  enabled. The action is performed with &lt;i&gt;all&lt;/i&gt; of the permissions
+                  possessed by the caller&apos;s protection domain.
+                  &lt;p&gt; If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an (unchecked)
+                  exception, it will propagate through this method.
+                  &lt;p&gt; Note that any DomainCombiner associated with the current
+                  AccessControlContext will be ignored while the action is performed.                
+                <param>
+                    action the action to be performed.                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method.                    
+                </return>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction,AccessControlContext)                    
+                </see>
+                <see>
+                    #doPrivileged(PrivilegedExceptionAction)                    
+                </see>
+                <see>
+                    #doPrivilegedWithCombiner(PrivilegedAction)                    
+                </see>
+                <see>
+                    java.security.DomainCombiner                    
+                </see>
+            </javadoc>
+            <javadoc line="269">
+                Performs the specified &lt;code&gt;PrivilegedAction&lt;/code&gt; with privileges
+                  enabled. The action is performed with &lt;i&gt;all&lt;/i&gt; of the permissions
+                  possessed by the caller&apos;s protection domain.
+                  &lt;p&gt; If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an (unchecked)
+                  exception, it will propagate through this method.
+                  &lt;p&gt; This method preserves the current AccessControlContext&apos;s
+                  DomainCombiner (which may be null) while the action is performed.                
+                <param>
+                    action the action to be performed.                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method.                    
+                </return>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction)                    
+                </see>
+                <see>
+                    java.security.DomainCombiner                    
+                </see>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="doPrivilegedWithCombiner" type="T" line="291">
+                <params>
+                    <param name="action" type="PrivilegedAction<T>"/>
+                </params>
+                <declaration name="dc" type="DomainCombiner" line="293"/>
+                <declaration name="acc" type="AccessControlContext" line="294"/>
+                <scope line="295"/>
+            </method>
+            <method name="doPrivileged" type="T" line="302"/>
+            <javadoc line="302">
+                Performs the specified &lt;code&gt;PrivilegedAction&lt;/code&gt; with privileges
+                  enabled and restricted by the specified
+                  &lt;code&gt;AccessControlContext&lt;/code&gt;.
+                  The action is performed with the intersection of the permissions
+                  possessed by the caller&apos;s protection domain, and those possessed
+                  by the domains represented by the specified
+                  &lt;code&gt;AccessControlContext&lt;/code&gt;.
+                  &lt;p&gt;
+                  If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an (unchecked) exception,
+                  it will propagate through this method.                
+                <param>
+                    action the action to be performed.                    
+                </param>
+                <param>
+                    context an <i>access control context</i>
+                      representing the restriction to be applied to the
+                      caller's domain's privileges before performing
+                      the specified action.  If the context is
+                      <code>null</code>,
+                      then no additional restriction is applied.                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method.                    
+                </return>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction)                    
+                </see>
+                <see>
+                    #doPrivileged(PrivilegedExceptionAction,AccessControlContext)                    
+                </see>
+            </javadoc>
+            <method name="doPrivileged" type="T" line="332"/>
+            <javadoc line="332">
+                Performs the specified &lt;code&gt;PrivilegedExceptionAction&lt;/code&gt; with
+                  privileges enabled.  The action is performed with &lt;i&gt;all&lt;/i&gt; of the
+                  permissions possessed by the caller&apos;s protection domain.
+                  &lt;p&gt; If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an &lt;i&gt;unchecked&lt;/i&gt;
+                  exception, it will propagate through this method.
+                  &lt;p&gt; Note that any DomainCombiner associated with the current
+                  AccessControlContext will be ignored while the action is performed.                
+                <param>
+                    action the action to be performed                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method                    
+                </return>
+                <exception>
+                    PrivilegedActionException if the specified action's
+                      <code>run</code> method threw a <i>checked</i> exception                    
+                </exception>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction)                    
+                </see>
+                <see>
+                    #doPrivileged(PrivilegedExceptionAction,AccessControlContext)                    
+                </see>
+                <see>
+                    #doPrivilegedWithCombiner(PrivilegedExceptionAction)                    
+                </see>
+                <see>
+                    java.security.DomainCombiner                    
+                </see>
+            </javadoc>
+            <javadoc line="361">
+                Performs the specified &lt;code&gt;PrivilegedExceptionAction&lt;/code&gt; with
+                  privileges enabled.  The action is performed with &lt;i&gt;all&lt;/i&gt; of the
+                  permissions possessed by the caller&apos;s protection domain.
+                  &lt;p&gt; If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an &lt;i&gt;unchecked&lt;/i&gt;
+                  exception, it will propagate through this method.
+                  &lt;p&gt; This method preserves the current AccessControlContext&apos;s
+                  DomainCombiner (which may be null) while the action is performed.                
+                <param>
+                    action the action to be performed.                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method                    
+                </return>
+                <exception>
+                    PrivilegedActionException if the specified action's
+                      <code>run</code> method threw a <i>checked</i> exception                    
+                </exception>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction)                    
+                </see>
+                <see>
+                    #doPrivileged(PrivilegedExceptionAction,AccessControlContext)                    
+                </see>
+                <see>
+                    java.security.DomainCombiner                    
+                </see>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="doPrivilegedWithCombiner" type="T" line="387">
+                <params>
+                    <param name="action" type="PrivilegedExceptionAction<T>"/>
+                </params>
+                <declaration name="dc" type="DomainCombiner" line="389"/>
+                <declaration name="acc" type="AccessControlContext" line="390"/>
+                <scope line="391"/>
+            </method>
+            <javadoc line="397">
+                preserve the combiner across the doPrivileged call                
+            </javadoc>
+            <method name="preserveCombiner" type="AccessControlContext" line="401">
+                <params>
+                    <param name="combiner" type="DomainCombiner"/>
+                </params>
+                <comment line="403">
+                    callerClass[0] = Reflection.getCallerClass
+                     callerClass[1] = AccessController.preserveCombiner
+                     callerClass[2] = AccessController.doPrivileged
+                     callerClass[3] = caller                    
+                </comment>
+                <comment line="417">
+                    perform &apos;combine&apos; on the caller of doPrivileged,                    
+                </comment>
+                <comment line="418">
+                    even if the caller is from the bootclasspath                    
+                </comment>
+                <declaration name="callerClass" type="Class" line="403"/>
+                <anonymous_class line="411">
+                    <method name="run" type="ProtectionDomain" line="412"/>
+                </anonymous_class>
+                <declaration name="callerPd" type="ProtectionDomain" line="410"/>
+                <declaration name="pds" type="ProtectionDomain[]" line="419"/>
+            </method>
+            <method name="doPrivileged" type="T" line="424"/>
+            <javadoc line="424">
+                Performs the specified &lt;code&gt;PrivilegedExceptionAction&lt;/code&gt; with
+                  privileges enabled and restricted by the specified
+                  &lt;code&gt;AccessControlContext&lt;/code&gt;.  The action is performed with the
+                  intersection of the permissions possessed by the caller&apos;s
+                  protection domain, and those possessed by the domains represented by the
+                  specified &lt;code&gt;AccessControlContext&lt;/code&gt;.
+                  &lt;p&gt;
+                  If the action&apos;s &lt;code&gt;run&lt;/code&gt; method throws an &lt;i&gt;unchecked&lt;/i&gt;
+                  exception, it will propagate through this method.                
+                <param>
+                    action the action to be performed                    
+                </param>
+                <param>
+                    context an <i>access control context</i>
+                      representing the restriction to be applied to the
+                      caller's domain's privileges before performing
+                      the specified action.  If the context is
+                      <code>null</code>,
+                      then no additional restriction is applied.                    
+                </param>
+                <return>
+                    the value returned by the action's <code>run</code> method                    
+                </return>
+                <exception>
+                    PrivilegedActionException if the specified action's
+                      <code>run</code> method
+                      threw a <i>checked</i> exception                    
+                </exception>
+                <exception>
+                    NullPointerException if the action is <code>null</code>                    
+                </exception>
+                <see>
+                    #doPrivileged(PrivilegedAction)                    
+                </see>
+                <see>
+                    #doPrivileged(PrivilegedExceptionAction,AccessControlContext)                    
+                </see>
+            </javadoc>
+            <method name="getStackAccessControlContext" type="AccessControlContext" line="458"/>
+            <javadoc line="458">
+                Returns the AccessControl context. i.e., it gets
+                  the protection domains of all the callers on the stack,
+                  starting at the first class with a non-null
+                  ProtectionDomain.                
+                <return>
+                    the access control context based on the current stack or
+                      null if there was only privileged system code.                    
+                </return>
+            </javadoc>
+            <method name="getInheritedAccessControlContext" type="AccessControlContext" line="470"/>
+            <javadoc line="470">
+                Returns the &quot;inherited&quot; AccessControl context. This is the context
+                  that existed when the thread was created. Package private so
+                  AccessControlContext can use it.                
+            </javadoc>
+            <javadoc line="478">
+                This method takes a &quot;snapshot&quot; of the current calling context, which
+                  includes the current Thread&apos;s inherited AccessControlContext,
+                  and places it in an AccessControlContext object. This context may then
+                  be checked at a later point, possibly in another thread.                
+                <see>
+                    AccessControlContext                    
+                </see>
+                <return>
+                    the AccessControlContext based on the current context.                    
+                </return>
+            </javadoc>
+            <method name="getContext" type="AccessControlContext" line="490">
+                <comment line="493">
+                    all we had was privileged system code. We don&apos;t want                    
+                </comment>
+                <comment line="494">
+                    to return null though, so we construct a real ACC.                    
+                </comment>
+                <declaration name="acc" type="AccessControlContext" line="491"/>
+                <scope line="492"/>
+                <scope line="496"/>
+            </method>
+            <javadoc line="501">
+                Determines whether the access request indicated by the
+                  specified permission should be allowed or denied, based on
+                  the current AccessControlContext and security policy.
+                  This method quietly returns if the access request
+                  is permitted, or throws an AccessControlException otherwise. The
+                  getPermission method of the AccessControlException returns the
+                  &lt;code&gt;perm&lt;/code&gt; Permission object instance.                
+                <param>
+                    perm the requested permission.                    
+                </param>
+                <exception>
+                    AccessControlException if the specified permission
+                      is not permitted, based on the current security policy.                    
+                </exception>
+                <exception>
+                    NullPointerException if the specified permission
+                      is <code>null</code> and is checked based on the
+                      security policy currently in effect.                    
+                </exception>
+            </javadoc>
+            <method name="checkPermission" type="void" line="521">
+                <params>
+                    <param name="perm" type="Permission"/>
+                </params>
+                <comment line="522">
+                    System.err.println(&quot;checkPermission &quot;+perm);                    
+                </comment>
+                <comment line="523">
+                    Thread.currentThread().dumpStack();                    
+                </comment>
+                <comment line="530">
+                    if context is null, we had privileged system code on the stack.                    
+                </comment>
+                <scope line="525"/>
+                <declaration name="stack" type="AccessControlContext" line="529"/>
+                <scope line="531">
+                    <declaration name="debug" type="Debug" line="532"/>
+                    <declaration name="dumpDebug" type="boolean" line="533"/>
+                    <scope line="534"/>
+                    <scope line="540"/>
+                    <scope line="544"/>
+                    <scope line="548"/>
+                </scope>
+                <declaration name="acc" type="AccessControlContext" line="554"/>
+            </method>
+        </class>
+    </source>

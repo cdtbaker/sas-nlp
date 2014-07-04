@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.transport">
+        <import package="java.rmi.Remote"/>
+        <import package="java.rmi.RemoteException"/>
+        <import package="java.rmi.dgc.DGC"/>
+        <import package="java.rmi.dgc.Lease"/>
+        <import package="java.rmi.dgc.VMID"/>
+        <import package="java.rmi.server.LogStream"/>
+        <import package="java.rmi.server.ObjID"/>
+        <import package="java.rmi.server.RemoteServer"/>
+        <import package="java.rmi.server.ServerNotActiveException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.concurrent.Future"/>
+        <import package="java.util.concurrent.ScheduledExecutorService"/>
+        <import package="java.util.concurrent.TimeUnit"/>
+        <import package="sun.rmi.runtime.Log"/>
+        <import package="sun.rmi.runtime.RuntimeUtil"/>
+        <import package="sun.rmi.server.UnicastRef"/>
+        <import package="sun.rmi.server.UnicastServerRef"/>
+        <import package="sun.rmi.server.Util"/>
+        <import package="sun.security.action.GetLongAction"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <class name="DGCImpl" line="56">
+            <comment line="65">
+                                
+            </comment>
+            <implements interface="DGC"/>
+            <javadoc line="56">
+                This class implements the guts of the server-side distributed GC
+                  algorithm                
+                <author>
+                    Ann Wollrath                    
+                </author>
+            </javadoc>
+            <declaration name="dgcLog" type="Log" line="65"/>
+            <declaration name="leaseValue" type="long" line="69"/>
+            <javadoc line="69">
+                lease duration to grant to clients                
+            </javadoc>
+            <declaration name="leaseCheckInterval" type="long" line="74"/>
+            <javadoc line="74">
+                lease check interval; default is half of lease grant duration                
+            </javadoc>
+            <declaration name="scheduler" type="ScheduledExecutorService" line="79"/>
+            <javadoc line="79">
+                thread pool for scheduling delayed tasks                
+            </javadoc>
+            <declaration name="dgc" type="DGCImpl" line="84"/>
+            <javadoc line="84">
+                remote implementation of DGC interface for this VM                
+            </javadoc>
+            <declaration name="leaseTable" type="Map&lt;VMID,LeaseInfo&gt;" line="86"/>
+            <javadoc line="86">
+                table that maps VMID to LeaseInfo                
+            </javadoc>
+            <declaration name="checker" type="Future&lt;?&gt;" line="88"/>
+            <javadoc line="88">
+                checks for lease expiration                
+            </javadoc>
+            <javadoc line="91">
+                Return the remote implementation of the DGC interface for
+                  this VM.                
+            </javadoc>
+            <method name="getDGCImpl" type="DGCImpl" line="95"/>
+            <javadoc line="99">
+                Construct a new server-side remote object collector at
+                  a particular port. Disallow construction from outside.                
+            </javadoc>
+            <method name="DGCImpl" type="constructor" line="103"/>
+            <javadoc line="105">
+                The dirty call adds the VMID &quot;vmid&quot; to the set of clients
+                  that hold references to the object associated with the ObjID
+                  id.  The long &quot;sequenceNum&quot; is used to detect late dirty calls.  If
+                  the VMID &quot;vmid&quot; is null, a VMID will be generated on the
+                  server (for use by the client in subsequent calls) and
+                  returned.
+                  The client must call the &quot;dirty&quot; method to renew the lease
+                  before the &quot;lease&quot; time expires or all references to remote
+                  objects in this VM that the client holds are considered
+                  &quot;unreferenced&quot;.                
+            </javadoc>
+            <method name="dirty" type="Lease" line="118">
+                <params>
+                    <param name="ids" type="ObjID[]"/>
+                    <param name="sequenceNum" type="long"/>
+                    <param name="lease" type="Lease"/>
+                </params>
+                <comment line="120">
+                    The server specifies the lease value; the client has
+                     no say in the matter.                    
+                </comment>
+                <comment line="130">
+                    create a VMID if one wasn&apos;t supplied                    
+                </comment>
+                <comment line="147">
+                    record lease information                    
+                </comment>
+                <comment line="176">
+                    return the VMID used                    
+                </comment>
+                <declaration name="vmid" type="VMID" line="119"/>
+                <declaration name="duration" type="long" line="124"/>
+                <scope line="126"/>
+                <scope line="131">
+                    <scope line="134">
+                        <declaration name="clientHost" type="String" line="135"/>
+                        <scope line="136"/>
+                        <scope line="138"/>
+                    </scope>
+                </scope>
+                <scope line="148">
+                    <declaration name="info" type="LeaseInfo" line="149"/>
+                    <scope line="150">
+                        <scope line="152">
+                            <anonymous_class line="154">
+                                <method name="run" type="void" line="155"/>
+                            </anonymous_class>
+                        </scope>
+                    </scope>
+                    <scope line="162"/>
+                </scope>
+                <scope line="167">
+                    <scope line="168"/>
+                </scope>
+            </method>
+            <javadoc line="180">
+                The clean call removes the VMID from the set of clients
+                  that hold references to the object associated with the LiveRef
+                  ref.  The sequence number is used to detect late clean calls.  If the
+                  argument &quot;strong&quot; is true, then the clean call is a result of a
+                  failed &quot;dirty&quot; call, thus the sequence number for the VMID needs
+                  to be remembered until the client goes away.                
+            </javadoc>
+            <method name="clean" type="void" line="189">
+                <params>
+                    <param name="ids" type="ObjID[]"/>
+                    <param name="sequenceNum" type="long"/>
+                    <param name="vmid" type="VMID"/>
+                    <param name="strong" type="boolean"/>
+                </params>
+                <scope line="190">
+                    <scope line="191"/>
+                </scope>
+            </method>
+            <javadoc line="200">
+                Register interest in receiving a callback when this VMID
+                  becomes inaccessible.                
+            </javadoc>
+            <method name="registerTarget" type="void" line="204">
+                <params>
+                    <param name="vmid" type="VMID"/>
+                    <param name="target" type="Target"/>
+                </params>
+                <scope line="205">
+                    <declaration name="info" type="LeaseInfo" line="206"/>
+                    <scope line="207"/>
+                    <scope line="209"/>
+                </scope>
+            </method>
+            <javadoc line="215">
+                Remove notification request.                
+            </javadoc>
+            <method name="unregisterTarget" type="void" line="218">
+                <params>
+                    <param name="vmid" type="VMID"/>
+                    <param name="target" type="Target"/>
+                </params>
+                <scope line="219">
+                    <declaration name="info" type="LeaseInfo" line="220"/>
+                    <scope line="221"/>
+                </scope>
+            </method>
+            <javadoc line="227">
+                Check if leases have expired.  If a lease has expired, remove
+                  it from the table and notify all interested parties that the
+                  VMID is essentially &quot;dead&quot;.                
+                <return>
+                    if true, there are leases outstanding; otherwise leases
+                      no longer need to be checked                    
+                </return>
+            </javadoc>
+            <method name="checkLeases" type="void" line="235">
+                <comment line="238">
+                                        
+                </comment>
+                <comment line="241">
+                    Build a list of leaseInfo objects that need to have
+                     targets removed from their notifySet.  Remove expired
+                     leases from leaseTable.                    
+                </comment>
+                <comment line="261">
+                    Notify and unegister targets without holding the lock on
+                     the leaseTable so we avoid deadlock.                    
+                </comment>
+                <declaration name="time" type="long" line="236"/>
+                <declaration name="toUnregister" type="List&lt;LeaseInfo&gt;" line="239"/>
+                <scope line="245">
+                    <declaration name="iter" type="Iterator&lt;LeaseInfo&gt;" line="246"/>
+                    <scope line="247">
+                        <declaration name="info" type="LeaseInfo" line="248"/>
+                        <scope line="249"/>
+                    </scope>
+                    <scope line="255"/>
+                </scope>
+                <scope line="264">
+                    <scope line="265"/>
+                </scope>
+            </method>
+            <scope line="271">
+                <anonymous_class line="276">
+                    <method name="run" type="Void" line="277">
+                        <comment line="284">
+                            Put remote collector object in table by hand to prevent
+                             listen on port.  (UnicastServerRef.exportObject would
+                             cause transport to listen.)                            
+                        </comment>
+                        <declaration name="savedCcl" type="ClassLoader" line="278"/>
+                        <scope line="280">
+                            <scope line="289">
+                                <declaration name="dgcID" type="ObjID" line="291"/>
+                                <declaration name="ref" type="LiveRef" line="292"/>
+                                <declaration name="disp" type="UnicastServerRef" line="293"/>
+                                <declaration name="stub" type="Remote" line="294"/>
+                                <declaration name="target" type="Target" line="298"/>
+                            </scope>
+                            <scope line="301"/>
+                        </scope>
+                        <scope line="305"/>
+                    </method>
+                </anonymous_class>
+            </scope>
+            <class name="LeaseInfo" line="313">
+                <declaration name="vmid" type="VMID" line="314"/>
+                <declaration name="expiration" type="long" line="315"/>
+                <declaration name="notifySet" type="Set&lt;Target&gt;" line="316"/>
+                <method name="LeaseInfo" type="constructor" line="318">
+                    <params>
+                        <param name="vmid" type="VMID"/>
+                        <param name="lease" type="long"/>
+                    </params>
+                </method>
+                <method name="renew" type="void" line="323">
+                    <params>
+                        <param name="lease" type="long"/>
+                    </params>
+                    <declaration name="newExpiration" type="long" line="324"/>
+                </method>
+                <method name="expired" type="boolean" line="329">
+                    <params>
+                        <param name="time" type="long"/>
+                    </params>
+                    <scope line="330">
+                        <scope line="331"/>
+                    </scope>
+                    <scope line="335"/>
+                </method>
+            </class>
+        </class>
+    </source>

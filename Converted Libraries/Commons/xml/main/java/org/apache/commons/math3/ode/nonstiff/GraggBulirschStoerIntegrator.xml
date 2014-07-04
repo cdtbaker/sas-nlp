@@ -1,0 +1,846 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.ode.nonstiff">
+        <import package="org.apache.commons.math3.analysis.solvers.UnivariateSolver"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.MaxCountExceededException"/>
+        <import package="org.apache.commons.math3.exception.NoBracketingException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooSmallException"/>
+        <import package="org.apache.commons.math3.ode.ExpandableStatefulODE"/>
+        <import package="org.apache.commons.math3.ode.events.EventHandler"/>
+        <import package="org.apache.commons.math3.ode.sampling.AbstractStepInterpolator"/>
+        <import package="org.apache.commons.math3.ode.sampling.StepHandler"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <class name="GraggBulirschStoerIntegrator" line="31">
+            <extends class="AdaptiveStepsizeIntegrator"/>
+            <javadoc line="31">
+                This class implements a Gragg-Bulirsch-Stoer integrator for
+                  Ordinary Differential Equations.
+                  &lt;p&gt;The Gragg-Bulirsch-Stoer algorithm is one of the most efficient
+                  ones currently available for smooth problems. It uses Richardson
+                  extrapolation to estimate what would be the solution if the step
+                  size could be decreased down to zero.&lt;/p&gt;
+                  &lt;p&gt;
+                  This method changes both the step size and the order during
+                  integration, in order to minimize computation cost. It is
+                  particularly well suited when a very high precision is needed. The
+                  limit where this method becomes more efficient than high-order
+                  embedded Runge-Kutta methods like {@link DormandPrince853IntegratorDormand-Prince 8(5,3)} depends on the problem. Results given in the
+                  Hairer, Norsett and Wanner book show for example that this limit
+                  occurs for accuracy around 1e-6 when integrating Saltzam-Lorenz
+                  equations (the authors note this problem is &lt;i&gt;extremely sensitive
+                  to the errors in the first integration steps&lt;/i&gt;), and around 1e-11
+                  for a two dimensional celestial mechanics problems with seven
+                  bodies (pleiades problem, involving quasi-collisions for which
+                  &lt;i&gt;automatic step size control is essential&lt;/i&gt;).
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  This implementation is basically a reimplementation in Java of the
+                  &lt;a
+                  href=&quot;http://www.unige.ch/math/folks/hairer/prog/nonstiff/odex.f&quot;&gt;odex&lt;/a&gt;
+                  fortran code by E. Hairer and G. Wanner. The redistribution policy
+                  for this code is available &lt;a
+                  href=&quot;http://www.unige.ch/~hairer/prog/licence.txt&quot;&gt;here&lt;/a&gt;, for
+                  convenience, it is reproduced below.&lt;/p&gt;
+                  &lt;/p&gt;
+                  &lt;table border=&quot;0&quot; width=&quot;80%&quot; cellpadding=&quot;10&quot; align=&quot;center&quot; bgcolor=&quot;#E0E0E0&quot;&gt;
+                  &lt;tr&gt;&lt;td&gt;Copyright (c) 2004, Ernst Hairer&lt;/td&gt;&lt;/tr&gt;
+                  &lt;tr&gt;&lt;td&gt;Redistribution and use in source and binary forms, with or
+                  without modification, are permitted provided that the following
+                  conditions are met:
+                  &lt;ul&gt;
+                  &lt;li&gt;Redistributions of source code must retain the above copyright
+                  notice, this list of conditions and the following disclaimer.&lt;/li&gt;
+                  &lt;li&gt;Redistributions in binary form must reproduce the above copyright
+                  notice, this list of conditions and the following disclaimer in the
+                  documentation and/or other materials provided with the distribution.&lt;/li&gt;
+                  &lt;/ul&gt;&lt;/td&gt;&lt;/tr&gt;
+                  &lt;tr&gt;&lt;td&gt;&lt;strong&gt;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+                  CONTRIBUTORS &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
+                  BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+                  FOR A  PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+                  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+                  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+                  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+                  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+                  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+                  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+                  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&lt;/strong&gt;&lt;/td&gt;&lt;/tr&gt;
+                  &lt;/table&gt;                
+                <version>
+                    $Id: GraggBulirschStoerIntegrator.java 1416643 2012-12-03 19:37:14Z tn $                    
+                </version>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <declaration name="METHOD_NAME" type="String" line="99"/>
+            <javadoc line="99">
+                Integrator method name.                
+            </javadoc>
+            <declaration name="maxOrder" type="int" line="102"/>
+            <javadoc line="102">
+                maximal order.                
+            </javadoc>
+            <declaration name="sequence" type="int[]" line="105"/>
+            <javadoc line="105">
+                step size sequence.                
+            </javadoc>
+            <declaration name="costPerStep" type="int[]" line="108"/>
+            <javadoc line="108">
+                overall cost of applying step reduction up to iteration k+1, in number of calls.                
+            </javadoc>
+            <declaration name="costPerTimeUnit" type="double[]" line="111"/>
+            <javadoc line="111">
+                cost per unit step.                
+            </javadoc>
+            <declaration name="optimalStep" type="double[]" line="114"/>
+            <javadoc line="114">
+                optimal steps for each order.                
+            </javadoc>
+            <declaration name="coeff" type="double[][]" line="117"/>
+            <javadoc line="117">
+                extrapolation coefficients.                
+            </javadoc>
+            <declaration name="performTest" type="boolean" line="120"/>
+            <javadoc line="120">
+                stability check enabling parameter.                
+            </javadoc>
+            <declaration name="maxChecks" type="int" line="123"/>
+            <javadoc line="123">
+                maximal number of checks for each iteration.                
+            </javadoc>
+            <declaration name="maxIter" type="int" line="126"/>
+            <javadoc line="126">
+                maximal number of iterations for which checks are performed.                
+            </javadoc>
+            <declaration name="stabilityReduction" type="double" line="129"/>
+            <javadoc line="129">
+                stepsize reduction factor in case of stability check failure.                
+            </javadoc>
+            <declaration name="stepControl1" type="double" line="132"/>
+            <javadoc line="132">
+                first stepsize control factor.                
+            </javadoc>
+            <declaration name="stepControl2" type="double" line="135"/>
+            <javadoc line="135">
+                second stepsize control factor.                
+            </javadoc>
+            <declaration name="stepControl3" type="double" line="138"/>
+            <javadoc line="138">
+                third stepsize control factor.                
+            </javadoc>
+            <declaration name="stepControl4" type="double" line="141"/>
+            <javadoc line="141">
+                fourth stepsize control factor.                
+            </javadoc>
+            <declaration name="orderControl1" type="double" line="144"/>
+            <javadoc line="144">
+                first order control factor.                
+            </javadoc>
+            <declaration name="orderControl2" type="double" line="147"/>
+            <javadoc line="147">
+                second order control factor.                
+            </javadoc>
+            <declaration name="useInterpolationError" type="boolean" line="150"/>
+            <javadoc line="150">
+                use interpolation error in stepsize control.                
+            </javadoc>
+            <declaration name="mudif" type="int" line="153"/>
+            <javadoc line="153">
+                interpolation order control parameter.                
+            </javadoc>
+            <javadoc line="156">
+                Simple constructor.
+                  Build a Gragg-Bulirsch-Stoer integrator with the given step
+                  bounds. All tuning parameters are set to their default
+                  values. The default step handler does nothing.                
+                <param>
+                    minStep minimal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    maxStep maximal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    scalAbsoluteTolerance allowed absolute error                    
+                </param>
+                <param>
+                    scalRelativeTolerance allowed relative error                    
+                </param>
+            </javadoc>
+            <method name="GraggBulirschStoerIntegrator" type="constructor" line="171">
+                <params>
+                    <param name="minStep" type="double"/>
+                    <param name="maxStep" type="double"/>
+                    <param name="scalAbsoluteTolerance" type="double"/>
+                    <param name="scalRelativeTolerance" type="double"/>
+                </params>
+            </method>
+            <javadoc line="180">
+                Simple constructor.
+                  Build a Gragg-Bulirsch-Stoer integrator with the given step
+                  bounds. All tuning parameters are set to their default
+                  values. The default step handler does nothing.                
+                <param>
+                    minStep minimal step (must be positive even for backward
+                      integration), the last step can be smaller than this                    
+                </param>
+                <param>
+                    maxStep maximal step (must be positive even for backward
+                      integration)                    
+                </param>
+                <param>
+                    vecAbsoluteTolerance allowed absolute error                    
+                </param>
+                <param>
+                    vecRelativeTolerance allowed relative error                    
+                </param>
+            </javadoc>
+            <method name="GraggBulirschStoerIntegrator" type="constructor" line="193">
+                <params>
+                    <param name="minStep" type="double"/>
+                    <param name="maxStep" type="double"/>
+                    <param name="vecAbsoluteTolerance" type="double[]"/>
+                    <param name="vecRelativeTolerance" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="202">
+                Set the stability check controls.
+                  &lt;p&gt;The stability check is performed on the first few iterations of
+                  the extrapolation scheme. If this test fails, the step is rejected
+                  and the stepsize is reduced.&lt;/p&gt;
+                  &lt;p&gt;By default, the test is performed, at most during two
+                  iterations at each step, and at most once for each of these
+                  iterations. The default stepsize reduction factor is 0.5.&lt;/p&gt;                
+                <param>
+                    performStabilityCheck if true, stability check will be performed,
+                      if false, the check will be skipped                    
+                </param>
+                <param>
+                    maxNumIter maximal number of iterations for which checks are
+                      performed (the number of iterations is reset to default if negative
+                      or null)                    
+                </param>
+                <param>
+                    maxNumChecks maximal number of checks for each iteration
+                      (the number of checks is reset to default if negative or null)                    
+                </param>
+                <param>
+                    stepsizeReductionFactor stepsize reduction factor in case of
+                      failure (the factor is reset to default if lower than 0.0001 or
+                      greater than 0.9999)                    
+                </param>
+            </javadoc>
+            <method name="setStabilityCheck" type="void" line="222">
+                <params>
+                    <param name="performStabilityCheck" type="boolean"/>
+                    <param name="maxNumIter" type="int"/>
+                    <param name="maxNumChecks" type="int"/>
+                    <param name="stepsizeReductionFactor" type="double"/>
+                </params>
+                <scope line="228"/>
+                <scope line="230"/>
+            </method>
+            <javadoc line="236">
+                Set the step size control factors.
+                  &lt;p&gt;The new step size hNew is computed from the old one h by:
+                  &lt;pre&gt;
+                  hNew = h  stepControl2 / (err/stepControl1)^(1/(2k+1))
+                  &lt;/pre&gt;
+                  where err is the scaled error and k the iteration number of the
+                  extrapolation scheme (counting from 0). The default values are
+                  0.65 for stepControl1 and 0.94 for stepControl2.&lt;/p&gt;
+                  &lt;p&gt;The step size is subject to the restriction:
+                  &lt;pre&gt;
+                  stepControl3^(1/(2k+1))/stepControl4 &lt;= hNew/h &lt;= 1/stepControl3^(1/(2k+1))
+                  &lt;/pre&gt;
+                  The default values are 0.02 for stepControl3 and 4.0 for
+                  stepControl4.&lt;/p&gt;                
+                <param>
+                    control1 first stepsize control factor (the factor is
+                      reset to default if lower than 0.0001 or greater than 0.9999)                    
+                </param>
+                <param>
+                    control2 second stepsize control factor (the factor
+                      is reset to default if lower than 0.0001 or greater than 0.9999)                    
+                </param>
+                <param>
+                    control3 third stepsize control factor (the factor is
+                      reset to default if lower than 0.0001 or greater than 0.9999)                    
+                </param>
+                <param>
+                    control4 fourth stepsize control factor (the factor
+                      is reset to default if lower than 1.0001 or greater than 999.9)                    
+                </param>
+            </javadoc>
+            <method name="setControlFactors" type="void" line="261">
+                <params>
+                    <param name="control1" type="double"/>
+                    <param name="control2" type="double"/>
+                    <param name="control3" type="double"/>
+                    <param name="control4" type="double"/>
+                </params>
+                <scope line="263"/>
+                <scope line="265"/>
+                <scope line="269"/>
+                <scope line="271"/>
+                <scope line="275"/>
+                <scope line="277"/>
+                <scope line="281"/>
+                <scope line="283"/>
+            </method>
+            <javadoc line="289">
+                Set the order control parameters.
+                  &lt;p&gt;The Gragg-Bulirsch-Stoer method changes both the step size and
+                  the order during integration, in order to minimize computation
+                  cost. Each extrapolation step increases the order by 2, so the
+                  maximal order that will be used is always even, it is twice the
+                  maximal number of columns in the extrapolation table.&lt;/p&gt;
+                  &lt;pre&gt;
+                  order is decreased if w(k-1) &lt;= w(k)    orderControl1
+                  order is increased if w(k)   &lt;= w(k-1)  orderControl2
+                  &lt;/pre&gt;
+                  &lt;p&gt;where w is the table of work per unit step for each order
+                  (number of function calls divided by the step length), and k is
+                  the current order.&lt;/p&gt;
+                  &lt;p&gt;The default maximal order after construction is 18 (i.e. the
+                  maximal number of columns is 9). The default values are 0.8 for
+                  orderControl1 and 0.9 for orderControl2.&lt;/p&gt;                
+                <param>
+                    maximalOrder maximal order in the extrapolation table (the
+                      maximal order is reset to default if order <= 6 or odd)                    
+                </param>
+                <param>
+                    control1 first order control factor (the factor is
+                      reset to default if lower than 0.0001 or greater than 0.9999)                    
+                </param>
+                <param>
+                    control2 second order control factor (the factor
+                      is reset to default if lower than 0.0001 or greater than 0.9999)                    
+                </param>
+            </javadoc>
+            <method name="setOrderControl" type="void" line="313">
+                <params>
+                    <param name="maximalOrder" type="int"/>
+                    <param name="control1" type="double"/>
+                    <param name="control2" type="double"/>
+                </params>
+                <comment line="331">
+                    reinitialize the arrays                    
+                </comment>
+                <scope line="315"/>
+                <scope line="319"/>
+                <scope line="321"/>
+                <scope line="325"/>
+                <scope line="327"/>
+            </method>
+            <javadoc line="336">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="addStepHandler" type="void" line="338">
+                <params>
+                    <param name="handler" type="StepHandler"/>
+                </params>
+                <comment line="342">
+                    reinitialize the arrays                    
+                </comment>
+            </method>
+            <javadoc line="347">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="addEventHandler" type="void" line="353">
+                <params>
+                    <param name="function" type="EventHandler"/>
+                    <param name="maxCheckInterval" type="double"/>
+                    <param name="convergence" type="double"/>
+                    <param name="maxIterationCount" type="int"/>
+                    <param name="solver" type="UnivariateSolver"/>
+                </params>
+                <comment line="357">
+                    reinitialize the arrays                    
+                </comment>
+            </method>
+            <javadoc line="362">
+                Initialize the integrator internal arrays.                
+            </javadoc>
+            <method name="initializeArrays" type="void" line="363">
+                <comment line="368">
+                    all arrays should be reallocated with the right size                    
+                </comment>
+                <comment line="376">
+                    step size sequence: 2, 6, 10, 14, ...                    
+                </comment>
+                <comment line="381">
+                    initialize the order selection cost array                    
+                </comment>
+                <comment line="382">
+                    (number of function calls for each column of the extrapolation table)                    
+                </comment>
+                <comment line="388">
+                    initialize the extrapolation tables                    
+                </comment>
+                <declaration name="size" type="int" line="365"/>
+                <scope line="367"/>
+                <scope line="377"/>
+                <scope line="384"/>
+                <scope line="389">
+                    <scope line="391">
+                        <declaration name="ratio" type="double" line="392"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="399">
+                Set the interpolation order control parameter.
+                  The interpolation order for dense output is 2k - mudif + 1. The
+                  default value for mudif is 4 and the interpolation error is used
+                  in stepsize control by default.                
+                <param>
+                    useInterpolationErrorForControl if true, interpolation error is used
+                      for stepsize control                    
+                </param>
+                <param>
+                    mudifControlParameter interpolation order control parameter (the parameter
+                      is reset to default if <= 0 or >= 7)                    
+                </param>
+            </javadoc>
+            <method name="setInterpolationControl" type="void" line="410">
+                <params>
+                    <param name="useInterpolationErrorForControl" type="boolean"/>
+                    <param name="mudifControlParameter" type="int"/>
+                </params>
+                <scope line="414"/>
+                <scope line="416"/>
+            </method>
+            <javadoc line="422">
+                Update scaling array.                
+                <param>
+                    y1 first state vector to use for scaling                    
+                </param>
+                <param>
+                    y2 second state vector to use for scaling                    
+                </param>
+                <param>
+                    scale scaling array to update (can be shorter than state)                    
+                </param>
+            </javadoc>
+            <method name="rescale" type="void" line="427">
+                <params>
+                    <param name="y1" type="double[]"/>
+                    <param name="y2" type="double[]"/>
+                    <param name="scale" type="double[]"/>
+                </params>
+                <scope line="428">
+                    <scope line="429">
+                        <declaration name="yi" type="double" line="430"/>
+                    </scope>
+                </scope>
+                <scope line="433">
+                    <scope line="434">
+                        <declaration name="yi" type="double" line="435"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="441">
+                Perform integration over one step using substeps of a modified
+                  midpoint method.                
+                <param>
+                    t0 initial time                    
+                </param>
+                <param>
+                    y0 initial value of the state vector at t0                    
+                </param>
+                <param>
+                    step global step                    
+                </param>
+                <param>
+                    k iteration number (from 0 to sequence.length - 1)                    
+                </param>
+                <param>
+                    scale scaling array (can be shorter than state)                    
+                </param>
+                <param>
+                    f placeholder where to put the state vector derivatives at each substep
+                      (element 0 already contains initial derivative)                    
+                </param>
+                <param>
+                    yMiddle placeholder where to put the state vector at the middle of the step                    
+                </param>
+                <param>
+                    yEnd placeholder where to put the state vector at the end                    
+                </param>
+                <param>
+                    yTmp placeholder for one state vector                    
+                </param>
+                <return>
+                    true if computation was done properly,
+                      false if stability check failed before end of computation                    
+                </return>
+                <exception>
+                    MaxCountExceededException if the number of functions evaluations is exceeded                    
+                </exception>
+                <exception>
+                    DimensionMismatchException if arrays dimensions do not match equations settings                    
+                </exception>
+            </javadoc>
+            <method name="tryStep" type="boolean" line="462">
+                <params>
+                    <param name="t0" type="double"/>
+                    <param name="y0" type="double[]"/>
+                    <param name="step" type="double"/>
+                    <param name="k" type="int"/>
+                    <param name="scale" type="double[]"/>
+                    <param name="f" type="double[][]"/>
+                    <param name="yMiddle" type="double[]"/>
+                    <param name="yEnd" type="double[]"/>
+                    <param name="yTmp" type="double[]"/>
+                </params>
+                <comment line="468">
+                    first substep                    
+                </comment>
+                <comment line="476">
+                    other substeps                    
+                </comment>
+                <comment line="480">
+                    save the point at the middle of the step                    
+                </comment>
+                <comment line="493">
+                    stability check                    
+                </comment>
+                <comment line="512">
+                    correction of the last substep (at t0 + step)                    
+                </comment>
+                <declaration name="n" type="int" line="464"/>
+                <declaration name="subStep" type="double" line="465"/>
+                <declaration name="subStep2" type="double" line="466"/>
+                <declaration name="t" type="double" line="469"/>
+                <scope line="470"/>
+                <scope line="477">
+                    <scope line="479"/>
+                    <scope line="485">
+                        <declaration name="middle" type="double" line="486"/>
+                    </scope>
+                    <scope line="494">
+                        <declaration name="initialNorm" type="double" line="495"/>
+                        <scope line="496">
+                            <declaration name="ratio" type="double" line="497"/>
+                        </scope>
+                        <declaration name="deltaNorm" type="double" line="500"/>
+                        <scope line="501">
+                            <declaration name="ratio" type="double" line="502"/>
+                        </scope>
+                        <scope line="505"/>
+                    </scope>
+                </scope>
+                <scope line="513"/>
+            </method>
+            <javadoc line="521">
+                Extrapolate a vector.                
+                <param>
+                    offset offset to use in the coefficients table                    
+                </param>
+                <param>
+                    k index of the last updated point                    
+                </param>
+                <param>
+                    diag working diagonal of the Aitken-Neville's
+                      triangle, without the last element                    
+                </param>
+                <param>
+                    last last element                    
+                </param>
+            </javadoc>
+            <method name="extrapolate" type="void" line="529">
+                <params>
+                    <param name="offset" type="int"/>
+                    <param name="k" type="int"/>
+                    <param name="diag" type="double[][]"/>
+                    <param name="last" type="double[]"/>
+                </params>
+                <comment line="531">
+                    update the diagonal                    
+                </comment>
+                <comment line="534">
+                    Aitken-Neville&apos;s recursive formula                    
+                </comment>
+                <comment line="540">
+                    update the last element                    
+                </comment>
+                <comment line="542">
+                    Aitken-Neville&apos;s recursive formula                    
+                </comment>
+                <scope line="532">
+                    <scope line="533"/>
+                </scope>
+                <scope line="541"/>
+            </method>
+            <javadoc line="547">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="integrate" type="void" line="551">
+                <params>
+                    <param name="equations" type="ExpandableStatefulODE"/>
+                    <param name="t" type="double"/>
+                </params>
+                <comment line="557">
+                    create some internal working arrays                    
+                </comment>
+                <comment line="577">
+                    all substeps start at the same point, so share the first array                    
+                </comment>
+                <comment line="593">
+                    initial scaling                    
+                </comment>
+                <comment line="597">
+                    initial order selection                    
+                </comment>
+                <comment line="605">
+                    set up an interpolator sharing the integrator arrays                    
+                </comment>
+                <comment line="633">
+                    first evaluation, at the beginning of the step                    
+                </comment>
+                <comment line="649">
+                    step adjustment near bounds                    
+                </comment>
+                <comment line="657">
+                    iterate over several substep sizes                    
+                </comment>
+                <comment line="663">
+                    modified midpoint integration with the current substep                    
+                </comment>
+                <comment line="669">
+                    the stability check failed, we reduce the global step                    
+                </comment>
+                <comment line="676">
+                    the substep was computed successfully                    
+                </comment>
+                <comment line="679">
+                    extrapolate the state at the end of the step                    
+                </comment>
+                <comment line="680">
+                    using last iteration data                    
+                </comment>
+                <comment line="684">
+                    estimate the error at the end of the step.                    
+                </comment>
+                <comment line="693">
+                    error is too big, we reduce the global step                    
+                </comment>
+                <comment line="701">
+                    compute optimal stepsize for this order                    
+                </comment>
+                <comment line="709">
+                    check convergence                    
+                </comment>
+                <comment line="715">
+                    check if we can stop iterations now                    
+                </comment>
+                <comment line="717">
+                    convergence have been reached just before targetIter                    
+                </comment>
+                <comment line="720">
+                    estimate if there is a chance convergence will                    
+                </comment>
+                <comment line="721">
+                    be reached on next iteration, using the                    
+                </comment>
+                <comment line="722">
+                    asymptotic evolution of error                    
+                </comment>
+                <comment line="726">
+                    we don&apos;t expect to converge on next iteration                    
+                </comment>
+                <comment line="727">
+                    we reject the step immediately and reduce order                    
+                </comment>
+                <comment line="744">
+                    convergence has been reached exactly at targetIter                    
+                </comment>
+                <comment line="747">
+                    estimate if there is a chance convergence will                    
+                </comment>
+                <comment line="748">
+                    be reached on next iteration, using the                    
+                </comment>
+                <comment line="749">
+                    asymptotic evolution of error                    
+                </comment>
+                <comment line="752">
+                    we don&apos;t expect to converge on next iteration                    
+                </comment>
+                <comment line="753">
+                    we reject the step immediately                    
+                </comment>
+                <comment line="793">
+                    derivatives at end of step                    
+                </comment>
+                <comment line="797">
+                    dense output handling                    
+                </comment>
+                <comment line="801">
+                    extrapolate state at middle point of the step                    
+                </comment>
+                <comment line="810">
+                    derivative at middle point of the step                    
+                </comment>
+                <comment line="829">
+                    compute centered differences to evaluate next derivatives                    
+                </comment>
+                <comment line="842">
+                    estimate the dense output coefficients                    
+                </comment>
+                <comment line="848">
+                    use the interpolation error to limit stepsize                    
+                </comment>
+                <comment line="864">
+                    Discrete events handling                    
+                </comment>
+                <comment line="868">
+                    prepare next step                    
+                </comment>
+                <comment line="899">
+                    after a rejected step neither order nor stepsize                    
+                </comment>
+                <comment line="900">
+                    should increase                    
+                </comment>
+                <comment line="904">
+                    stepsize control                    
+                </comment>
+                <comment line="942">
+                    dispatch results                    
+                </comment>
+                <declaration name="forward" type="boolean" line="555"/>
+                <declaration name="y0" type="double[]" line="558"/>
+                <declaration name="y" type="double[]" line="559"/>
+                <declaration name="yDot0" type="double[]" line="560"/>
+                <declaration name="y1" type="double[]" line="561"/>
+                <declaration name="yTmp" type="double[]" line="562"/>
+                <declaration name="yTmpDot" type="double[]" line="563"/>
+                <declaration name="diagonal" type="double[][]" line="565"/>
+                <declaration name="y1Diag" type="double[][]" line="566"/>
+                <scope line="567"/>
+                <declaration name="fk" type="double[][][]" line="572"/>
+                <scope line="573">
+                    <scope line="580"/>
+                </scope>
+                <scope line="586"/>
+                <declaration name="yDot1" type="double[]" line="590"/>
+                <declaration name="yMidDots" type="double[][]" line="591"/>
+                <declaration name="scale" type="double[]" line="594"/>
+                <declaration name="tol" type="double" line="598"/>
+                <declaration name="log10R" type="double" line="600"/>
+                <declaration name="targetIter" type="int" line="601"/>
+                <declaration name="interpolator" type="AbstractStepInterpolator" line="606"/>
+                <declaration name="hNew" type="double" line="615"/>
+                <declaration name="maxError" type="double" line="616"/>
+                <declaration name="previousRejected" type="boolean" line="617"/>
+                <declaration name="firstTime" type="boolean" line="618"/>
+                <declaration name="newStep" type="boolean" line="619"/>
+                <declaration name="firstStepAlreadyComputed" type="boolean" line="620"/>
+                <scope line="624">
+                    <declaration name="error" type="double" line="626"/>
+                    <declaration name="reject" type="boolean" line="627"/>
+                    <scope line="629">
+                        <scope line="634"/>
+                        <scope line="638"/>
+                    </scope>
+                    <scope line="651"/>
+                    <declaration name="nextT" type="double" line="654"/>
+                    <declaration name="k" type="int" line="658"/>
+                    <scope line="659">
+                        <scope line="667"/>
+                        <scope line="674">
+                            <scope line="677">
+                                <scope line="686">
+                                    <declaration name="e" type="double" line="687"/>
+                                </scope>
+                                <scope line="692"/>
+                                <scope line="697">
+                                    <declaration name="exp" type="double" line="702"/>
+                                    <declaration name="fac" type="double" line="703"/>
+                                    <declaration name="pow" type="double" line="704"/>
+                                    <scope line="713">
+                                        <scope line="716"/>
+                                        <scope line="719">
+                                            <declaration name="ratio" type="double" line="723"/>
+                                            <scope line="725">
+                                                <scope line="733"/>
+                                            </scope>
+                                        </scope>
+                                    </scope>
+                                    <scope line="743"/>
+                                    <scope line="746">
+                                        <declaration name="ratio" type="double" line="750"/>
+                                        <scope line="751">
+                                            <scope line="758"/>
+                                        </scope>
+                                    </scope>
+                                    <scope line="767">
+                                        <scope line="771"/>
+                                    </scope>
+                                    <scope line="780"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="792"/>
+                    <declaration name="hInt" type="double" line="798"/>
+                    <scope line="799">
+                        <scope line="802"/>
+                        <declaration name="mu" type="int" line="806"/>
+                        <scope line="808">
+                            <declaration name="l2" type="int" line="811"/>
+                            <declaration name="factor" type="double" line="812"/>
+                            <declaration name="middleIndex" type="int" line="813"/>
+                            <scope line="814"/>
+                            <scope line="817">
+                                <scope line="820"/>
+                            </scope>
+                            <scope line="825"/>
+                            <scope line="830">
+                                <scope line="831">
+                                    <scope line="832"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="840">
+                            <declaration name="gbsInterpolator" type="GraggBulirschStoerStepInterpolator" line="843"/>
+                            <scope line="847">
+                                <declaration name="interpError" type="double" line="849"/>
+                                <scope line="852"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="862">
+                        <declaration name="optimalIter" type="int" line="874"/>
+                        <scope line="875">
+                            <scope line="877"/>
+                        </scope>
+                        <scope line="880">
+                            <scope line="882"/>
+                            <scope line="884"/>
+                        </scope>
+                        <scope line="887">
+                            <scope line="890"/>
+                            <scope line="893"/>
+                        </scope>
+                        <scope line="898"/>
+                        <scope line="903">
+                            <scope line="905"/>
+                            <scope line="907">
+                                <scope line="909"/>
+                                <scope line="912"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="927"/>
+                    <scope line="933"/>
+                    <scope line="936"/>
+                </scope>
+            </method>
+        </class>
+    </source>

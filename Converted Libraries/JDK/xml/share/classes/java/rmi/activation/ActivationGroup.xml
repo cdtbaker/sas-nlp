@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.rmi.activation">
+        <import package="java.lang.reflect.Constructor"/>
+        <import package="java.lang.reflect.InvocationTargetException"/>
+        <import package="java.rmi.MarshalledObject"/>
+        <import package="java.rmi.Naming"/>
+        <import package="java.rmi.Remote"/>
+        <import package="java.rmi.RemoteException"/>
+        <import package="java.rmi.activation.UnknownGroupException"/>
+        <import package="java.rmi.activation.UnknownObjectException"/>
+        <import package="java.rmi.server.RMIClassLoader"/>
+        <import package="java.rmi.server.UnicastRemoteObject"/>
+        <import package="java.security.AccessController"/>
+        <import package="sun.security.action.GetIntegerAction"/>
+        <class name="ActivationGroup" line="41">
+            <extends class="UnicastRemoteObject"/>
+            <implements interface="ActivationInstantiator"/>
+            <javadoc line="41">
+                An &lt;code&gt;ActivationGroup&lt;/code&gt; is responsible for creating new
+                  instances of &quot;activatable&quot; objects in its group, informing its
+                  &lt;code&gt;ActivationMonitor&lt;/code&gt; when either: its object&apos;s become
+                  active or inactive, or the group as a whole becomes inactive. &lt;p&gt;
+                  An &lt;code&gt;ActivationGroup&lt;/code&gt; is &lt;i&gt;initially&lt;/i&gt; created in one
+                  of several ways: &lt;ul&gt;
+                  &lt;li&gt;as a side-effect of creating an &lt;code&gt;ActivationDesc&lt;/code&gt;
+                  without an explicit &lt;code&gt;ActivationGroupID&lt;/code&gt; for the
+                  first activatable object in the group, or
+                  &lt;li&gt;via the &lt;code&gt;ActivationGroup.createGroup&lt;/code&gt; method
+                  &lt;li&gt;as a side-effect of activating the first object in a group
+                  whose &lt;code&gt;ActivationGroupDesc&lt;/code&gt; was only registered.&lt;/ul&gt;&lt;p&gt;
+                  Only the activator can &lt;i&gt;recreate&lt;/i&gt; an
+                  &lt;code&gt;ActivationGroup&lt;/code&gt;.  The activator spawns, as needed, a
+                  separate VM (as a child process, for example) for each registered
+                  activation group and directs activation requests to the appropriate
+                  group. It is implementation specific how VMs are spawned. An
+                  activation group is created via the
+                  &lt;code&gt;ActivationGroup.createGroup&lt;/code&gt; static method. The
+                  &lt;code&gt;createGroup&lt;/code&gt; method has two requirements on the group
+                  to be created: 1) the group must be a concrete subclass of
+                  &lt;code&gt;ActivationGroup&lt;/code&gt;, and 2) the group must have a
+                  constructor that takes two arguments:
+                  &lt;ul&gt;
+                  &lt;li&gt; the group&apos;s &lt;code&gt;ActivationGroupID&lt;/code&gt;, and
+                  &lt;li&gt; the group&apos;s initialization data (in a
+                  &lt;code&gt;java.rmi.MarshalledObject&lt;/code&gt;)&lt;/ul&gt;&lt;p&gt;
+                  When created, the default implementation of
+                  &lt;code&gt;ActivationGroup&lt;/code&gt; will override the system properties
+                  with the properties requested when its
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt; was created, and will set a
+                  &lt;code&gt;java.rmi.RMISecurityManager&lt;/code&gt; as the default system
+                  security manager.  If your application requires specific properties
+                  to be set when objects are activated in the group, the application
+                  should create a special &lt;code&gt;Properties&lt;/code&gt; object containing
+                  these properties, then create an &lt;code&gt;ActivationGroupDesc&lt;/code&gt;
+                  with the &lt;code&gt;Properties&lt;/code&gt; object, and use
+                  &lt;code&gt;ActivationGroup.createGroup&lt;/code&gt; before creating any
+                  &lt;code&gt;ActivationDesc&lt;/code&gt;s (before the default
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt; is created).  If your application
+                  requires the use of a security manager other than
+                  &lt;code&gt;java.rmi.RMISecurityManager&lt;/code&gt;, in the
+                  ActivativationGroupDescriptor properties list you can set
+                  &lt;code&gt;java.security.manager&lt;/code&gt; property to the name of the security
+                  manager you would like to install.                
+                <author>
+                    Ann Wollrath                    
+                </author>
+                <see>
+                    ActivationInstantiator                    
+                </see>
+                <see>
+                    ActivationGroupDesc                    
+                </see>
+                <see>
+                    ActivationGroupID                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <declaration name="groupID" type="ActivationGroupID" line="102"/>
+            <javadoc line="102">
+                @serial the group&apos;s identifier                
+            </javadoc>
+            <declaration name="monitor" type="ActivationMonitor" line="107"/>
+            <javadoc line="107">
+                @serial the group&apos;s monitor                
+            </javadoc>
+            <declaration name="incarnation" type="long" line="112"/>
+            <javadoc line="112">
+                @serial the group&apos;s incarnation number                
+            </javadoc>
+            <declaration name="currGroup" type="ActivationGroup" line="117"/>
+            <javadoc line="117">
+                the current activation group for this VM                
+            </javadoc>
+            <declaration name="currGroupID" type="ActivationGroupID" line="119"/>
+            <javadoc line="119">
+                the current group&apos;s identifier                
+            </javadoc>
+            <declaration name="currSystem" type="ActivationSystem" line="121"/>
+            <javadoc line="121">
+                the current group&apos;s activation system                
+            </javadoc>
+            <declaration name="canCreate" type="boolean" line="123"/>
+            <javadoc line="123">
+                used to control a group being created only once                
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="126"/>
+            <javadoc line="126">
+                indicate compatibility with the Java 2 SDK v1.2 version of class                
+            </javadoc>
+            <javadoc line="129">
+                Constructs an activation group with the given activation group
+                  identifier.  The group is exported as a
+                  &lt;code&gt;java.rmi.server.UnicastRemoteObject&lt;/code&gt;.                
+                <param>
+                    groupID the group's identifier                    
+                </param>
+                <throws>
+                    RemoteException if this group could not be exported                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="ActivationGroup" type="constructor" line="140">
+                <params>
+                    <param name="groupID" type="ActivationGroupID"/>
+                </params>
+                <comment line="141">
+                    call super constructor to export the object                    
+                </comment>
+            </method>
+            <javadoc line="146">
+                The group&apos;s &lt;code&gt;inactiveObject&lt;/code&gt; method is called
+                  indirectly via a call to the &lt;code&gt;Activatable.inactive&lt;/code&gt;
+                  method. A remote object implementation must call
+                  &lt;code&gt;Activatable&lt;/code&gt;&apos;s &lt;code&gt;inactive&lt;/code&gt; method when
+                  that object deactivates (the object deems that it is no longer
+                  active). If the object does not call
+                  &lt;code&gt;Activatable.inactive&lt;/code&gt; when it deactivates, the
+                  object will never be garbage collected since the group keeps
+                  strong references to the objects it creates. &lt;p&gt;
+                  &lt;p&gt;The group&apos;s &lt;code&gt;inactiveObject&lt;/code&gt; method unexports the
+                  remote object from the RMI runtime so that the object can no
+                  longer receive incoming RMI calls. An object will only be unexported
+                  if the object has no pending or executing calls.
+                  The subclass of &lt;code&gt;ActivationGroup&lt;/code&gt; must override this
+                  method and unexport the object. &lt;p&gt;
+                  &lt;p&gt;After removing the object from the RMI runtime, the group
+                  must inform its &lt;code&gt;ActivationMonitor&lt;/code&gt; (via the monitor&apos;s
+                  &lt;code&gt;inactiveObject&lt;/code&gt; method) that the remote object is
+                  not currently active so that the remote object will be
+                  re-activated by the activator upon a subsequent activation
+                  request.&lt;p&gt;
+                  &lt;p&gt;This method simply informs the group&apos;s monitor that the object
+                  is inactive.  It is up to the concrete subclass of ActivationGroup
+                  to fulfill the additional requirement of unexporting the object. &lt;p&gt;                
+                <param>
+                    id the object's activation identifier                    
+                </param>
+                <return>
+                    true if the object was successfully deactivated; otherwise
+                      returns false.                    
+                </return>
+                <exception>
+                    UnknownObjectException if object is unknown (may already
+                      be inactive)                    
+                </exception>
+                <exception>
+                    RemoteException if call informing monitor fails                    
+                </exception>
+                <exception>
+                    ActivationException if group is inactive                    
+                </exception>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="inactiveObject" type="boolean" line="186">
+                <params>
+                    <param name="id" type="ActivationID"/>
+                </params>
+            </method>
+            <method name="activeObject" type="void" line="191"/>
+            <javadoc line="191">
+                The group&apos;s &lt;code&gt;activeObject&lt;/code&gt; method is called when an
+                  object is exported (either by &lt;code&gt;Activatable&lt;/code&gt; object
+                  construction or an explicit call to
+                  &lt;code&gt;Activatable.exportObject&lt;/code&gt;. The group must inform its
+                  &lt;code&gt;ActivationMonitor&lt;/code&gt; that the object is active (via
+                  the monitor&apos;s &lt;code&gt;activeObject&lt;/code&gt; method) if the group
+                  hasn&apos;t already done so.                
+                <param>
+                    id the object's identifier                    
+                </param>
+                <param>
+                    obj the remote object implementation                    
+                </param>
+                <exception>
+                    UnknownObjectException if object is not registered                    
+                </exception>
+                <exception>
+                    RemoteException if call informing monitor fails                    
+                </exception>
+                <exception>
+                    ActivationException if group is inactive                    
+                </exception>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <javadoc line="210">
+                Create and set the activation group for the current VM.  The
+                  activation group can only be set if it is not currently set.
+                  An activation group is set using the &lt;code&gt;createGroup&lt;/code&gt;
+                  method when the &lt;code&gt;Activator&lt;/code&gt; initiates the
+                  re-creation of an activation group in order to carry out
+                  incoming &lt;code&gt;activate&lt;/code&gt; requests. A group must first be
+                  registered with the &lt;code&gt;ActivationSystem&lt;/code&gt; before it can
+                  be created via this method.
+                  &lt;p&gt;The group class specified by the
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt; must be a concrete subclass of
+                  &lt;code&gt;ActivationGroup&lt;/code&gt; and have a public constructor that
+                  takes two arguments: the &lt;code&gt;ActivationGroupID&lt;/code&gt; for the
+                  group and the &lt;code&gt;MarshalledObject&lt;/code&gt; containing the
+                  group&apos;s initialization data (obtained from the
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt;.
+                  &lt;p&gt;If the group class name specified in the
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt; is &lt;code&gt;null&lt;/code&gt;, then
+                  this method will behave as if the group descriptor contained
+                  the name of the default activation group implementation class.
+                  &lt;p&gt;Note that if your application creates its own custom
+                  activation group, a security manager must be set for that
+                  group.  Otherwise objects cannot be activated in the group.
+                  &lt;code&gt;java.rmi.RMISecurityManager&lt;/code&gt; is set by default.
+                  &lt;p&gt;If a security manager is already set in the group VM, this
+                  method first calls the security manager&apos;s
+                  &lt;code&gt;checkSetFactory&lt;/code&gt; method.  This could result in a
+                  &lt;code&gt;SecurityException&lt;/code&gt;. If your application needs to
+                  set a different security manager, you must ensure that the
+                  policy file specified by the group&apos;s
+                  &lt;code&gt;ActivationGroupDesc&lt;/code&gt; grants the group the necessary
+                  permissions to set a new security manager.  (Note: This will be
+                  necessary if your group downloads and sets a security manager).
+                  &lt;p&gt;After the group is created, the
+                  &lt;code&gt;ActivationSystem&lt;/code&gt; is informed that the group is
+                  active by calling the &lt;code&gt;activeGroup&lt;/code&gt; method which
+                  returns the &lt;code&gt;ActivationMonitor&lt;/code&gt; for the group. The
+                  application need not call &lt;code&gt;activeGroup&lt;/code&gt;
+                  independently since it is taken care of by this method.
+                  &lt;p&gt;Once a group is created, subsequent calls to the
+                  &lt;code&gt;currentGroupID&lt;/code&gt; method will return the identifier
+                  for this group until the group becomes inactive.                
+                <param>
+                    id the activation group's identifier                    
+                </param>
+                <param>
+                    desc the activation group's descriptor                    
+                </param>
+                <param>
+                    incarnation the group's incarnation number (zero on group's
+                      initial creation)                    
+                </param>
+                <return>
+                    the activation group for the VM                    
+                </return>
+                <exception>
+                    ActivationException if group already exists or if error
+                      occurs during group creation                    
+                </exception>
+                <exception>
+                    SecurityException if permission to create group is denied.
+                      (Note: The default implementation of the security manager
+                      <code>checkSetFactory</code>
+                      method requires the RuntimePermission "setFactory")                    
+                </exception>
+                <see>
+                    SecurityManager#checkSetFactory                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="createGroup" type="ActivationGroup" line="278">
+                <params>
+                    <param name="id" type="ActivationGroupID"/>
+                    <param name="desc" type="ActivationGroupDesc"/>
+                    <param name="incarnation" type="long"/>
+                </params>
+                <comment line="291">
+                    load group&apos;s class                    
+                </comment>
+                <comment line="296">
+                    see 4252236                    
+                </comment>
+                <comment line="317">
+                    create group                    
+                </comment>
+                <declaration name="security" type="SecurityManager" line="279"/>
+                <scope line="290">
+                    <declaration name="groupClassName" type="String" line="292"/>
+                    <declaration name="cl" type="Class&lt;? extends ActivationGroup&gt;" line="293"/>
+                    <declaration name="defaultGroupClass" type="Class&lt;? extends ActivationGroup&gt;" line="294"/>
+                    <scope line="298"/>
+                    <scope line="300">
+                        <declaration name="cl0" type="Class&lt;?&gt;" line="301"/>
+                        <scope line="302"/>
+                        <scope line="305"/>
+                        <scope line="309"/>
+                        <scope line="311"/>
+                    </scope>
+                    <declaration name="constructor" type="Constructor&lt;? extends ActivationGroup&gt;" line="318"/>
+                    <declaration name="newGroup" type="ActivationGroup" line="321"/>
+                </scope>
+                <scope line="330"/>
+                <scope line="335"/>
+                <scope line="338"/>
+            </method>
+            <javadoc line="345">
+                Returns the current activation group&apos;s identifier.  Returns null
+                  if no group is currently active for this VM.                
+                <return>
+                    the activation group's identifier                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="currentGroupID" type="ActivationGroupID" line="351"/>
+            <javadoc line="355">
+                Returns the activation group identifier for the VM.  If an
+                  activation group does not exist for this VM, a default
+                  activation group is created. A group can be created only once,
+                  so if a group has already become active and deactivated.                
+                <return>
+                    the activation group identifier                    
+                </return>
+                <exception>
+                    ActivationException if error occurs during group
+                      creation, if security manager is not set, or if the group
+                      has already been created and deactivated.                    
+                </exception>
+            </javadoc>
+            <method name="internalCurrentGroupID" type="ActivationGroupID" line="368"/>
+            <javadoc line="375">
+                Set the activation system for the VM.  The activation system can
+                  only be set it if no group is currently active. If the activation
+                  system is not set via this call, then the &lt;code&gt;getSystem&lt;/code&gt;
+                  method attempts to obtain a reference to the
+                  &lt;code&gt;ActivationSystem&lt;/code&gt; by looking up the name
+                  &quot;java.rmi.activation.ActivationSystem&quot; in the Activator&apos;s
+                  registry. By default, the port number used to look up the
+                  activation system is defined by
+                  &lt;code&gt;ActivationSystem.SYSTEM_PORT&lt;/code&gt;. This port can be overridden
+                  by setting the property &lt;code&gt;java.rmi.activation.port&lt;/code&gt;.
+                  &lt;p&gt;If there is a security manager, this method first
+                  calls the security manager&apos;s &lt;code&gt;checkSetFactory&lt;/code&gt; method.
+                  This could result in a SecurityException.                
+                <param>
+                    system remote reference to the <code>ActivationSystem</code>                    
+                </param>
+                <exception>
+                    ActivationException if activation system is already set                    
+                </exception>
+                <exception>
+                    SecurityException if permission to set the activation system is denied.
+                      (Note: The default implementation of the security manager
+                      <code>checkSetFactory</code>
+                      method requires the RuntimePermission "setFactory")                    
+                </exception>
+                <see>
+                    #getSystem                    
+                </see>
+                <see>
+                    SecurityManager#checkSetFactory                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="setSystem" type="void" line="403">
+                <params>
+                    <param name="system" type="ActivationSystem"/>
+                </params>
+                <declaration name="security" type="SecurityManager" line="404"/>
+            </method>
+            <javadoc line="414">
+                Returns the activation system for the VM. The activation system
+                  may be set by the &lt;code&gt;setSystem&lt;/code&gt; method. If the
+                  activation system is not set via the &lt;code&gt;setSystem&lt;/code&gt;
+                  method, then the &lt;code&gt;getSystem&lt;/code&gt; method attempts to
+                  obtain a reference to the &lt;code&gt;ActivationSystem&lt;/code&gt; by
+                  looking up the name &quot;java.rmi.activation.ActivationSystem&quot; in
+                  the Activator&apos;s registry. By default, the port number used to
+                  look up the activation system is defined by
+                  &lt;code&gt;ActivationSystem.SYSTEM_PORT&lt;/code&gt;. This port can be
+                  overridden by setting the property
+                  &lt;code&gt;java.rmi.activation.port&lt;/code&gt;.                
+                <return>
+                    the activation system for the VM/group                    
+                </return>
+                <exception>
+                    ActivationException if activation system cannot be
+                      obtained or is not bound
+                      (means that it is not running)                    
+                </exception>
+                <see>
+                    #setSystem                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getSystem" type="ActivationSystem" line="436">
+                <scope line="437">
+                    <scope line="438">
+                        <declaration name="port" type="int" line="439"/>
+                    </scope>
+                    <scope line="445"/>
+                </scope>
+            </method>
+            <javadoc line="453">
+                This protected method is necessary for subclasses to
+                  make the &lt;code&gt;activeObject&lt;/code&gt; callback to the group&apos;s
+                  monitor. The call is simply forwarded to the group&apos;s
+                  &lt;code&gt;ActivationMonitor&lt;/code&gt;.                
+                <param>
+                    id the object's identifier                    
+                </param>
+                <param>
+                    mobj a marshalled object containing the remote object's stub                    
+                </param>
+                <exception>
+                    UnknownObjectException if object is not registered                    
+                </exception>
+                <exception>
+                    RemoteException if call informing monitor fails                    
+                </exception>
+                <exception>
+                    ActivationException if an activation error occurs                    
+                </exception>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="activeObject" type="void" line="469">
+                <params>
+                    <param name="id" type="ActivationID"/>
+                    <param name="mobj" type="MarshalledObject<? extends Remote>"/>
+                </params>
+            </method>
+            <javadoc line="473">
+                This protected method is necessary for subclasses to
+                  make the &lt;code&gt;inactiveGroup&lt;/code&gt; callback to the group&apos;s
+                  monitor. The call is simply forwarded to the group&apos;s
+                  &lt;code&gt;ActivationMonitor&lt;/code&gt;. Also, the current group
+                  for the VM is set to null.                
+                <exception>
+                    UnknownGroupException if group is not registered                    
+                </exception>
+                <exception>
+                    RemoteException if call informing monitor fails                    
+                </exception>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="inactiveGroup" type="void" line="486">
+                <scope line="487"/>
+                <scope line="489"/>
+            </method>
+            <javadoc line="494">
+                Returns the monitor for the activation group.                
+            </javadoc>
+            <method name="getMonitor" type="ActivationMonitor" line="497">
+                <scope line="498">
+                    <scope line="499"/>
+                </scope>
+            </method>
+            <javadoc line="506">
+                Destroys the current group.                
+            </javadoc>
+            <method name="destroyGroup" type="void" line="509">
+                <comment line="512">
+                    NOTE: don&apos;t set currSystem to null since it may be needed                    
+                </comment>
+            </method>
+            <javadoc line="515">
+                Returns the current group for the VM.                
+                <exception>
+                    ActivationException if current group is null (not active)                    
+                </exception>
+            </javadoc>
+            <method name="currentGroup" type="ActivationGroup" line="521">
+                <scope line="522"/>
+            </method>
+        </class>
+    </source>

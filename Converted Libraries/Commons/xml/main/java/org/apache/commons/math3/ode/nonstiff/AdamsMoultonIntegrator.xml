@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.ode.nonstiff">
+        <import package="java.util.Arrays"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.MaxCountExceededException"/>
+        <import package="org.apache.commons.math3.exception.NoBracketingException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooSmallException"/>
+        <import package="org.apache.commons.math3.linear.Array2DRowRealMatrix"/>
+        <import package="org.apache.commons.math3.linear.RealMatrixPreservingVisitor"/>
+        <import package="org.apache.commons.math3.ode.EquationsMapper"/>
+        <import package="org.apache.commons.math3.ode.ExpandableStatefulODE"/>
+        <import package="org.apache.commons.math3.ode.sampling.NordsieckStepInterpolator"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <class name="AdamsMoultonIntegrator" line="34">
+            <extends class="AdamsIntegrator"/>
+            <javadoc line="34">
+                This class implements implicit Adams-Moulton integrators for Ordinary
+                  Differential Equations.
+                  &lt;p&gt;Adams-Moulton methods (in fact due to Adams alone) are implicit
+                  multistep ODE solvers. This implementation is a variation of the classical
+                  one: it uses adaptive stepsize to implement error control, whereas
+                  classical implementations are fixed step size. The value of state vector
+                  at step n+1 is a simple combination of the value at step n and of the
+                  derivatives at steps n+1, n, n-1 ... Since y&apos;&lt;sub&gt;n+1&lt;/sub&gt; is needed to
+                  compute y&lt;sub&gt;n+1&lt;/sub&gt;, another method must be used to compute a first
+                  estimate of y&lt;sub&gt;n+1&lt;/sub&gt;, then compute y&apos;&lt;sub&gt;n+1&lt;/sub&gt;, then compute
+                  a final estimate of y&lt;sub&gt;n+1&lt;/sub&gt; using the following formulas. Depending
+                  on the number k of previous steps one wants to use for computing the next
+                  value, different formulas are available for the final estimate:&lt;/p&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;k = 1: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + h y&apos;&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;k = 2: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + h (y&apos;&lt;sub&gt;n+1&lt;/sub&gt;+y&apos;&lt;sub&gt;n&lt;/sub&gt;)/2&lt;/li&gt;
+                  &lt;li&gt;k = 3: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + h (5y&apos;&lt;sub&gt;n+1&lt;/sub&gt;+8y&apos;&lt;sub&gt;n&lt;/sub&gt;-y&apos;&lt;sub&gt;n-1&lt;/sub&gt;)/12&lt;/li&gt;
+                  &lt;li&gt;k = 4: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + h (9y&apos;&lt;sub&gt;n+1&lt;/sub&gt;+19y&apos;&lt;sub&gt;n&lt;/sub&gt;-5y&apos;&lt;sub&gt;n-1&lt;/sub&gt;+y&apos;&lt;sub&gt;n-2&lt;/sub&gt;)/24&lt;/li&gt;
+                  &lt;li&gt;...&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;p&gt;A k-steps Adams-Moulton method is of order k+1.&lt;/p&gt;
+                  &lt;h3&gt;Implementation details&lt;/h3&gt;
+                  &lt;p&gt;We define scaled derivatives s&lt;sub&gt;i&lt;/sub&gt;(n) at step n as:
+                  &lt;pre&gt;
+                  s&lt;sub&gt;1&lt;/sub&gt;(n) = h y&apos;&lt;sub&gt;n&lt;/sub&gt; for first derivative
+                  s&lt;sub&gt;2&lt;/sub&gt;(n) = h&lt;sup&gt;2&lt;/sup&gt;/2 y&apos;&apos;&lt;sub&gt;n&lt;/sub&gt; for second derivative
+                  s&lt;sub&gt;3&lt;/sub&gt;(n) = h&lt;sup&gt;3&lt;/sup&gt;/6 y&apos;&apos;&apos;&lt;sub&gt;n&lt;/sub&gt; for third derivative
+                  ...
+                  s&lt;sub&gt;k&lt;/sub&gt;(n) = h&lt;sup&gt;k&lt;/sup&gt;/k! y&lt;sup&gt;(k)&lt;/sup&gt;&lt;sub&gt;n&lt;/sub&gt; for k&lt;sup&gt;th&lt;/sup&gt; derivative
+                  &lt;/pre&gt;&lt;/p&gt;
+                  &lt;p&gt;The definitions above use the classical representation with several previous first
+                  derivatives. Lets define
+                  &lt;pre&gt;
+                  q&lt;sub&gt;n&lt;/sub&gt; = [ s&lt;sub&gt;1&lt;/sub&gt;(n-1) s&lt;sub&gt;1&lt;/sub&gt;(n-2) ... s&lt;sub&gt;1&lt;/sub&gt;(n-(k-1)) ]&lt;sup&gt;T&lt;/sup&gt;
+                  &lt;/pre&gt;
+                  (we omit the k index in the notation for clarity). With these definitions,
+                  Adams-Moulton methods can be written:
+                  &lt;ul&gt;
+                  &lt;li&gt;k = 1: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + s&lt;sub&gt;1&lt;/sub&gt;(n+1)&lt;/li&gt;
+                  &lt;li&gt;k = 2: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + 1/2 s&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ 1/2 ] q&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;k = 3: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + 5/12 s&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ 8/12 -1/12 ] q&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;k = 4: y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + 9/24 s&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ 19/24 -5/24 1/24 ] q&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;...&lt;/li&gt;
+                  &lt;/ul&gt;&lt;/p&gt;
+                  &lt;p&gt;Instead of using the classical representation with first derivatives only (y&lt;sub&gt;n&lt;/sub&gt;,
+                  s&lt;sub&gt;1&lt;/sub&gt;(n+1) and q&lt;sub&gt;n+1&lt;/sub&gt;), our implementation uses the Nordsieck vector with
+                  higher degrees scaled derivatives all taken at the same step (y&lt;sub&gt;n&lt;/sub&gt;, s&lt;sub&gt;1&lt;/sub&gt;(n)
+                  and r&lt;sub&gt;n&lt;/sub&gt;) where r&lt;sub&gt;n&lt;/sub&gt; is defined as:
+                  &lt;pre&gt;
+                  r&lt;sub&gt;n&lt;/sub&gt; = [ s&lt;sub&gt;2&lt;/sub&gt;(n), s&lt;sub&gt;3&lt;/sub&gt;(n) ... s&lt;sub&gt;k&lt;/sub&gt;(n) ]&lt;sup&gt;T&lt;/sup&gt;
+                  &lt;/pre&gt;
+                  (here again we omit the k index in the notation for clarity)
+                  &lt;/p&gt;
+                  &lt;p&gt;Taylor series formulas show that for any index offset i, s&lt;sub&gt;1&lt;/sub&gt;(n-i) can be
+                  computed from s&lt;sub&gt;1&lt;/sub&gt;(n), s&lt;sub&gt;2&lt;/sub&gt;(n) ... s&lt;sub&gt;k&lt;/sub&gt;(n), the formula being exact
+                  for degree k polynomials.
+                  &lt;pre&gt;
+                  s&lt;sub&gt;1&lt;/sub&gt;(n-i) = s&lt;sub&gt;1&lt;/sub&gt;(n) + &amp;sum;&lt;sub&gt;j&lt;/sub&gt; j (-i)&lt;sup&gt;j-1&lt;/sup&gt; s&lt;sub&gt;j&lt;/sub&gt;(n)
+                  &lt;/pre&gt;
+                  The previous formula can be used with several values for i to compute the transform between
+                  classical representation and Nordsieck vector. The transform between r&lt;sub&gt;n&lt;/sub&gt;
+                  and q&lt;sub&gt;n&lt;/sub&gt; resulting from the Taylor series formulas above is:
+                  &lt;pre&gt;
+                  q&lt;sub&gt;n&lt;/sub&gt; = s&lt;sub&gt;1&lt;/sub&gt;(n) u + P r&lt;sub&gt;n&lt;/sub&gt;
+                  &lt;/pre&gt;
+                  where u is the [ 1 1 ... 1 ]&lt;sup&gt;T&lt;/sup&gt; vector and P is the (k-1)&amp;times;(k-1) matrix built
+                  with the j (-i)&lt;sup&gt;j-1&lt;/sup&gt; terms:
+                  &lt;pre&gt;
+                  [  -2   3   -4    5  ... ]
+                  [  -4  12  -32   80  ... ]
+                  P =  [  -6  27 -108  405  ... ]
+                  [  -8  48 -256 1280  ... ]
+                  [          ...           ]
+                  &lt;/pre&gt;&lt;/p&gt;
+                  &lt;p&gt;Using the Nordsieck vector has several advantages:
+                  &lt;ul&gt;
+                  &lt;li&gt;it greatly simplifies step interpolation as the interpolator mainly applies
+                  Taylor series formulas,&lt;/li&gt;
+                  &lt;li&gt;it simplifies step changes that occur when discrete events that truncate
+                  the step are triggered,&lt;/li&gt;
+                  &lt;li&gt;it allows to extend the methods in order to support adaptive stepsize.&lt;/li&gt;
+                  &lt;/ul&gt;&lt;/p&gt;
+                  &lt;p&gt;The predicted Nordsieck vector at step n+1 is computed from the Nordsieck vector at step
+                  n as follows:
+                  &lt;ul&gt;
+                  &lt;li&gt;Y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + s&lt;sub&gt;1&lt;/sub&gt;(n) + u&lt;sup&gt;T&lt;/sup&gt; r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;S&lt;sub&gt;1&lt;/sub&gt;(n+1) = h f(t&lt;sub&gt;n+1&lt;/sub&gt;, Y&lt;sub&gt;n+1&lt;/sub&gt;)&lt;/li&gt;
+                  &lt;li&gt;R&lt;sub&gt;n+1&lt;/sub&gt; = (s&lt;sub&gt;1&lt;/sub&gt;(n) - S&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u + P&lt;sup&gt;-1&lt;/sup&gt; A P r&lt;sub&gt;n&lt;/sub&gt;&lt;/li&gt;
+                  &lt;/ul&gt;
+                  where A is a rows shifting matrix (the lower left part is an identity matrix):
+                  &lt;pre&gt;
+                  [ 0 0   ...  0 0 | 0 ]
+                  [ ---------------+---]
+                  [ 1 0   ...  0 0 | 0 ]
+                  A = [ 0 1   ...  0 0 | 0 ]
+                  [       ...      | 0 ]
+                  [ 0 0   ...  1 0 | 0 ]
+                  [ 0 0   ...  0 1 | 0 ]
+                  &lt;/pre&gt;
+                  From this predicted vector, the corrected vector is computed as follows:
+                  &lt;ul&gt;
+                  &lt;li&gt;y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + S&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ -1 +1 -1 +1 ... &amp;plusmn;1 ] r&lt;sub&gt;n+1&lt;/sub&gt;&lt;/li&gt;
+                  &lt;li&gt;s&lt;sub&gt;1&lt;/sub&gt;(n+1) = h f(t&lt;sub&gt;n+1&lt;/sub&gt;, y&lt;sub&gt;n+1&lt;/sub&gt;)&lt;/li&gt;
+                  &lt;li&gt;r&lt;sub&gt;n+1&lt;/sub&gt; = R&lt;sub&gt;n+1&lt;/sub&gt; + (s&lt;sub&gt;1&lt;/sub&gt;(n+1) - S&lt;sub&gt;1&lt;/sub&gt;(n+1)) P&lt;sup&gt;-1&lt;/sup&gt; u&lt;/li&gt;
+                  &lt;/ul&gt;
+                  where the upper case Y&lt;sub&gt;n+1&lt;/sub&gt;, S&lt;sub&gt;1&lt;/sub&gt;(n+1) and R&lt;sub&gt;n+1&lt;/sub&gt; represent the
+                  predicted states whereas the lower case y&lt;sub&gt;n+1&lt;/sub&gt;, s&lt;sub&gt;n+1&lt;/sub&gt; and r&lt;sub&gt;n+1&lt;/sub&gt;
+                  represent the corrected states.&lt;/p&gt;
+                  &lt;p&gt;The P&lt;sup&gt;-1&lt;/sup&gt;u vector and the P&lt;sup&gt;-1&lt;/sup&gt; A P matrix do not depend on the state,
+                  they only depend on k and therefore are precomputed once for all.&lt;/p&gt;                
+                <version>
+                    $Id: AdamsMoultonIntegrator.java 1463684 2013-04-02 19:04:13Z luc $                    
+                </version>
+                <since>
+                    2.0                    
+                </since>
+            </javadoc>
+            <declaration name="METHOD_NAME" type="String" line="161"/>
+            <javadoc line="161">
+                Integrator method name.                
+            </javadoc>
+            <javadoc line="164">
+                Build an Adams-Moulton integrator with the given order and error control parameters.                
+                <param>
+                    nSteps number of steps of the method excluding the one being computed                    
+                </param>
+                <param>
+                    minStep minimal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    maxStep maximal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    scalAbsoluteTolerance allowed absolute error                    
+                </param>
+                <param>
+                    scalRelativeTolerance allowed relative error                    
+                </param>
+                <exception>
+                    NumberIsTooSmallException if order is 1 or less                    
+                </exception>
+            </javadoc>
+            <method name="AdamsMoultonIntegrator" type="constructor" line="181">
+                <params>
+                    <param name="nSteps" type="int"/>
+                    <param name="minStep" type="double"/>
+                    <param name="maxStep" type="double"/>
+                    <param name="scalAbsoluteTolerance" type="double"/>
+                    <param name="scalRelativeTolerance" type="double"/>
+                </params>
+            </method>
+            <javadoc line="186">
+                Build an Adams-Moulton integrator with the given order and error control parameters.                
+                <param>
+                    nSteps number of steps of the method excluding the one being computed                    
+                </param>
+                <param>
+                    minStep minimal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    maxStep maximal step (sign is irrelevant, regardless of
+                      integration direction, forward or backward), the last step can
+                      be smaller than this                    
+                </param>
+                <param>
+                    vecAbsoluteTolerance allowed absolute error                    
+                </param>
+                <param>
+                    vecRelativeTolerance allowed relative error                    
+                </param>
+                <exception>
+                    IllegalArgumentException if order is 1 or less                    
+                </exception>
+            </javadoc>
+            <method name="AdamsMoultonIntegrator" type="constructor" line="203">
+                <params>
+                    <param name="nSteps" type="int"/>
+                    <param name="minStep" type="double"/>
+                    <param name="maxStep" type="double"/>
+                    <param name="vecAbsoluteTolerance" type="double[]"/>
+                    <param name="vecRelativeTolerance" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="209">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="integrate" type="void" line="213">
+                <params>
+                    <param name="equations" type="ExpandableStatefulODE"/>
+                    <param name="t" type="double"/>
+                </params>
+                <comment line="219">
+                    initialize working arrays                    
+                </comment>
+                <comment line="227">
+                    set up two interpolators sharing the integrator arrays                    
+                </comment>
+                <comment line="232">
+                    set up integration control objects                    
+                </comment>
+                <comment line="235">
+                    compute the initial Nordsieck vector using the configured starter integrator                    
+                </comment>
+                <comment line="251">
+                    predict a first estimate of the state at step end (P in the PECE sequence)                    
+                </comment>
+                <comment line="263">
+                    evaluate a first estimate of the derivative (first E in the PECE sequence)                    
+                </comment>
+                <comment line="266">
+                    update Nordsieck vector                    
+                </comment>
+                <comment line="273">
+                    apply correction (C in the PECE sequence)                    
+                </comment>
+                <comment line="277">
+                    reject the step and attempt to reduce error by stepsize control                    
+                </comment>
+                <comment line="284">
+                    evaluate a final estimate of the derivative (second E in the PECE sequence)                    
+                </comment>
+                <comment line="288">
+                    update Nordsieck vector                    
+                </comment>
+                <comment line="295">
+                    discrete events handling                    
+                </comment>
+                <comment line="307">
+                    prepare next step                    
+                </comment>
+                <comment line="311">
+                    some events handler has triggered changes that                    
+                </comment>
+                <comment line="312">
+                    invalidate the derivatives, we need to restart from scratch                    
+                </comment>
+                <comment line="318">
+                    stepsize control for next step                    
+                </comment>
+                <comment line="336">
+                    dispatch results                    
+                </comment>
+                <declaration name="forward" type="boolean" line="217"/>
+                <declaration name="y0" type="double[]" line="220"/>
+                <declaration name="y" type="double[]" line="221"/>
+                <declaration name="yDot" type="double[]" line="222"/>
+                <declaration name="yTmp" type="double[]" line="223"/>
+                <declaration name="predictedScaled" type="double[]" line="224"/>
+                <declaration name="nordsieckTmp" type="Array2DRowRealMatrix" line="225"/>
+                <declaration name="interpolator" type="NordsieckStepInterpolator" line="228"/>
+                <declaration name="hNew" type="double" line="240"/>
+                <scope line="244">
+                    <declaration name="error" type="double" line="246"/>
+                    <scope line="247">
+                        <declaration name="stepEnd" type="double" line="252"/>
+                        <declaration name="expandable" type="ExpandableStatefulODE" line="254"/>
+                        <declaration name="primary" type="EquationsMapper" line="255"/>
+                        <declaration name="index" type="int" line="257"/>
+                        <scope line="258"/>
+                        <scope line="267"/>
+                        <scope line="276">
+                            <declaration name="factor" type="double" line="278"/>
+                        </scope>
+                    </scope>
+                    <declaration name="stepEnd" type="double" line="285"/>
+                    <declaration name="correctedScaled" type="double[]" line="289"/>
+                    <scope line="290"/>
+                    <scope line="305">
+                        <scope line="310"/>
+                        <declaration name="factor" type="double" line="319"/>
+                        <declaration name="scaledH" type="double" line="320"/>
+                        <declaration name="nextT" type="double" line="321"/>
+                        <declaration name="nextIsLast" type="boolean" line="322"/>
+                        <declaration name="filteredNextT" type="double" line="325"/>
+                        <declaration name="filteredNextIsLast" type="boolean" line="326"/>
+                        <scope line="327"/>
+                    </scope>
+                </scope>
+            </method>
+            <class name="Corrector" line="344">
+                <implements interface="RealMatrixPreservingVisitor"/>
+                <javadoc line="344">
+                    Corrector for current state in Adams-Moulton method.
+                      &lt;p&gt;
+                      This visitor implements the Taylor series formula:
+                      &lt;pre&gt;
+                      Y&lt;sub&gt;n+1&lt;/sub&gt; = y&lt;sub&gt;n&lt;/sub&gt; + s&lt;sub&gt;1&lt;/sub&gt;(n+1) + [ -1 +1 -1 +1 ... &amp;plusmn;1 ] r&lt;sub&gt;n+1&lt;/sub&gt;
+                      &lt;/pre&gt;
+                      &lt;/p&gt;                    
+                </javadoc>
+                <declaration name="previous" type="double[]" line="354"/>
+                <javadoc line="354">
+                    Previous state.                    
+                </javadoc>
+                <declaration name="scaled" type="double[]" line="357"/>
+                <javadoc line="357">
+                    Current scaled first derivative.                    
+                </javadoc>
+                <declaration name="before" type="double[]" line="360"/>
+                <javadoc line="360">
+                    Current state before correction.                    
+                </javadoc>
+                <declaration name="after" type="double[]" line="363"/>
+                <javadoc line="363">
+                    Current state after correction.                    
+                </javadoc>
+                <javadoc line="366">
+                    Simple constructor.                    
+                    <param>
+                        previous previous state                        
+                    </param>
+                    <param>
+                        scaled current scaled first derivative                        
+                    </param>
+                    <param>
+                        state state to correct (will be overwritten after visit)                        
+                    </param>
+                </javadoc>
+                <method name="Corrector" type="constructor" line="371">
+                    <params>
+                        <param name="previous" type="double[]"/>
+                        <param name="scaled" type="double[]"/>
+                        <param name="state" type="double[]"/>
+                    </params>
+                </method>
+                <javadoc line="378">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="start" type="void" line="380">
+                    <params>
+                        <param name="rows" type="int"/>
+                        <param name="columns" type="int"/>
+                        <param name="startRow" type="int"/>
+                        <param name="endRow" type="int"/>
+                        <param name="startColumn" type="int"/>
+                        <param name="endColumn" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="384">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="visit" type="void" line="385">
+                    <params>
+                        <param name="row" type="int"/>
+                        <param name="column" type="int"/>
+                        <param name="value" type="double"/>
+                    </params>
+                    <scope line="386"/>
+                    <scope line="388"/>
+                </method>
+                <javadoc line="393">
+                    End visiting the Nordsieck vector.
+                      &lt;p&gt;The correction is used to control stepsize. So its amplitude is
+                      considered to be an error, which must be normalized according to
+                      error control settings. If the normalized value is greater than 1,
+                      the correction was too large and the step must be rejected.&lt;/p&gt;                    
+                    <return>
+                        the normalized correction, if greater than 1, the step
+                          must be rejected                        
+                    </return>
+                </javadoc>
+                <method name="end" type="double" line="402">
+                    <declaration name="error" type="double" line="404"/>
+                    <scope line="405">
+                        <scope line="407">
+                            <declaration name="yScale" type="double" line="408"/>
+                            <declaration name="tol" type="double" line="409"/>
+                            <declaration name="ratio" type="double" line="412"/>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+        </class>
+    </source>

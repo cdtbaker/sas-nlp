@@ -1,0 +1,40 @@
+package org.apache.commons.math3.geometry.partitioning;
+import org.apache.commons.math3.geometry.Vector;
+import org.apache.commons.math3.geometry.Space;
+/** 
+ * This interface defines mappers between a space and one of its sub-spaces.
+ * <p>Sub-spaces are the lower dimensions subsets of a n-dimensions
+ * space. The (n-1)-dimension sub-spaces are specific sub-spaces known
+ * as {@link Hyperplane hyperplanes}. This interface can be used regardless
+ * of the dimensions differences. As an example, {@link org.apache.commons.math3.geometry.euclidean.threed.Line Line} in 3D
+ * implements Embedding<{@link org.apache.commons.math3.geometry.euclidean.threed.Vector3D Vector3D}, {link
+ * org.apache.commons.math3.geometry.euclidean.oned.Vector1D Vector1D>, i.e. it
+ * maps directly dimensions 3 and 1.</p>
+ * <p>In the 3D euclidean space, hyperplanes are 2D planes, and the 1D
+ * sub-spaces are lines.</p>
+ * @param<S>
+ *  Type of the embedding space.
+ * @param<T>
+ *  Type of the embedded sub-space.
+ * @see Hyperplane
+ * @version $Id: Embedding.java 1416643 2012-12-03 19:37:14Z tn $
+ * @since 3.0
+ */
+public interface Embedding<S extends Space,T extends Space> {
+  /** 
+ * Transform a space point into a sub-space point.
+ * @param point n-dimension point of the space
+ * @return (n-1)-dimension point of the sub-space corresponding to
+ * the specified space point
+ * @see #toSpace
+ */
+  Vector<T> toSubSpace(  Vector<S> point);
+  /** 
+ * Transform a sub-space point into a space point.
+ * @param point (n-1)-dimension point of the sub-space
+ * @return n-dimension point of the space corresponding to the
+ * specified sub-space point
+ * @see #toSubSpace
+ */
+  Vector<S> toSpace(  Vector<T> point);
+}

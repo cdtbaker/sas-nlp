@@ -1,0 +1,689 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.nio.ch">
+        <import package="java.io.FileDescriptor"/>
+        <import package="java.io.IOException"/>
+        <import package="java.net"/>
+        <import package="java.nio.ByteBuffer"/>
+        <import package="java.nio.channels"/>
+        <import package="java.nio.channels.spi"/>
+        <import package="java.util"/>
+        <import package="sun.net.ResourceManager"/>
+        <class name="DatagramChannelImpl" line="38">
+            <extends class="DatagramChannel"/>
+            <comment line="48">
+                Used to make native read and write calls                
+            </comment>
+            <comment line="51">
+                Our file descriptor                
+            </comment>
+            <comment line="54">
+                fd value needed for dev/poll. This value will remain valid                
+            </comment>
+            <comment line="55">
+                even after the value in the file descriptor object has been set to -1                
+            </comment>
+            <comment line="58">
+                The protocol family of the socket                
+            </comment>
+            <comment line="61">
+                IDs of native threads doing reads and writes, for signalling                
+            </comment>
+            <comment line="65">
+                Cached InetAddress and port for unconnected DatagramChannels                
+            </comment>
+            <comment line="66">
+                used by receive0                
+            </comment>
+            <comment line="70">
+                Lock held by current reading or connecting thread                
+            </comment>
+            <comment line="73">
+                Lock held by current writing or connecting thread                
+            </comment>
+            <comment line="76">
+                Lock held by any thread that modifies the state fields declared below                
+            </comment>
+            <comment line="77">
+                DO NOT invoke a blocking I/O operation while holding this lock!                
+            </comment>
+            <comment line="80">
+                -- The following fields are protected by stateLock                
+            </comment>
+            <comment line="82">
+                State (does not necessarily increase monotonically)                
+            </comment>
+            <comment line="89">
+                Binding                
+            </comment>
+            <comment line="93">
+                Our socket adaptor, if any                
+            </comment>
+            <comment line="96">
+                Multicast support                
+            </comment>
+            <comment line="99">
+                -- End of fields protected by stateLock                
+            </comment>
+            <comment line="317">
+                Set by receive0 (## ugh)                
+            </comment>
+            <comment line="868">
+                package-private                
+            </comment>
+            <comment line="1071">
+                -- Native methods --                
+            </comment>
+            <implements interface="SelChImpl"/>
+            <javadoc line="38">
+                An implementation of DatagramChannels.                
+            </javadoc>
+            <declaration name="nd" type="NativeDispatcher" line="48"/>
+            <declaration name="fd" type="FileDescriptor" line="51"/>
+            <declaration name="fdVal" type="int" line="55"/>
+            <declaration name="family" type="ProtocolFamily" line="58"/>
+            <declaration name="readerThread" type="long" line="61"/>
+            <declaration name="writerThread" type="long" line="62"/>
+            <declaration name="cachedSenderInetAddress" type="InetAddress" line="66"/>
+            <declaration name="cachedSenderPort" type="int" line="67"/>
+            <declaration name="readLock" type="Object" line="70"/>
+            <declaration name="writeLock" type="Object" line="73"/>
+            <declaration name="stateLock" type="Object" line="77"/>
+            <declaration name="ST_UNINITIALIZED" type="int" line="82"/>
+            <declaration name="ST_UNCONNECTED" type="int" line="83"/>
+            <declaration name="ST_CONNECTED" type="int" line="84"/>
+            <declaration name="ST_KILLED" type="int" line="85"/>
+            <declaration name="state" type="int" line="86"/>
+            <declaration name="localAddress" type="SocketAddress" line="89"/>
+            <declaration name="remoteAddress" type="SocketAddress" line="90"/>
+            <declaration name="socket" type="DatagramSocket" line="93"/>
+            <declaration name="registry" type="MembershipRegistry" line="96"/>
+            <method name="DatagramChannelImpl" type="constructor" line="103">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                </params>
+                <scope line="106"/>
+                <scope line="112"/>
+            </method>
+            <method name="DatagramChannelImpl" type="constructor" line="120">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                    <param name="family" type="ProtocolFamily"/>
+                </params>
+                <scope line="124"/>
+                <scope line="130">
+                    <scope line="131"/>
+                </scope>
+            </method>
+            <method name="DatagramChannelImpl" type="constructor" line="143">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                    <param name="fd" type="FileDescriptor"/>
+                </params>
+            </method>
+            <method name="socket" type="DatagramSocket" line="153">
+                <scope line="154"/>
+            </method>
+            <method name="getLocalAddress" type="SocketAddress" line="162">
+                <scope line="163"/>
+            </method>
+            <method name="getRemoteAddress" type="SocketAddress" line="171">
+                <scope line="172"/>
+            </method>
+            <method name="setOption" type="DatagramChannel" line="182">
+                <params>
+                    <param name="name" type="SocketOption<T>"/>
+                    <param name="value" type="T"/>
+                </params>
+                <comment line="192">
+                    IPv4 only; no-op for IPv6                    
+                </comment>
+                <comment line="202">
+                    options are protocol dependent                    
+                </comment>
+                <comment line="217">
+                    need IPv4 address to identify interface                    
+                </comment>
+                <comment line="227">
+                    remaining options don&apos;t need any special handling                    
+                </comment>
+                <scope line="188">
+                    <scope line="191">
+                        <scope line="193"/>
+                    </scope>
+                    <scope line="201"/>
+                    <scope line="207">
+                        <declaration name="interf" type="NetworkInterface" line="210"/>
+                        <scope line="211">
+                            <declaration name="index" type="int" line="212"/>
+                        </scope>
+                        <scope line="216">
+                            <declaration name="target" type="Inet4Address" line="218"/>
+                            <declaration name="targetAddress" type="int" line="221"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getOption" type="T" line="237">
+                <params>
+                    <param name="name" type="SocketOption<T>"/>
+                </params>
+                <comment line="247">
+                    IPv4 only; always return 0 on IPv6                    
+                </comment>
+                <comment line="265">
+                    default interface                    
+                </comment>
+                <comment line="275">
+                    default interface                    
+                </comment>
+                <comment line="284">
+                    no special handling                    
+                </comment>
+                <scope line="243">
+                    <scope line="246">
+                        <scope line="248"/>
+                        <scope line="250"/>
+                    </scope>
+                    <scope line="257"/>
+                    <scope line="261">
+                        <scope line="262">
+                            <declaration name="address" type="int" line="263"/>
+                            <declaration name="ia" type="InetAddress" line="267"/>
+                            <declaration name="ni" type="NetworkInterface" line="268"/>
+                        </scope>
+                        <scope line="272">
+                            <declaration name="index" type="int" line="273"/>
+                            <declaration name="ni" type="NetworkInterface" line="277"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <class name="DefaultOptionsHolder" line="289">
+                <declaration name="defaultOptions" type="Set&lt;SocketOption&lt;?&gt;&gt;" line="290"/>
+                <method name="defaultOptions" type="Set<SocketOption<?>>" line="292">
+                    <declaration name="set" type="HashSet&lt;SocketOption&lt;?&gt;&gt;" line="293"/>
+                </method>
+            </class>
+            <method name="supportedOptions" type="Set<SocketOption<?>>" line="307"/>
+            <method name="ensureOpen" type="void" line="311"/>
+            <declaration name="sender" type="SocketAddress" line="316"/>
+            <method name="receive" type="SocketAddress" line="318">
+                <params>
+                    <param name="dst" type="ByteBuffer"/>
+                </params>
+                <comment line="325">
+                    Socket was not bound before attempting receive                    
+                </comment>
+                <comment line="356">
+                    Ignore packet                    
+                </comment>
+                <scope line="323">
+                    <declaration name="n" type="int" line="328"/>
+                    <declaration name="bb" type="ByteBuffer" line="329"/>
+                    <scope line="330">
+                        <declaration name="security" type="SecurityManager" line="334"/>
+                        <scope line="336">
+                            <scope line="337"/>
+                        </scope>
+                        <scope line="342">
+                            <scope line="344">
+                                <scope line="345"/>
+                                <declaration name="isa" type="InetSocketAddress" line="350"/>
+                                <scope line="351"/>
+                                <scope line="355"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="367"/>
+                </scope>
+            </method>
+            <method name="receive" type="int" line="379">
+                <params>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="dst" type="ByteBuffer"/>
+                </params>
+                <comment line="387">
+                    Substitute a native buffer. If the supplied buffer is empty                    
+                </comment>
+                <comment line="388">
+                    we must instead use a nonempty buffer, otherwise the call                    
+                </comment>
+                <comment line="389">
+                    will not block waiting for a datagram on some platforms.                    
+                </comment>
+                <declaration name="pos" type="int" line="380"/>
+                <declaration name="lim" type="int" line="381"/>
+                <declaration name="rem" type="int" line="383"/>
+                <declaration name="newSize" type="int" line="390"/>
+                <declaration name="bb" type="ByteBuffer" line="391"/>
+                <scope line="392">
+                    <declaration name="n" type="int" line="393"/>
+                </scope>
+                <scope line="398"/>
+            </method>
+            <method name="receiveIntoNativeBuffer" type="int" line="406">
+                <params>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="bb" type="ByteBuffer"/>
+                    <param name="rem" type="int"/>
+                    <param name="pos" type="int"/>
+                </params>
+                <declaration name="n" type="int" line="407"/>
+            </method>
+            <method name="send" type="int" line="416">
+                <params>
+                    <param name="src" type="ByteBuffer"/>
+                    <param name="target" type="SocketAddress"/>
+                </params>
+                <comment line="439">
+                    Connected case; Check address then write                    
+                </comment>
+                <scope line="420">
+                    <declaration name="isa" type="InetSocketAddress" line="422"/>
+                    <declaration name="ia" type="InetAddress" line="423"/>
+                    <scope line="426">
+                        <scope line="427">
+                            <declaration name="sm" type="SecurityManager" line="430"/>
+                            <scope line="431">
+                                <scope line="432"/>
+                                <scope line="434"/>
+                            </scope>
+                        </scope>
+                        <scope line="439">
+                            <scope line="440"/>
+                        </scope>
+                    </scope>
+                    <declaration name="n" type="int" line="448"/>
+                    <scope line="449">
+                        <scope line="454"/>
+                        <scope line="458">
+                            <scope line="459"/>
+                        </scope>
+                    </scope>
+                    <scope line="464"/>
+                </scope>
+            </method>
+            <method name="send" type="int" line="474">
+                <params>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="src" type="ByteBuffer"/>
+                    <param name="target" type="SocketAddress"/>
+                </params>
+                <comment line="478">
+                    Substitute a native buffer                    
+                </comment>
+                <comment line="488">
+                    Do not update src until we see how many bytes were written                    
+                </comment>
+                <comment line="493">
+                    now update src                    
+                </comment>
+                <declaration name="pos" type="int" line="479"/>
+                <declaration name="lim" type="int" line="480"/>
+                <declaration name="rem" type="int" line="482"/>
+                <declaration name="bb" type="ByteBuffer" line="484"/>
+                <scope line="485">
+                    <declaration name="n" type="int" line="491"/>
+                    <scope line="492"/>
+                </scope>
+                <scope line="497"/>
+            </method>
+            <method name="sendFromNativeBuffer" type="int" line="505">
+                <params>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="bb" type="ByteBuffer"/>
+                    <param name="target" type="SocketAddress"/>
+                </params>
+                <declaration name="pos" type="int" line="506"/>
+                <declaration name="lim" type="int" line="507"/>
+                <declaration name="rem" type="int" line="509"/>
+                <declaration name="preferIPv6" type="boolean" line="511"/>
+                <declaration name="written" type="int" line="512"/>
+            </method>
+            <method name="read" type="int" line="519">
+                <params>
+                    <param name="buf" type="ByteBuffer"/>
+                </params>
+                <scope line="522">
+                    <scope line="523"/>
+                    <declaration name="n" type="int" line="528"/>
+                    <scope line="529">
+                        <scope line="534"/>
+                    </scope>
+                    <scope line="538"/>
+                </scope>
+            </method>
+            <method name="read" type="long" line="548">
+                <params>
+                    <param name="dsts" type="ByteBuffer[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <scope line="551">
+                    <scope line="552"/>
+                    <declaration name="n" type="long" line="557"/>
+                    <scope line="558">
+                        <scope line="563"/>
+                    </scope>
+                    <scope line="567"/>
+                </scope>
+            </method>
+            <method name="write" type="int" line="575">
+                <params>
+                    <param name="buf" type="ByteBuffer"/>
+                </params>
+                <scope line="578">
+                    <scope line="579"/>
+                    <declaration name="n" type="int" line="584"/>
+                    <scope line="585">
+                        <scope line="590"/>
+                    </scope>
+                    <scope line="594"/>
+                </scope>
+            </method>
+            <method name="write" type="long" line="604">
+                <params>
+                    <param name="srcs" type="ByteBuffer[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <scope line="607">
+                    <scope line="608"/>
+                    <declaration name="n" type="long" line="613"/>
+                    <scope line="614">
+                        <scope line="619"/>
+                    </scope>
+                    <scope line="623"/>
+                </scope>
+            </method>
+            <method name="implConfigureBlocking" type="void" line="631">
+                <params>
+                    <param name="block" type="boolean"/>
+                </params>
+            </method>
+            <method name="localAddress" type="SocketAddress" line="635">
+                <scope line="636"/>
+            </method>
+            <method name="remoteAddress" type="SocketAddress" line="641">
+                <scope line="642"/>
+            </method>
+            <method name="bind" type="DatagramChannel" line="648">
+                <params>
+                    <param name="local" type="SocketAddress"/>
+                </params>
+                <comment line="661">
+                    only Inet4Address allowed with IPv4 socket                    
+                </comment>
+                <scope line="649">
+                    <scope line="650">
+                        <scope line="651">
+                            <declaration name="isa" type="InetSocketAddress" line="655"/>
+                            <scope line="656"/>
+                            <scope line="658">
+                                <scope line="662">
+                                    <declaration name="addr" type="InetAddress" line="663"/>
+                                </scope>
+                            </scope>
+                            <declaration name="sm" type="SecurityManager" line="668"/>
+                            <scope line="669"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="isConnected" type="boolean" line="680">
+                <scope line="681"/>
+            </method>
+            <method name="ensureOpenAndUnconnected" type="void" line="686">
+                <scope line="687"/>
+            </method>
+            <method name="connect" type="DatagramChannel" line="695">
+                <params>
+                    <param name="sa" type="SocketAddress"/>
+                </params>
+                <comment line="712">
+                    Can&apos;t happen                    
+                </comment>
+                <comment line="714">
+                    Connection succeeded; disallow further invocation                    
+                </comment>
+                <comment line="721">
+                    set or refresh local address                    
+                </comment>
+                <declaration name="localPort" type="int" line="696"/>
+                <scope line="698">
+                    <scope line="699">
+                        <scope line="700">
+                            <declaration name="isa" type="InetSocketAddress" line="702"/>
+                            <declaration name="sm" type="SecurityManager" line="703"/>
+                            <declaration name="n" type="int" line="707"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="disconnect" type="DatagramChannel" line="729">
+                <comment line="744">
+                    refresh local address                    
+                </comment>
+                <scope line="730">
+                    <scope line="731">
+                        <scope line="732">
+                            <declaration name="isa" type="InetSocketAddress" line="735"/>
+                            <declaration name="sm" type="SecurityManager" line="736"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="752">
+                Joins channel&apos;s socket to the given group/interface and
+                  optional source address.                
+            </javadoc>
+            <method name="innerJoin" type="MembershipKey" line="760">
+                <params>
+                    <param name="group" type="InetAddress"/>
+                    <param name="interf" type="NetworkInterface"/>
+                    <param name="source" type="InetAddress"/>
+                </params>
+                <comment line="764">
+                    check multicast address is compatible with this socket                    
+                </comment>
+                <comment line="775">
+                    check source address                    
+                </comment>
+                <comment line="793">
+                    check the registry to see if we are already a member of the group                    
+                </comment>
+                <comment line="797">
+                    return existing membership key                    
+                </comment>
+                <comment line="811">
+                    need multicast and source address as byte arrays                    
+                </comment>
+                <comment line="816">
+                    join the group                    
+                </comment>
+                <comment line="825">
+                    need IPv4 address to identify interface                    
+                </comment>
+                <comment line="834">
+                    join the group                    
+                </comment>
+                <scope line="765"/>
+                <scope line="768"/>
+                <scope line="771"/>
+                <scope line="776"/>
+                <declaration name="sm" type="SecurityManager" line="785"/>
+                <scope line="789">
+                    <scope line="794"/>
+                    <scope line="796">
+                        <declaration name="key" type="MembershipKey" line="798"/>
+                    </scope>
+                    <declaration name="key" type="MembershipKeyImpl" line="803"/>
+                    <scope line="806">
+                        <declaration name="index" type="int" line="807"/>
+                        <declaration name="groupAddress" type="byte[]" line="812"/>
+                        <declaration name="sourceAddress" type="byte[]" line="813"/>
+                        <declaration name="n" type="int" line="817"/>
+                    </scope>
+                    <scope line="824">
+                        <declaration name="target" type="Inet4Address" line="826"/>
+                        <declaration name="groupAddress" type="int" line="830"/>
+                        <declaration name="targetAddress" type="int" line="831"/>
+                        <declaration name="sourceAddress" type="int" line="832"/>
+                        <declaration name="n" type="int" line="835"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="join" type="MembershipKey" line="852">
+                <params>
+                    <param name="group" type="InetAddress"/>
+                    <param name="interf" type="NetworkInterface"/>
+                </params>
+            </method>
+            <method name="join" type="MembershipKey" line="861">
+                <params>
+                    <param name="group" type="InetAddress"/>
+                    <param name="interf" type="NetworkInterface"/>
+                    <param name="source" type="InetAddress"/>
+                </params>
+            </method>
+            <method name="drop" type="void" line="868">
+                <params>
+                    <param name="key" type="MembershipKeyImpl"/>
+                </params>
+                <comment line="886">
+                    should not happen                    
+                </comment>
+                <scope line="871">
+                    <scope line="875">
+                        <scope line="876">
+                            <declaration name="key6" type="MembershipKeyImpl.Type6" line="877"/>
+                        </scope>
+                        <scope line="880">
+                            <declaration name="key4" type="MembershipKeyImpl.Type4" line="881"/>
+                        </scope>
+                    </scope>
+                    <scope line="885"/>
+                </scope>
+            </method>
+            <javadoc line="895">
+                Block datagrams from given source if a memory to receive all
+                  datagrams.                
+            </javadoc>
+            <method name="block" type="void" line="901">
+                <params>
+                    <param name="key" type="MembershipKeyImpl"/>
+                    <param name="source" type="InetAddress"/>
+                </params>
+                <comment line="928">
+                    ancient kernel                    
+                </comment>
+                <scope line="905">
+                    <declaration name="n" type="int" line="915"/>
+                    <scope line="916">
+                        <declaration name="key6" type="MembershipKeyImpl.Type6" line="917"/>
+                    </scope>
+                    <scope line="921">
+                        <declaration name="key4" type="MembershipKeyImpl.Type4" line="922"/>
+                    </scope>
+                    <scope line="927"/>
+                </scope>
+            </method>
+            <javadoc line="934">
+                Unblock given source.                
+            </javadoc>
+            <method name="unblock" type="void" line="937">
+                <params>
+                    <param name="key" type="MembershipKeyImpl"/>
+                    <param name="source" type="InetAddress"/>
+                </params>
+                <comment line="958">
+                    should not happen                    
+                </comment>
+                <scope line="941">
+                    <scope line="945">
+                        <scope line="946">
+                            <declaration name="key6" type="MembershipKeyImpl.Type6" line="947"/>
+                        </scope>
+                        <scope line="951">
+                            <declaration name="key4" type="MembershipKeyImpl.Type4" line="952"/>
+                        </scope>
+                    </scope>
+                    <scope line="957"/>
+                </scope>
+            </method>
+            <method name="implCloseSelectableChannel" type="void" line="964">
+                <comment line="969">
+                    if member of mulitcast group then invalidate all keys                    
+                </comment>
+                <scope line="965">
+                    <declaration name="th" type="long" line="973"/>
+                </scope>
+            </method>
+            <method name="kill" type="void" line="983">
+                <scope line="984">
+                    <scope line="987"/>
+                </scope>
+            </method>
+            <method name="finalize" type="void" line="997">
+                <comment line="998">
+                    fd is null if constructor threw exception                    
+                </comment>
+            </method>
+            <javadoc line="1003">
+                Translates native poll revent set into a ready operation set                
+            </javadoc>
+            <method name="translateReadyOps" type="boolean" line="1007">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="initialOps" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+                <comment line="1008">
+                    Do this just once, it synchronizes                    
+                </comment>
+                <comment line="1013">
+                    This should only happen if this channel is pre-closed while a                    
+                </comment>
+                <comment line="1014">
+                    selection operation is in progress                    
+                </comment>
+                <comment line="1015">
+                    ## Throw an error if this channel has not been pre-closed                    
+                </comment>
+                <declaration name="intOps" type="int" line="1008"/>
+                <declaration name="oldOps" type="int" line="1009"/>
+                <declaration name="newOps" type="int" line="1010"/>
+                <scope line="1012"/>
+                <scope line="1020"/>
+            </method>
+            <method name="translateAndUpdateReadyOps" type="boolean" line="1038">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+            </method>
+            <method name="translateAndSetReadyOps" type="boolean" line="1042">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+            </method>
+            <javadoc line="1046">
+                Translates an interest operation set into a native poll event set                
+            </javadoc>
+            <method name="translateAndSetInterestOps" type="void" line="1049">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+                <declaration name="newOps" type="int" line="1050"/>
+            </method>
+            <method name="getFD" type="FileDescriptor" line="1061"/>
+            <method name="getFDVal" type="int" line="1065"/>
+            <method name="initIDs" type="void" line="1072"/>
+            <method name="disconnect0" type="void" line="1074"/>
+            <method name="receive0" type="int" line="1077"/>
+            <method name="send0" type="int" line="1081"/>
+            <scope line="1085"/>
+        </class>
+    </source>

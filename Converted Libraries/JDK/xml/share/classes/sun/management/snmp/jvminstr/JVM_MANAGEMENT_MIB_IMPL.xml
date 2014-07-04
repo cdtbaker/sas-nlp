@@ -1,0 +1,644 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.management.snmp.jvminstr">
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.List"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="javax.management.MBeanServer"/>
+        <import package="javax.management.ObjectName"/>
+        <import package="javax.management.InstanceAlreadyExistsException"/>
+        <import package="javax.management.NotificationEmitter"/>
+        <import package="javax.management.NotificationListener"/>
+        <import package="javax.management.Notification"/>
+        <import package="javax.management.ListenerNotFoundException"/>
+        <import package="javax.management.openmbean.CompositeData"/>
+        <import package="com.sun.jmx.snmp.agent.SnmpMib"/>
+        <import package="com.sun.jmx.snmp.daemon.SnmpAdaptorServer"/>
+        <import package="com.sun.jmx.snmp.SnmpPeer"/>
+        <import package="com.sun.jmx.snmp.SnmpParameters"/>
+        <import package="com.sun.jmx.snmp.SnmpOidTable"/>
+        <import package="com.sun.jmx.snmp.SnmpOid"/>
+        <import package="com.sun.jmx.snmp.SnmpVarBindList"/>
+        <import package="com.sun.jmx.snmp.SnmpVarBind"/>
+        <import package="com.sun.jmx.snmp.SnmpCounter"/>
+        <import package="com.sun.jmx.snmp.SnmpCounter64"/>
+        <import package="com.sun.jmx.snmp.SnmpString"/>
+        <import package="com.sun.jmx.snmp.SnmpInt"/>
+        <import package="com.sun.jmx.snmp.Enumerated"/>
+        <import package="com.sun.jmx.snmp.agent.SnmpMibTable"/>
+        <import package="sun.management.snmp.jvmmib.JVM_MANAGEMENT_MIBOidTable"/>
+        <import package="sun.management.snmp.jvmmib.JVM_MANAGEMENT_MIB"/>
+        <import package="sun.management.snmp.jvmmib.JvmMemoryMeta"/>
+        <import package="sun.management.snmp.jvmmib.JvmThreadingMeta"/>
+        <import package="sun.management.snmp.jvmmib.JvmRuntimeMeta"/>
+        <import package="sun.management.snmp.jvmmib.JvmClassLoadingMeta"/>
+        <import package="sun.management.snmp.jvmmib.JvmCompilationMeta"/>
+        <import package="sun.management.snmp.util.MibLogger"/>
+        <import package="sun.management.snmp.util.SnmpCachedData"/>
+        <import package="sun.management.snmp.util.SnmpTableHandler"/>
+        <import package="java.lang.management.ManagementFactory"/>
+        <import package="java.lang.management.MemoryPoolMXBean"/>
+        <import package="java.lang.management.MemoryNotificationInfo"/>
+        <import package="java.lang.management.MemoryType"/>
+        <class name="JVM_MANAGEMENT_MIB_IMPL" line="81">
+            <extends class="JVM_MANAGEMENT_MIB"/>
+            <comment line="680">
+                cache validity                
+            </comment>
+            <comment line="681">
+                                
+            </comment>
+            <comment line="682">
+                Should we define a property for this? Should we have different                
+            </comment>
+            <comment line="683">
+                cache validity periods depending on which table we cache?                
+            </comment>
+            <comment line="684">
+                                
+            </comment>
+            <comment line="689">
+                Defined in RFC 2579                
+            </comment>
+            <declaration name="serialVersionUID" type="long" line="82"/>
+            <declaration name="log" type="MibLogger" line="84"/>
+            <declaration name="tableRef" type="WeakReference&lt;SnmpOidTable&gt;" line="87"/>
+            <method name="getOidTable" type="SnmpOidTable" line="89">
+                <declaration name="table" type="SnmpOidTable" line="90"/>
+                <scope line="91"/>
+                <scope line="98"/>
+            </method>
+            <class name="NotificationHandler" line="106">
+                <implements interface="NotificationListener"/>
+                <javadoc line="106">
+                    Handler waiting for memory &lt;CODE&gt;Notification&lt;/CODE&gt;.
+                      Translate each JMX notification in SNMP trap.                    
+                </javadoc>
+                <method name="handleNotification" type="void" line="112">
+                    <params>
+                        <param name="notification" type="Notification"/>
+                        <param name="handback" type="Object"/>
+                    </params>
+                    <comment line="172">
+                        Datas                        
+                    </comment>
+                    <declaration name="type" type="String" line="116"/>
+                    <scope line="119">
+                        <declaration name="minfo" type="MemoryNotificationInfo" line="120"/>
+                        <declaration name="count" type="SnmpCounter64" line="122"/>
+                        <declaration name="used" type="SnmpCounter64" line="123"/>
+                        <declaration name="poolName" type="SnmpString" line="125"/>
+                        <declaration name="entryIndex" type="SnmpOid" line="126"/>
+                        <scope line="129"/>
+                        <declaration name="trap" type="SnmpOid" line="137"/>
+                        <declaration name="mibTable" type="SnmpOidTable" line="139"/>
+                        <scope line="140">
+                            <declaration name="usedOid" type="SnmpOid" line="141"/>
+                            <declaration name="countOid" type="SnmpOid" line="142"/>
+                            <scope line="145"/>
+                            <scope line="157"/>
+                            <declaration name="list" type="SnmpVarBindList" line="173"/>
+                            <declaration name="poolNameOid" type="SnmpOid" line="174"/>
+                            <declaration name="varCount" type="SnmpVarBind" line="179"/>
+                            <declaration name="varUsed" type="SnmpVarBind" line="180"/>
+                            <declaration name="varPoolName" type="SnmpVarBind" line="181"/>
+                        </scope>
+                        <scope line="189"/>
+                    </scope>
+                </method>
+            </class>
+            <declaration name="notificationTargets" type="ArrayList&lt;NotificationTarget&gt;" line="197"/>
+            <javadoc line="197">
+                List of notification targets.                
+            </javadoc>
+            <declaration name="emitter" type="NotificationEmitter" line="202"/>
+            <declaration name="handler" type="NotificationHandler" line="203"/>
+            <javadoc line="206">
+                Instantiate a JVM MIB intrusmentation.
+                  A &lt;CODE&gt;NotificationListener&lt;/CODE&gt; is added to the &lt;CODE&gt;MemoryMXBean&lt;/CODE&gt;
+                  &lt;CODE&gt;NotificationEmitter&lt;/CODE&gt;                
+            </javadoc>
+            <method name="JVM_MANAGEMENT_MIB_IMPL" type="constructor" line="211"/>
+            <method name="sendTrap" type="void" line="217">
+                <params>
+                    <param name="trap" type="SnmpOid"/>
+                    <param name="list" type="SnmpVarBindList"/>
+                </params>
+                <declaration name="iterator" type="Iterator" line="218"/>
+                <declaration name="adaptor" type="SnmpAdaptorServer" line="219"/>
+                <scope line="222"/>
+                <scope line="227"/>
+                <scope line="232">
+                    <declaration name="target" type="NotificationTarget" line="233"/>
+                    <scope line="234">
+                        <declaration name="peer" type="SnmpPeer" line="236"/>
+                        <declaration name="p" type="SnmpParameters" line="238"/>
+                    </scope>
+                    <scope line="244"/>
+                </scope>
+            </method>
+            <javadoc line="253">
+                Add a notification target.                
+                <param>
+                    target The target to add                    
+                </param>
+                <throws>
+                    IllegalArgumentException If target parameter is null.                    
+                </throws>
+            </javadoc>
+            <method name="addTarget" type="void" line="259">
+                <params>
+                    <param name="target" type="NotificationTarget"/>
+                </params>
+            </method>
+            <javadoc line="266">
+                Remove notification listener.                
+            </javadoc>
+            <method name="terminate" type="void" line="269">
+                <scope line="270"/>
+                <scope line="272"/>
+            </method>
+            <javadoc line="277">
+                Add notification targets.                
+                <param>
+                    targets A list of
+                      <CODE>sun.management.snmp.jvminstr.NotificationTarget</CODE>                    
+                </param>
+                <throws>
+                    IllegalArgumentException If targets parameter is null.                    
+                </throws>
+            </javadoc>
+            <method name="addTargets" type="void" line="284">
+                <params>
+                    <param name="targets" type="List<NotificationTarget>"/>
+                </params>
+            </method>
+            <javadoc line="291">
+                Factory method for &quot;JvmMemory&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmMemory")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmMemory" group (JvmMemory)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmMemoryMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmMemoryMBean" type="Object" line="311">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="313">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="314">
+                    the returned object must implement the &quot;JvmMemoryMBean&quot;                    
+                </comment>
+                <comment line="315">
+                    interface.                    
+                </comment>
+                <comment line="316">
+                                        
+                </comment>
+            </method>
+            <javadoc line="323">
+                Factory method for &quot;JvmMemory&quot; group metadata class.
+                  You can redefine this method if you need to replace the default
+                  generated metadata class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmMemory")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the metadata class generated for the
+                      "JvmMemory" group (JvmMemoryMeta)                    
+                </return>
+            </javadoc>
+            <method name="createJvmMemoryMetaNode" type="JvmMemoryMeta" line="341">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+            </method>
+            <javadoc line="345">
+                Factory method for &quot;JvmThreading&quot; group metadata class.
+                  You can redefine this method if you need to replace the default
+                  generated metadata class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmThreading")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the metadata class generated for the
+                      "JvmThreading" group (JvmThreadingMeta)                    
+                </return>
+            </javadoc>
+            <method name="createJvmThreadingMetaNode" type="JvmThreadingMeta" line="363">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+            </method>
+            <javadoc line="367">
+                Factory method for &quot;JvmThreading&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmThreading")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmThreading" group (JvmThreading)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmThreadingMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmThreadingMBean" type="Object" line="388">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="390">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="391">
+                    the returned object must implement the &quot;JvmThreadingMBean&quot;                    
+                </comment>
+                <comment line="392">
+                    interface.                    
+                </comment>
+                <comment line="393">
+                                        
+                </comment>
+            </method>
+            <javadoc line="400">
+                Factory method for &quot;JvmRuntime&quot; group metadata class.
+                  You can redefine this method if you need to replace the default
+                  generated metadata class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmRuntime")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the metadata class generated for the
+                      "JvmRuntime" group (JvmRuntimeMeta)                    
+                </return>
+            </javadoc>
+            <method name="createJvmRuntimeMetaNode" type="JvmRuntimeMeta" line="418">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+            </method>
+            <javadoc line="422">
+                Factory method for &quot;JvmRuntime&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmRuntime")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmRuntime" group (JvmRuntime)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmRuntimeMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmRuntimeMBean" type="Object" line="443">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="445">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="446">
+                    the returned object must implement the &quot;JvmRuntimeMBean&quot;                    
+                </comment>
+                <comment line="447">
+                    interface.                    
+                </comment>
+                <comment line="448">
+                                        
+                </comment>
+            </method>
+            <javadoc line="455">
+                Factory method for &quot;JvmCompilation&quot; group metadata class.
+                  You can redefine this method if you need to replace the default
+                  generated metadata class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmCompilation")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the metadata class generated for the
+                      "JvmCompilation" group (JvmCompilationMeta)                    
+                </return>
+            </javadoc>
+            <method name="createJvmCompilationMetaNode" type="JvmCompilationMeta" line="474">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="475">
+                    If there is no compilation system, the jvmCompilation  will not                    
+                </comment>
+                <comment line="476">
+                    be instantiated.                    
+                </comment>
+                <comment line="477">
+                                        
+                </comment>
+            </method>
+            <javadoc line="483">
+                Factory method for &quot;JvmCompilation&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmCompilation")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmCompilation" group (JvmCompilation)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmCompilationMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmCompilationMBean" type="Object" line="502">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="504">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="505">
+                    the returned object must implement the &quot;JvmCompilationMBean&quot;                    
+                </comment>
+                <comment line="506">
+                    interface.                    
+                </comment>
+                <comment line="507">
+                                        
+                </comment>
+            </method>
+            <javadoc line="514">
+                Factory method for &quot;JvmOS&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmOS")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmOS" group (JvmOS)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmOSMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmOSMBean" type="Object" line="533">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="535">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="536">
+                    the returned object must implement the &quot;JvmOSMBean&quot;                    
+                </comment>
+                <comment line="537">
+                    interface.                    
+                </comment>
+                <comment line="538">
+                                        
+                </comment>
+            </method>
+            <javadoc line="546">
+                Factory method for &quot;JvmClassLoading&quot; group MBean.
+                  You can redefine this method if you need to replace the default
+                  generated MBean class with your own customized class.                
+                <param>
+                    groupName Name of the group ("JvmClassLoading")                    
+                </param>
+                <param>
+                    groupOid  OID of this group                    
+                </param>
+                <param>
+                    groupObjname ObjectName for this group (may be null)                    
+                </param>
+                <param>
+                    server    MBeanServer for this group (may be null)                    
+                </param>
+                <return>
+                    An instance of the MBean class generated for the
+                      "JvmClassLoading" group (JvmClassLoading)
+                      Note that when using standard metadata,
+                      the returned object must implement the "JvmClassLoadingMBean"
+                      interface.                    
+                </return>
+            </javadoc>
+            <method name="createJvmClassLoadingMBean" type="Object" line="567">
+                <params>
+                    <param name="groupName" type="String"/>
+                    <param name="groupOid" type="String"/>
+                    <param name="groupObjname" type="ObjectName"/>
+                    <param name="server" type="MBeanServer"/>
+                </params>
+                <comment line="569">
+                    Note that when using standard metadata,                    
+                </comment>
+                <comment line="570">
+                    the returned object must implement the &quot;JvmClassLoadingMBean&quot;                    
+                </comment>
+                <comment line="571">
+                    interface.                    
+                </comment>
+                <comment line="572">
+                                        
+                </comment>
+            </method>
+            <method name="validDisplayStringTC" type="String" line="579">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <scope line="583"/>
+            </method>
+            <method name="validJavaObjectNameTC" type="String" line="590">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <scope line="594"/>
+            </method>
+            <method name="validPathElementTC" type="String" line="601">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <scope line="605"/>
+            </method>
+            <method name="validArgValueTC" type="String" line="611">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <scope line="615"/>
+            </method>
+            <javadoc line="622">
+                WARNING: This should probably be moved to JvmMemPoolTableMetaImpl                
+            </javadoc>
+            <method name="getJvmMemPoolTableHandler" type="SnmpTableHandler" line="625">
+                <params>
+                    <param name="userData" type="Object"/>
+                </params>
+                <declaration name="meta" type="SnmpMibTable" line="626"/>
+                <scope line="628">
+                    <declaration name="err" type="String" line="629"/>
+                </scope>
+                <declaration name="memPoolTable" type="JvmMemPoolTableMetaImpl" line="635"/>
+            </method>
+            <javadoc line="640">
+                WARNING: This should probably be moved to JvmMemPoolTableMetaImpl                
+            </javadoc>
+            <method name="findInCache" type="int" line="644">
+                <params>
+                    <param name="handler" type="SnmpTableHandler"/>
+                    <param name="poolName" type="String"/>
+                </params>
+                <scope line="646">
+                    <scope line="647">
+                        <declaration name="err" type="String" line="648"/>
+                    </scope>
+                </scope>
+                <declaration name="data" type="SnmpCachedData" line="655"/>
+                <declaration name="len" type="int" line="656"/>
+                <scope line="657">
+                    <declaration name="pool" type="MemoryPoolMXBean" line="658"/>
+                </scope>
+            </method>
+            <javadoc line="664">
+                WARNING: This should probably be moved to JvmMemPoolTableMetaImpl                
+            </javadoc>
+            <method name="getJvmMemPoolEntryIndex" type="SnmpOid" line="668">
+                <params>
+                    <param name="handler" type="SnmpTableHandler"/>
+                    <param name="poolName" type="String"/>
+                </params>
+                <declaration name="index" type="int" line="669"/>
+            </method>
+            <method name="getJvmMemPoolEntryIndex" type="SnmpOid" line="674">
+                <params>
+                    <param name="poolName" type="String"/>
+                </params>
+            </method>
+            <method name="validity" type="long" line="684"/>
+            <declaration name="DISPLAY_STRING_MAX_LENGTH" type="int" line="689"/>
+            <declaration name="JAVA_OBJECT_NAME_MAX_LENGTH" type="int" line="690"/>
+            <declaration name="PATH_ELEMENT_MAX_LENGTH" type="int" line="691"/>
+            <declaration name="ARG_VALUE_MAX_LENGTH" type="int" line="692"/>
+            <declaration name="DEFAULT_CACHE_VALIDITY_PERIOD" type="int" line="693"/>
+        </class>
+    </source>

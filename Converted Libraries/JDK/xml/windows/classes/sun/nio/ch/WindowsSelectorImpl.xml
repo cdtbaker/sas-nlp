@@ -1,0 +1,1022 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.nio.ch">
+        <import package="java.nio.channels.spi.SelectorProvider"/>
+        <import package="java.nio.channels.Selector"/>
+        <import package="java.nio.channels.ClosedSelectorException"/>
+        <import package="java.nio.channels.Pipe"/>
+        <import package="java.nio.channels.SelectableChannel"/>
+        <import package="java.io.IOException"/>
+        <import package="java.util.List"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Iterator"/>
+        <class name="WindowsSelectorImpl" line="43">
+            <extends class="SelectorImpl"/>
+            <comment line="52">
+                Initial capacity of the poll array                
+            </comment>
+            <comment line="54">
+                Maximum number of sockets for select().                
+            </comment>
+            <comment line="55">
+                Should be INIT_CAP times a power of 2                
+            </comment>
+            <comment line="58">
+                The list of SelectableChannels serviced by this Selector. Every mod                
+            </comment>
+            <comment line="59">
+                MAX_SELECTABLE_FDS entry is bogus, to align this array with the poll                
+            </comment>
+            <comment line="60">
+                array,  where the corresponding entry is occupied by the wakeupSocket                
+            </comment>
+            <comment line="63">
+                The global native poll array holds file decriptors and event masks                
+            </comment>
+            <comment line="66">
+                The number of valid entries in  poll array, including entries occupied                
+            </comment>
+            <comment line="67">
+                by wakeup socket handle.                
+            </comment>
+            <comment line="70">
+                Number of helper threads needed for select. We need one thread per                
+            </comment>
+            <comment line="71">
+                each additional set of MAX_SELECTABLE_FDS - 1 channels.                
+            </comment>
+            <comment line="74">
+                A list of helper threads for select.                
+            </comment>
+            <comment line="77">
+                Pipe used as a wakeup object.                
+            </comment>
+            <comment line="80">
+                File descriptors corresponding to source and sink                
+            </comment>
+            <comment line="83">
+                Lock for close cleanup                
+            </comment>
+            <comment line="86">
+                Maps file descriptors to their indices in  pollArray                
+            </comment>
+            <comment line="104">
+                class for fdMap entries                
+            </comment>
+            <comment line="115">
+                SubSelector for the main thread                
+            </comment>
+            <comment line="118">
+                timeout for poll                
+            </comment>
+            <comment line="120">
+                Lock for interrupt triggering and clearing                
+            </comment>
+            <comment line="178">
+                Helper threads wait on this lock for the next poll.                
+            </comment>
+            <comment line="214">
+                Main thread waits on this lock, until all helper threads are done                
+            </comment>
+            <comment line="215">
+                with poll().                
+            </comment>
+            <comment line="405">
+                Represents a helper thread used for select.                
+            </comment>
+            <comment line="444">
+                After some channels registered/deregistered, the number of required                
+            </comment>
+            <comment line="445">
+                helper threads may have changed. Adjust this number.                
+            </comment>
+            <comment line="462">
+                Sets Windows wakeup socket to a signaled state.                
+            </comment>
+            <comment line="468">
+                Sets Windows wakeup socket to a non-signaled state.                
+            </comment>
+            <comment line="482">
+                We increment this counter on each call to updateSelectedKeys()                
+            </comment>
+            <comment line="483">
+                each entry in  SubSelector.fdsMap has a memorized value of                
+            </comment>
+            <comment line="484">
+                updateCount. When we increment numKeysUpdated we set updateCount                
+            </comment>
+            <comment line="485">
+                for the corresponding entry to its current value. This is used to                
+            </comment>
+            <comment line="486">
+                avoid counting the same key more than once - the same key can                
+            </comment>
+            <comment line="487">
+                appear in readfds and writefds.                
+            </comment>
+            <comment line="490">
+                Update ops of the corresponding Channels. Add the ready keys to the                
+            </comment>
+            <comment line="491">
+                ready queue.                
+            </comment>
+            <javadoc line="43">
+                A multi-threaded implementation of Selector for Windows.                
+                <author>
+                    Konstantin Kladko                    
+                </author>
+                <author>
+                    Mark Reinhold                    
+                </author>
+            </javadoc>
+            <declaration name="INIT_CAP" type="int" line="52"/>
+            <declaration name="MAX_SELECTABLE_FDS" type="int" line="55"/>
+            <declaration name="channelArray" type="SelectionKeyImpl[]" line="60"/>
+            <declaration name="pollWrapper" type="PollArrayWrapper" line="63"/>
+            <declaration name="totalChannels" type="int" line="67"/>
+            <declaration name="threadsCount" type="int" line="71"/>
+            <declaration name="threads" type="List&lt;SelectThread&gt;" line="74"/>
+            <declaration name="wakeupPipe" type="Pipe" line="77"/>
+            <declaration name="wakeupSourceFd" type="int" line="80"/>
+            <declaration name="closeLock" type="Object" line="83"/>
+            <class name="FdMap" line="86">
+                <extends class="HashMap">
+                    <type_params>
+                        <type_param name="Integer"/>
+                        <type_param name="MapEntry"/>
+                    </type_params>
+                </extends>
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="serialVersionUID" type="long" line="87"/>
+                <method name="get" type="MapEntry" line="88">
+                    <params>
+                        <param name="desc" type="int"/>
+                    </params>
+                </method>
+                <method name="put" type="MapEntry" line="91">
+                    <params>
+                        <param name="ski" type="SelectionKeyImpl"/>
+                    </params>
+                </method>
+                <method name="remove" type="MapEntry" line="94">
+                    <params>
+                        <param name="ski" type="SelectionKeyImpl"/>
+                    </params>
+                    <declaration name="fd" type="Integer" line="95"/>
+                    <declaration name="x" type="MapEntry" line="96"/>
+                </method>
+            </class>
+            <class name="MapEntry" line="104">
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="ski" type="SelectionKeyImpl" line="105"/>
+                <declaration name="updateCount" type="long" line="106"/>
+                <declaration name="clearedCount" type="long" line="107"/>
+                <method name="MapEntry" type="constructor" line="108">
+                    <params>
+                        <param name="ski" type="SelectionKeyImpl"/>
+                    </params>
+                </method>
+            </class>
+            <declaration name="fdMap" type="FdMap" line="112"/>
+            <declaration name="subSelector" type="SubSelector" line="115"/>
+            <declaration name="timeout" type="long" line="117"/>
+            <declaration name="interruptLock" type="Object" line="120"/>
+            <declaration name="interruptTriggered" type="boolean" line="121"/>
+            <method name="WindowsSelectorImpl" type="constructor" line="123">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                </params>
+                <comment line="129">
+                    Disable the Nagle algorithm so that the wakeup is more immediate                    
+                </comment>
+                <declaration name="sink" type="SinkChannelImpl" line="130"/>
+            </method>
+            <method name="doSelect" type="int" line="137">
+                <params>
+                    <param name="timeout" type="long"/>
+                </params>
+                <comment line="140">
+                    set selector timeout                    
+                </comment>
+                <comment line="146">
+                    Calculate number of helper threads needed for poll. If necessary                    
+                </comment>
+                <comment line="147">
+                    threads are created here and start waiting on startLock                    
+                </comment>
+                <comment line="149">
+                    reset finishLock                    
+                </comment>
+                <comment line="150">
+                    Wakeup helper threads, waiting on startLock, so they start polling.                    
+                </comment>
+                <comment line="151">
+                    Redundant threads will exit here after wakeup.                    
+                </comment>
+                <comment line="153">
+                    do polling in the main thread. Main thread is responsible for                    
+                </comment>
+                <comment line="154">
+                    first MAX_SELECTABLE_FDS entries in pollArray.                    
+                </comment>
+                <comment line="160">
+                    Save this exception                    
+                </comment>
+                <comment line="162">
+                    Main thread is out of poll(). Wakeup others and wait for them                    
+                </comment>
+                <comment line="168">
+                    Done with poll(). Set wakeupSocket to nonsignaled  for the next run.                    
+                </comment>
+                <comment line="172">
+                    Done with poll(). Set wakeupSocket to nonsignaled  for the next run.                    
+                </comment>
+                <scope line="142"/>
+                <scope line="155">
+                    <scope line="157"/>
+                    <scope line="159"/>
+                </scope>
+                <scope line="165"/>
+                <declaration name="updated" type="int" line="171"/>
+            </method>
+            <declaration name="startLock" type="StartLock" line="178"/>
+            <class name="StartLock" line="180">
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="runsCounter" type="long" line="184"/>
+                <method name="startThreads" type="void" line="186">
+                    <comment line="187">
+                        next run                        
+                    </comment>
+                    <comment line="188">
+                        wake up threads.                        
+                    </comment>
+                </method>
+                <method name="waitForStart" type="boolean" line="194">
+                    <params>
+                        <param name="thread" type="SelectThread"/>
+                    </params>
+                    <comment line="203">
+                        redundant thread                        
+                    </comment>
+                    <comment line="204">
+                        will cause run() to exit.                        
+                    </comment>
+                    <comment line="206">
+                        update lastRun                        
+                    </comment>
+                    <comment line="207">
+                        will cause run() to poll.                        
+                    </comment>
+                    <scope line="195">
+                        <scope line="196">
+                            <scope line="197"/>
+                            <scope line="199"/>
+                        </scope>
+                        <scope line="203"/>
+                        <scope line="205"/>
+                    </scope>
+                </method>
+            </class>
+            <declaration name="finishLock" type="FinishLock" line="215"/>
+            <class name="FinishLock" line="217">
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="threadsToFinish" type="int" line="219"/>
+                <declaration name="exception" type="IOException" line="222"/>
+                <method name="reset" type="void" line="225">
+                    <comment line="226">
+                        helper threads                        
+                    </comment>
+                </method>
+                <method name="threadFinished" type="void" line="231">
+                    <comment line="232">
+                        finished poll() first                        
+                    </comment>
+                    <comment line="233">
+                        if finished first, wakeup others                        
+                    </comment>
+                    <comment line="237">
+                        all helper threads finished poll().                        
+                    </comment>
+                    <comment line="238">
+                        notify the main thread                        
+                    </comment>
+                    <scope line="232"/>
+                </method>
+                <method name="waitForHelperThreads" type="void" line="243">
+                    <comment line="245">
+                        no helper threads finished yet. Wakeup them up.                        
+                    </comment>
+                    <comment line="252">
+                        Interrupted - set interrupted state.                        
+                    </comment>
+                    <scope line="244"/>
+                    <scope line="248">
+                        <scope line="249"/>
+                        <scope line="251"/>
+                    </scope>
+                </method>
+                <method name="setException" type="void" line="259">
+                    <params>
+                        <param name="e" type="IOException"/>
+                    </params>
+                </method>
+                <method name="checkForException" type="void" line="265">
+                    <declaration name="message" type="StringBuffer" line="268"/>
+                </method>
+            </class>
+            <class name="SubSelector" line="277">
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="pollArrayIndex" type="int" line="278"/>
+                <declaration name="readFds" type="int[]" line="282"/>
+                <declaration name="writeFds" type="int[]" line="283"/>
+                <declaration name="exceptFds" type="int[]" line="284"/>
+                <method name="SubSelector" type="constructor" line="286">
+                    <comment line="287">
+                        main thread                        
+                    </comment>
+                </method>
+                <method name="SubSelector" type="constructor" line="290">
+                    <params>
+                        <param name="threadIndex" type="int"/>
+                    </params>
+                </method>
+                <method name="poll" type="int" line="294"/>
+                <method name="poll" type="int" line="300">
+                    <params>
+                        <param name="index" type="int"/>
+                    </params>
+                    <comment line="301">
+                        poll for helper threads                        
+                    </comment>
+                </method>
+                <method name="poll0" type="int" line="309"/>
+                <method name="processSelectedKeys" type="int" line="312">
+                    <params>
+                        <param name="updateCount" type="long"/>
+                    </params>
+                    <declaration name="numKeysUpdated" type="int" line="313"/>
+                </method>
+                <javadoc line="329">
+                    Note, clearedCount is used to determine if the readyOps have
+                      been reset in this select operation. updateCount is used to
+                      tell if a key has been counted as updated in this select
+                      operation.
+                      me.updateCount &lt;= me.clearedCount &lt;= updateCount                    
+                </javadoc>
+                <method name="processFDSet" type="int" line="339">
+                    <params>
+                        <param name="updateCount" type="long"/>
+                        <param name="fds" type="int[]"/>
+                        <param name="rOps" type="int"/>
+                        <param name="isExceptFds" type="boolean"/>
+                    </params>
+                    <comment line="350">
+                        If me is null, the key was deregistered in the previous                        
+                    </comment>
+                    <comment line="351">
+                        processDeregisterQueue.                        
+                    </comment>
+                    <comment line="356">
+                        The descriptor may be in the exceptfds set because there is                        
+                    </comment>
+                    <comment line="357">
+                        OOB data queued to the socket. If there is OOB data then it                        
+                    </comment>
+                    <comment line="358">
+                        is discarded and the key is not added to the selected set.                        
+                    </comment>
+                    <comment line="366">
+                        Key in selected set                        
+                    </comment>
+                    <comment line="373">
+                        The readyOps have been set; now add                        
+                    </comment>
+                    <comment line="381">
+                        Key is not in selected set yet                        
+                    </comment>
+                    <comment line="389">
+                        The readyOps have been set; now add                        
+                    </comment>
+                    <declaration name="numKeysUpdated" type="int" line="340"/>
+                    <scope line="341">
+                        <declaration name="desc" type="int" line="342"/>
+                        <scope line="343">
+                            <scope line="344"/>
+                        </scope>
+                        <declaration name="me" type="MapEntry" line="349"/>
+                        <declaration name="sk" type="SelectionKeyImpl" line="354"/>
+                        <scope line="362"/>
+                        <scope line="366">
+                            <scope line="367">
+                                <scope line="369"/>
+                            </scope>
+                            <scope line="373">
+                                <scope line="375"/>
+                            </scope>
+                        </scope>
+                        <scope line="381">
+                            <scope line="382">
+                                <scope line="384"/>
+                            </scope>
+                            <scope line="389">
+                                <scope line="391"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <class name="SelectThread" line="405">
+                <extends class="Thread"/>
+                <comment line="182">
+                    A variable which distinguishes the current run of doSelect from the                    
+                </comment>
+                <comment line="183">
+                    previous one. Incrementing runsCounter and notifying threads will                    
+                </comment>
+                <comment line="184">
+                    trigger another round of poll.                    
+                </comment>
+                <comment line="186">
+                    Triggers threads, waiting on this lock to start polling.                    
+                </comment>
+                <comment line="191">
+                    This function is called by a helper thread to wait for the                    
+                </comment>
+                <comment line="192">
+                    next round of poll(). It also checks, if this thread became                    
+                </comment>
+                <comment line="193">
+                    redundant. If yes, it returns true, notifying the thread                    
+                </comment>
+                <comment line="194">
+                    that it should exit.                    
+                </comment>
+                <comment line="219">
+                    Number of helper threads, that did not finish yet.                    
+                </comment>
+                <comment line="222">
+                    IOException which occured during the last run.                    
+                </comment>
+                <comment line="225">
+                    Called before polling.                    
+                </comment>
+                <comment line="230">
+                    Each helper thread invokes this function on finishLock, when                    
+                </comment>
+                <comment line="231">
+                    the thread is done with poll().                    
+                </comment>
+                <comment line="242">
+                    The main thread invokes this function on finishLock to wait                    
+                </comment>
+                <comment line="243">
+                    for helper threads to finish poll().                    
+                </comment>
+                <comment line="259">
+                    sets IOException for this run                    
+                </comment>
+                <comment line="264">
+                    Checks if there was any exception during the last run.                    
+                </comment>
+                <comment line="265">
+                    If yes, throws it                    
+                </comment>
+                <comment line="279">
+                    starting index in pollArray to poll                    
+                </comment>
+                <comment line="280">
+                    These arrays will hold result of native select().                    
+                </comment>
+                <comment line="281">
+                    The first element of each array is the number of selected sockets.                    
+                </comment>
+                <comment line="282">
+                    Other elements are file descriptors of selected sockets.                    
+                </comment>
+                <comment line="407">
+                    index of this thread                    
+                </comment>
+                <comment line="409">
+                    last run number                    
+                </comment>
+                <comment line="411">
+                    Creates a new thread                    
+                </comment>
+                <declaration name="index" type="int" line="406"/>
+                <declaration name="subSelector" type="SubSelector" line="407"/>
+                <declaration name="lastRun" type="long" line="408"/>
+                <declaration name="zombie" type="boolean" line="409"/>
+                <method name="SelectThread" type="constructor" line="411">
+                    <params>
+                        <param name="i" type="int"/>
+                    </params>
+                    <comment line="414">
+                        make sure we wait for next round of poll                        
+                    </comment>
+                </method>
+                <method name="makeZombie" type="void" line="417"/>
+                <method name="isZombie" type="boolean" line="420"/>
+                <method name="run" type="void" line="423">
+                    <comment line="424">
+                        poll loop                        
+                    </comment>
+                    <comment line="425">
+                        wait for the start of poll. If this thread has become                        
+                    </comment>
+                    <comment line="426">
+                        redundant, then exit.                        
+                    </comment>
+                    <comment line="429">
+                        call poll()                        
+                    </comment>
+                    <comment line="433">
+                        Save this exception and let other threads finish.                        
+                    </comment>
+                    <comment line="436">
+                        notify main thread, that this thread has finished, and                        
+                    </comment>
+                    <comment line="437">
+                        wakeup others, if this thread is the first to finish.                        
+                    </comment>
+                    <scope line="424">
+                        <scope line="430"/>
+                        <scope line="432"/>
+                    </scope>
+                </method>
+            </class>
+            <method name="adjustThreadsCount" type="void" line="445">
+                <comment line="447">
+                    More threads needed. Start more threads.                    
+                </comment>
+                <comment line="455">
+                    Some threads become redundant. Remove them from the threads List.                    
+                </comment>
+                <scope line="446">
+                    <scope line="448">
+                        <declaration name="newThread" type="SelectThread" line="449"/>
+                    </scope>
+                </scope>
+                <scope line="454"/>
+            </method>
+            <method name="setWakeupSocket" type="void" line="462"/>
+            <method name="setWakeupSocket0" type="void" line="465"/>
+            <method name="resetWakeupSocket" type="void" line="468">
+                <scope line="469"/>
+            </method>
+            <method name="resetWakeupSocket0" type="void" line="477"/>
+            <method name="discardUrgentData" type="boolean" line="479"/>
+            <declaration name="updateCount" type="long" line="487"/>
+            <method name="updateSelectedKeys" type="int" line="491">
+                <declaration name="numKeysUpdated" type="int" line="493"/>
+                <scope line="495"/>
+            </method>
+            <method name="implClose" type="void" line="501">
+                <comment line="505">
+                    prevent further wakeup                    
+                </comment>
+                <comment line="511">
+                    Deregister channels                    
+                </comment>
+                <comment line="512">
+                    skip wakeupEvent                    
+                </comment>
+                <comment line="523">
+                    Make all remaining helper threads exit                    
+                </comment>
+                <scope line="502">
+                    <scope line="503">
+                        <scope line="504">
+                            <scope line="506"/>
+                            <scope line="511">
+                                <scope line="512">
+                                    <declaration name="selch" type="SelectableChannel" line="514"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="implRegister" type="void" line="532">
+                <params>
+                    <param name="ski" type="SelectionKeyImpl"/>
+                </params>
+                <scope line="533"/>
+            </method>
+            <method name="growIfNeeded" type="void" line="546">
+                <comment line="548">
+                    Make a larger array                    
+                </comment>
+                <comment line="554">
+                    more threads needed                    
+                </comment>
+                <scope line="547">
+                    <declaration name="newSize" type="int" line="548"/>
+                    <declaration name="temp" type="SelectionKeyImpl" line="549"/>
+                </scope>
+                <scope line="554"/>
+            </method>
+            <method name="implDereg" type="void" line="561">
+                <params>
+                    <param name="ski" type="SelectionKeyImpl"/>
+                </params>
+                <comment line="565">
+                    Copy end one over it                    
+                </comment>
+                <comment line="577">
+                    The last thread has become redundant.                    
+                </comment>
+                <comment line="579">
+                    Remove the key from fdMap, keys and selectedKeys                    
+                </comment>
+                <declaration name="i" type="int" line="562"/>
+                <scope line="564">
+                    <declaration name="endChannel" type="SelectionKeyImpl" line="566"/>
+                </scope>
+                <scope line="575"/>
+                <declaration name="selch" type="SelectableChannel" line="583"/>
+            </method>
+            <method name="putEventOps" type="void" line="588">
+                <params>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                    <param name="ops" type="int"/>
+                </params>
+                <scope line="589"/>
+            </method>
+            <method name="wakeup" type="Selector" line="596">
+                <scope line="597">
+                    <scope line="598"/>
+                </scope>
+            </method>
+            <scope line="606"/>
+        </class>
+    </source>

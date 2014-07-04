@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.imageio.plugins.gif">
+        <import package="java.awt.Point"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.image.BufferedImage"/>
+        <import package="java.awt.image.DataBuffer"/>
+        <import package="java.awt.image.WritableRaster"/>
+        <import package="java.io.BufferedInputStream"/>
+        <import package="java.io.DataInputStream"/>
+        <import package="java.io.EOFException"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.nio.ByteOrder"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.List"/>
+        <import package="javax.imageio.IIOException"/>
+        <import package="javax.imageio.ImageReader"/>
+        <import package="javax.imageio.ImageReadParam"/>
+        <import package="javax.imageio.ImageTypeSpecifier"/>
+        <import package="javax.imageio.metadata.IIOMetadata"/>
+        <import package="javax.imageio.spi.ImageReaderSpi"/>
+        <import package="javax.imageio.stream.ImageInputStream"/>
+        <import package="com.sun.imageio.plugins.common.ReaderUtil"/>
+        <class name="GIFImageReader" line="52">
+            <extends class="ImageReader"/>
+            <comment line="55">
+                The current ImageInputStream source.                
+            </comment>
+            <comment line="58">
+                Per-stream settings                
+            </comment>
+            <comment line="60">
+                True if the file header including stream metadata has been read.                
+            </comment>
+            <comment line="63">
+                Global metadata, read once per input setting.                
+            </comment>
+            <comment line="66">
+                The current image index                
+            </comment>
+            <comment line="69">
+                Metadata for image at &apos;currIndex&apos;, or null.                
+            </comment>
+            <comment line="72">
+                A List of Longs indicating the stream positions of the                
+            </comment>
+            <comment line="73">
+                start of the metadata for each image.  Entries are added                
+            </comment>
+            <comment line="74">
+                as needed.                
+            </comment>
+            <comment line="77">
+                Length of metadata for image at &apos;currIndex&apos;, valid only if                
+            </comment>
+            <comment line="78">
+                imageMetadata != null.                
+            </comment>
+            <comment line="81">
+                The number of images in the stream, if known, otherwise -1.                
+            </comment>
+            <comment line="84">
+                Variables used by the LZW decoding process                
+            </comment>
+            <comment line="93">
+                32-bit lookahead buffer                
+            </comment>
+            <comment line="96">
+                Try if the end of the data blocks has been found,                
+            </comment>
+            <comment line="97">
+                and we are simply draining the 32-bit buffer                
+            </comment>
+            <comment line="100">
+                The image to be written.                
+            </comment>
+            <comment line="103">
+                The image&apos;s tile.                
+            </comment>
+            <comment line="106">
+                The image dimensions (from the stream).                
+            </comment>
+            <comment line="109">
+                The pixel currently being decoded (in the stream&apos;s coordinates).                
+            </comment>
+            <comment line="112">
+                The number of rows decoded                
+            </comment>
+            <comment line="115">
+                The current interlace pass, starting with 0.                
+            </comment>
+            <comment line="118">
+                End per-stream settings                
+            </comment>
+            <comment line="120">
+                Constants used to control interlacing.                
+            </comment>
+            <comment line="128">
+                Take input from an ImageInputStream                
+            </comment>
+            <comment line="165">
+                Throw an IndexOutOfBoundsException if index &lt; minIndex,                
+            </comment>
+            <comment line="166">
+                and bump minIndex if required.                
+            </comment>
+            <comment line="282">
+                BEGIN LZW STUFF                
+            </comment>
+            <comment line="292">
+                Load a block (1-255 bytes) at a time, and maintain                
+            </comment>
+            <comment line="293">
+                a 32-bit lookahead buffer that is filled from the left                
+            </comment>
+            <comment line="294">
+                and extracted from the right.                
+            </comment>
+            <comment line="295">
+                                
+            </comment>
+            <comment line="296">
+                When the last block is found, we continue to                
+            </comment>
+            <comment line="297">
+                                
+            </comment>
+            <comment line="369">
+                Used only if IIOReadUpdateListeners are present                
+            </comment>
+            <comment line="463">
+                END LZW STUFF                
+            </comment>
+            <comment line="604">
+                Read blocks of 1-255 bytes, stop at a 0-length block                
+            </comment>
+            <comment line="621">
+                Stream must be positioned at start of metadata for &apos;currIndex&apos;                
+            </comment>
+            <declaration name="stream" type="ImageInputStream" line="55"/>
+            <declaration name="gotHeader" type="boolean" line="60"/>
+            <declaration name="streamMetadata" type="GIFStreamMetadata" line="63"/>
+            <declaration name="currIndex" type="int" line="66"/>
+            <declaration name="imageMetadata" type="GIFImageMetadata" line="69"/>
+            <declaration name="imageStartPosition" type="List" line="74"/>
+            <declaration name="imageMetadataLength" type="int" line="78"/>
+            <declaration name="numImages" type="int" line="81"/>
+            <declaration name="block" type="byte[]" line="84"/>
+            <declaration name="blockLength" type="int" line="85"/>
+            <declaration name="bitPos" type="int" line="86"/>
+            <declaration name="nextByte" type="int" line="87"/>
+            <declaration name="initCodeSize" type="int" line="88"/>
+            <declaration name="clearCode" type="int" line="89"/>
+            <declaration name="eofCode" type="int" line="90"/>
+            <declaration name="next32Bits" type="int" line="93"/>
+            <declaration name="lastBlockFound" type="boolean" line="97"/>
+            <declaration name="theImage" type="BufferedImage" line="100"/>
+            <declaration name="theTile" type="WritableRaster" line="103"/>
+            <declaration name="width" type="int" line="106"/>
+            <declaration name="streamX" type="int" line="109"/>
+            <declaration name="rowsDone" type="int" line="112"/>
+            <declaration name="interlacePass" type="int" line="115"/>
+            <declaration name="interlaceIncrement" type="int[]" line="120"/>
+            <declaration name="interlaceOffset" type="int[]" line="121"/>
+            <method name="GIFImageReader" type="constructor" line="123">
+                <params>
+                    <param name="originatingProvider" type="ImageReaderSpi"/>
+                </params>
+            </method>
+            <method name="setInput" type="void" line="130">
+                <params>
+                    <param name="input" type="Object"/>
+                    <param name="seekForwardOnly" type="boolean"/>
+                    <param name="ignoreMetadata" type="boolean"/>
+                </params>
+                <comment line="142">
+                    Clear all values based on the previous stream contents                    
+                </comment>
+                <scope line="132">
+                    <scope line="133"/>
+                </scope>
+                <scope line="138"/>
+            </method>
+            <method name="getNumImages" type="int" line="146">
+                <params>
+                    <param name="allowSearch" type="boolean"/>
+                </params>
+                <scope line="147"/>
+                <scope line="150"/>
+                <scope line="155"/>
+                <scope line="158"/>
+            </method>
+            <method name="checkIndex" type="void" line="166">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <scope line="167"/>
+                <scope line="170"/>
+            </method>
+            <method name="getWidth" type="int" line="175">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <declaration name="index" type="int" line="178"/>
+                <scope line="179"/>
+            </method>
+            <method name="getHeight" type="int" line="186">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <declaration name="index" type="int" line="189"/>
+                <scope line="190"/>
+            </method>
+            <method name="getImageTypes" type="Iterator" line="197">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="215">
+                    Normalize color table length to 2^1, 2^2, 2^4, or 2^8                    
+                </comment>
+                <comment line="223">
+                    Bump from 3 to 4 bits                    
+                </comment>
+                <comment line="226">
+                    Bump to 8 bits                    
+                </comment>
+                <comment line="234">
+                    Entries from length + 1 to lutLength - 1 will be 0                    
+                </comment>
+                <comment line="247">
+                    Some files erroneously have a transparent color index                    
+                </comment>
+                <comment line="248">
+                    of 255 even though there are fewer than 256 colors.                    
+                </comment>
+                <declaration name="index" type="int" line="200"/>
+                <scope line="201"/>
+                <declaration name="l" type="List" line="206"/>
+                <declaration name="colorTable" type="byte[]" line="208"/>
+                <scope line="209"/>
+                <scope line="211"/>
+                <declaration name="length" type="int" line="216"/>
+                <declaration name="bits" type="int" line="217"/>
+                <scope line="218"/>
+                <scope line="220"/>
+                <scope line="222"/>
+                <scope line="225"/>
+                <declaration name="lutLength" type="int" line="229"/>
+                <declaration name="r" type="byte[]" line="230"/>
+                <declaration name="g" type="byte[]" line="231"/>
+                <declaration name="b" type="byte[]" line="232"/>
+                <declaration name="rgbIndex" type="int" line="235"/>
+                <scope line="236"/>
+                <declaration name="a" type="byte[]" line="242"/>
+                <scope line="243">
+                    <declaration name="idx" type="int" line="249"/>
+                </scope>
+                <declaration name="bitsPerSample" type="int[]" line="254"/>
+            </method>
+            <method name="getDefaultReadParam" type="ImageReadParam" line="261"/>
+            <method name="getStreamMetadata" type="IIOMetadata" line="265"/>
+            <method name="getImageMetadata" type="IIOMetadata" line="270">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <declaration name="index" type="int" line="273"/>
+                <scope line="274"/>
+            </method>
+            <method name="initNext32Bits" type="void" line="283"/>
+            <method name="getCode" type="int" line="297">
+                <params>
+                    <param name="codeSize" type="int"/>
+                    <param name="codeMask" type="int"/>
+                </params>
+                <comment line="299">
+                    No more data available                    
+                </comment>
+                <comment line="305">
+                    Shift in a byte of new data at a time                    
+                </comment>
+                <comment line="310">
+                    Check if current block is out of bytes                    
+                </comment>
+                <comment line="312">
+                    Get next block size                    
+                </comment>
+                <scope line="298"/>
+                <declaration name="code" type="int" line="302"/>
+                <scope line="306">
+                    <scope line="311">
+                        <scope line="314"/>
+                        <scope line="317">
+                            <declaration name="left" type="int" line="318"/>
+                            <declaration name="off" type="int" line="319"/>
+                            <scope line="320">
+                                <declaration name="nbytes" type="int" line="321"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="initializeStringTable" type="void" line="338">
+                <params>
+                    <param name="prefix" type="int[]"/>
+                    <param name="suffix" type="byte[]"/>
+                    <param name="initial" type="byte[]"/>
+                    <param name="length" type="int[]"/>
+                </params>
+                <comment line="347">
+                    Fill in the entire table for robustness against                    
+                </comment>
+                <comment line="348">
+                    out-of-sequence codes.                    
+                </comment>
+                <comment line="354">
+                    tableIndex = numEntries + 2;                    
+                </comment>
+                <comment line="355">
+                    codeSize = initCodeSize + 1;                    
+                </comment>
+                <comment line="356">
+                    codeMask = (1 &lt;&lt; codeSize) - 1;                    
+                </comment>
+                <declaration name="numEntries" type="int" line="339"/>
+                <scope line="340"/>
+                <scope line="349"/>
+            </method>
+            <declaration name="sourceRegion" type="Rectangle" line="359"/>
+            <declaration name="sourceXSubsampling" type="int" line="360"/>
+            <declaration name="sourceYSubsampling" type="int" line="361"/>
+            <declaration name="sourceMinProgressivePass" type="int" line="362"/>
+            <declaration name="sourceMaxProgressivePass" type="int" line="363"/>
+            <declaration name="destinationOffset" type="Point" line="365"/>
+            <declaration name="destinationRegion" type="Rectangle" line="366"/>
+            <declaration name="updateMinY" type="int" line="369"/>
+            <declaration name="updateYStep" type="int" line="370"/>
+            <declaration name="decodeThisRow" type="boolean" line="372"/>
+            <declaration name="destY" type="int" line="373"/>
+            <declaration name="rowBuf" type="byte[]" line="375"/>
+            <method name="outputRow" type="void" line="377">
+                <comment line="378">
+                    Clip against ImageReadParam                    
+                </comment>
+                <comment line="391">
+                    Update IIOReadUpdateListeners, if any                    
+                </comment>
+                <comment line="394">
+                    updateYStep will have been initialized if                    
+                </comment>
+                <comment line="395">
+                    updateListeners is non-null                    
+                </comment>
+                <declaration name="width" type="int" line="379"/>
+                <declaration name="destX" type="int" line="381"/>
+                <scope line="383"/>
+                <scope line="385">
+                    <scope line="386"/>
+                </scope>
+                <scope line="392">
+                    <declaration name="bands" type="int[]" line="393"/>
+                </scope>
+            </method>
+            <method name="computeDecodeThisRow" type="void" line="403"/>
+            <method name="outputPixels" type="void" line="411">
+                <params>
+                    <param name="string" type="byte[]"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="422">
+                    Process end-of-row                    
+                </comment>
+                <comment line="425">
+                    Update IIOReadProgressListeners                    
+                </comment>
+                <comment line="437">
+                    Inform IIOReadUpdateListeners of end of pass                    
+                </comment>
+                <comment line="453">
+                    Determine whether pixels from this row will                    
+                </comment>
+                <comment line="454">
+                    be written to the destination                    
+                </comment>
+                <scope line="413"/>
+                <scope line="417">
+                    <scope line="418"/>
+                    <scope line="424">
+                        <scope line="429"/>
+                        <scope line="434">
+                            <scope line="436">
+                                <scope line="438"/>
+                                <scope line="443"/>
+                            </scope>
+                        </scope>
+                        <scope line="449"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="readHeader" type="void" line="464">
+                <comment line="472">
+                    Create an object to store the stream metadata                    
+                </comment>
+                <comment line="506">
+                    Found position of metadata for image 0                    
+                </comment>
+                <scope line="465"/>
+                <scope line="468"/>
+                <scope line="475">
+                    <declaration name="signature" type="byte[]" line="478"/>
+                    <declaration name="version" type="StringBuffer" line="481"/>
+                    <declaration name="packedFields" type="int" line="490"/>
+                    <declaration name="globalColorTableFlag" type="boolean" line="491"/>
+                    <declaration name="numGCTEntries" type="int" line="494"/>
+                    <scope line="499"/>
+                    <scope line="502"/>
+                </scope>
+                <scope line="508"/>
+            </method>
+            <method name="skipImage" type="boolean" line="515">
+                <comment line="516">
+                    Stream must be at the beginning of an image descriptor                    
+                </comment>
+                <comment line="517">
+                    upon exit                    
+                </comment>
+                <comment line="528">
+                    Skip color table if any                    
+                </comment>
+                <comment line="553">
+                    EOF                    
+                </comment>
+                <scope line="519">
+                    <scope line="520">
+                        <declaration name="blockType" type="int" line="521"/>
+                        <scope line="523">
+                            <declaration name="packedFields" type="int" line="526"/>
+                            <scope line="527">
+                                <declaration name="bits" type="int" line="529"/>
+                            </scope>
+                            <declaration name="length" type="int" line="535"/>
+                            <scope line="536"/>
+                        </scope>
+                        <scope line="542"/>
+                        <scope line="544">
+                            <declaration name="label" type="int" line="545"/>
+                            <declaration name="length" type="int" line="547"/>
+                            <scope line="548"/>
+                        </scope>
+                        <scope line="552"/>
+                        <scope line="555">
+                            <declaration name="length" type="int" line="556"/>
+                            <scope line="557"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="563"/>
+                <scope line="565"/>
+            </method>
+            <method name="locateImage" type="int" line="570">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="574">
+                    Find closest known index                    
+                </comment>
+                <comment line="577">
+                    Seek to that position                    
+                </comment>
+                <comment line="581">
+                    Skip images until at desired index or last image found                    
+                </comment>
+                <scope line="573">
+                    <declaration name="index" type="int" line="575"/>
+                    <declaration name="l" type="Long" line="578"/>
+                    <scope line="582">
+                        <scope line="583"/>
+                        <declaration name="l1" type="Long" line="588"/>
+                    </scope>
+                </scope>
+                <scope line="592"/>
+                <scope line="596"/>
+            </method>
+            <method name="concatenateBlocks" type="byte[]" line="604">
+                <declaration name="data" type="byte[]" line="605"/>
+                <scope line="606">
+                    <declaration name="length" type="int" line="607"/>
+                    <scope line="608"/>
+                    <declaration name="newData" type="byte[]" line="611"/>
+                </scope>
+            </method>
+            <method name="readMetadata" type="void" line="621">
+                <comment line="627">
+                    Create an object to store the image metadata                    
+                </comment>
+                <comment line="633">
+                    Image Descriptor                    
+                </comment>
+                <comment line="649">
+                    Read color table if any                    
+                </comment>
+                <comment line="657">
+                    Record length of this metadata block                    
+                </comment>
+                <comment line="661">
+                    Now positioned at start of LZW-compressed pixels                    
+                </comment>
+                <comment line="663">
+                    Extension block                    
+                </comment>
+                <comment line="666">
+                    Graphics Control Extension                    
+                </comment>
+                <comment line="667">
+                    4                    
+                </comment>
+                <comment line="681">
+                    Plain text extension                    
+                </comment>
+                <comment line="701">
+                    Comment extension                    
+                </comment>
+                <comment line="707">
+                    Application extension                    
+                </comment>
+                <comment line="712">
+                    read available data                    
+                </comment>
+                <comment line="733">
+                    Init lists if necessary                    
+                </comment>
+                <comment line="744">
+                    Skip over unknown extension blocks                    
+                </comment>
+                <comment line="751">
+                    Trailer                    
+                </comment>
+                <scope line="622"/>
+                <scope line="626">
+                    <declaration name="startPosition" type="long" line="630"/>
+                    <scope line="631">
+                        <declaration name="blockType" type="int" line="632"/>
+                        <scope line="633">
+                            <declaration name="idPackedFields" type="int" line="641"/>
+                            <declaration name="localColorTableFlag" type="boolean" line="642"/>
+                            <declaration name="numLCTEntries" type="int" line="646"/>
+                            <scope line="648"/>
+                            <scope line="653"/>
+                        </scope>
+                        <scope line="663">
+                            <declaration name="label" type="int" line="664"/>
+                            <scope line="666">
+                                <declaration name="gceLength" type="int" line="667"/>
+                                <declaration name="gcePackedFields" type="int" line="668"/>
+                                <declaration name="terminator" type="int" line="680"/>
+                            </scope>
+                            <scope line="681">
+                                <declaration name="length" type="int" line="682"/>
+                            </scope>
+                            <scope line="701">
+                                <declaration name="comment" type="byte[]" line="702"/>
+                                <scope line="703"/>
+                            </scope>
+                            <scope line="707">
+                                <declaration name="blockSize" type="int" line="708"/>
+                                <declaration name="applicationID" type="byte[]" line="709"/>
+                                <declaration name="authCode" type="byte[]" line="710"/>
+                                <declaration name="blockData" type="byte[]" line="713"/>
+                                <declaration name="offset" type="int" line="716"/>
+                                <declaration name="applicationData" type="byte[]" line="719"/>
+                                <scope line="721">
+                                    <declaration name="len" type="int" line="722"/>
+                                    <declaration name="data" type="byte[]" line="723"/>
+                                </scope>
+                                <scope line="734"/>
+                            </scope>
+                            <scope line="743">
+                                <declaration name="length" type="int" line="745"/>
+                                <scope line="746"/>
+                            </scope>
+                        </scope>
+                        <scope line="751"/>
+                        <scope line="754"/>
+                    </scope>
+                </scope>
+                <scope line="759"/>
+                <scope line="761"/>
+            </method>
+            <method name="copyData" type="int" line="766">
+                <params>
+                    <param name="src" type="byte[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="dst" type="byte[]"/>
+                </params>
+                <declaration name="len" type="int" line="767"/>
+                <declaration name="rest" type="int" line="768"/>
+                <scope line="769"/>
+            </method>
+            <method name="startPass" type="void" line="776">
+                <params>
+                    <param name="pass" type="int"/>
+                </params>
+                <comment line="806">
+                    Initialized updateMinY and updateYStep                    
+                </comment>
+                <comment line="810">
+                    Inform IIOReadUpdateListeners of new pass                    
+                </comment>
+                <scope line="777"/>
+                <declaration name="y" type="int" line="781"/>
+                <declaration name="yStep" type="int" line="782"/>
+                <scope line="783"/>
+                <declaration name="vals" type="int[]" line="788"/>
+                <declaration name="bands" type="int[]" line="811"/>
+            </method>
+            <method name="read" type="BufferedImage" line="825">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="param" type="ImageReadParam"/>
+                </params>
+                <comment line="839">
+                    A null ImageReadParam means we use the default                    
+                </comment>
+                <comment line="844">
+                    Initialize the destination image                    
+                </comment>
+                <comment line="858">
+                    Get source region, taking subsampling offsets into account,                    
+                </comment>
+                <comment line="859">
+                    and clipping against the true source bounds                    
+                </comment>
+                <comment line="879">
+                    Inform IIOReadProgressListeners of start of image                    
+                </comment>
+                <comment line="886">
+                    Read and decode the image data, fill in theImage                    
+                </comment>
+                <comment line="889">
+                    Read first data block                    
+                </comment>
+                <comment line="904">
+                    Init 32-bit buffer                    
+                </comment>
+                <comment line="934">
+                    Inform IIOReadProgressListeners of end of image                    
+                </comment>
+                <comment line="939">
+                    Inform IIOReadProgressListeners of end of image                    
+                </comment>
+                <comment line="946">
+                    code == tableIndex                    
+                </comment>
+                <comment line="949">
+                    warning - code out of sequence                    
+                </comment>
+                <comment line="950">
+                    possibly data corruption                    
+                </comment>
+                <comment line="971">
+                    Reverse code                    
+                </comment>
+                <scope line="826"/>
+                <declaration name="index" type="int" line="831"/>
+                <scope line="832"/>
+                <scope line="840"/>
+                <declaration name="imageTypes" type="Iterator" line="845"/>
+                <scope line="885">
+                    <declaration name="left" type="int" line="891"/>
+                    <declaration name="off" type="int" line="892"/>
+                    <scope line="893">
+                        <declaration name="nbytes" type="int" line="894"/>
+                    </scope>
+                    <declaration name="code" type="int" line="910"/>
+                    <declaration name="prefix" type="int[]" line="912"/>
+                    <declaration name="suffix" type="byte[]" line="913"/>
+                    <declaration name="initial" type="byte[]" line="914"/>
+                    <declaration name="length" type="int[]" line="915"/>
+                    <declaration name="string" type="byte[]" line="916"/>
+                    <declaration name="tableIndex" type="int" line="919"/>
+                    <declaration name="codeSize" type="int" line="920"/>
+                    <declaration name="codeMask" type="int" line="921"/>
+                    <scope line="923">
+                        <scope line="926">
+                            <scope line="933"/>
+                        </scope>
+                        <scope line="938"/>
+                        <scope line="942">
+                            <declaration name="newSuffixIndex" type="int" line="943"/>
+                            <scope line="944"/>
+                            <scope line="946">
+                                <scope line="948"/>
+                            </scope>
+                            <declaration name="ti" type="int" line="955"/>
+                            <declaration name="oc" type="int" line="956"/>
+                            <scope line="965"/>
+                        </scope>
+                        <declaration name="c" type="int" line="972"/>
+                        <declaration name="len" type="int" line="973"/>
+                        <scope line="974"/>
+                    </scope>
+                </scope>
+                <scope line="985"/>
+            </method>
+            <javadoc line="991">
+                Remove all settings including global settings such as
+                  &lt;code&gt;Locale&lt;/code&gt;s and listeners, as well as stream settings.                
+            </javadoc>
+            <method name="reset" type="void" line="995"/>
+            <javadoc line="1000">
+                Remove local settings based on parsing of a stream.                
+            </javadoc>
+            <method name="resetStreamSettings" type="void" line="1003">
+                <comment line="1011">
+                    No need to reinitialize &apos;block&apos;                    
+                </comment>
+            </method>
+        </class>
+    </source>

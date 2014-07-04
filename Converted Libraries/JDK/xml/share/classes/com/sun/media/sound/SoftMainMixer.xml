@@ -1,0 +1,662 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.media.sound">
+        <import package="java.io.IOException"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.TreeMap"/>
+        <import package="java.util.Map.Entry"/>
+        <import package="javax.sound.midi.MidiMessage"/>
+        <import package="javax.sound.midi.Patch"/>
+        <import package="javax.sound.midi.ShortMessage"/>
+        <import package="javax.sound.sampled.AudioInputStream"/>
+        <import package="javax.sound.sampled.AudioSystem"/>
+        <class name="SoftMainMixer" line="41">
+            <comment line="49">
+                A private class thats contains a ModelChannelMixer and it&apos;s private buffers.                
+            </comment>
+            <comment line="50">
+                This becomes necessary when we want to have separate delay buffers for each channel mixer.                
+            </comment>
+            <comment line="762">
+                Must only we called within control_mutex synchronization                
+            </comment>
+            <javadoc line="41">
+                Software synthesizer main audio mixer.                
+                <author>
+                    Karl Helgason                    
+                </author>
+            </javadoc>
+            <class name="SoftChannelMixerContainer" line="50">
+                <declaration name="mixer" type="ModelChannelMixer" line="52"/>
+                <declaration name="buffers" type="SoftAudioBuffer[]" line="53"/>
+            </class>
+            <declaration name="CHANNEL_LEFT" type="int" line="56"/>
+            <declaration name="CHANNEL_RIGHT" type="int" line="57"/>
+            <declaration name="CHANNEL_MONO" type="int" line="58"/>
+            <declaration name="CHANNEL_DELAY_LEFT" type="int" line="59"/>
+            <declaration name="CHANNEL_DELAY_RIGHT" type="int" line="60"/>
+            <declaration name="CHANNEL_DELAY_MONO" type="int" line="61"/>
+            <declaration name="CHANNEL_EFFECT1" type="int" line="62"/>
+            <declaration name="CHANNEL_EFFECT2" type="int" line="63"/>
+            <declaration name="CHANNEL_DELAY_EFFECT1" type="int" line="64"/>
+            <declaration name="CHANNEL_DELAY_EFFECT2" type="int" line="65"/>
+            <declaration name="CHANNEL_LEFT_DRY" type="int" line="66"/>
+            <declaration name="CHANNEL_RIGHT_DRY" type="int" line="67"/>
+            <declaration name="CHANNEL_SCRATCH1" type="int" line="68"/>
+            <declaration name="CHANNEL_SCRATCH2" type="int" line="69"/>
+            <declaration name="active_sensing_on" type="boolean" line="70"/>
+            <declaration name="msec_last_activity" type="long" line="71"/>
+            <declaration name="pusher_silent" type="boolean" line="72"/>
+            <declaration name="pusher_silent_count" type="int" line="73"/>
+            <declaration name="sample_pos" type="long" line="74"/>
+            <declaration name="readfully" type="boolean" line="75"/>
+            <declaration name="control_mutex" type="Object" line="76"/>
+            <declaration name="synth" type="SoftSynthesizer" line="77"/>
+            <declaration name="samplerate" type="float" line="78"/>
+            <declaration name="nrofchannels" type="int" line="79"/>
+            <declaration name="voicestatus" type="SoftVoice[]" line="80"/>
+            <declaration name="buffers" type="SoftAudioBuffer[]" line="81"/>
+            <declaration name="reverb" type="SoftReverb" line="82"/>
+            <declaration name="chorus" type="SoftAudioProcessor" line="83"/>
+            <declaration name="agc" type="SoftAudioProcessor" line="84"/>
+            <declaration name="msec_buffer_len" type="long" line="85"/>
+            <declaration name="buffer_len" type="int" line="86"/>
+            <declaration name="midimessages" type="TreeMap&lt;Long,Object&gt;" line="87"/>
+            <declaration name="delay_midievent" type="int" line="88"/>
+            <declaration name="max_delay_midievent" type="int" line="89"/>
+            <declaration name="last_volume_left" type="double" line="90"/>
+            <declaration name="last_volume_right" type="double" line="91"/>
+            <declaration name="co_master_balance" type="double[]" line="92"/>
+            <declaration name="co_master_volume" type="double[]" line="93"/>
+            <declaration name="co_master_coarse_tuning" type="double[]" line="94"/>
+            <declaration name="co_master_fine_tuning" type="double[]" line="95"/>
+            <declaration name="ais" type="AudioInputStream" line="96"/>
+            <declaration name="registeredMixers" type="Set&lt;SoftChannelMixerContainer&gt;" line="97"/>
+            <declaration name="stoppedMixers" type="Set&lt;ModelChannelMixer&gt;" line="98"/>
+            <declaration name="cur_registeredMixers" type="SoftChannelMixerContainer[]" line="99"/>
+            <declaration name="co_master" type="SoftControl" line="100"/>
+            <anonymous_class line="100">
+                <declaration name="balance" type="double[]" line="102"/>
+                <declaration name="volume" type="double[]" line="103"/>
+                <declaration name="coarse_tuning" type="double[]" line="104"/>
+                <declaration name="fine_tuning" type="double[]" line="105"/>
+                <method name="get" type="double[]" line="107">
+                    <params>
+                        <param name="instance" type="int"/>
+                        <param name="name" type="String"/>
+                    </params>
+                </method>
+            </anonymous_class>
+            <method name="processSystemExclusiveMessage" type="void" line="122">
+                <params>
+                    <param name="data" type="byte[]"/>
+                </params>
+                <comment line="126">
+                    Universal Non-Real-Time SysEx                    
+                </comment>
+                <comment line="133">
+                    MIDI Tuning Standard                    
+                </comment>
+                <comment line="136">
+                    BULK TUNING DUMP                    
+                </comment>
+                <comment line="138">
+                    http://www.midi.org/about-midi/tuning.shtml                    
+                </comment>
+                <comment line="144">
+                    KEY-BASED TUNING DUMP                    
+                </comment>
+                <comment line="145">
+                    SCALE/OCTAVE TUNING DUMP, 1 byte format                    
+                </comment>
+                <comment line="146">
+                    SCALE/OCTAVE TUNING DUMP, 2 byte format                    
+                </comment>
+                <comment line="147">
+                    SINGLE NOTE TUNING CHANGE (NON REAL-TIME)                    
+                </comment>
+                <comment line="148">
+                    (BANK)                    
+                </comment>
+                <comment line="150">
+                    http://www.midi.org/about-midi/tuning_extens.shtml                    
+                </comment>
+                <comment line="156">
+                    scale/octave tuning 1-byte form (Non                    
+                </comment>
+                <comment line="157">
+                    Real-Time)                    
+                </comment>
+                <comment line="158">
+                    scale/octave tuning 2-byte form (Non                    
+                </comment>
+                <comment line="159">
+                    Real-Time)                    
+                </comment>
+                <comment line="161">
+                    http://www.midi.org/about-midi/tuning-scale.shtml                    
+                </comment>
+                <comment line="175">
+                    General Midi Message                    
+                </comment>
+                <comment line="178">
+                    General Midi 1 On                    
+                </comment>
+                <comment line="182">
+                    General Midi Off                    
+                </comment>
+                <comment line="186">
+                    General MidI Level 2 On                    
+                </comment>
+                <comment line="194">
+                    DLS Message                    
+                </comment>
+                <comment line="197">
+                    DLS On                    
+                </comment>
+                <comment line="203">
+                    DLS Off                    
+                </comment>
+                <comment line="208">
+                    DLS Static Voice Allocation Off                    
+                </comment>
+                <comment line="211">
+                    DLS Static Voice Allocation On                    
+                </comment>
+                <comment line="225">
+                    Universal Real-Time SysEx                    
+                </comment>
+                <comment line="232">
+                    Device Control                    
+                </comment>
+                <comment line="236">
+                    Master Volume                    
+                </comment>
+                <comment line="237">
+                    Master Balane                    
+                </comment>
+                <comment line="238">
+                    Master fine tuning                    
+                </comment>
+                <comment line="239">
+                    Master coarse tuning                    
+                </comment>
+                <comment line="251">
+                    Global Parameter Control                    
+                </comment>
+                <comment line="283">
+                    MIDI Tuning Standard                    
+                </comment>
+                <comment line="286">
+                    SINGLE NOTE TUNING CHANGE (REAL-TIME)                    
+                </comment>
+                <comment line="288">
+                    http://www.midi.org/about-midi/tuning.shtml                    
+                </comment>
+                <comment line="299">
+                    SINGLE NOTE TUNING CHANGE (REAL-TIME)                    
+                </comment>
+                <comment line="300">
+                    (BANK)                    
+                </comment>
+                <comment line="302">
+                    http://www.midi.org/about-midi/tuning_extens.shtml                    
+                </comment>
+                <comment line="313">
+                    scale/octave tuning 1-byte form                    
+                </comment>
+                <comment line="314">
+                    (Real-Time)                    
+                </comment>
+                <comment line="315">
+                    scale/octave tuning 2-byte form                    
+                </comment>
+                <comment line="316">
+                    (Real-Time)                    
+                </comment>
+                <comment line="318">
+                    http://www.midi.org/about-midi/tuning-scale.shtml                    
+                </comment>
+                <comment line="337">
+                    Control Destination Settings                    
+                </comment>
+                <comment line="340">
+                    Channel Pressure                    
+                </comment>
+                <comment line="356">
+                    Poly Pressure                    
+                </comment>
+                <comment line="372">
+                    Control Change                    
+                </comment>
+                <comment line="394">
+                    Key Based Instrument Control                    
+                </comment>
+                <comment line="398">
+                    Basic Message                    
+                </comment>
+                <scope line="123">
+                    <scope line="127">
+                        <declaration name="deviceID" type="int" line="128"/>
+                        <scope line="129">
+                            <declaration name="subid1" type="int" line="130"/>
+                            <declaration name="subid2" type="int" line="131"/>
+                            <scope line="137">
+                                <declaration name="tuning" type="SoftTuning" line="139"/>
+                            </scope>
+                            <scope line="149">
+                                <declaration name="tuning" type="SoftTuning" line="151"/>
+                            </scope>
+                            <scope line="160">
+                                <declaration name="tuning" type="SoftTuning" line="162"/>
+                                <declaration name="channelmask" type="int" line="163"/>
+                                <declaration name="channels" type="SoftChannel[]" line="165"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="226">
+                        <declaration name="deviceID" type="int" line="227"/>
+                        <scope line="228">
+                            <declaration name="subid1" type="int" line="229"/>
+                            <declaration name="subid2" type="int" line="230"/>
+                            <declaration name="val" type="int" line="240"/>
+                            <declaration name="ix" type="int" line="252"/>
+                            <declaration name="slotPathLen" type="int" line="253"/>
+                            <declaration name="paramWidth" type="int" line="254"/>
+                            <declaration name="valueWidth" type="int" line="255"/>
+                            <declaration name="slotPath" type="int[]" line="256"/>
+                            <scope line="257">
+                                <declaration name="msb" type="int" line="258"/>
+                                <declaration name="lsb" type="int" line="259"/>
+                            </scope>
+                            <declaration name="paramCount" type="int" line="262"/>
+                            <declaration name="params" type="long[]" line="264"/>
+                            <declaration name="values" type="long[]" line="265"/>
+                            <scope line="266"/>
+                            <scope line="287">
+                                <declaration name="tuning" type="SoftTuning" line="289"/>
+                                <declaration name="voices" type="SoftVoice[]" line="292"/>
+                            </scope>
+                            <scope line="301">
+                                <declaration name="tuning" type="SoftTuning" line="303"/>
+                                <declaration name="voices" type="SoftVoice[]" line="306"/>
+                            </scope>
+                            <scope line="317">
+                                <declaration name="tuning" type="SoftTuning" line="319"/>
+                                <declaration name="channelmask" type="int" line="320"/>
+                                <declaration name="channels" type="SoftChannel[]" line="322"/>
+                                <declaration name="voices" type="SoftVoice[]" line="326"/>
+                            </scope>
+                            <scope line="341">
+                                <declaration name="destinations" type="int[]" line="342"/>
+                                <declaration name="ranges" type="int[]" line="343"/>
+                                <declaration name="ix" type="int" line="344"/>
+                                <scope line="345"/>
+                                <declaration name="channel" type="int" line="350"/>
+                                <declaration name="softchannel" type="SoftChannel" line="351"/>
+                            </scope>
+                            <scope line="357">
+                                <declaration name="destinations" type="int[]" line="358"/>
+                                <declaration name="ranges" type="int[]" line="359"/>
+                                <declaration name="ix" type="int" line="360"/>
+                                <scope line="361"/>
+                                <declaration name="channel" type="int" line="366"/>
+                                <declaration name="softchannel" type="SoftChannel" line="367"/>
+                            </scope>
+                            <scope line="373">
+                                <declaration name="destinations" type="int[]" line="374"/>
+                                <declaration name="ranges" type="int[]" line="375"/>
+                                <declaration name="ix" type="int" line="376"/>
+                                <scope line="377"/>
+                                <declaration name="channel" type="int" line="382"/>
+                                <declaration name="softchannel" type="SoftChannel" line="383"/>
+                                <declaration name="control" type="int" line="384"/>
+                            </scope>
+                            <scope line="395">
+                                <declaration name="channel" type="int" line="399"/>
+                                <declaration name="keynumber" type="int" line="400"/>
+                                <declaration name="softchannel" type="SoftChannel" line="401"/>
+                                <scope line="402">
+                                    <declaration name="controlnumber" type="int" line="403"/>
+                                    <declaration name="controlvalue" type="int" line="404"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="processMessages" type="void" line="423">
+                <params>
+                    <param name="timeStamp" type="long"/>
+                </params>
+                <declaration name="iter" type="Iterator&lt;Entry&lt;Long,Object&gt;&gt;" line="424"/>
+                <scope line="425">
+                    <declaration name="entry" type="Entry&lt;Long,Object&gt;" line="426"/>
+                    <declaration name="msec_delay" type="long" line="429"/>
+                </scope>
+            </method>
+            <method name="processAudioBuffers" type="void" line="441">
+                <comment line="484">
+                    perform control logic                    
+                </comment>
+                <comment line="492">
+                    Active Sensing                    
+                </comment>
+                <comment line="493">
+                    if no message occurs for max 1000 ms                    
+                </comment>
+                <comment line="494">
+                    then do AllSoundOff on all channels                    
+                </comment>
+                <comment line="539">
+                    Make backup of left,right,mono channels                    
+                </comment>
+                <comment line="557">
+                    Reroute default left,right output                    
+                </comment>
+                <comment line="558">
+                    to channelmixer left,right input/output                    
+                </comment>
+                <comment line="677">
+                    Run effects                    
+                </comment>
+                <comment line="687">
+                    Set Volume / Balance                    
+                </comment>
+                <scope line="444"/>
+                <scope line="449"/>
+                <scope line="459"/>
+                <scope line="463"/>
+                <scope line="467"/>
+                <scope line="471"/>
+                <scope line="475"/>
+                <declaration name="volume_left" type="double" line="479"/>
+                <declaration name="volume_right" type="double" line="480"/>
+                <declaration name="act_registeredMixers" type="SoftChannelMixerContainer[]" line="482"/>
+                <scope line="485">
+                    <declaration name="msec_pos" type="long" line="487"/>
+                    <scope line="491">
+                        <scope line="495"/>
+                    </scope>
+                    <declaration name="volume" type="double" line="508"/>
+                    <declaration name="balance" type="double" line="512"/>
+                    <scope line="522">
+                        <scope line="523"/>
+                    </scope>
+                </scope>
+                <scope line="537">
+                    <declaration name="leftbak" type="SoftAudioBuffer" line="540"/>
+                    <declaration name="rightbak" type="SoftAudioBuffer" line="541"/>
+                    <declaration name="monobak" type="SoftAudioBuffer" line="542"/>
+                    <declaration name="delayleftbak" type="SoftAudioBuffer" line="543"/>
+                    <declaration name="delayrightbak" type="SoftAudioBuffer" line="544"/>
+                    <declaration name="delaymonobak" type="SoftAudioBuffer" line="545"/>
+                    <declaration name="bufferlen" type="int" line="547"/>
+                    <declaration name="cbuffer" type="float[][]" line="549"/>
+                    <declaration name="obuffer" type="float[][]" line="550"/>
+                    <scope line="555">
+                        <scope line="571"/>
+                        <scope line="575"/>
+                        <scope line="579"/>
+                        <declaration name="hasactivevoices" type="boolean" line="587"/>
+                        <scope line="590"/>
+                        <scope line="596">
+                            <declaration name="mono" type="float[]" line="597"/>
+                            <declaration name="left" type="float[]" line="598"/>
+                            <scope line="599">
+                                <declaration name="right" type="float[]" line="600"/>
+                                <scope line="601">
+                                    <declaration name="v" type="float" line="602"/>
+                                </scope>
+                            </scope>
+                            <scope line="608">
+                                <scope line="609"/>
+                            </scope>
+                        </scope>
+                        <scope line="615">
+                            <scope line="616"/>
+                        </scope>
+                        <scope line="622">
+                            <declaration name="cbuff" type="float[]" line="623"/>
+                            <declaration name="obuff" type="float[]" line="624"/>
+                        </scope>
+                        <scope line="629">
+                            <scope line="630">
+                                <scope line="631">
+                                    <scope line="632"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="657">
+                    <declaration name="mono" type="float[]" line="658"/>
+                    <declaration name="left" type="float[]" line="659"/>
+                    <declaration name="bufferlen" type="int" line="660"/>
+                    <scope line="661">
+                        <declaration name="right" type="float[]" line="662"/>
+                        <scope line="663">
+                            <declaration name="v" type="float" line="664"/>
+                        </scope>
+                    </scope>
+                    <scope line="670">
+                        <scope line="671"/>
+                    </scope>
+                </scope>
+                <scope line="688">
+                    <declaration name="left" type="float[]" line="689"/>
+                    <declaration name="right" type="float[]" line="690"/>
+                    <declaration name="bufferlen" type="int" line="691"/>
+                    <declaration name="amp" type="float" line="693"/>
+                    <declaration name="amp_delta" type="float" line="694"/>
+                    <scope line="697"/>
+                    <scope line="701">
+                        <scope line="704"/>
+                    </scope>
+                </scope>
+                <scope line="712">
+                    <scope line="713">
+                        <declaration name="left" type="float[]" line="714"/>
+                        <declaration name="right" type="float[]" line="715"/>
+                        <declaration name="bufferlen" type="int" line="716"/>
+                        <declaration name="amp" type="float" line="717"/>
+                        <scope line="721"/>
+                    </scope>
+                </scope>
+                <scope line="732">
+                    <declaration name="midimessages_size" type="int" line="734"/>
+                    <scope line="735"/>
+                    <scope line="740">
+                        <scope line="743">
+                            <scope line="745"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="activity" type="void" line="763">
+                <declaration name="silent_samples" type="long" line="764"/>
+                <scope line="766">
+                    <scope line="769"/>
+                </scope>
+            </method>
+            <method name="stopMixer" type="void" line="778">
+                <params>
+                    <param name="mixer" type="ModelChannelMixer"/>
+                </params>
+            </method>
+            <method name="registerMixer" type="void" line="784">
+                <params>
+                    <param name="mixer" type="ModelChannelMixer"/>
+                </params>
+                <declaration name="mixercontainer" type="SoftChannelMixerContainer" line="787"/>
+                <scope line="789"/>
+            </method>
+            <method name="SoftMainMixer" type="constructor" line="798">
+                <params>
+                    <param name="synth" type="SoftSynthesizer"/>
+                </params>
+                <comment line="874">
+                    boolean pusher_silent2;
+                    synchronized (control_mutex) {
+                    pusher_silent2 = pusher_silent;
+                    }                    
+                </comment>
+                <declaration name="buffersize" type="int" line="812"/>
+                <scope line="821"/>
+                <declaration name="samplerate" type="float" line="830"/>
+                <declaration name="controlrate" type="float" line="831"/>
+                <anonymous_class line="860">
+                    <declaration name="buffers" type="SoftAudioBuffer[]" line="862"/>
+                    <declaration name="nrofchannels" type="int" line="863"/>
+                    <declaration name="buffersize" type="int" line="865"/>
+                    <declaration name="bbuffer" type="byte[]" line="866"/>
+                    <declaration name="bbuffer_pos" type="int" line="870"/>
+                    <declaration name="single" type="byte[]" line="871"/>
+                    <method name="fillBuffer" type="void" line="873">
+                        <comment line="874">
+                            boolean pusher_silent2;
+                            synchronized (control_mutex) {
+                            pusher_silent2 = pusher_silent;
+                            }                            
+                        </comment>
+                    </method>
+                    <method name="read" type="int" line="886">
+                        <params>
+                            <param name="b" type="byte[]"/>
+                            <param name="off" type="int"/>
+                            <param name="len" type="int"/>
+                        </params>
+                        <declaration name="bbuffer_len" type="int" line="887"/>
+                        <declaration name="offlen" type="int" line="888"/>
+                        <declaration name="orgoff" type="int" line="889"/>
+                        <declaration name="bbuffer" type="byte[]" line="890"/>
+                        <scope line="891">
+                            <scope line="894">
+                                <declaration name="bbuffer_pos" type="int" line="895"/>
+                            </scope>
+                        </scope>
+                    </method>
+                    <method name="read" type="int" line="906">
+                        <declaration name="ret" type="int" line="907"/>
+                    </method>
+                    <method name="available" type="int" line="913"/>
+                    <method name="close" type="void" line="917"/>
+                </anonymous_class>
+                <declaration name="in" type="InputStream" line="860"/>
+            </method>
+            <method name="getInputStream" type="AudioInputStream" line="926"/>
+            <method name="reset" type="void" line="930">
+                <comment line="949">
+                    Reset Reverb                    
+                </comment>
+                <comment line="952">
+                    Reset Chorus                    
+                </comment>
+                <declaration name="channels" type="SoftChannel[]" line="932"/>
+                <scope line="933">
+                    <scope line="937"/>
+                </scope>
+            </method>
+            <method name="setVolume" type="void" line="957">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+                <scope line="958"/>
+            </method>
+            <method name="setBalance" type="void" line="963">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+                <scope line="964"/>
+            </method>
+            <method name="setFineTuning" type="void" line="969">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+                <scope line="970"/>
+            </method>
+            <method name="setCoarseTuning" type="void" line="975">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+                <scope line="976"/>
+            </method>
+            <method name="getVolume" type="int" line="981">
+                <scope line="982"/>
+            </method>
+            <method name="getBalance" type="int" line="987">
+                <scope line="988"/>
+            </method>
+            <method name="getFineTuning" type="int" line="993">
+                <scope line="994"/>
+            </method>
+            <method name="getCoarseTuning" type="int" line="999">
+                <scope line="1000"/>
+            </method>
+            <method name="globalParameterControlChange" type="void" line="1006">
+                <params>
+                    <param name="slothpath" type="int[]"/>
+                    <param name="params" type="long[]"/>
+                    <param name="paramsvalue" type="long[]"/>
+                </params>
+                <comment line="1012">
+                    slothpath: 01xx are reserved only for GM2                    
+                </comment>
+                <scope line="1010">
+                    <scope line="1014">
+                        <scope line="1015"/>
+                    </scope>
+                    <scope line="1020">
+                        <scope line="1021"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="processMessage" type="void" line="1031">
+                <params>
+                    <param name="object" type="Object"/>
+                </params>
+            </method>
+            <method name="processMessage" type="void" line="1038">
+                <params>
+                    <param name="message" type="MidiMessage"/>
+                </params>
+                <scope line="1039">
+                    <declaration name="sms" type="ShortMessage" line="1040"/>
+                </scope>
+            </method>
+            <method name="processMessage" type="void" line="1048">
+                <params>
+                    <param name="data" type="byte[]"/>
+                </params>
+                <declaration name="status" type="int" line="1049"/>
+                <scope line="1053"/>
+                <declaration name="cmd" type="int" line="1058"/>
+                <declaration name="ch" type="int" line="1059"/>
+                <declaration name="data1" type="int" line="1061"/>
+                <declaration name="data2" type="int" line="1062"/>
+            </method>
+            <method name="processMessage" type="void" line="1076">
+                <params>
+                    <param name="ch" type="int"/>
+                    <param name="cmd" type="int"/>
+                    <param name="data1" type="int"/>
+                    <param name="data2" type="int"/>
+                </params>
+                <scope line="1077"/>
+                <scope line="1081">
+                    <declaration name="status" type="int" line="1082"/>
+                    <scope line="1085"/>
+                </scope>
+                <declaration name="channels" type="SoftChannel[]" line="1095"/>
+                <declaration name="softchannel" type="SoftChannel" line="1098"/>
+            </method>
+            <method name="getMicrosecondPosition" type="long" line="1131">
+                <scope line="1133">
+                    <scope line="1135"/>
+                </scope>
+            </method>
+            <method name="close" type="void" line="1143"/>
+        </class>
+    </source>

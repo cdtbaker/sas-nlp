@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.provider.certpath">
+        <import package="java.math.BigInteger"/>
+        <import package="java.util"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.security.Security"/>
+        <import package="java.security.cert"/>
+        <import package="java.security.cert.CertPathValidatorException.BasicReason"/>
+        <import package="java.net.URI"/>
+        <import package="java.net.URISyntaxException"/>
+        <import package="javax.security.auth.x500.X500Principal"/>
+        <import package="sun.security.provider.certpath.OCSP"/>
+        <import package="sun.security.util.Debug"/>
+        <import package="sun.security.x509"/>
+        <class name="OCSPChecker" line="43">
+            <extends class="PKIXCertPathChecker"/>
+            <comment line="368">
+                The OCSP security property values are in the following order:
+                   1. ocsp.responderURL
+                   2. ocsp.responderCertSubjectName
+                   3. ocsp.responderCertIssuerName
+                   4. ocsp.responderCertSerialNumber                
+            </comment>
+            <comment line="411">
+                Retrieves the values of the OCSP security properties.                
+            </comment>
+            <comment line="434">
+                Removes any non-hexadecimal characters from a string.                
+            </comment>
+            <javadoc line="43">
+                OCSPChecker is a &lt;code&gt;PKIXCertPathChecker&lt;/code&gt; that uses the
+                  Online Certificate Status Protocol (OCSP) as specified in RFC 2560
+                  &lt;a href=&quot;http://www.ietf.org/rfc/rfc2560.txt&quot;&gt;
+                  http://www.ietf.org/rfc/rfc2560.txt&lt;/a&gt;.                
+                <author>
+                    Ram Marti                    
+                </author>
+            </javadoc>
+            <declaration name="OCSP_ENABLE_PROP" type="String" line="53"/>
+            <declaration name="OCSP_URL_PROP" type="String" line="54"/>
+            <declaration name="OCSP_CERT_SUBJECT_PROP" type="String" line="55"/>
+            <declaration name="OCSP_CERT_ISSUER_PROP" type="String" line="57"/>
+            <declaration name="OCSP_CERT_NUMBER_PROP" type="String" line="58"/>
+            <declaration name="HEX_DIGITS" type="String" line="61"/>
+            <declaration name="DEBUG" type="Debug" line="62"/>
+            <declaration name="dump" type="boolean" line="63"/>
+            <declaration name="remainingCerts" type="int" line="65"/>
+            <declaration name="certs" type="X509Certificate[]" line="67"/>
+            <declaration name="cp" type="CertPath" line="69"/>
+            <declaration name="pkixParams" type="PKIXParameters" line="71"/>
+            <declaration name="onlyEECert" type="boolean" line="73"/>
+            <javadoc line="75">
+                Default Constructor                
+                <param>
+                    certPath the X509 certification path                    
+                </param>
+                <param>
+                    pkixParams the input PKIX parameter set                    
+                </param>
+                <throws>
+                    CertPathValidatorException if OCSPChecker can not be created                    
+                </throws>
+            </javadoc>
+            <method name="OCSPChecker" type="constructor" line="83">
+                <params>
+                    <param name="certPath" type="CertPath"/>
+                    <param name="pkixParams" type="PKIXParameters"/>
+                </params>
+            </method>
+            <method name="OCSPChecker" type="constructor" line="88">
+                <params>
+                    <param name="certPath" type="CertPath"/>
+                    <param name="pkixParams" type="PKIXParameters"/>
+                    <param name="onlyEECert" type="boolean"/>
+                </params>
+                <declaration name="tmp" type="List&lt;? extends Certificate&gt;" line="93"/>
+            </method>
+            <javadoc line="98">
+                Initializes the internal state of the checker from parameters
+                  specified in the constructor                
+            </javadoc>
+            <method name="init" type="void" line="103">
+                <params>
+                    <param name="forward" type="boolean"/>
+                </params>
+                <scope line="104"/>
+                <scope line="106"/>
+            </method>
+            <method name="isForwardCheckingSupported" type="boolean" line="112"/>
+            <method name="getSupportedExtensions" type="Set<String>" line="116"/>
+            <javadoc line="120">
+                Sends an OCSPRequest for the certificate to the OCSP Server and
+                  processes the response back from the OCSP Server.                
+                <param>
+                    cert the Certificate                    
+                </param>
+                <param>
+                    unresolvedCritExts the unresolved critical extensions                    
+                </param>
+                <exception>
+                    CertPathValidatorException Exception is thrown if the
+                      certificate has been revoked.                    
+                </exception>
+            </javadoc>
+            <method name="check" type="void" line="131">
+                <params>
+                    <param name="cert" type="Certificate"/>
+                    <param name="unresolvedCritExts" type="Collection<String>"/>
+                </params>
+                <comment line="133">
+                    Decrement the certificate counter                    
+                </comment>
+                <comment line="150">
+                    OCSP security property values, in the following order:
+                       1. ocsp.responderURL
+                       2. ocsp.responderCertSubjectName
+                       3. ocsp.responderCertIssuerName
+                       4. ocsp.responderCertSerialNumber                    
+                </comment>
+                <comment line="157">
+                    should cache these properties to avoid calling every time?                    
+                </comment>
+                <comment line="160">
+                    Check whether OCSP is feasible before seeking cert information                    
+                </comment>
+                <comment line="163">
+                    When responder&apos;s subject name is set then the issuer/serial                    
+                </comment>
+                <comment line="164">
+                    properties are ignored                    
+                </comment>
+                <comment line="172">
+                    remove colon or space separators                    
+                </comment>
+                <comment line="181">
+                    If the OCSP responder cert properties are set then the                    
+                </comment>
+                <comment line="182">
+                    identified cert must be located in the trust anchors or                    
+                </comment>
+                <comment line="183">
+                    in the cert stores.                    
+                </comment>
+                <comment line="189">
+                    Set the issuer certificate to the next cert in the chain                    
+                </comment>
+                <comment line="190">
+                    (unless we&apos;re processing the final cert).                    
+                </comment>
+                <comment line="196">
+                    done                    
+                </comment>
+                <comment line="198">
+                    By default, the OCSP responder&apos;s cert is the same as the                    
+                </comment>
+                <comment line="199">
+                    issuer of the cert being validated.                    
+                </comment>
+                <comment line="209">
+                    Check anchor certs for:                    
+                </comment>
+                <comment line="210">
+                    - the issuer cert (of the cert being validated)                    
+                </comment>
+                <comment line="211">
+                    - the OCSP responder&apos;s cert                    
+                </comment>
+                <comment line="219">
+                    Extract the anchor certs                    
+                </comment>
+                <comment line="241">
+                    Check if anchor cert is the issuer cert                    
+                </comment>
+                <comment line="246">
+                    done                    
+                </comment>
+                <comment line="248">
+                    By default, the OCSP responder&apos;s cert is the same as                    
+                </comment>
+                <comment line="249">
+                    the issuer of the cert being validated.                    
+                </comment>
+                <comment line="260">
+                    Check if anchor cert is the responder cert                    
+                </comment>
+                <comment line="262">
+                    Satisfy the responder subject name property only, or                    
+                </comment>
+                <comment line="263">
+                    satisfy the responder issuer name and serial number                    
+                </comment>
+                <comment line="264">
+                    properties only                    
+                </comment>
+                <comment line="275">
+                    done                    
+                </comment>
+                <comment line="284">
+                    Check cert stores if responder cert has not yet been found                    
+                </comment>
+                <comment line="307">
+                    ignore and try next certStore                    
+                </comment>
+                <comment line="315">
+                    done                    
+                </comment>
+                <comment line="323">
+                    Could not find the certificate identified in the OCSP properties                    
+                </comment>
+                <comment line="330">
+                    The algorithm constraints of the OCSP trusted responder certificate                    
+                </comment>
+                <comment line="331">
+                    does not need to be checked in this code. The constraints will be                    
+                </comment>
+                <comment line="332">
+                    checked when the responder&apos;s certificate is validated.                    
+                </comment>
+                <comment line="345">
+                    Wrap exceptions in CertPathValidatorException so that                    
+                </comment>
+                <comment line="346">
+                    we can fallback to CRLs, if enabled.                    
+                </comment>
+                <declaration name="currCertImpl" type="X509CertImpl" line="136"/>
+                <scope line="137"/>
+                <scope line="139"/>
+                <scope line="143">
+                    <scope line="144"/>
+                </scope>
+                <declaration name="properties" type="String[]" line="158"/>
+                <declaration name="uri" type="URI" line="161"/>
+                <declaration name="responderSubjectName" type="X500Principal" line="165"/>
+                <declaration name="responderIssuerName" type="X500Principal" line="166"/>
+                <declaration name="responderSerialNumber" type="BigInteger" line="167"/>
+                <scope line="168"/>
+                <scope line="170">
+                    <declaration name="value" type="String" line="173"/>
+                </scope>
+                <scope line="175"/>
+                <declaration name="seekResponderCert" type="boolean" line="184"/>
+                <scope line="185"/>
+                <declaration name="issuerCert" type="X509Certificate" line="191"/>
+                <declaration name="seekIssuerCert" type="boolean" line="192"/>
+                <declaration name="responderCert" type="X509Certificate" line="193"/>
+                <scope line="194">
+                    <scope line="200">
+                        <scope line="202"/>
+                    </scope>
+                </scope>
+                <scope line="212">
+                    <scope line="214"/>
+                    <declaration name="anchors" type="Iterator&lt;TrustAnchor&gt;" line="220"/>
+                    <scope line="222"/>
+                    <declaration name="certIssuerName" type="X500Principal" line="227"/>
+                    <scope line="229">
+                        <declaration name="anchor" type="TrustAnchor" line="231"/>
+                        <declaration name="anchorCert" type="X509Certificate" line="232"/>
+                        <declaration name="anchorSubjectName" type="X500Principal" line="233"/>
+                        <scope line="236"/>
+                        <scope line="243">
+                            <scope line="250">
+                                <scope line="252"/>
+                            </scope>
+                        </scope>
+                        <scope line="261">
+                            <scope line="272"/>
+                        </scope>
+                    </scope>
+                    <scope line="279"/>
+                    <scope line="285">
+                        <scope line="286"/>
+                        <declaration name="filter" type="X509CertSelector" line="290"/>
+                        <scope line="291"/>
+                        <scope line="295"/>
+                        <scope line="300">
+                            <declaration name="certStores" type="List&lt;CertStore&gt;" line="301"/>
+                            <scope line="302">
+                                <declaration name="i" type="Iterator" line="303"/>
+                                <scope line="304"/>
+                                <scope line="306">
+                                    <scope line="308"/>
+                                </scope>
+                                <scope line="313"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="324"/>
+                <declaration name="certId" type="CertId" line="334"/>
+                <declaration name="response" type="OCSPResponse" line="335"/>
+                <scope line="336"/>
+                <scope line="341">
+                    <scope line="342"/>
+                    <scope line="344"/>
+                </scope>
+                <declaration name="rs" type="RevocationStatus" line="351"/>
+                <declaration name="certStatus" type="RevocationStatus.CertStatus" line="352"/>
+                <scope line="353">
+                    <declaration name="t" type="Throwable" line="354"/>
+                </scope>
+                <scope line="360"/>
+            </method>
+            <method name="getOCSPServerURI" type="URI" line="375">
+                <params>
+                    <param name="currCertImpl" type="X509CertImpl"/>
+                    <param name="responderURL" type="String"/>
+                </params>
+                <comment line="385">
+                    Examine the certificate&apos;s AuthorityInfoAccess extension                    
+                </comment>
+                <scope line="377">
+                    <scope line="378"/>
+                    <scope line="380"/>
+                </scope>
+                <declaration name="aia" type="AuthorityInfoAccessExtension" line="386"/>
+                <scope line="388"/>
+                <declaration name="descriptions" type="List&lt;AccessDescription&gt;" line="393"/>
+                <scope line="394">
+                    <scope line="396">
+                        <declaration name="generalName" type="GeneralName" line="398"/>
+                        <scope line="399">
+                            <declaration name="uri" type="URIName" line="400"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getOCSPProperties" type="String[]" line="413">
+                <declaration name="properties" type="String[]" line="414"/>
+                <anonymous_class line="417">
+                    <method name="run" type="Void" line="418"/>
+                </anonymous_class>
+            </method>
+            <method name="stripOutSeparators" type="String" line="436">
+                <params>
+                    <param name="value" type="String"/>
+                </params>
+                <declaration name="chars" type="char[]" line="437"/>
+                <declaration name="hexNumber" type="StringBuilder" line="438"/>
+                <scope line="439">
+                    <scope line="440"/>
+                </scope>
+            </method>
+        </class>
+    </source>

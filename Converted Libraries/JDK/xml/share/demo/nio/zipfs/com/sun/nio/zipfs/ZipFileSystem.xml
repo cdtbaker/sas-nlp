@@ -1,0 +1,2660 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.nio.zipfs">
+        <import package="java.io.ByteArrayInputStream"/>
+        <import package="java.io.ByteArrayOutputStream"/>
+        <import package="java.io.EOFException"/>
+        <import package="java.io.File"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.nio.ByteBuffer"/>
+        <import package="java.nio.MappedByteBuffer"/>
+        <import package="java.nio.channels"/>
+        <import package="java.nio.file"/>
+        <import package="java.nio.file.attribute"/>
+        <import package="java.nio.file.spi"/>
+        <import package="java.util"/>
+        <import package="java.util.concurrent.locks.ReadWriteLock"/>
+        <import package="java.util.concurrent.locks.ReentrantReadWriteLock"/>
+        <import package="java.util.regex.Pattern"/>
+        <import package="java.util.zip.CRC32"/>
+        <import package="java.util.zip.Inflater"/>
+        <import package="java.util.zip.Deflater"/>
+        <import package="java.util.zip.InflaterInputStream"/>
+        <import package="java.util.zip.DeflaterOutputStream"/>
+        <import package="java.util.zip.ZipException"/>
+        <import package="java.util.zip.ZipError"/>
+        <import package="java.lang.Boolean"/>
+        <import package="com.sun.nio.zipfs.ZipConstants"/>
+        <import package="com.sun.nio.zipfs.ZipUtils"/>
+        <import package="java.nio.file.StandardOpenOption"/>
+        <import package="java.nio.file.StandardCopyOption"/>
+        <class name="ZipFileSystem" line="64">
+            <extends class="FileSystem"/>
+            <comment line="79">
+                configurable by env map                
+            </comment>
+            <comment line="80">
+                default dir for the file system                
+            </comment>
+            <comment line="81">
+                default encoding for name/comment                
+            </comment>
+            <comment line="82">
+                use a temp file for newOS, default                
+            </comment>
+            <comment line="83">
+                is to use BAOS for better performance                
+            </comment>
+            <comment line="84">
+                create a new zip if not exists                
+            </comment>
+            <comment line="379">
+                returns the list of child paths of &quot;path&quot;                
+            </comment>
+            <comment line="479">
+                Returns an output stream for writing the contents into the specified                
+            </comment>
+            <comment line="480">
+                entry.                
+            </comment>
+            <comment line="524">
+                Returns an input stream for reading the contents of the specified                
+            </comment>
+            <comment line="525">
+                file entry.                
+            </comment>
+            <comment line="551">
+                Returns a Writable/ReadByteChannel for now. Might consdier to use                
+            </comment>
+            <comment line="552">
+                newFileChannel() instead, which dump the entry data into a regular                
+            </comment>
+            <comment line="553">
+                file on the default file system and create a FileChannel on top of                
+            </comment>
+            <comment line="554">
+                it.                
+            </comment>
+            <comment line="672">
+                Returns a FileChannel of the specified entry.                
+            </comment>
+            <comment line="673">
+                                
+            </comment>
+            <comment line="674">
+                This implementation creates a temporary file on the default file system,                
+            </comment>
+            <comment line="675">
+                copy the entry data into it if the entry exists, and then create a                
+            </comment>
+            <comment line="676">
+                FileChannel on top of it.                
+            </comment>
+            <comment line="813">
+                the outstanding input streams that need to be closed                
+            </comment>
+            <comment line="817">
+                the ex-channel and ex-path that need to close when their outstanding                
+            </comment>
+            <comment line="818">
+                input streams are all closed by the obtainers.                
+            </comment>
+            <comment line="840">
+                check if all parents really exit. ZIP spec does not require                
+            </comment>
+            <comment line="841">
+                the existence of any &quot;parent directory&quot;.                
+            </comment>
+            <comment line="882">
+                /////////////////////////////////////////////////////////////////                
+            </comment>
+            <comment line="885">
+                channel to the zipfile                
+            </comment>
+            <comment line="886">
+                CEN &amp; ENDHDR                
+            </comment>
+            <comment line="888">
+                position of first LOC header (usually 0)                
+            </comment>
+            <comment line="892">
+                name -&gt; pos (in cen), IndexNode itself can be used as a &quot;key&quot;                
+            </comment>
+            <comment line="920">
+                Reads len bytes of data from the specified offset into buf.                
+            </comment>
+            <comment line="921">
+                Returns the total number of bytes read.                
+            </comment>
+            <comment line="922">
+                Each/every byte read from here (except the cen, which is mapped).                
+            </comment>
+            <comment line="940">
+                Searches for end of central directory (END) header. The contents of                
+            </comment>
+            <comment line="941">
+                the END header will be read and placed in endbuf. Returns the file                
+            </comment>
+            <comment line="942">
+                position of the END header, otherwise returns -1 if the END header                
+            </comment>
+            <comment line="943">
+                was not found or an error occurred.                
+            </comment>
+            <comment line="1009">
+                Reads zip file central directory. Returns the file position of first                
+            </comment>
+            <comment line="1010">
+                CEN header, otherwise returns -1 if an error occured. If zip-&gt;msg != NULL                
+            </comment>
+            <comment line="1011">
+                then the error was a zip format error and zip-&gt;msg has the error text.                
+            </comment>
+            <comment line="1012">
+                Always pass in -1 for knownTotal; it&apos;s used for a recursive call.                
+            </comment>
+            <comment line="1071">
+                Creates a new empty temporary file in the same directory as the                
+            </comment>
+            <comment line="1072">
+                specified file.  A variant of File.createTempFile.                
+            </comment>
+            <comment line="1083">
+                //////////////////update &amp; sync //////////////////////////////////////                
+            </comment>
+            <comment line="1087">
+                shared key. consumer guarantees the &quot;writeLock&quot; before use it.                
+            </comment>
+            <comment line="1119">
+                copy over the whole LOC entry (header if necessary, data and ext) from                
+            </comment>
+            <comment line="1120">
+                old zip to the new one.                
+            </comment>
+            <comment line="1166">
+                sync the zip file system, if there is any udpate                
+            </comment>
+            <comment line="1345">
+                Returns an out stream for either                
+            </comment>
+            <comment line="1346">
+                (1) writing the contents of a new entry, if the entry exits, or                
+            </comment>
+            <comment line="1347">
+                (2) updating/replacing the contents of the specified existing entry.                
+            </comment>
+            <comment line="1442">
+                Inner class implementing the input stream used to read                
+            </comment>
+            <comment line="1443">
+                a (possibly compressed) zip file entry.                
+            </comment>
+            <comment line="1593">
+                Maxmum number of de/inflater we cache                
+            </comment>
+            <comment line="1595">
+                List of available Inflater objects for decompression                
+            </comment>
+            <comment line="1598">
+                Gets an inflater from the list of available inflaters or allocates                
+            </comment>
+            <comment line="1599">
+                a new one.                
+            </comment>
+            <comment line="1612">
+                Releases the specified inflater to the list of available inflaters.                
+            </comment>
+            <comment line="1624">
+                List of available Deflater objects for compression                
+            </comment>
+            <comment line="1627">
+                Gets an deflater from the list of available deflaters or allocates                
+            </comment>
+            <comment line="1628">
+                a new one.                
+            </comment>
+            <comment line="1641">
+                Releases the specified inflater to the list of available inflaters.                
+            </comment>
+            <comment line="1653">
+                End of central directory record                
+            </comment>
+            <comment line="1722">
+                Internal node that links a &quot;name&quot; to its pos in cen table.                
+            </comment>
+            <comment line="1723">
+                The node itself can be used as a &quot;key&quot; to lookup itself in                
+            </comment>
+            <comment line="1724">
+                the HashMap inodes.                
+            </comment>
+            <comment line="2285">
+                ZIP directory has two issues:                
+            </comment>
+            <comment line="2286">
+                (1) ZIP spec does not require the ZIP file to include                
+            </comment>
+            <comment line="2287">
+                directory entry                
+            </comment>
+            <comment line="2288">
+                (2) all entries are not stored/organized in a &quot;tree&quot;                
+            </comment>
+            <comment line="2289">
+                structure.                
+            </comment>
+            <comment line="2290">
+                A possible solution is to build the node tree ourself as                
+            </comment>
+            <comment line="2291">
+                implemented below.                
+            </comment>
+            <javadoc line="64">
+                A FileSystem built on a zip file                
+                <author>
+                    Xueming Shen                    
+                </author>
+            </javadoc>
+            <declaration name="provider" type="ZipFileSystemProvider" line="72"/>
+            <declaration name="defaultdir" type="ZipPath" line="73"/>
+            <declaration name="readOnly" type="boolean" line="74"/>
+            <declaration name="zfpath" type="Path" line="75"/>
+            <declaration name="zc" type="ZipCoder" line="76"/>
+            <declaration name="defaultDir" type="String" line="79"/>
+            <declaration name="nameEncoding" type="String" line="80"/>
+            <declaration name="useTempFile" type="boolean" line="81"/>
+            <declaration name="createNew" type="boolean" line="83"/>
+            <declaration name="isWindows" type="boolean" line="84"/>
+            <method name="ZipFileSystem" type="constructor" line="91">
+                <params>
+                    <param name="provider" type="ZipFileSystemProvider"/>
+                    <param name="zfpath" type="Path"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <comment line="92">
+                    configurable env setup                    
+                </comment>
+                <comment line="113">
+                    sm and existence check                    
+                </comment>
+                <scope line="104">
+                    <scope line="105">
+                        <scope line="106"/>
+                    </scope>
+                    <scope line="109"/>
+                </scope>
+            </method>
+            <method name="provider" type="FileSystemProvider" line="124"/>
+            <method name="getSeparator" type="String" line="129"/>
+            <method name="isOpen" type="boolean" line="134"/>
+            <method name="isReadOnly" type="boolean" line="139"/>
+            <method name="checkWritable" type="void" line="143"/>
+            <method name="getRootDirectories" type="Iterable<Path>" line="149">
+                <declaration name="pathArr" type="ArrayList&lt;Path&gt;" line="150"/>
+            </method>
+            <method name="getDefaultDir" type="ZipPath" line="155"/>
+            <method name="getPath" type="ZipPath" line="160">
+                <params>
+                    <param name="first" type="String"/>
+                    <param name="more" type="String"/>
+                </params>
+                <declaration name="path" type="String" line="161"/>
+                <scope line="162"/>
+                <scope line="164">
+                    <declaration name="sb" type="StringBuilder" line="165"/>
+                    <scope line="167">
+                        <scope line="168"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getUserPrincipalLookupService" type="UserPrincipalLookupService" line="180"/>
+            <method name="newWatchService" type="WatchService" line="185"/>
+            <method name="getFileStore" type="FileStore" line="189">
+                <params>
+                    <param name="path" type="ZipPath"/>
+                </params>
+            </method>
+            <method name="getFileStores" type="Iterable<FileStore>" line="194">
+                <declaration name="list" type="ArrayList&lt;FileStore&gt;" line="195"/>
+            </method>
+            <declaration name="supportedFileAttributeViews" type="Set&lt;String&gt;" line="200"/>
+            <method name="supportedFileAttributeViews" type="Set<String>" line="205"/>
+            <method name="toString" type="String" line="210"/>
+            <method name="getZipFile" type="Path" line="214"/>
+            <declaration name="GLOB_SYNTAX" type="String" line="218"/>
+            <declaration name="REGEX_SYNTAX" type="String" line="219"/>
+            <method name="getPathMatcher" type="PathMatcher" line="222">
+                <params>
+                    <param name="syntaxAndInput" type="String"/>
+                </params>
+                <comment line="240">
+                    return matcher                    
+                </comment>
+                <declaration name="pos" type="int" line="223"/>
+                <scope line="224"/>
+                <declaration name="syntax" type="String" line="227"/>
+                <declaration name="input" type="String" line="228"/>
+                <declaration name="expr" type="String" line="229"/>
+                <scope line="230"/>
+                <scope line="232">
+                    <scope line="233"/>
+                    <scope line="235"/>
+                </scope>
+                <declaration name="pattern" type="Pattern" line="241"/>
+                <anonymous_class line="242">
+                    <method name="matches" type="boolean" line="244">
+                        <params>
+                            <param name="path" type="Path"/>
+                        </params>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="close" type="void" line="251">
+                <comment line="256">
+                    set closed                    
+                </comment>
+                <comment line="260">
+                    unlock and close all remaining streams                    
+                </comment>
+                <comment line="265">
+                    lock and sync                    
+                </comment>
+                <comment line="268">
+                    close the ch just in case no update                    
+                </comment>
+                <comment line="269">
+                    and sync dose not close the ch                    
+                </comment>
+                <scope line="253"/>
+                <scope line="257"/>
+                <scope line="260">
+                    <declaration name="copy" type="Set&lt;InputStream&gt;" line="261"/>
+                </scope>
+                <scope line="266"/>
+                <scope line="269"/>
+                <scope line="273"/>
+                <scope line="277"/>
+                <declaration name="ioe" type="IOException" line="282"/>
+                <scope line="283">
+                    <scope line="284">
+                        <scope line="285"/>
+                        <scope line="287"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getFileAttributes" type="ZipFileAttributes" line="302">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <comment line="312">
+                    pseudo directory                    
+                </comment>
+                <comment line="313">
+                    STORED for dir                    
+                </comment>
+                <comment line="314">
+                    -1 for all times                    
+                </comment>
+                <declaration name="e" type="Entry" line="303"/>
+                <scope line="305">
+                    <scope line="308">
+                        <declaration name="inode" type="IndexNode" line="309"/>
+                    </scope>
+                </scope>
+                <scope line="316"/>
+            </method>
+            <method name="setTimes" type="void" line="324">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="mtime" type="FileTime"/>
+                    <param name="atime" type="FileTime"/>
+                    <param name="ctime" type="FileTime"/>
+                </params>
+                <comment line="329">
+                    ensureOpen checked                    
+                </comment>
+                <comment line="333">
+                    copy e                    
+                </comment>
+                <scope line="327">
+                    <declaration name="e" type="Entry" line="329"/>
+                </scope>
+                <scope line="341"/>
+            </method>
+            <method name="exists" type="boolean" line="348">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <scope line="350"/>
+                <scope line="353"/>
+            </method>
+            <method name="isDirectory" type="boolean" line="360">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <scope line="362">
+                    <declaration name="n" type="IndexNode" line="363"/>
+                </scope>
+                <scope line="365"/>
+            </method>
+            <method name="toZipPath" type="ZipPath" line="370">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <comment line="371">
+                    make it absolute                    
+                </comment>
+                <declaration name="p" type="byte[]" line="372"/>
+            </method>
+            <method name="iteratorOf" type="Iterator<Path>" line="382">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="filter" type="DirectoryStream.Filter<? super Path>"/>
+                </params>
+                <comment line="383">
+                    iteration of inodes needs exclusive lock                    
+                </comment>
+                <scope line="384">
+                    <declaration name="inode" type="IndexNode" line="386"/>
+                    <declaration name="list" type="List&lt;Path&gt;" line="389"/>
+                    <declaration name="child" type="IndexNode" line="390"/>
+                    <scope line="391">
+                        <declaration name="zp" type="ZipPath" line="392"/>
+                    </scope>
+                </scope>
+                <scope line="398"/>
+            </method>
+            <method name="createDirectory" type="void" line="405">
+                <params>
+                    <param name="dir" type="byte[]"/>
+                    <param name="attrs" type="FileAttribute<?>"/>
+                </params>
+                <comment line="411">
+                    root dir, or exiting dir                    
+                </comment>
+                <comment line="415">
+                    STORED for dir                    
+                </comment>
+                <scope line="409">
+                    <declaration name="e" type="Entry" line="414"/>
+                </scope>
+                <scope line="417"/>
+            </method>
+            <method name="copyFile" type="void" line="424">
+                <params>
+                    <param name="deletesrc" type="boolean"/>
+                    <param name="src" type="byte[]"/>
+                    <param name="dst" type="byte[]"/>
+                    <param name="options" type="CopyOption"/>
+                </params>
+                <comment line="427">
+                    do nothing, src and dst are the same                    
+                </comment>
+                <comment line="432">
+                    ensureOpen checked                    
+                </comment>
+                <comment line="435">
+                    spec says to create dst dir                    
+                </comment>
+                <comment line="454">
+                    copy eSrc entry                    
+                </comment>
+                <comment line="455">
+                    change name                    
+                </comment>
+                <comment line="458">
+                    make it the same type                    
+                </comment>
+                <comment line="459">
+                    if it&apos;s not &quot;rename&quot;, just take the data                    
+                </comment>
+                <scope line="430">
+                    <declaration name="eSrc" type="Entry" line="432"/>
+                    <scope line="435"/>
+                    <declaration name="hasReplace" type="boolean" line="439"/>
+                    <declaration name="hasCopyAttrs" type="boolean" line="440"/>
+                    <scope line="441"/>
+                    <declaration name="eDst" type="Entry" line="447"/>
+                    <scope line="448"/>
+                    <scope line="451"/>
+                    <declaration name="u" type="Entry" line="454"/>
+                    <scope line="457">
+                        <scope line="459">
+                            <scope line="462"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="473"/>
+            </method>
+            <method name="newOutputStream" type="OutputStream" line="482">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="options" type="OpenOption"/>
+                </params>
+                <comment line="497">
+                    only need a readlock, the &quot;update()&quot; will                    
+                </comment>
+                <comment line="498">
+                    try to obtain a writelock when the os is                    
+                </comment>
+                <comment line="499">
+                    being closed.                    
+                </comment>
+                <declaration name="hasCreateNew" type="boolean" line="484"/>
+                <declaration name="hasCreate" type="boolean" line="485"/>
+                <declaration name="hasAppend" type="boolean" line="486"/>
+                <scope line="487"/>
+                <scope line="498">
+                    <declaration name="e" type="Entry" line="500"/>
+                    <scope line="501">
+                        <scope line="504">
+                            <declaration name="is" type="InputStream" line="505"/>
+                            <declaration name="os" type="OutputStream" line="506"/>
+                        </scope>
+                    </scope>
+                    <scope line="512"/>
+                </scope>
+                <scope line="518"/>
+            </method>
+            <method name="newInputStream" type="InputStream" line="525">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <scope line="527">
+                    <declaration name="e" type="Entry" line="529"/>
+                </scope>
+                <scope line="535"/>
+            </method>
+            <method name="checkOptions" type="void" line="540">
+                <params>
+                    <param name="options" type="Set<? extends OpenOption>"/>
+                </params>
+                <comment line="541">
+                    check for options of null type and option is an intance of StandardOpenOption                    
+                </comment>
+                <scope line="542"/>
+            </method>
+            <method name="newByteChannel" type="SeekableByteChannel" line="558">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="options" type="Set<? extends OpenOption>"/>
+                    <param name="attrs" type="FileAttribute<?>"/>
+                </params>
+                <scope line="561">
+                    <scope line="564">
+                        <declaration name="wbc" type="WritableByteChannel" line="565"/>
+                        <declaration name="leftover" type="long" line="567"/>
+                        <scope line="568">
+                            <declaration name="e" type="Entry" line="569"/>
+                        </scope>
+                        <declaration name="offset" type="long" line="573"/>
+                        <anonymous_class line="574">
+                            <declaration name="written" type="long" line="575"/>
+                            <method name="isOpen" type="boolean" line="576"/>
+                            <method name="position" type="long" line="580"/>
+                            <method name="position" type="SeekableByteChannel" line="586">
+                                <params>
+                                    <param name="pos" type="long"/>
+                                </params>
+                            </method>
+                            <method name="read" type="int" line="590">
+                                <params>
+                                    <param name="dst" type="ByteBuffer"/>
+                                </params>
+                            </method>
+                            <method name="truncate" type="SeekableByteChannel" line="596">
+                                <params>
+                                    <param name="size" type="long"/>
+                                </params>
+                            </method>
+                            <method name="write" type="int" line="600">
+                                <params>
+                                    <param name="src" type="ByteBuffer"/>
+                                </params>
+                                <declaration name="n" type="int" line="601"/>
+                            </method>
+                            <method name="size" type="long" line="606"/>
+                            <method name="close" type="void" line="610"/>
+                        </anonymous_class>
+                    </scope>
+                    <scope line="614"/>
+                </scope>
+                <scope line="617">
+                    <scope line="619">
+                        <declaration name="e" type="Entry" line="621"/>
+                        <declaration name="rbc" type="ReadableByteChannel" line="624"/>
+                        <declaration name="size" type="long" line="626"/>
+                        <anonymous_class line="627">
+                            <declaration name="read" type="long" line="628"/>
+                            <method name="isOpen" type="boolean" line="629"/>
+                            <method name="position" type="long" line="633"/>
+                            <method name="position" type="SeekableByteChannel" line="639">
+                                <params>
+                                    <param name="pos" type="long"/>
+                                </params>
+                            </method>
+                            <method name="read" type="int" line="643">
+                                <params>
+                                    <param name="dst" type="ByteBuffer"/>
+                                </params>
+                            </method>
+                            <method name="truncate" type="SeekableByteChannel" line="649">
+                                <params>
+                                    <param name="size" type="long"/>
+                                </params>
+                            </method>
+                            <method name="write" type="int" line="653">
+                                <params>
+                                    <param name="src" type="ByteBuffer"/>
+                                </params>
+                            </method>
+                            <method name="size" type="long" line="657"/>
+                            <method name="close" type="void" line="661"/>
+                        </anonymous_class>
+                    </scope>
+                    <scope line="665"/>
+                </scope>
+            </method>
+            <method name="newFileChannel" type="FileChannel" line="680">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="options" type="Set<? extends OpenOption>"/>
+                    <param name="attrs" type="FileAttribute<?>"/>
+                </params>
+                <comment line="700">
+                    for tmpfile                    
+                </comment>
+                <comment line="715">
+                    is there a better way to hook into the FileChannel&apos;s close method?                    
+                </comment>
+                <comment line="802">
+                    if this is a new fch for reading                    
+                </comment>
+                <declaration name="forWrite" type="boolean" line="682"/>
+                <scope line="685">
+                    <declaration name="e" type="Entry" line="687"/>
+                    <scope line="688">
+                        <scope line="690"/>
+                        <scope line="693"/>
+                    </scope>
+                    <scope line="701"/>
+                    <declaration name="isFCH" type="boolean" line="705"/>
+                    <declaration name="tmpfile" type="Path" line="706"/>
+                    <declaration name="fch" type="FileChannel" line="707"/>
+                    <declaration name="u" type="Entry" line="710"/>
+                    <scope line="711"/>
+                    <anonymous_class line="716">
+                        <method name="write" type="int" line="717">
+                            <params>
+                                <param name="src" type="ByteBuffer"/>
+                            </params>
+                        </method>
+                        <method name="write" type="long" line="722">
+                            <params>
+                                <param name="srcs" type="ByteBuffer[]"/>
+                                <param name="offset" type="int"/>
+                                <param name="length" type="int"/>
+                            </params>
+                        </method>
+                        <method name="position" type="long" line="725"/>
+                        <method name="position" type="FileChannel" line="730">
+                            <params>
+                                <param name="newPosition" type="long"/>
+                            </params>
+                        </method>
+                        <method name="size" type="long" line="734"/>
+                        <method name="truncate" type="FileChannel" line="739">
+                            <params>
+                                <param name="size" type="long"/>
+                            </params>
+                        </method>
+                        <method name="force" type="void" line="745">
+                            <params>
+                                <param name="metaData" type="boolean"/>
+                            </params>
+                        </method>
+                        <method name="transferTo" type="long" line="751">
+                            <params>
+                                <param name="position" type="long"/>
+                                <param name="count" type="long"/>
+                                <param name="target" type="WritableByteChannel"/>
+                            </params>
+                        </method>
+                        <method name="transferFrom" type="long" line="757">
+                            <params>
+                                <param name="src" type="ReadableByteChannel"/>
+                                <param name="position" type="long"/>
+                                <param name="count" type="long"/>
+                            </params>
+                        </method>
+                        <method name="read" type="int" line="760">
+                            <params>
+                                <param name="dst" type="ByteBuffer"/>
+                            </params>
+                        </method>
+                        <method name="read" type="int" line="765">
+                            <params>
+                                <param name="dst" type="ByteBuffer"/>
+                                <param name="position" type="long"/>
+                            </params>
+                        </method>
+                        <method name="read" type="long" line="770">
+                            <params>
+                                <param name="dsts" type="ByteBuffer[]"/>
+                                <param name="offset" type="int"/>
+                                <param name="length" type="int"/>
+                            </params>
+                        </method>
+                        <method name="write" type="int" line="775">
+                            <params>
+                                <param name="src" type="ByteBuffer"/>
+                                <param name="position" type="long"/>
+                            </params>
+                        </method>
+                        <method name="map" type="MappedByteBuffer" line="781">
+                            <params>
+                                <param name="mode" type="MapMode"/>
+                                <param name="position" type="long"/>
+                                <param name="size" type="long"/>
+                            </params>
+                        </method>
+                        <method name="lock" type="FileLock" line="786">
+                            <params>
+                                <param name="position" type="long"/>
+                                <param name="size" type="long"/>
+                                <param name="shared" type="boolean"/>
+                            </params>
+                        </method>
+                        <method name="tryLock" type="FileLock" line="791">
+                            <params>
+                                <param name="position" type="long"/>
+                                <param name="size" type="long"/>
+                                <param name="shared" type="boolean"/>
+                            </params>
+                        </method>
+                        <method name="implCloseChannel" type="void" line="794">
+                            <comment line="802">
+                                if this is a new fch for reading                                
+                            </comment>
+                            <scope line="796"/>
+                            <scope line="801"/>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="807"/>
+            </method>
+            <declaration name="streams" type="Set&lt;InputStream&gt;" line="813"/>
+            <declaration name="exChClosers" type="Set&lt;ExChannelCloser&gt;" line="818"/>
+            <declaration name="tmppaths" type="Set&lt;Path&gt;" line="820"/>
+            <method name="getTempPathForEntry" type="Path" line="821">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <declaration name="tmpPath" type="Path" line="822"/>
+                <scope line="823">
+                    <declaration name="e" type="Entry" line="824"/>
+                    <scope line="825">
+                        <scope line="826"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="removeTempPathForEntry" type="void" line="834">
+                <params>
+                    <param name="path" type="Path"/>
+                </params>
+            </method>
+            <method name="checkParents" type="void" line="841">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <scope line="843">
+                    <scope line="844">
+                        <scope line="845"/>
+                    </scope>
+                </scope>
+                <scope line="849"/>
+            </method>
+            <declaration name="ROOTPATH" type="byte[]" line="854"/>
+            <method name="getParent" type="byte[]" line="855">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <comment line="857">
+                    isDirectory                    
+                </comment>
+                <declaration name="off" type="int" line="856"/>
+                <scope line="859"/>
+            </method>
+            <method name="beginWrite" type="void" line="865"/>
+            <method name="endWrite" type="void" line="869"/>
+            <method name="beginRead" type="void" line="873"/>
+            <method name="endRead" type="void" line="877"/>
+            <declaration name="isOpen" type="boolean" line="883"/>
+            <declaration name="ch" type="SeekableByteChannel" line="884"/>
+            <declaration name="cen" type="byte[]" line="885"/>
+            <declaration name="end" type="END" line="886"/>
+            <declaration name="locpos" type="long" line="887"/>
+            <declaration name="rwlock" type="ReadWriteLock" line="889"/>
+            <declaration name="inodes" type="LinkedHashMap&lt;IndexNode,IndexNode&gt;" line="892"/>
+            <method name="getBytes" type="byte[]" line="894">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <method name="getString" type="String" line="898">
+                <params>
+                    <param name="name" type="byte[]"/>
+                </params>
+            </method>
+            <method name="finalize" type="void" line="902"/>
+            <method name="getDataPos" type="long" line="906">
+                <params>
+                    <param name="e" type="Entry"/>
+                </params>
+                <scope line="907">
+                    <declaration name="e2" type="Entry" line="908"/>
+                </scope>
+                <declaration name="buf" type="byte[]" line="913"/>
+            </method>
+            <method name="readFullyAt" type="long" line="924">
+                <params>
+                    <param name="buf" type="byte[]"/>
+                    <param name="off" type="int"/>
+                    <param name="len" type="long"/>
+                    <param name="pos" type="long"/>
+                </params>
+                <declaration name="bb" type="ByteBuffer" line="925"/>
+            </method>
+            <method name="readFullyAt" type="long" line="933">
+                <params>
+                    <param name="bb" type="ByteBuffer"/>
+                    <param name="pos" type="long"/>
+                </params>
+                <scope line="934"/>
+            </method>
+            <method name="findEND" type="END" line="944">
+                <comment line="954">
+                    Pretend there are some NUL bytes before start of file                    
+                </comment>
+                <comment line="962">
+                    Now scan the block backwards for END header signature                    
+                </comment>
+                <comment line="969">
+                    Found END header                    
+                </comment>
+                <comment line="982">
+                    need to find the zip64 end;                    
+                </comment>
+                <comment line="994">
+                    end64 found, re-calcualte everything.                    
+                </comment>
+                <comment line="997">
+                    assume total &lt; 2g                    
+                </comment>
+                <comment line="1005">
+                    make compiler happy                    
+                </comment>
+                <declaration name="buf" type="byte[]" line="945"/>
+                <declaration name="ziplen" type="long" line="946"/>
+                <declaration name="minHDR" type="long" line="947"/>
+                <declaration name="minPos" type="long" line="948"/>
+                <scope line="951">
+                    <declaration name="off" type="int" line="952"/>
+                    <scope line="953"/>
+                    <declaration name="len" type="int" line="958"/>
+                    <scope line="963">
+                        <scope line="968">
+                            <declaration name="end" type="END" line="971"/>
+                            <scope line="981">
+                                <declaration name="loc64" type="byte[]" line="983"/>
+                                <scope line="985"/>
+                                <declaration name="end64pos" type="long" line="988"/>
+                                <declaration name="end64buf" type="byte[]" line="989"/>
+                                <scope line="991"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="initCEN" type="byte[]" line="1012">
+                <comment line="1018">
+                    only END header present                    
+                </comment>
+                <comment line="1022">
+                    position of CEN table                    
+                </comment>
+                <comment line="1024">
+                    Get position of first local file (LOC) header, taking into                    
+                </comment>
+                <comment line="1025">
+                    account that there may be a stub prefixed to the zip file.                    
+                </comment>
+                <comment line="1030">
+                    read in the CEN and END                    
+                </comment>
+                <comment line="1035">
+                    Iterate through the entries in the central directory                    
+                </comment>
+                <comment line="1055">
+                    skip ext and comment                    
+                </comment>
+                <scope line="1014"/>
+                <declaration name="cenpos" type="long" line="1022"/>
+                <declaration name="cen" type="byte[]" line="1031"/>
+                <scope line="1032"/>
+                <declaration name="pos" type="int" line="1037"/>
+                <declaration name="limit" type="int" line="1038"/>
+                <scope line="1039">
+                    <declaration name="method" type="int" line="1042"/>
+                    <declaration name="nlen" type="int" line="1043"/>
+                    <declaration name="elen" type="int" line="1044"/>
+                    <declaration name="clen" type="int" line="1045"/>
+                    <declaration name="name" type="byte[]" line="1052"/>
+                    <declaration name="inode" type="IndexNode" line="1053"/>
+                </scope>
+                <scope line="1058"/>
+            </method>
+            <method name="ensureOpen" type="void" line="1065"/>
+            <method name="createTempFileInSameDirectoryAs" type="Path" line="1074">
+                <params>
+                    <param name="path" type="Path"/>
+                </params>
+                <declaration name="parent" type="Path" line="1075"/>
+                <declaration name="dir" type="String" line="1076"/>
+                <declaration name="tmpPath" type="Path" line="1077"/>
+            </method>
+            <declaration name="hasUpdate" type="boolean" line="1084"/>
+            <declaration name="LOOKUPKEY" type="IndexNode" line="1087"/>
+            <method name="updateDelete" type="void" line="1089">
+                <params>
+                    <param name="inode" type="IndexNode"/>
+                </params>
+                <scope line="1091"/>
+                <scope line="1095"/>
+            </method>
+            <method name="update" type="void" line="1100">
+                <params>
+                    <param name="e" type="Entry"/>
+                </params>
+                <scope line="1102">
+                    <declaration name="old" type="IndexNode" line="1103"/>
+                    <scope line="1104"/>
+                    <scope line="1107">
+                        <declaration name="parent" type="IndexNode" line="1108"/>
+                    </scope>
+                </scope>
+                <scope line="1113"/>
+            </method>
+            <method name="copyLOCEntry" type="long" line="1124">
+                <params>
+                    <param name="e" type="Entry"/>
+                    <param name="updateHeader" type="boolean"/>
+                    <param name="os" type="OutputStream"/>
+                    <param name="written" type="long"/>
+                    <param name="buf" type="byte[]"/>
+                </params>
+                <comment line="1125">
+                    where to read                    
+                </comment>
+                <comment line="1126">
+                    update the e.locoff with new value                    
+                </comment>
+                <comment line="1128">
+                    calculate the size need to write out                    
+                </comment>
+                <comment line="1130">
+                    if there is A ext                    
+                </comment>
+                <comment line="1137">
+                    read loc, use the original loc.elen/nlen                    
+                </comment>
+                <comment line="1141">
+                    skip header                    
+                </comment>
+                <comment line="1145">
+                    write out the loc header                    
+                </comment>
+                <comment line="1147">
+                    use e.csize,  LOCSIZ(buf) is zero if FLAG_DATADESCR is on                    
+                </comment>
+                <comment line="1148">
+                    size += LOCNAM(buf) + LOCEXT(buf) + LOCSIZ(buf);                    
+                </comment>
+                <declaration name="locoff" type="long" line="1125"/>
+                <declaration name="size" type="long" line="1129"/>
+                <scope line="1131"/>
+                <scope line="1140"/>
+                <scope line="1144"/>
+                <declaration name="n" type="int" line="1152"/>
+                <scope line="1155"/>
+            </method>
+            <method name="sync" type="void" line="1166">
+                <comment line="1167">
+                    System.out.printf(&quot;-&gt;sync(%s) starting....!%n&quot;, toString());                    
+                </comment>
+                <comment line="1169">
+                    check ex-closer                    
+                </comment>
+                <comment line="1188">
+                    write loc                    
+                </comment>
+                <comment line="1190">
+                    an updated inode                    
+                </comment>
+                <comment line="1194">
+                    entry copy: the only thing changed is the &quot;name&quot;                    
+                </comment>
+                <comment line="1195">
+                    and &quot;nlen&quot; in LOC header, so we udpate/rewrite the                    
+                </comment>
+                <comment line="1196">
+                    LOC in new file and simply copy the rest (data and                    
+                </comment>
+                <comment line="1197">
+                    ext) without enflating/deflating from the old zip                    
+                </comment>
+                <comment line="1198">
+                    file LOC entry.                    
+                </comment>
+                <comment line="1200">
+                    NEW, FILECH or CEN                    
+                </comment>
+                <comment line="1202">
+                    write loc header                    
+                </comment>
+                <comment line="1203">
+                    in-memory, deflated                    
+                </comment>
+                <comment line="1204">
+                    already                    
+                </comment>
+                <comment line="1206">
+                    tmp file                    
+                </comment>
+                <comment line="1209">
+                    deflated already                    
+                </comment>
+                <comment line="1215">
+                    the data are not deflated, use ZEOS                    
+                </comment>
+                <comment line="1229">
+                    dir, 0-length data                    
+                </comment>
+                <comment line="1234">
+                    skip any in-accurate entry                    
+                </comment>
+                <comment line="1236">
+                    unchanged inode                    
+                </comment>
+                <comment line="1238">
+                    pseudo directory node                    
+                </comment>
+                <comment line="1245">
+                    skip any wrong entry                    
+                </comment>
+                <comment line="1250">
+                    now write back the cen and end table                    
+                </comment>
+                <comment line="1261">
+                                        
+                </comment>
+                <comment line="1262">
+                    TBD: ExChannelCloser should not be necessary if we only                    
+                </comment>
+                <comment line="1263">
+                    sync when being closed, all streams should have been                    
+                </comment>
+                <comment line="1264">
+                    closed already. Keep the logic here for now.                    
+                </comment>
+                <comment line="1265">
+                                        
+                </comment>
+                <comment line="1266">
+                    There are outstanding input streams open on existing &quot;ch&quot;,                    
+                </comment>
+                <comment line="1267">
+                    so, don&apos;t close the &quot;cha&quot; and delete the &quot;file for now, let                    
+                </comment>
+                <comment line="1268">
+                    the &quot;ex-channel-closer&quot; to handle them                    
+                </comment>
+                <comment line="1282">
+                    clear                    
+                </comment>
+                <comment line="1283">
+                    if (isOpen) {
+                    ch = zfpath.newByteChannel(READ);  re-fresh &quot;ch&quot; and &quot;cen&quot;
+                    cen = initCEN();
+                    }                    
+                </comment>
+                <comment line="1289">
+                    System.out.printf(&quot;-&gt;sync(%s) done!%n&quot;, toString());                    
+                </comment>
+                <scope line="1170">
+                    <scope line="1171">
+                        <scope line="1172"/>
+                    </scope>
+                </scope>
+                <declaration name="tmpFile" type="Path" line="1181"/>
+                <declaration name="os" type="OutputStream" line="1182"/>
+                <declaration name="elist" type="ArrayList&lt;Entry&gt;" line="1183"/>
+                <declaration name="written" type="long" line="1184"/>
+                <declaration name="buf" type="byte[]" line="1185"/>
+                <declaration name="e" type="Entry" line="1186"/>
+                <scope line="1189">
+                    <scope line="1190">
+                        <scope line="1192">
+                            <scope line="1193"/>
+                            <scope line="1200">
+                                <scope line="1203"/>
+                                <scope line="1206">
+                                    <scope line="1207">
+                                        <declaration name="n" type="int" line="1208"/>
+                                        <scope line="1209">
+                                            <scope line="1210"/>
+                                        </scope>
+                                        <scope line="1214">
+                                            <scope line="1216">
+                                                <scope line="1217"/>
+                                            </scope>
+                                        </scope>
+                                    </scope>
+                                </scope>
+                                <scope line="1228"/>
+                            </scope>
+                        </scope>
+                        <scope line="1233"/>
+                    </scope>
+                    <scope line="1236">
+                        <scope line="1237"/>
+                        <scope line="1241"/>
+                        <scope line="1244"/>
+                    </scope>
+                </scope>
+                <scope line="1252"/>
+                <scope line="1260">
+                    <declaration name="ecc" type="ExChannelCloser" line="1269"/>
+                </scope>
+                <scope line="1276"/>
+            </method>
+            <method name="getInode" type="IndexNode" line="1292">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <comment line="1299">
+                    if does not ends with a slash                    
+                </comment>
+                <declaration name="key" type="IndexNode" line="1295"/>
+                <declaration name="inode" type="IndexNode" line="1296"/>
+                <scope line="1298"/>
+            </method>
+            <method name="getEntry0" type="Entry" line="1307">
+                <params>
+                    <param name="path" type="byte[]"/>
+                </params>
+                <declaration name="inode" type="IndexNode" line="1308"/>
+            </method>
+            <method name="deleteFile" type="void" line="1318">
+                <params>
+                    <param name="path" type="byte[]"/>
+                    <param name="failIfNotExists" type="boolean"/>
+                </params>
+                <declaration name="inode" type="IndexNode" line="1321"/>
+                <scope line="1322"/>
+                <scope line="1327"/>
+            </method>
+            <method name="copyStream" type="void" line="1336">
+                <params>
+                    <param name="is" type="InputStream"/>
+                    <param name="os" type="OutputStream"/>
+                </params>
+                <declaration name="copyBuf" type="byte[]" line="1337"/>
+                <declaration name="n" type="int" line="1338"/>
+                <scope line="1339"/>
+            </method>
+            <method name="getOutputStream" type="OutputStream" line="1347">
+                <params>
+                    <param name="e" type="Entry"/>
+                </params>
+                <comment line="1352">
+                    TBD:  use default method                    
+                </comment>
+                <comment line="1353">
+                    store size, compressed size, and crc-32 in LOC header                    
+                </comment>
+                <declaration name="os" type="OutputStream" line="1357"/>
+                <scope line="1358"/>
+                <scope line="1361"/>
+            </method>
+            <method name="getInputStream" type="InputStream" line="1369">
+                <params>
+                    <param name="e" type="Entry"/>
+                </params>
+                <comment line="1380">
+                    FILECH result is un-compressed.                    
+                </comment>
+                <comment line="1382">
+                    TBD: wrap to hook close()                    
+                </comment>
+                <comment line="1383">
+                    streams.add(eis);                    
+                </comment>
+                <comment line="1385">
+                    untouced  CEN or COPY                    
+                </comment>
+                <comment line="1389">
+                    MORE: Compute good size for inflater stream:                    
+                </comment>
+                <comment line="1390">
+                    Inflater likes a bit of slack                    
+                </comment>
+                <comment line="1405">
+                    Override fill() method to provide an extra &quot;dummy&quot; byte                    
+                </comment>
+                <comment line="1406">
+                    at the end of the input stream. This is required when                    
+                </comment>
+                <comment line="1407">
+                    using the &quot;nowrap&quot; Inflater option. (it appears the new                    
+                </comment>
+                <comment line="1408">
+                    zlib in 7 does not need it, but keep it for now)                    
+                </comment>
+                <comment line="1433">
+                    TBD: wrap/ it does not seem necessary                    
+                </comment>
+                <declaration name="eis" type="InputStream" line="1370"/>
+                <scope line="1372"/>
+                <scope line="1379"/>
+                <scope line="1385"/>
+                <scope line="1388">
+                    <declaration name="bufSize" type="long" line="1390"/>
+                    <declaration name="size" type="long" line="1393"/>
+                    <anonymous_class line="1394">
+                        <declaration name="isClosed" type="boolean" line="1396"/>
+                        <method name="close" type="void" line="1397">
+                            <scope line="1398"/>
+                        </method>
+                        <method name="fill" type="void" line="1409">
+                            <scope line="1410"/>
+                            <scope line="1415"/>
+                        </method>
+                        <declaration name="eof" type="boolean" line="1422"/>
+                        <method name="available" type="int" line="1424">
+                            <declaration name="avail" type="long" line="1427"/>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="1432"/>
+                <scope line="1434"/>
+            </method>
+            <class name="EntryInputStream" line="1443">
+                <extends class="InputStream"/>
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="zfch" type="SeekableByteChannel" line="1444"/>
+                <declaration name="pos" type="long" line="1446"/>
+                <declaration name="rem" type="long" line="1447"/>
+                <declaration name="size" type="long" line="1448"/>
+                <method name="EntryInputStream" type="constructor" line="1452">
+                    <params>
+                        <param name="e" type="Entry"/>
+                        <param name="zfch" type="SeekableByteChannel"/>
+                    </params>
+                </method>
+                <method name="read" type="int" line="1458">
+                    <params>
+                        <param name="b" type="byte"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <comment line="1469">
+                        readFullyAt()                        
+                    </comment>
+                    <scope line="1460"/>
+                    <scope line="1463"/>
+                    <scope line="1466"/>
+                    <declaration name="n" type="long" line="1470"/>
+                    <declaration name="bb" type="ByteBuffer" line="1471"/>
+                    <scope line="1474"/>
+                    <scope line="1477"/>
+                    <scope line="1481"/>
+                </method>
+                <method name="read" type="int" line="1486">
+                    <declaration name="b" type="byte[]" line="1487"/>
+                    <scope line="1488"/>
+                    <scope line="1490"/>
+                </method>
+                <method name="skip" type="long" line="1494">
+                    <params>
+                        <param name="n" type="long"/>
+                    </params>
+                    <scope line="1500"/>
+                </method>
+                <method name="available" type="int" line="1505"/>
+                <method name="size" type="long" line="1508"/>
+                <method name="close" type="void" line="1511"/>
+            </class>
+            <class name="EntryOutputStream" line="1517">
+                <extends class="DeflaterOutputStream"/>
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="crc" type="CRC32" line="1519"/>
+                <declaration name="e" type="Entry" line="1520"/>
+                <declaration name="written" type="long" line="1521"/>
+                <method name="EntryOutputStream" type="constructor" line="1525">
+                    <params>
+                        <param name="e" type="Entry"/>
+                        <param name="os" type="OutputStream"/>
+                    </params>
+                </method>
+                <method name="write" type="void" line="1534">
+                    <params>
+                        <param name="b" type="byte"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <comment line="1535">
+                        only from sync                        
+                    </comment>
+                    <scope line="1537"/>
+                    <scope line="1539"/>
+                </method>
+                <method name="close" type="void" line="1557">
+                    <comment line="1558">
+                        TBD ensureOpen();                        
+                    </comment>
+                    <comment line="1567">
+                        we already know that both e.size and e.csize are the same                        
+                    </comment>
+                    <comment line="1574">
+                        crc.reset();                        
+                    </comment>
+                    <scope line="1578"/>
+                </method>
+            </class>
+            <method name="zerror" type="void" line="1588">
+                <params>
+                    <param name="msg" type="String"/>
+                </params>
+            </method>
+            <declaration name="MAX_FLATER" type="int" line="1593"/>
+            <declaration name="inflaters" type="List&lt;Inflater&gt;" line="1595"/>
+            <method name="getInflater" type="Inflater" line="1599">
+                <scope line="1600">
+                    <declaration name="size" type="int" line="1601"/>
+                    <scope line="1602">
+                        <declaration name="inf" type="Inflater" line="1603"/>
+                    </scope>
+                    <scope line="1605"/>
+                </scope>
+            </method>
+            <method name="releaseInflater" type="void" line="1612">
+                <params>
+                    <param name="inf" type="Inflater"/>
+                </params>
+                <scope line="1613">
+                    <scope line="1614"/>
+                    <scope line="1617"/>
+                </scope>
+            </method>
+            <declaration name="deflaters" type="List&lt;Deflater&gt;" line="1624"/>
+            <method name="getDeflater" type="Deflater" line="1628">
+                <scope line="1629">
+                    <declaration name="size" type="int" line="1630"/>
+                    <scope line="1631">
+                        <declaration name="def" type="Deflater" line="1632"/>
+                    </scope>
+                    <scope line="1634"/>
+                </scope>
+            </method>
+            <method name="releaseDeflater" type="void" line="1641">
+                <params>
+                    <param name="def" type="Deflater"/>
+                </params>
+                <scope line="1642">
+                    <scope line="1643"/>
+                    <scope line="1646"/>
+                </scope>
+            </method>
+            <class name="END" line="1653">
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="disknum" type="int" line="1654"/>
+                <declaration name="sdisknum" type="int" line="1655"/>
+                <declaration name="endsub" type="int" line="1656"/>
+                <declaration name="centot" type="int" line="1657"/>
+                <declaration name="cenlen" type="long" line="1658"/>
+                <declaration name="cenoff" type="long" line="1659"/>
+                <declaration name="comlen" type="int" line="1660"/>
+                <declaration name="comment" type="byte[]" line="1661"/>
+                <declaration name="diskNum" type="int" line="1664"/>
+                <declaration name="endpos" type="long" line="1665"/>
+                <declaration name="disktot" type="int" line="1666"/>
+                <method name="write" type="void" line="1668">
+                    <params>
+                        <param name="os" type="OutputStream"/>
+                        <param name="offset" type="long"/>
+                    </params>
+                    <comment line="1687">
+                        zip64 end of central directory record                        
+                    </comment>
+                    <comment line="1688">
+                        zip64 END record signature                        
+                    </comment>
+                    <comment line="1689">
+                        size of zip64 end                        
+                    </comment>
+                    <comment line="1690">
+                        version made by                        
+                    </comment>
+                    <comment line="1691">
+                        version needed to extract                        
+                    </comment>
+                    <comment line="1692">
+                        number of this disk                        
+                    </comment>
+                    <comment line="1693">
+                        central directory start disk                        
+                    </comment>
+                    <comment line="1694">
+                        number of directory entires on disk                        
+                    </comment>
+                    <comment line="1695">
+                        number of directory entires                        
+                    </comment>
+                    <comment line="1696">
+                        length of central directory                        
+                    </comment>
+                    <comment line="1697">
+                        offset of central directory                        
+                    </comment>
+                    <comment line="1699">
+                        zip64 end of central directory locator                        
+                    </comment>
+                    <comment line="1700">
+                        zip64 END locator signature                        
+                    </comment>
+                    <comment line="1701">
+                        zip64 END start disk                        
+                    </comment>
+                    <comment line="1702">
+                        offset of zip64 END                        
+                    </comment>
+                    <comment line="1703">
+                        total number of disks (?)                        
+                    </comment>
+                    <comment line="1705">
+                        END record signature                        
+                    </comment>
+                    <comment line="1706">
+                        number of this disk                        
+                    </comment>
+                    <comment line="1707">
+                        central directory start disk                        
+                    </comment>
+                    <comment line="1708">
+                        number of directory entries on disk                        
+                    </comment>
+                    <comment line="1709">
+                        total number of directory entries                        
+                    </comment>
+                    <comment line="1710">
+                        length of central directory                        
+                    </comment>
+                    <comment line="1711">
+                        offset of central directory                        
+                    </comment>
+                    <comment line="1712">
+                        zip file comment                        
+                    </comment>
+                    <declaration name="hasZip64" type="boolean" line="1669"/>
+                    <declaration name="xlen" type="long" line="1670"/>
+                    <declaration name="xoff" type="long" line="1671"/>
+                    <scope line="1672"/>
+                    <scope line="1676"/>
+                    <declaration name="count" type="int" line="1680"/>
+                    <scope line="1681"/>
+                    <scope line="1685">
+                        <declaration name="off64" type="long" line="1686"/>
+                    </scope>
+                    <scope line="1712"/>
+                    <scope line="1715"/>
+                </method>
+            </class>
+            <class name="IndexNode" line="1724">
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="name" type="byte[]" line="1725"/>
+                <declaration name="hashcode" type="int" line="1726"/>
+                <declaration name="pos" type="int" line="1727"/>
+                <method name="IndexNode" type="constructor" line="1729">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                        <param name="pos" type="int"/>
+                    </params>
+                </method>
+                <method name="keyOf" type="IndexNode" line="1734">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                    </params>
+                </method>
+                <method name="name" type="void" line="1738">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                    </params>
+                </method>
+                <method name="as" type="IndexNode" line="1743">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                    </params>
+                    <comment line="1744">
+                        as a lookup &quot;key&quot;                        
+                    </comment>
+                </method>
+                <method name="isDir" type="boolean" line="1748"/>
+                <method name="equals" type="boolean" line="1753">
+                    <params>
+                        <param name="other" type="Object"/>
+                    </params>
+                    <scope line="1754"/>
+                </method>
+                <method name="hashCode" type="int" line="1760"/>
+                <method name="IndexNode" type="constructor" line="1764"/>
+                <declaration name="sibling" type="IndexNode" line="1765"/>
+                <declaration name="child" type="IndexNode" line="1766"/>
+            </class>
+            <class name="Entry" line="1769">
+                <extends class="IndexNode"/>
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="CEN" type="int" line="1771"/>
+                <declaration name="NEW" type="int" line="1772"/>
+                <declaration name="FILECH" type="int" line="1773"/>
+                <declaration name="COPY" type="int" line="1774"/>
+                <declaration name="bytes" type="byte[]" line="1777"/>
+                <declaration name="file" type="Path" line="1778"/>
+                <declaration name="type" type="int" line="1779"/>
+                <declaration name="version" type="int" line="1782"/>
+                <declaration name="flag" type="int" line="1783"/>
+                <declaration name="method" type="int" line="1784"/>
+                <declaration name="mtime" type="long" line="1785"/>
+                <declaration name="atime" type="long" line="1786"/>
+                <declaration name="ctime" type="long" line="1787"/>
+                <declaration name="crc" type="long" line="1788"/>
+                <declaration name="csize" type="long" line="1789"/>
+                <declaration name="size" type="long" line="1790"/>
+                <declaration name="extra" type="byte[]" line="1791"/>
+                <declaration name="versionMade" type="int" line="1794"/>
+                <declaration name="disk" type="int" line="1795"/>
+                <declaration name="attrs" type="int" line="1796"/>
+                <declaration name="attrsEx" type="long" line="1797"/>
+                <declaration name="locoff" type="long" line="1798"/>
+                <declaration name="comment" type="byte[]" line="1799"/>
+                <method name="Entry" type="constructor" line="1801"/>
+                <method name="Entry" type="constructor" line="1803">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                    </params>
+                </method>
+                <method name="Entry" type="constructor" line="1812">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                        <param name="type" type="int"/>
+                    </params>
+                </method>
+                <method name="Entry" type="constructor" line="1817">
+                    <params>
+                        <param name="e" type="Entry"/>
+                        <param name="type" type="int"/>
+                    </params>
+                </method>
+                <method name="Entry" type="constructor" line="1837">
+                    <params>
+                        <param name="name" type="byte[]"/>
+                        <param name="file" type="Path"/>
+                        <param name="type" type="int"/>
+                    </params>
+                </method>
+                <method name="version" type="int" line="1843"/>
+                <method name="readCEN" type="Entry" line="1854">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                        <param name="pos" type="int"/>
+                    </params>
+                </method>
+                <method name="cen" type="Entry" line="1860">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                        <param name="pos" type="int"/>
+                    </params>
+                    <declaration name="cen" type="byte[]" line="1861"/>
+                    <declaration name="nlen" type="int" line="1872"/>
+                    <declaration name="elen" type="int" line="1873"/>
+                    <declaration name="clen" type="int" line="1874"/>
+                    <scope line="1884"/>
+                    <scope line="1889"/>
+                </method>
+                <method name="writeCEN" type="int" line="1896">
+                    <params>
+                        <param name="os" type="OutputStream"/>
+                    </params>
+                    <comment line="1903">
+                        extra for ZIP64                        
+                    </comment>
+                    <comment line="1904">
+                        extra for NTFS (a/c/mtime)                        
+                    </comment>
+                    <comment line="1905">
+                        extra for Extended Timestamp                        
+                    </comment>
+                    <comment line="1907">
+                        confirm size/length                        
+                    </comment>
+                    <comment line="1913">
+                        csize(8)                        
+                    </comment>
+                    <comment line="1916">
+                        size(8)                        
+                    </comment>
+                    <comment line="1921">
+                        offset(8)                        
+                    </comment>
+                    <comment line="1924">
+                        header and data sz 4 bytes                        
+                    </comment>
+                    <comment line="1927">
+                        use NTFS                        
+                    </comment>
+                    <comment line="1928">
+                        total 36 bytes                        
+                    </comment>
+                    <comment line="1929">
+                        Extended Timestamp otherwise                        
+                    </comment>
+                    <comment line="1930">
+                        only mtime in cen                        
+                    </comment>
+                    <comment line="1932">
+                        CEN header signature                        
+                    </comment>
+                    <comment line="1934">
+                        ver 4.5 for zip64                        
+                    </comment>
+                    <comment line="1937">
+                        version made by                        
+                    </comment>
+                    <comment line="1938">
+                        version needed to extract                        
+                    </comment>
+                    <comment line="1940">
+                        general purpose bit flag                        
+                    </comment>
+                    <comment line="1941">
+                        compression method                        
+                    </comment>
+                    <comment line="1942">
+                        last modification time                        
+                    </comment>
+                    <comment line="1944">
+                        crc-32                        
+                    </comment>
+                    <comment line="1945">
+                        compressed size                        
+                    </comment>
+                    <comment line="1946">
+                        uncompressed size                        
+                    </comment>
+                    <comment line="1955">
+                        starting disk number                        
+                    </comment>
+                    <comment line="1956">
+                        internal file attributes (unused)                        
+                    </comment>
+                    <comment line="1957">
+                        external file attributes (unused)                        
+                    </comment>
+                    <comment line="1958">
+                        relative offset of local header                        
+                    </comment>
+                    <comment line="1961">
+                        Zip64 extra                        
+                    </comment>
+                    <comment line="1962">
+                        size of &quot;this&quot; extra block                        
+                    </comment>
+                    <comment line="1971">
+                        System.out.println(&quot;writing NTFS:&quot; + elenNTFS);                        
+                    </comment>
+                    <comment line="1974">
+                        reserved                        
+                    </comment>
+                    <comment line="1975">
+                        NTFS attr tag                        
+                    </comment>
+                    <comment line="1985">
+                        mtime and atime                        
+                    </comment>
+                    <comment line="1987">
+                        mtime, atime and ctime                        
+                    </comment>
+                    <comment line="1990">
+                        whatever not recognized                        
+                    </comment>
+                    <comment line="1992">
+                        TBD: 0, Math.min(commentBytes.length, 0xffff));                        
+                    </comment>
+                    <declaration name="written" type="int" line="1897"/>
+                    <declaration name="version0" type="int" line="1898"/>
+                    <declaration name="csize0" type="long" line="1900"/>
+                    <declaration name="size0" type="long" line="1901"/>
+                    <declaration name="locoff0" type="long" line="1902"/>
+                    <declaration name="elen64" type="int" line="1903"/>
+                    <declaration name="elenNTFS" type="int" line="1904"/>
+                    <declaration name="elenEXTT" type="int" line="1905"/>
+                    <declaration name="nlen" type="int" line="1908"/>
+                    <declaration name="elen" type="int" line="1909"/>
+                    <declaration name="clen" type="int" line="1910"/>
+                    <scope line="1911"/>
+                    <scope line="1915"/>
+                    <scope line="1919"/>
+                    <scope line="1926"/>
+                    <scope line="1933"/>
+                    <scope line="1936"/>
+                    <scope line="1950"/>
+                    <scope line="1952"/>
+                    <scope line="1960"/>
+                    <scope line="1970"/>
+                    <scope line="1981"/>
+                </method>
+                <method name="readLOC" type="Entry" line="2000">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                        <param name="pos" type="long"/>
+                    </params>
+                </method>
+                <method name="readLOC" type="Entry" line="2006">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                        <param name="pos" type="long"/>
+                        <param name="buf" type="byte[]"/>
+                    </params>
+                </method>
+                <method name="loc" type="Entry" line="2012">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                        <param name="pos" type="long"/>
+                        <param name="buf" type="byte[]"/>
+                    </params>
+                    <comment line="2019">
+                        startPos = pos;                        
+                    </comment>
+                    <comment line="2043">
+                        Data Descriptor                        
+                    </comment>
+                    <comment line="2044">
+                        get the size/csize from cen                        
+                    </comment>
+                    <comment line="2057">
+                        zip64 ext: must include both size and csize                        
+                    </comment>
+                    <comment line="2059">
+                        HeaderID+DataSize+Data                        
+                    </comment>
+                    <declaration name="nlen" type="int" line="2027"/>
+                    <declaration name="elen" type="int" line="2028"/>
+                    <scope line="2031"/>
+                    <scope line="2034">
+                        <scope line="2037"/>
+                    </scope>
+                    <scope line="2042">
+                        <declaration name="e" type="Entry" line="2044"/>
+                    </scope>
+                    <scope line="2054">
+                        <scope line="2056">
+                            <declaration name="off" type="int" line="2058"/>
+                            <scope line="2059">
+                                <declaration name="sz" type="int" line="2060"/>
+                                <scope line="2061"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="writeLOC" type="int" line="2076">
+                    <params>
+                        <param name="os" type="OutputStream"/>
+                    </params>
+                    <comment line="2077">
+                        LOC header signature                        
+                    </comment>
+                    <comment line="2085">
+                        version needed to extract                        
+                    </comment>
+                    <comment line="2086">
+                        general purpose bit flag                        
+                    </comment>
+                    <comment line="2087">
+                        compression method                        
+                    </comment>
+                    <comment line="2088">
+                        last modification time                        
+                    </comment>
+                    <comment line="2090">
+                        store size, uncompressed size, and crc-32 in data descriptor                        
+                    </comment>
+                    <comment line="2091">
+                        immediately following compressed entry data                        
+                    </comment>
+                    <comment line="2097">
+                        headid(2) + size(2) + size(8) + csize(8)                        
+                    </comment>
+                    <comment line="2098">
+                        ver 4.5 for zip64                        
+                    </comment>
+                    <comment line="2100">
+                        version needed to extract                        
+                    </comment>
+                    <comment line="2102">
+                        general purpose bit flag                        
+                    </comment>
+                    <comment line="2103">
+                        compression method                        
+                    </comment>
+                    <comment line="2104">
+                        last modification time                        
+                    </comment>
+                    <comment line="2106">
+                        crc-32                        
+                    </comment>
+                    <comment line="2111">
+                        compressed size                        
+                    </comment>
+                    <comment line="2112">
+                        uncompressed size                        
+                    </comment>
+                    <comment line="2115">
+                        on unix use &quot;ext time&quot;                        
+                    </comment>
+                    <comment line="2132">
+                        size for the folowing data block                        
+                    </comment>
+                    <comment line="2134">
+                        mtime and atime                        
+                    </comment>
+                    <comment line="2136">
+                        mtime, atime and ctime                        
+                    </comment>
+                    <declaration name="version" type="int" line="2078"/>
+                    <declaration name="nlen" type="int" line="2080"/>
+                    <declaration name="elen" type="int" line="2081"/>
+                    <declaration name="elen64" type="int" line="2082"/>
+                    <declaration name="elenEXTT" type="int" line="2083"/>
+                    <scope line="2084"/>
+                    <scope line="2095">
+                        <scope line="2096"/>
+                        <scope line="2099"/>
+                        <scope line="2107"/>
+                        <scope line="2110"/>
+                    </scope>
+                    <scope line="2115"/>
+                    <scope line="2124"/>
+                    <scope line="2130"/>
+                    <scope line="2142"/>
+                </method>
+                <method name="writeEXT" type="int" line="2151">
+                    <params>
+                        <param name="os" type="OutputStream"/>
+                    </params>
+                    <comment line="2152">
+                        EXT header signature                        
+                    </comment>
+                    <comment line="2153">
+                        crc-32                        
+                    </comment>
+                    <comment line="2159">
+                        compressed size                        
+                    </comment>
+                    <comment line="2160">
+                        uncompressed size                        
+                    </comment>
+                    <scope line="2154"/>
+                    <scope line="2158"/>
+                </method>
+                <method name="readExtra" type="void" line="2166">
+                    <params>
+                        <param name="zipfs" type="ZipFileSystem"/>
+                    </params>
+                    <comment line="2173">
+                        extra spec: HeaderID+DataSize+Data                        
+                    </comment>
+                    <comment line="2178">
+                        invalid data                        
+                    </comment>
+                    <comment line="2183">
+                        invalid zip64 extra                        
+                    </comment>
+                    <comment line="2184">
+                        fields, just skip                        
+                    </comment>
+                    <comment line="2202">
+                        reserved 4 bytes                        
+                    </comment>
+                    <comment line="2207">
+                        override the loc field, datatime here is                        
+                    </comment>
+                    <comment line="2208">
+                        more &quot;accurate&quot;                        
+                    </comment>
+                    <comment line="2214">
+                        spec says the Extened timestamp in cen only has mtime                        
+                    </comment>
+                    <comment line="2215">
+                        need to read the loc to get the extra a/ctime                        
+                    </comment>
+                    <comment line="2225">
+                        EXTT is at lease 9 bytes                        
+                    </comment>
+                    <comment line="2257">
+                        unknown tag                        
+                    </comment>
+                    <declaration name="elen" type="int" line="2169"/>
+                    <declaration name="off" type="int" line="2170"/>
+                    <declaration name="newOff" type="int" line="2171"/>
+                    <scope line="2172">
+                        <declaration name="pos" type="int" line="2174"/>
+                        <declaration name="tag" type="int" line="2175"/>
+                        <declaration name="sz" type="int" line="2176"/>
+                        <scope line="2182"/>
+                        <scope line="2188"/>
+                        <scope line="2194"/>
+                        <declaration name="buf" type="byte[]" line="2216"/>
+                        <declaration name="locElen" type="int" line="2224"/>
+                        <declaration name="locNlen" type="int" line="2227"/>
+                        <declaration name="locPos" type="int" line="2232"/>
+                        <scope line="2233">
+                            <declaration name="locTag" type="int" line="2234"/>
+                            <declaration name="locSZ" type="int" line="2235"/>
+                            <scope line="2237"/>
+                            <declaration name="flag" type="int" line="2241"/>
+                            <scope line="2242"/>
+                            <scope line="2246"/>
+                            <scope line="2250"/>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <class name="ExChannelCloser" line="2270">
+                <comment line="1445">
+                    local ref to zipfs&apos;s &quot;ch&quot;. zipfs.ch might                    
+                </comment>
+                <comment line="1446">
+                    point to a new channel after sync()                    
+                </comment>
+                <comment line="1447">
+                    current position within entry data                    
+                </comment>
+                <comment line="1448">
+                    number of remaining bytes within entry                    
+                </comment>
+                <comment line="1449">
+                    uncompressed size of this entry                    
+                </comment>
+                <comment line="1657">
+                    endsub                    
+                </comment>
+                <comment line="1658">
+                    4 bytes                    
+                </comment>
+                <comment line="1659">
+                    4 bytes                    
+                </comment>
+                <comment line="1660">
+                    4 bytes                    
+                </comment>
+                <comment line="1661">
+                    comment length                    
+                </comment>
+                <comment line="1664">
+                                        
+                </comment>
+                <comment line="1727">
+                    node is hashable/hashed by its name                    
+                </comment>
+                <comment line="1728">
+                    postion in cen table, -1 menas the                    
+                </comment>
+                <comment line="1729">
+                    entry does not exists in zip file                    
+                </comment>
+                <comment line="1767">
+                    1st child                    
+                </comment>
+                <comment line="1772">
+                    entry read from cen                    
+                </comment>
+                <comment line="1773">
+                    updated contents in bytes or file                    
+                </comment>
+                <comment line="1774">
+                    fch update in &quot;file&quot;                    
+                </comment>
+                <comment line="1775">
+                    copy of a CEN entry                    
+                </comment>
+                <comment line="1778">
+                    updated content bytes                    
+                </comment>
+                <comment line="1779">
+                    use tmp file to store bytes;                    
+                </comment>
+                <comment line="1780">
+                    default is the entry read from cen                    
+                </comment>
+                <comment line="1782">
+                    entry attributes                    
+                </comment>
+                <comment line="1785">
+                    compression method                    
+                </comment>
+                <comment line="1786">
+                    last modification time (in DOS time)                    
+                </comment>
+                <comment line="1787">
+                    last access time                    
+                </comment>
+                <comment line="1788">
+                    create time                    
+                </comment>
+                <comment line="1789">
+                    crc-32 of entry data                    
+                </comment>
+                <comment line="1790">
+                    compressed size of entry data                    
+                </comment>
+                <comment line="1791">
+                    uncompressed size of entry data                    
+                </comment>
+                <comment line="1794">
+                    cen                    
+                </comment>
+                <comment line="1852">
+                    /////////////////// CEN //////////////////////                    
+                </comment>
+                <comment line="1998">
+                    /////////////////// LOC //////////////////////                    
+                </comment>
+                <comment line="2149">
+                    Data Descriptior                    
+                </comment>
+                <comment line="2166">
+                    read NTFS, UNIX and ZIP64 data from cen.extra                    
+                </comment>
+                <declaration name="path" type="Path" line="2271"/>
+                <declaration name="ch" type="SeekableByteChannel" line="2272"/>
+                <declaration name="streams" type="Set&lt;InputStream&gt;" line="2273"/>
+                <method name="ExChannelCloser" type="constructor" line="2277">
+                    <params>
+                        <param name="path" type="Path"/>
+                        <param name="ch" type="SeekableByteChannel"/>
+                        <param name="streams" type="Set<InputStream>"/>
+                    </params>
+                </method>
+            </class>
+            <declaration name="root" type="IndexNode" line="2291"/>
+            <method name="addToTree" type="void" line="2293">
+                <params>
+                    <param name="inode" type="IndexNode"/>
+                    <param name="dirs" type="HashSet<IndexNode>"/>
+                </params>
+                <comment line="2302">
+                    pseudo directory entry                    
+                </comment>
+                <scope line="2294"/>
+                <declaration name="parent" type="IndexNode" line="2297"/>
+                <declaration name="name" type="byte[]" line="2298"/>
+                <declaration name="pname" type="byte[]" line="2299"/>
+                <scope line="2300"/>
+                <scope line="2302"/>
+            </method>
+            <method name="removeFromTree" type="void" line="2313">
+                <params>
+                    <param name="inode" type="IndexNode"/>
+                </params>
+                <declaration name="parent" type="IndexNode" line="2314"/>
+                <declaration name="child" type="IndexNode" line="2315"/>
+                <scope line="2316"/>
+                <scope line="2318">
+                    <declaration name="last" type="IndexNode" line="2319"/>
+                    <scope line="2320">
+                        <scope line="2321"/>
+                        <scope line="2324"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="buildNodeTree" type="void" line="2331">
+                <scope line="2333">
+                    <declaration name="dirs" type="HashSet&lt;IndexNode&gt;" line="2334"/>
+                    <declaration name="root" type="IndexNode" line="2335"/>
+                    <scope line="2338"/>
+                </scope>
+                <scope line="2341"/>
+            </method>
+        </class>
+    </source>

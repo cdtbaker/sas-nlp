@@ -1,0 +1,565 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.krb5.internal.crypto.dk">
+        <import package="javax.crypto.Cipher"/>
+        <import package="javax.crypto.Mac"/>
+        <import package="java.security.GeneralSecurityException"/>
+        <import package="java.io.UnsupportedEncodingException"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.io.ByteArrayInputStream"/>
+        <import package="java.io.ByteArrayOutputStream"/>
+        <import package="java.nio.charset.Charset"/>
+        <import package="java.nio.CharBuffer"/>
+        <import package="java.nio.ByteBuffer"/>
+        <import package="sun.misc.HexDumpEncoder"/>
+        <import package="sun.security.krb5.Confounder"/>
+        <import package="sun.security.krb5.internal.crypto.KeyUsage"/>
+        <import package="sun.security.krb5.KrbCryptoException"/>
+        <class name="DkCrypto" line="48">
+            <comment line="61">
+                These values correspond to the ASCII encoding for the string &quot;kerberos&quot;                
+            </comment>
+            <comment line="65">
+                in bits                
+            </comment>
+            <comment line="72">
+                in bytes                
+            </comment>
+            <comment line="392">
+                Round up to the next blocksize                
+            </comment>
+            <comment line="445">
+                DK(Key, Constant) = random-to-key(DR(Key, Constant))                
+            </comment>
+            <comment line="451">
+                From RFC 3961.
+                
+                 DR(Key, Constant) = k-truncate(E(Key, Constant,
+                                                  initial-cipher-state))
+                
+                 Here DR is the random-octet generation function described below, and
+                 DK is the key-derivation function produced from it.  In this
+                 construction, E(Key, Plaintext, CipherState) is a cipher, Constant is
+                 a well-known constant determined by the specific usage of this
+                 function, and k-truncate truncates its argument by taking the first k
+                 bits.  Here, k is the key generation seed length needed for the
+                 encryption system.
+                
+                 The output of the DR function is a string of bits; the actual key is
+                 produced by applying the cryptosystem&apos;s random-to-key operation on
+                 this bitstring.
+                
+                 If the Constant is smaller than the cipher block size of E, then it
+                 must be expanded with n-fold() so it can be encrypted.  If the output
+                 of E is shorter than k bits it is fed back into the encryption as
+                 many times as necessary.  The construct is as follows (where |
+                 indicates concatentation):
+                
+                 K1 = E(Key, n-fold(Constant), initial-cipher-state)
+                 K2 = E(Key, K1, initial-cipher-state)
+                 K3 = E(Key, K2, initial-cipher-state)
+                 K4 = ...
+                
+                 DR(Key, Constant) = k-truncate(K1 | K2 | K3 | K4 ...)                
+            </comment>
+            <comment line="523">
+                ---------------------------------                
+            </comment>
+            <comment line="525">
+                From MIT-1.3.1 distribution                
+            </comment>
+            <comment line="526">
+                n-fold(k-bits):
+                   l = lcm(n,k)
+                   r = lk
+                 s = k-bits | k-bits rot 13 | k-bits rot 132 | ... | k-bits rot 13(r-1)
+                 compute the 1&apos;s complement sum:
+                 n-fold = s[0..n-1]+s[n..2n-1]+s[2n..3n-1]+..+s[(k-1)n..kn-1]                
+            </comment>
+            <comment line="535">
+                representation: msb first, assume n and k are multiples of 8, and
+                  that k&gt;=16.  this is the case of all the cryptosystems which are
+                  likely to be used.  this function can be replaced if that
+                  assumption ever fails.                
+            </comment>
+            <comment line="542">
+                                
+            </comment>
+            <comment line="637">
+                Routines used for debugging                
+            </comment>
+            <comment line="677">
+                String.getBytes(&quot;UTF-8&quot;);                
+            </comment>
+            <comment line="678">
+                Do this instead of using String to avoid making password immutable                
+            </comment>
+            <javadoc line="48">
+                Implements Derive Key cryptography functionality as defined in RFC 3961.
+                  http://www.ietf.org/rfc/rfc3961.txt
+                  This is an abstract class. Concrete subclasses need to implement
+                  the abstract methods.                
+            </javadoc>
+            <declaration name="debug" type="boolean" line="58"/>
+            <declaration name="KERBEROS_CONSTANT" type="byte[]" line="61"/>
+            <method name="getKeySeedLength" type="int" line="64"/>
+            <method name="randomToKey" type="byte[]" line="66"/>
+            <method name="getCipher" type="Cipher" line="68"/>
+            <method name="getChecksumLength" type="int" line="71"/>
+            <method name="getHmac" type="byte[]" line="73"/>
+            <javadoc line="76">
+                From RFC 3961.
+                  encryption function       conf = random string of length c
+                  pad = shortest string to bring confounder
+                  and plaintext to a length that&apos;s a
+                  multiple of m
+                  (C1, newIV) = E(Ke, conf | plaintext | pad,
+                  oldstate.ivec)
+                  H1 = HMAC(Ki, conf | plaintext | pad)
+                  ciphertext =  C1 | H1[1..h]
+                  newstate.ivec = newIV                
+                <param>
+                    ivec initial vector to use when initializing the cipher; if null,
+                      then blocksize number of zeros are used,                    
+                </param>
+                <param>
+                    new_ivec if non-null, it is updated upon return to be the
+                      new ivec to use when calling encrypt next time                    
+                </param>
+            </javadoc>
+            <method name="encrypt" type="byte[]" line="96">
+                <params>
+                    <param name="baseKey" type="byte[]"/>
+                    <param name="usage" type="int"/>
+                    <param name="ivec" type="byte[]"/>
+                    <param name="new_ivec" type="byte[]"/>
+                    <param name="plaintext" type="byte[]"/>
+                    <param name="start" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="107">
+                    Derive encryption key                    
+                </comment>
+                <comment line="129">
+                    Encrypt                    
+                </comment>
+                <comment line="130">
+                    C1 = E(Ke, conf | plaintext | pad, oldivec)                    
+                </comment>
+                <comment line="150">
+                    Set padding bytes to zero                    
+                </comment>
+                <comment line="155">
+                    cipher | hmac                    
+                </comment>
+                <comment line="161">
+                    Update ivec for next operation                    
+                </comment>
+                <comment line="162">
+                    (last blockSize bytes of ciphertext)                    
+                </comment>
+                <comment line="163">
+                    newstate.ivec = newIV                    
+                </comment>
+                <comment line="172">
+                    Derive integrity key                    
+                </comment>
+                <comment line="180">
+                    Generate checksum                    
+                </comment>
+                <comment line="181">
+                    H1 = HMAC(Ki, conf | plaintext | pad)                    
+                </comment>
+                <comment line="190">
+                    C1 | H1[1..h]                    
+                </comment>
+                <scope line="98"/>
+                <declaration name="Ke" type="byte[]" line="103"/>
+                <declaration name="Ki" type="byte[]" line="104"/>
+                <scope line="106">
+                    <declaration name="constant" type="byte[]" line="109"/>
+                    <scope line="118">
+                        <scope line="120"/>
+                    </scope>
+                    <declaration name="encCipher" type="Cipher" line="131"/>
+                    <declaration name="blockSize" type="int" line="132"/>
+                    <declaration name="confounder" type="byte[]" line="133"/>
+                    <declaration name="plainSize" type="int" line="135"/>
+                    <scope line="136"/>
+                    <declaration name="toBeEncrypted" type="byte[]" line="144"/>
+                    <declaration name="cipherSize" type="int" line="154"/>
+                    <declaration name="ccSize" type="int" line="155"/>
+                    <declaration name="ciphertext" type="byte[]" line="157"/>
+                    <scope line="164">
+                        <scope line="167"/>
+                    </scope>
+                    <scope line="175"/>
+                    <declaration name="hmac" type="byte[]" line="182"/>
+                    <scope line="184"/>
+                </scope>
+                <scope line="194">
+                    <scope line="195"/>
+                    <scope line="198"/>
+                </scope>
+            </method>
+            <javadoc line="204">
+                Performs encryption using given key only; does not add
+                  confounder, padding, or checksum. Incoming data to be encrypted
+                  assumed to have the correct blocksize.
+                  Ignore key usage.                
+            </javadoc>
+            <method name="encryptRaw" type="byte[]" line="212">
+                <params>
+                    <param name="baseKey" type="byte[]"/>
+                    <param name="usage" type="int"/>
+                    <param name="ivec" type="byte[]"/>
+                    <param name="plaintext" type="byte[]"/>
+                    <param name="start" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="223">
+                    Encrypt                    
+                </comment>
+                <scope line="214">
+                    <scope line="216"/>
+                </scope>
+                <declaration name="encCipher" type="Cipher" line="224"/>
+                <declaration name="blockSize" type="int" line="225"/>
+                <scope line="227"/>
+                <declaration name="cipherSize" type="int" line="233"/>
+                <declaration name="ciphertext" type="byte[]" line="234"/>
+            </method>
+            <javadoc line="240">
+                Decrypts data using specified key and initial vector.                
+                <param>
+                    baseKey encryption key to use                    
+                </param>
+                <param>
+                    ciphertext  encrypted data to be decrypted                    
+                </param>
+                <param>
+                    usage ignored                    
+                </param>
+            </javadoc>
+            <method name="decryptRaw" type="byte[]" line="248">
+                <params>
+                    <param name="baseKey" type="byte[]"/>
+                    <param name="usage" type="int"/>
+                    <param name="ivec" type="byte[]"/>
+                    <param name="ciphertext" type="byte[]"/>
+                    <param name="start" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="250">
+                    <scope line="252"/>
+                </scope>
+                <declaration name="decCipher" type="Cipher" line="259"/>
+                <declaration name="blockSize" type="int" line="261"/>
+                <scope line="263"/>
+                <declaration name="decrypted" type="byte[]" line="269"/>
+                <scope line="271"/>
+            </method>
+            <javadoc line="279">
+                @param baseKey key from which keys are to be derived using usage                
+                <param>
+                    ciphertext  E(Ke, conf | plaintext | padding, ivec) | H1[1..h]                    
+                </param>
+            </javadoc>
+            <method name="decrypt" type="byte[]" line="284">
+                <params>
+                    <param name="baseKey" type="byte[]"/>
+                    <param name="usage" type="int"/>
+                    <param name="ivec" type="byte[]"/>
+                    <param name="ciphertext" type="byte[]"/>
+                    <param name="start" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="295">
+                    Derive encryption key                    
+                </comment>
+                <comment line="304">
+                    Encryption key                    
+                </comment>
+                <comment line="320">
+                    Decrypt [confounder | plaintext | padding] (without checksum)                    
+                </comment>
+                <comment line="330">
+                    decrypted = [confounder | plaintext | padding]                    
+                </comment>
+                <comment line="332">
+                    Derive integrity key                    
+                </comment>
+                <comment line="334">
+                    Integrity key                    
+                </comment>
+                <comment line="340">
+                    Verify checksum                    
+                </comment>
+                <comment line="341">
+                    H1 = HMAC(Ki, conf | plaintext | pad)                    
+                </comment>
+                <comment line="365">
+                    Prepare decrypted msg and ivec to be returned                    
+                </comment>
+                <comment line="366">
+                    Last blockSize bytes of ciphertext without checksum                    
+                </comment>
+                <comment line="375">
+                    Get rid of confounder                    
+                </comment>
+                <comment line="376">
+                    [plaintext | padding]                    
+                </comment>
+                <comment line="380">
+                    padding still there                    
+                </comment>
+                <scope line="286"/>
+                <declaration name="Ke" type="byte[]" line="291"/>
+                <declaration name="Ki" type="byte[]" line="292"/>
+                <scope line="294">
+                    <declaration name="constant" type="byte[]" line="296"/>
+                    <scope line="306">
+                        <scope line="308"/>
+                    </scope>
+                    <declaration name="decCipher" type="Cipher" line="317"/>
+                    <declaration name="blockSize" type="int" line="318"/>
+                    <declaration name="cksumSize" type="int" line="321"/>
+                    <declaration name="cipherSize" type="int" line="322"/>
+                    <declaration name="decrypted" type="byte[]" line="323"/>
+                    <scope line="325"/>
+                    <scope line="335"/>
+                    <declaration name="calculatedHmac" type="byte[]" line="342"/>
+                    <scope line="344"/>
+                    <declaration name="cksumFailed" type="boolean" line="351"/>
+                    <scope line="352">
+                        <scope line="353">
+                            <scope line="354"/>
+                        </scope>
+                    </scope>
+                    <scope line="361"/>
+                    <scope line="367">
+                        <scope line="370"/>
+                    </scope>
+                    <declaration name="plaintext" type="byte[]" line="377"/>
+                </scope>
+                <scope line="381">
+                    <scope line="382"/>
+                    <scope line="385"/>
+                </scope>
+            </method>
+            <method name="roundup" type="int" line="392">
+                <params>
+                    <param name="n" type="int"/>
+                    <param name="blocksize" type="int"/>
+                </params>
+            </method>
+            <method name="calculateChecksum" type="byte[]" line="397">
+                <params>
+                    <param name="baseKey" type="byte[]"/>
+                    <param name="usage" type="int"/>
+                    <param name="input" type="byte[]"/>
+                    <param name="start" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="404">
+                    Derive keys                    
+                </comment>
+                <comment line="413">
+                    Checksum key                    
+                </comment>
+                <comment line="423">
+                    Generate checksum                    
+                </comment>
+                <comment line="424">
+                    H1 = HMAC(Kc, input)                    
+                </comment>
+                <scope line="399"/>
+                <declaration name="constant" type="byte[]" line="405"/>
+                <declaration name="Kc" type="byte[]" line="413"/>
+                <scope line="414"/>
+                <scope line="422">
+                    <declaration name="hmac" type="byte[]" line="425"/>
+                    <scope line="426"/>
+                    <scope line="429"/>
+                    <scope line="431">
+                        <declaration name="buf" type="byte[]" line="432"/>
+                    </scope>
+                    <scope line="435"/>
+                </scope>
+                <scope line="439"/>
+            </method>
+            <method name="dk" type="byte[]" line="446">
+                <params>
+                    <param name="key" type="byte[]"/>
+                    <param name="constant" type="byte[]"/>
+                </params>
+            </method>
+            <method name="dr" type="byte[]" line="482">
+                <params>
+                    <param name="key" type="byte[]"/>
+                    <param name="constant" type="byte[]"/>
+                </params>
+                <comment line="492">
+                    from bits to bytes                    
+                </comment>
+                <comment line="496">
+                                        
+                </comment>
+                <declaration name="encCipher" type="Cipher" line="484"/>
+                <declaration name="blocksize" type="int" line="485"/>
+                <scope line="487"/>
+                <declaration name="toBeEncrypted" type="byte[]" line="490"/>
+                <declaration name="keybytes" type="int" line="492"/>
+                <declaration name="rawkey" type="byte[]" line="493"/>
+                <declaration name="posn" type="int" line="494"/>
+                <declaration name="n" type="int" line="497"/>
+                <scope line="498">
+                    <scope line="499"/>
+                    <declaration name="cipherBlock" type="byte[]" line="504"/>
+                    <scope line="505"/>
+                    <scope line="512"/>
+                </scope>
+            </method>
+            <method name="nfold" type="byte[]" line="542">
+                <params>
+                    <param name="in" type="byte[]"/>
+                    <param name="outbits" type="int"/>
+                </params>
+                <comment line="545">
+                    count in bytes                    
+                </comment>
+                <comment line="547">
+                                        
+                </comment>
+                <comment line="549">
+                    n                    
+                </comment>
+                <comment line="550">
+                    k                    
+                </comment>
+                <comment line="565">
+                                        
+                </comment>
+                <comment line="572">
+                    this will end up cycling through k lcm(k,n)/k times, which                    
+                </comment>
+                <comment line="573">
+                    is correct                    
+                </comment>
+                <comment line="575">
+                                        
+                </comment>
+                <comment line="576">
+                                        
+                </comment>
+                <comment line="578">
+                                        
+                </comment>
+                <comment line="580">
+                                        
+                </comment>
+                <comment line="583">
+                                        
+                </comment>
+                <comment line="584">
+                    Mask off values using &amp;0xff to get only the lower byte                    
+                </comment>
+                <comment line="585">
+                    Use &gt;&gt;&gt; to avoid sign extension                    
+                </comment>
+                <comment line="590">
+                    System.err.println(&quot;((&quot; +
+                    ((in[((inbits-1)-(msbit&gt;&gt;&gt;3))%inbits]&amp;0xff)&lt;&lt;8)
+                    + &quot;|&quot; + (in[((inbits)-(msbit&gt;&gt;&gt;3))%inbits]&amp;0xff) + &quot;)&quot;
+                    + &quot;&gt;&gt;&gt;&quot; + ((msbit&amp;7)+1) + &quot;)&amp;0xff = &quot; + bval);                    
+                </comment>
+                <comment line="599">
+                                        
+                </comment>
+                <comment line="600">
+                    Mask off values using &amp;0xff to get only the lower byte                    
+                </comment>
+                <comment line="613">
+                                        
+                </comment>
+                <comment line="621">
+                                        
+                </comment>
+                <comment line="624">
+                                        
+                </comment>
+                <comment line="628">
+                                        
+                </comment>
+                <declaration name="inbits" type="int" line="544"/>
+                <declaration name="a" type="int" line="548"/>
+                <scope line="552"/>
+                <scope line="559"/>
+                <declaration name="out" type="byte[]" line="566"/>
+                <declaration name="thisbyte" type="int" line="569"/>
+                <declaration name="msbit" type="int" line="570"/>
+                <scope line="574">
+                    <scope line="605"/>
+                    <scope line="616"/>
+                </scope>
+                <scope line="622">
+                    <scope line="623"/>
+                </scope>
+            </method>
+            <method name="bytesToString" type="String" line="637">
+                <params>
+                    <param name="digest" type="byte[]"/>
+                </params>
+                <comment line="638">
+                    Get character representation of digest                    
+                </comment>
+                <declaration name="digestString" type="StringBuffer" line="639"/>
+                <scope line="641">
+                    <scope line="642"/>
+                    <scope line="645"/>
+                </scope>
+            </method>
+            <method name="binaryStringToBytes" type="byte[]" line="653">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <declaration name="usageStr" type="char[]" line="654"/>
+                <declaration name="usage" type="byte[]" line="655"/>
+                <scope line="656">
+                    <declaration name="a" type="byte" line="657"/>
+                    <declaration name="b" type="byte" line="658"/>
+                </scope>
+            </method>
+            <method name="traceOutput" type="void" line="665">
+                <params>
+                    <param name="traceTag" type="String"/>
+                    <param name="output" type="byte[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="666">
+                    <declaration name="out" type="ByteArrayOutputStream" line="667"/>
+                </scope>
+                <scope line="672"/>
+            </method>
+            <method name="charToUtf8" type="byte[]" line="678">
+                <params>
+                    <param name="chars" type="char[]"/>
+                </params>
+                <declaration name="utf8" type="Charset" line="679"/>
+                <declaration name="cb" type="CharBuffer" line="681"/>
+                <declaration name="bb" type="ByteBuffer" line="682"/>
+                <declaration name="len" type="int" line="683"/>
+                <declaration name="answer" type="byte[]" line="684"/>
+            </method>
+            <method name="charToUtf16" type="byte[]" line="689">
+                <params>
+                    <param name="chars" type="char[]"/>
+                </params>
+                <declaration name="utf8" type="Charset" line="690"/>
+                <declaration name="cb" type="CharBuffer" line="692"/>
+                <declaration name="bb" type="ByteBuffer" line="693"/>
+                <declaration name="len" type="int" line="694"/>
+                <declaration name="answer" type="byte[]" line="695"/>
+            </method>
+        </class>
+    </source>

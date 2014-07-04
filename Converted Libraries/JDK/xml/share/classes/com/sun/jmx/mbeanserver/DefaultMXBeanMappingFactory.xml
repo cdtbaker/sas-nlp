@@ -1,0 +1,1153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jmx.mbeanserver">
+        <import package="com.sun.jmx.mbeanserver.Util"/>
+        <import package="com.sun.jmx.mbeanserver.MXBeanIntrospector.typeName"/>
+        <import package="javax.management.openmbean.SimpleType"/>
+        <import package="com.sun.jmx.remote.util.EnvHelp"/>
+        <import package="java.beans.ConstructorProperties"/>
+        <import package="java.io.InvalidObjectException"/>
+        <import package="java.lang.annotation.ElementType"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.lang.reflect.Array"/>
+        <import package="java.lang.reflect.Constructor"/>
+        <import package="java.lang.reflect.Field"/>
+        <import package="java.lang.reflect.GenericArrayType"/>
+        <import package="java.lang.reflect.Method"/>
+        <import package="java.lang.reflect.Modifier"/>
+        <import package="java.lang.reflect.ParameterizedType"/>
+        <import package="java.lang.reflect.Proxy"/>
+        <import package="java.lang.reflect.Type"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.BitSet"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Comparator"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.SortedMap"/>
+        <import package="java.util.SortedSet"/>
+        <import package="java.util.TreeSet"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="javax.management.JMX"/>
+        <import package="javax.management.ObjectName"/>
+        <import package="javax.management.openmbean.ArrayType"/>
+        <import package="javax.management.openmbean.CompositeData"/>
+        <import package="javax.management.openmbean.CompositeDataInvocationHandler"/>
+        <import package="javax.management.openmbean.CompositeDataSupport"/>
+        <import package="javax.management.openmbean.CompositeDataView"/>
+        <import package="javax.management.openmbean.CompositeType"/>
+        <import package="javax.management.openmbean.OpenDataException"/>
+        <import package="javax.management.openmbean.OpenType"/>
+        <import package="javax.management.openmbean.SimpleType"/>
+        <import package="javax.management.openmbean.TabularData"/>
+        <import package="javax.management.openmbean.TabularDataSupport"/>
+        <import package="javax.management.openmbean.TabularType"/>
+        <class name="DefaultMXBeanMappingFactory" line="77">
+            <extends class="MXBeanMappingFactory"/>
+            <comment line="305">
+                Make the converter for an array type, or a collection such as
+                 List&lt;String&gt; or Set&lt;Integer&gt;.  We never see one-dimensional
+                 primitive arrays (e.g. int[]) here because they use the identity
+                 converter and are registered as such in the static initializer.                
+            </comment>
+            <comment line="375">
+                We know how to translate List&lt;E&gt;, Set&lt;E&gt;, SortedSet&lt;E&gt;,
+                Map&lt;K,V&gt;, SortedMap&lt;K,V&gt;, and that&apos;s it.  We don&apos;t accept
+                subtypes of those because we wouldn&apos;t know how to deserialize
+                them.  We don&apos;t accept Queue&lt;E&gt; because it is unlikely people                
+            </comment>
+            <comment line="486">
+                Converter for classes where the open data is identical to the
+                original data.  This is true for any of the SimpleType types,
+                and for an any-dimension array of those.  It is also true for
+                primitive types as of JMX 1.3, since an int[]
+                can be directly represented by an ArrayType, and an int needs no mapping                
+            </comment>
+            <comment line="1492">
+                really an IdentityHashSet but that doesn&apos;t exist                
+            </comment>
+            <javadoc line="77">
+                &lt;p&gt;A converter between Java types and the limited set of classes
+                  defined by Open MBeans.&lt;/p&gt;
+                  &lt;p&gt;A Java type is an instance of java.lang.reflect.Type.  For our
+                  purposes, it is either a Class, such as String.class or int.class;
+                  or a ParameterizedType, such as List&lt;String&gt; or Map&lt;Integer,
+                  String[]&gt;.  On J2SE 1.4 and earlier, it can only be a Class.&lt;/p&gt;
+                  &lt;p&gt;Each Type is associated with an DefaultMXBeanMappingFactory.  The
+                  DefaultMXBeanMappingFactory defines an OpenType corresponding to the Type, plus a
+                  Java class corresponding to the OpenType.  For example:&lt;/p&gt;
+                  &lt;pre&gt;
+                  Type                     Open class     OpenType
+                  ----                     ----------     --------
+                  Integer                Integer        SimpleType.INTEGER
+                  int                            int            SimpleType.INTEGER
+                  Integer[]              Integer[]      ArrayType(1, SimpleType.INTEGER)
+                  int[]                  Integer[]      ArrayType(SimpleType.INTEGER, true)
+                  String[][]             String[][]     ArrayType(2, SimpleType.STRING)
+                  List&lt;String&gt;                   String[]       ArrayType(1, SimpleType.STRING)
+                  ThreadState (an Enum)    String         SimpleType.STRING
+                  Map&lt;Integer, String[]&gt;   TabularData          TabularType(
+                  CompositeType(
+                  {&quot;key&quot;, SimpleType.INTEGER},
+                  {&quot;value&quot;,
+                  ArrayType(1,
+                  SimpleType.STRING)}),
+                  indexNames={&quot;key&quot;})
+                  &lt;/pre&gt;
+                  &lt;p&gt;Apart from simple types, arrays, and collections, Java types are
+                  converted through introspection into CompositeType.  The Java type
+                  must have at least one getter (method such as &quot;int getSize()&quot; or
+                  &quot;boolean isBig()&quot;), and we must be able to deduce how to
+                  reconstruct an instance of the Java class from the values of the
+                  getters using one of various heuristics.&lt;/p&gt;                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <class name="NonNullMXBeanMapping" line="119">
+                <extends class="MXBeanMapping"/>
+                <method name="NonNullMXBeanMapping" type="constructor" line="120">
+                    <params>
+                        <param name="javaType" type="Type"/>
+                        <param name="openType" type="OpenType<?>"/>
+                    </params>
+                </method>
+                <method name="fromOpenValue" type="Object" line="126">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                </method>
+                <method name="toOpenValue" type="Object" line="134">
+                    <params>
+                        <param name="javaValue" type="Object"/>
+                    </params>
+                </method>
+                <method name="fromNonNullOpenValue" type="Object" line="141"/>
+                <method name="toNonNullOpenValue" type="Object" line="144"/>
+                <javadoc line="147">
+                    &lt;p&gt;True if and only if this MXBeanMapping&apos;s toOpenValue and
+                      fromOpenValue methods are the identity function.&lt;/p&gt;                    
+                </javadoc>
+                <method name="isIdentity" type="boolean" line="151"/>
+            </class>
+            <method name="isIdentity" type="boolean" line="156">
+                <params>
+                    <param name="mapping" type="MXBeanMapping"/>
+                </params>
+            </method>
+            <class name="Mappings" line="161">
+                <extends class="WeakHashMap">
+                    <type_params>
+                        <type_param name="Type"/>
+                        <type_param name="WeakReference<MXBeanMapping>"/>
+                    </type_params>
+                </extends>
+            </class>
+            <declaration name="mappings" type="Mappings" line="164"/>
+            <declaration name="permanentMappings" type="List&lt;MXBeanMapping&gt;" line="166"/>
+            <javadoc line="166">
+                Following List simply serves to keep a reference to predefined
+                  MXBeanMappings so they don&apos;t get garbage collected.                
+            </javadoc>
+            <method name="getMapping" type="MXBeanMapping" line="170">
+                <params>
+                    <param name="type" type="Type"/>
+                </params>
+                <declaration name="wr" type="WeakReference&lt;MXBeanMapping&gt;" line="171"/>
+            </method>
+            <method name="putMapping" type="void" line="175">
+                <params>
+                    <param name="type" type="Type"/>
+                    <param name="mapping" type="MXBeanMapping"/>
+                </params>
+                <declaration name="wr" type="WeakReference&lt;MXBeanMapping&gt;" line="176"/>
+            </method>
+            <method name="putPermanentMapping" type="void" line="182">
+                <params>
+                    <param name="type" type="Type"/>
+                    <param name="mapping" type="MXBeanMapping"/>
+                </params>
+            </method>
+            <scope line="187">
+                <declaration name="simpleTypes" type="OpenType&lt;?&gt;[]" line="190"/>
+                <scope line="196">
+                    <declaration name="t" type="OpenType&lt;?&gt;" line="197"/>
+                    <declaration name="c" type="Class&lt;?&gt;" line="198"/>
+                    <scope line="199"/>
+                    <scope line="202"/>
+                    <declaration name="mapping" type="MXBeanMapping" line="206"/>
+                    <scope line="209">
+                        <scope line="210">
+                            <declaration name="typeField" type="Field" line="211"/>
+                            <declaration name="primitiveType" type="Class&lt;?&gt;" line="212"/>
+                            <declaration name="primitiveMapping" type="MXBeanMapping" line="213"/>
+                            <scope line="216">
+                                <declaration name="primitiveArrayType" type="Class&lt;?&gt;" line="217"/>
+                                <declaration name="primitiveArrayOpenType" type="OpenType&lt;?&gt;" line="219"/>
+                                <declaration name="primitiveArrayMapping" type="MXBeanMapping" line="221"/>
+                            </scope>
+                        </scope>
+                        <scope line="227"/>
+                        <scope line="229"/>
+                    </scope>
+                </scope>
+            </scope>
+            <javadoc line="237">
+                Get the converter for the given Java type, creating it if necessary.                
+            </javadoc>
+            <method name="mappingForType" type="MXBeanMapping" line="241">
+                <params>
+                    <param name="objType" type="Type"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <scope line="242"/>
+                <declaration name="mapping" type="MXBeanMapping" line="247"/>
+                <scope line="254"/>
+                <scope line="256"/>
+                <scope line="258"/>
+            </method>
+            <method name="makeMapping" type="MXBeanMapping" line="267">
+                <params>
+                    <param name="objType" type="Type"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <comment line="269">
+                    It&apos;s not yet worth formalizing these tests by having for example
+                    an array of factory classes, each of which says whether it                    
+                </comment>
+                <comment line="279">
+                    Huge hack to avoid compiler warnings here.  The ElementType                    
+                </comment>
+                <comment line="280">
+                    parameter is ignored but allows us to obtain a type variable                    
+                </comment>
+                <comment line="281">
+                    T that matches &lt;T extends Enum&lt;T&gt;&gt;.                    
+                </comment>
+                <scope line="272">
+                    <declaration name="componentType" type="Type" line="273"/>
+                </scope>
+                <scope line="276">
+                    <declaration name="objClass" type="Class&lt;?&gt;" line="277"/>
+                    <scope line="278"/>
+                    <scope line="283">
+                        <declaration name="componentType" type="Type" line="284"/>
+                    </scope>
+                    <scope line="287"/>
+                    <scope line="289"/>
+                </scope>
+                <scope line="292"/>
+            </method>
+            <method name="makeEnumMapping" type="MXBeanMapping" line="300">
+                <params>
+                    <param name="enumClass" type="Class<?>"/>
+                    <param name="fake" type="Class<T>"/>
+                </params>
+            </method>
+            <method name="makeArrayOrCollectionMapping" type="MXBeanMapping" line="312">
+                <params>
+                    <param name="collectionType" type="Type"/>
+                    <param name="elementType" type="Type"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <declaration name="elementMapping" type="MXBeanMapping" line="314"/>
+                <declaration name="elementOpenType" type="OpenType&lt;?&gt;" line="315"/>
+                <declaration name="openType" type="ArrayType&lt;?&gt;" line="316"/>
+                <declaration name="elementOpenClass" type="Class&lt;?&gt;" line="317"/>
+                <declaration name="openArrayClass" type="Class&lt;?&gt;" line="319"/>
+                <declaration name="openArrayClassName" type="String" line="320"/>
+                <scope line="325"/>
+                <scope line="327"/>
+                <scope line="331"/>
+                <scope line="335">
+                    <scope line="336"/>
+                    <scope line="339"/>
+                </scope>
+            </method>
+            <declaration name="keyArray" type="String[]" line="348"/>
+            <declaration name="keyValueArray" type="String[]" line="349"/>
+            <method name="makeTabularMapping" type="MXBeanMapping" line="355">
+                <params>
+                    <param name="objType" type="Type"/>
+                    <param name="sortedMap" type="boolean"/>
+                    <param name="keyType" type="Type"/>
+                    <param name="valueType" type="Type"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <declaration name="objTypeName" type="String" line="357"/>
+                <declaration name="keyMapping" type="MXBeanMapping" line="358"/>
+                <declaration name="valueMapping" type="MXBeanMapping" line="359"/>
+                <declaration name="keyOpenType" type="OpenType&lt;?&gt;" line="360"/>
+                <declaration name="valueOpenType" type="OpenType&lt;?&gt;" line="361"/>
+                <declaration name="rowType" type="CompositeType" line="362"/>
+                <declaration name="tabularType" type="TabularType" line="368"/>
+            </method>
+            <method name="makeParameterizedTypeMapping" type="MXBeanMapping" line="382">
+                <params>
+                    <param name="objType" type="ParameterizedType"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <declaration name="rawType" type="Type" line="384"/>
+                <scope line="386">
+                    <declaration name="c" type="Class&lt;?&gt;" line="387"/>
+                    <scope line="388">
+                        <declaration name="actuals" type="Type[]" line="389"/>
+                    </scope>
+                    <scope line="394">
+                        <declaration name="sortedMap" type="boolean" line="395"/>
+                        <scope line="396">
+                            <declaration name="actuals" type="Type[]" line="397"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="makeMXBeanRefMapping" type="MXBeanMapping" line="410">
+                <params>
+                    <param name="t" type="Type"/>
+                </params>
+            </method>
+            <method name="makeCompositeMapping" type="MXBeanMapping" line="416">
+                <params>
+                    <param name="c" type="Class<?>"/>
+                    <param name="factory" type="MXBeanMappingFactory"/>
+                </params>
+                <comment line="418">
+                    For historical reasons GcInfo implements CompositeData but we                    
+                </comment>
+                <comment line="419">
+                    shouldn&apos;t count its CompositeData.getCompositeType() field as                    
+                </comment>
+                <comment line="420">
+                    an item in the computed CompositeType.                    
+                </comment>
+                <comment line="429">
+                    Select public methods that look like &quot;T getX()&quot; or &quot;boolean
+                    isX()&quot;, where T is not void and X is not the empty                    
+                </comment>
+                <comment line="474">
+                    field names                    
+                </comment>
+                <comment line="475">
+                    field descriptions                    
+                </comment>
+                <declaration name="gcInfoHack" type="boolean" line="421"/>
+                <declaration name="methods" type="List&lt;Method&gt;" line="425"/>
+                <declaration name="getterMap" type="SortedMap&lt;String,Method&gt;" line="427"/>
+                <scope line="432">
+                    <declaration name="propertyName" type="String" line="433"/>
+                    <declaration name="old" type="Method" line="440"/>
+                    <scope line="443">
+                        <declaration name="msg" type="String" line="444"/>
+                    </scope>
+                </scope>
+                <declaration name="nitems" type="int" line="451"/>
+                <scope line="453"/>
+                <declaration name="getters" type="Method[]" line="458"/>
+                <declaration name="itemNames" type="String[]" line="459"/>
+                <declaration name="openTypes" type="OpenType&lt;?&gt;[]" line="460"/>
+                <declaration name="i" type="int" line="461"/>
+                <scope line="462">
+                    <declaration name="getter" type="Method" line="464"/>
+                    <declaration name="retType" type="Type" line="466"/>
+                </scope>
+                <declaration name="compositeType" type="CompositeType" line="471"/>
+            </method>
+            <class name="IdentityMapping" line="491">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="IdentityMapping" type="constructor" line="492">
+                    <params>
+                        <param name="targetType" type="Type"/>
+                        <param name="openType" type="OpenType<?>"/>
+                    </params>
+                </method>
+                <method name="isIdentity" type="boolean" line="496"/>
+                <method name="fromNonNullOpenValue" type="Object" line="502">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="507">
+                    <params>
+                        <param name="javaValue" type="Object"/>
+                    </params>
+                </method>
+            </class>
+            <class name="EnumMapping" line="512">
+                <type_params>
+                    <type_param name="T"/>
+                </type_params>
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="EnumMapping" type="constructor" line="515">
+                    <params>
+                        <param name="enumClass" type="Class<T>"/>
+                    </params>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="521">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                </method>
+                <method name="fromNonNullOpenValue" type="T" line="527">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <scope line="528"/>
+                    <scope line="530"/>
+                </method>
+                <declaration name="enumClass" type="Class&lt;T&gt;" line="536"/>
+            </class>
+            <class name="ArrayMapping" line="539">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="ArrayMapping" type="constructor" line="542">
+                    <params>
+                        <param name="targetType" type="Type"/>
+                        <param name="openArrayType" type="ArrayType<?>"/>
+                        <param name="openArrayClass" type="Class<?>"/>
+                        <param name="elementMapping" type="MXBeanMapping"/>
+                    </params>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="549">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <declaration name="valueArray" type="Object[]" line="550"/>
+                    <declaration name="len" type="int" line="551"/>
+                    <declaration name="openArray" type="Object[]" line="552"/>
+                </method>
+                <method name="fromNonNullOpenValue" type="Object" line="561">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                    <declaration name="openArray" type="Object[]" line="562"/>
+                    <declaration name="javaType" type="Type" line="563"/>
+                    <declaration name="valueArray" type="Object[]" line="564"/>
+                    <declaration name="componentType" type="Type" line="565"/>
+                    <scope line="566"/>
+                    <scope line="570"/>
+                    <scope line="572"/>
+                </method>
+                <method name="checkReconstructible" type="void" line="583"/>
+                <declaration name="elementMapping" type="MXBeanMapping" line="587"/>
+                <javadoc line="587">
+                    DefaultMXBeanMappingFactory for the elements of this array.  If this is an
+                      array of arrays, the converter converts the second-level arrays,
+                      not the deepest elements.                    
+                </javadoc>
+            </class>
+            <class name="CollectionMapping" line="595">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="CollectionMapping" type="constructor" line="599">
+                    <params>
+                        <param name="targetType" type="Type"/>
+                        <param name="openArrayType" type="ArrayType<?>"/>
+                        <param name="openArrayClass" type="Class<?>"/>
+                        <param name="elementMapping" type="MXBeanMapping"/>
+                    </params>
+                    <comment line="603">
+                        Determine the concrete class to be used when converting
+                        back to this Java type.  We convert all Lists to ArrayList
+                        and all Sets to TreeSet.  (TreeSet because it is a SortedSet,                        
+                    </comment>
+                    <comment line="616">
+                        can&apos;t happen                        
+                    </comment>
+                    <declaration name="raw" type="Type" line="607"/>
+                    <declaration name="c" type="Class&lt;?&gt;" line="608"/>
+                    <declaration name="collC" type="Class&lt;?&gt;" line="609"/>
+                    <scope line="616"/>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="625">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <declaration name="valueCollection" type="Collection&lt;?&gt;" line="626"/>
+                    <scope line="627">
+                        <declaration name="comparator" type="Comparator&lt;?&gt;" line="628"/>
+                        <scope line="630">
+                            <declaration name="msg" type="String" line="631"/>
+                        </scope>
+                    </scope>
+                    <declaration name="openArray" type="Object[]" line="637"/>
+                    <declaration name="i" type="int" line="640"/>
+                </method>
+                <method name="fromNonNullOpenValue" type="Object" line="648">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                    <declaration name="openArray" type="Object[]" line="649"/>
+                    <declaration name="valueCollection" type="Collection&lt;Object&gt;" line="650"/>
+                    <scope line="651"/>
+                    <scope line="653"/>
+                    <scope line="656">
+                        <declaration name="value" type="Object" line="657"/>
+                        <scope line="658">
+                            <declaration name="msg" type="String" line="659"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="checkReconstructible" type="void" line="669"/>
+                <declaration name="collectionClass" type="Class&lt;? extends Collection&lt;?&gt;&gt;" line="673"/>
+                <declaration name="elementMapping" type="MXBeanMapping" line="674"/>
+            </class>
+            <class name="MXBeanRefMapping" line="677">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="MXBeanRefMapping" type="constructor" line="678">
+                    <params>
+                        <param name="intf" type="Type"/>
+                    </params>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="684">
+                    <params>
+                        <param name="javaValue" type="Object"/>
+                    </params>
+                    <declaration name="lookup" type="MXBeanLookup" line="685"/>
+                    <declaration name="name" type="ObjectName" line="686"/>
+                </method>
+                <method name="fromNonNullOpenValue" type="Object" line="694">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                    <declaration name="lookup" type="MXBeanLookup" line="695"/>
+                    <declaration name="name" type="ObjectName" line="696"/>
+                    <declaration name="mxbean" type="Object" line="697"/>
+                    <scope line="699">
+                        <declaration name="msg" type="String" line="700"/>
+                    </scope>
+                </method>
+                <method name="lookupNotNull" type="MXBeanLookup" line="709">
+                    <params>
+                        <param name="excClass" type="Class<T>"/>
+                    </params>
+                    <declaration name="lookup" type="MXBeanLookup" line="710"/>
+                    <scope line="711">
+                        <declaration name="msg" type="String" line="712"/>
+                        <declaration name="exc" type="T" line="714"/>
+                        <scope line="715">
+                            <declaration name="con" type="Constructor&lt;T&gt;" line="716"/>
+                        </scope>
+                        <scope line="718"/>
+                    </scope>
+                </method>
+            </class>
+            <class name="TabularMapping" line="727">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="TabularMapping" type="constructor" line="732">
+                    <params>
+                        <param name="targetType" type="Type"/>
+                        <param name="sortedMap" type="boolean"/>
+                        <param name="tabularType" type="TabularType"/>
+                        <param name="keyConverter" type="MXBeanMapping"/>
+                        <param name="valueConverter" type="MXBeanMapping"/>
+                    </params>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="740">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <declaration name="valueMap" type="Map&lt;Object,Object&gt;" line="741"/>
+                    <scope line="742">
+                        <declaration name="comparator" type="Comparator&lt;?&gt;" line="743"/>
+                        <scope line="744">
+                            <declaration name="msg" type="String" line="745"/>
+                        </scope>
+                    </scope>
+                    <declaration name="tabularType" type="TabularType" line="751"/>
+                    <declaration name="table" type="TabularData" line="752"/>
+                    <declaration name="rowType" type="CompositeType" line="753"/>
+                    <scope line="754">
+                        <declaration name="openKey" type="Object" line="755"/>
+                        <declaration name="openValue" type="Object" line="756"/>
+                        <declaration name="row" type="CompositeData" line="757"/>
+                    </scope>
+                </method>
+                <method name="fromNonNullOpenValue" type="Object" line="769">
+                    <params>
+                        <param name="openValue" type="Object"/>
+                    </params>
+                    <declaration name="table" type="TabularData" line="770"/>
+                    <declaration name="rows" type="Collection&lt;CompositeData&gt;" line="771"/>
+                    <declaration name="valueMap" type="Map&lt;Object,Object&gt;" line="772"/>
+                    <scope line="774">
+                        <declaration name="key" type="Object" line="775"/>
+                        <declaration name="value" type="Object" line="777"/>
+                        <scope line="779">
+                            <declaration name="msg" type="String" line="780"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="checkReconstructible" type="void" line="789"/>
+                <declaration name="sortedMap" type="boolean" line="794"/>
+                <declaration name="keyMapping" type="MXBeanMapping" line="795"/>
+                <declaration name="valueMapping" type="MXBeanMapping" line="796"/>
+            </class>
+            <class name="CompositeMapping" line="799">
+                <extends class="NonNullMXBeanMapping"/>
+                <method name="CompositeMapping" type="constructor" line="804">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="compositeType" type="CompositeType"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="getters" type="Method[]"/>
+                        <param name="factory" type="MXBeanMappingFactory"/>
+                    </params>
+                    <scope line="812">
+                        <declaration name="retType" type="Type" line="813"/>
+                    </scope>
+                </method>
+                <method name="toNonNullOpenValue" type="Object" line="820">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <declaration name="ct" type="CompositeType" line="821"/>
+                    <declaration name="values" type="Object[]" line="827"/>
+                    <scope line="828">
+                        <scope line="829">
+                            <declaration name="got" type="Object" line="830"/>
+                        </scope>
+                        <scope line="832"/>
+                    </scope>
+                </method>
+                <javadoc line="840">
+                    Determine how to convert back from the CompositeData into
+                      the original Java type.  For a type that is not reconstructible,
+                      this method will fail every time, and will throw the right
+                      exception.                    
+                </javadoc>
+                <method name="makeCompositeBuilder" type="void" line="845">
+                    <comment line="850">
+                        In this 2D array, each subarray is a set of builders where
+                        there is no point in consulting the ones after the first if                        
+                    </comment>
+                    <comment line="868">
+                        We try to make a meaningful exception message by
+                        concatenating each Builder&apos;s explanation of why it                        
+                    </comment>
+                    <comment line="890">
+                        skip other builders in this group                        
+                    </comment>
+                    <declaration name="targetClass" type="Class&lt;?&gt;" line="849"/>
+                    <declaration name="builders" type="CompositeBuilder[][]" line="853"/>
+                    <declaration name="foundBuilder" type="CompositeBuilder" line="867"/>
+                    <declaration name="whyNots" type="StringBuilder" line="871"/>
+                    <declaration name="possibleCause" type="Throwable" line="872"/>
+                    <scope line="874">
+                        <scope line="875">
+                            <declaration name="builder" type="CompositeBuilder" line="876"/>
+                            <declaration name="whyNot" type="String" line="877"/>
+                            <scope line="878"/>
+                            <declaration name="cause" type="Throwable" line="882"/>
+                            <scope line="885"/>
+                        </scope>
+                    </scope>
+                    <scope line="894">
+                        <declaration name="msg" type="String" line="895"/>
+                    </scope>
+                </method>
+                <method name="checkReconstructible" type="void" line="906"/>
+                <method name="fromNonNullOpenValue" type="Object" line="912">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                </method>
+                <declaration name="itemNames" type="String[]" line="919"/>
+                <declaration name="getters" type="Method[]" line="920"/>
+                <declaration name="getterMappings" type="MXBeanMapping[]" line="921"/>
+                <declaration name="compositeBuilder" type="CompositeBuilder" line="922"/>
+            </class>
+            <class name="CompositeBuilder" line="925">
+                <javadoc line="925">
+                    Converts from a CompositeData to an instance of the targetClass.                    
+                </javadoc>
+                <method name="CompositeBuilder" type="constructor" line="927">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                    </params>
+                </method>
+                <method name="getTargetClass" type="Class<?>" line="932"/>
+                <method name="getItemNames" type="String[]" line="936"/>
+                <method name="applicable" type="String" line="940"/>
+                <javadoc line="940">
+                    If the subclass is appropriate for targetClass, then the
+                      method returns null.  If the subclass is not appropriate,
+                      then the method returns an explanation of why not.  If the
+                      subclass should be appropriate but there is a problem,
+                      then the method throws InvalidObjectException.                    
+                </javadoc>
+                <javadoc line="948">
+                    If the subclass returns an explanation of why it is not applicable,
+                      it can additionally indicate an exception with details.  This is
+                      potentially confusing, because the real problem could be that one
+                      of the other subclasses is supposed to be applicable but isn&apos;t.
+                      But the advantage of less information loss probably outweighs the
+                      disadvantage of possible confusion.                    
+                </javadoc>
+                <method name="possibleCause" type="Throwable" line="954"/>
+                <method name="fromCompositeData" type="Object" line="958"/>
+                <declaration name="targetClass" type="Class&lt;?&gt;" line="963"/>
+                <declaration name="itemNames" type="String[]" line="964"/>
+            </class>
+            <class name="CompositeBuilderViaFrom" line="967">
+                <extends class="CompositeBuilder"/>
+                <javadoc line="967">
+                    Builder for when the target class has a method &quot;public static
+                      from(CompositeData)&quot;.                    
+                </javadoc>
+                <method name="CompositeBuilderViaFrom" type="constructor" line="972">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                    </params>
+                </method>
+                <method name="applicable" type="String" line="976">
+                    <params>
+                        <param name="getters" type="Method[]"/>
+                    </params>
+                    <comment line="977">
+                        See if it has a method &quot;T from(CompositeData)&quot;                        
+                    </comment>
+                    <comment line="978">
+                        as is conventional for a CompositeDataView                        
+                    </comment>
+                    <comment line="999">
+                        success!                        
+                    </comment>
+                    <comment line="1003">
+                        OK: it doesn&apos;t have the method                        
+                    </comment>
+                    <declaration name="targetClass" type="Class&lt;?&gt;" line="979"/>
+                    <scope line="980">
+                        <declaration name="fromMethod" type="Method" line="981"/>
+                        <scope line="984">
+                            <declaration name="msg" type="String" line="985"/>
+                        </scope>
+                        <scope line="990">
+                            <declaration name="msg" type="String" line="991"/>
+                        </scope>
+                    </scope>
+                    <scope line="1000"/>
+                    <scope line="1002"/>
+                </method>
+                <method name="fromCompositeData" type="Object" line="1011">
+                    <params>
+                        <param name="cd" type="CompositeData"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="converters" type="MXBeanMapping[]"/>
+                    </params>
+                    <scope line="1012"/>
+                    <scope line="1014">
+                        <declaration name="msg" type="String" line="1015"/>
+                    </scope>
+                </method>
+                <declaration name="fromMethod" type="Method" line="1020"/>
+            </class>
+            <class name="CompositeBuilderCheckGetters" line="1023">
+                <extends class="CompositeBuilder"/>
+                <javadoc line="1023">
+                    This builder never actually returns success.  It simply serves
+                      to check whether the other builders in the same group have any
+                      chance of success.  If any getter in the targetClass returns
+                      a type that we don&apos;t know how to reconstruct, then we will
+                      not be able to make a builder, and there is no point in repeating
+                      the error about the problematic getter as many times as there are
+                      candidate builders.  Instead, the &quot;applicable&quot; method will return
+                      an explanatory string, and the other builders will be skipped.
+                      If all the getters are OK, then the &quot;applicable&quot; method will return
+                      an empty string and the other builders will be tried.                    
+                </javadoc>
+                <method name="CompositeBuilderCheckGetters" type="constructor" line="1035">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="getterConverters" type="MXBeanMapping[]"/>
+                    </params>
+                </method>
+                <method name="applicable" type="String" line="1040">
+                    <params>
+                        <param name="getters" type="Method[]"/>
+                    </params>
+                    <scope line="1041">
+                        <scope line="1042"/>
+                        <scope line="1044"/>
+                    </scope>
+                </method>
+                <method name="possibleCause" type="Throwable" line="1054"/>
+                <method name="fromCompositeData" type="Object" line="1060">
+                    <params>
+                        <param name="cd" type="CompositeData"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="converters" type="MXBeanMapping[]"/>
+                    </params>
+                </method>
+                <declaration name="getterConverters" type="MXBeanMapping[]" line="1064"/>
+                <declaration name="possibleCause" type="Throwable" line="1065"/>
+            </class>
+            <class name="CompositeBuilderViaSetters" line="1068">
+                <extends class="CompositeBuilder"/>
+                <javadoc line="1068">
+                    Builder for when the target class has a setter for every getter.                    
+                </javadoc>
+                <method name="CompositeBuilderViaSetters" type="constructor" line="1071">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                    </params>
+                </method>
+                <method name="applicable" type="String" line="1075">
+                    <params>
+                        <param name="getters" type="Method[]"/>
+                    </params>
+                    <scope line="1076">
+                        <declaration name="c" type="Constructor&lt;?&gt;" line="1077"/>
+                    </scope>
+                    <scope line="1078"/>
+                    <declaration name="setters" type="Method[]" line="1082"/>
+                    <scope line="1083">
+                        <declaration name="getter" type="Method" line="1084"/>
+                        <declaration name="returnType" type="Class&lt;?&gt;" line="1085"/>
+                        <declaration name="name" type="String" line="1086"/>
+                        <declaration name="setterName" type="String" line="1087"/>
+                        <declaration name="setter" type="Method" line="1088"/>
+                        <scope line="1089"/>
+                        <scope line="1093"/>
+                    </scope>
+                </method>
+                <method name="fromCompositeData" type="Object" line="1106">
+                    <params>
+                        <param name="cd" type="CompositeData"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="converters" type="MXBeanMapping[]"/>
+                    </params>
+                    <declaration name="o" type="Object" line="1107"/>
+                    <scope line="1108">
+                        <scope line="1110">
+                            <scope line="1111">
+                                <declaration name="openItem" type="Object" line="1112"/>
+                                <declaration name="javaItem" type="Object" line="1113"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1118"/>
+                </method>
+                <declaration name="setters" type="Method[]" line="1124"/>
+            </class>
+            <class name="CompositeBuilderViaConstructor" line="1127">
+                <extends class="CompositeBuilder"/>
+                <javadoc line="1127">
+                    Builder for when the target class has a constructor that is
+                      annotated with @ConstructorProperties so we can see the correspondence
+                      to getters.                    
+                </javadoc>
+                <method name="CompositeBuilderViaConstructor" type="constructor" line="1133">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                    </params>
+                </method>
+                <method name="applicable" type="String" line="1137">
+                    <params>
+                        <param name="getters" type="Method[]"/>
+                    </params>
+                    <comment line="1144">
+                        Applicable if and only if there are any annotated constructors                        
+                    </comment>
+                    <comment line="1157">
+                        Now check that all the annotated constructors are valid                        
+                    </comment>
+                    <comment line="1158">
+                        and throw an exception if not.                        
+                    </comment>
+                    <comment line="1160">
+                        First link the itemNames to their getter indexes.                        
+                    </comment>
+                    <comment line="1166">
+                        Run through the constructors making the checks in the spec.                        
+                    </comment>
+                    <comment line="1167">
+                        For each constructor, remember the correspondence between its                        
+                    </comment>
+                    <comment line="1168">
+                        parameters and the items.  The int[] for a constructor says                        
+                    </comment>
+                    <comment line="1169">
+                        what parameter index should get what item.  For example,                        
+                    </comment>
+                    <comment line="1170">
+                        if element 0 is 2 then that means that item 0 in the                        
+                    </comment>
+                    <comment line="1171">
+                        CompositeData goes to parameter 2 of the constructor.  If an                        
+                    </comment>
+                    <comment line="1172">
+                        element is -1, that item isn&apos;t given to the constructor.                        
+                    </comment>
+                    <comment line="1173">
+                        Also remember the set of properties in that constructor                        
+                    </comment>
+                    <comment line="1174">
+                        so we can test unambiguity.                        
+                    </comment>
+                    <comment line="1240">
+                        Check that no possible set of items could lead to an ambiguous
+                         choice of constructor (spec requires this check).  For any
+                         pair of constructors, their union would be the minimal
+                         ambiguous set.  If this set itself corresponds to a constructor,
+                         there is no ambiguity for that pair.  In the usual case, one
+                         of the constructors is a superset of the other so the union is
+                         just the bigger constuctor.
+                        
+                         The algorithm here is quadratic in the number of constructors
+                         with a @ConstructorProperties annotation.  Typically this corresponds
+                         to the number of versions of the class there have been.  Ten
+                         would already be a large number, so although it&apos;s probably
+                         possible to have an O(n lg n) algorithm it wouldn&apos;t be
+                         worth the complexity.                        
+                    </comment>
+                    <comment line="1278">
+                        success!                        
+                    </comment>
+                    <declaration name="propertyNamesClass" type="Class&lt;ConstructorProperties&gt;" line="1139"/>
+                    <declaration name="targetClass" type="Class&lt;?&gt;" line="1141"/>
+                    <declaration name="constrs" type="Constructor&lt;?&gt;[]" line="1142"/>
+                    <declaration name="annotatedConstrList" type="List&lt;Constructor&lt;?&gt;&gt;" line="1145"/>
+                    <scope line="1146"/>
+                    <declaration name="getterMap" type="Map&lt;String,Integer&gt;" line="1161"/>
+                    <declaration name="itemNames" type="String[]" line="1162"/>
+                    <declaration name="getterIndexSets" type="Set&lt;BitSet&gt;" line="1175"/>
+                    <scope line="1176">
+                        <declaration name="propertyNames" type="String[]" line="1177"/>
+                        <declaration name="paramTypes" type="Type[]" line="1180"/>
+                        <scope line="1181">
+                            <declaration name="msg" type="String" line="1182"/>
+                        </scope>
+                        <declaration name="paramIndexes" type="int[]" line="1188"/>
+                        <declaration name="present" type="BitSet" line="1191"/>
+                        <scope line="1193">
+                            <declaration name="propertyName" type="String" line="1194"/>
+                            <scope line="1195">
+                                <declaration name="msg" type="String" line="1196"/>
+                                <scope line="1199">
+                                    <scope line="1200"/>
+                                </scope>
+                            </scope>
+                            <declaration name="getterIndex" type="int" line="1208"/>
+                            <scope line="1210">
+                                <declaration name="msg" type="String" line="1211"/>
+                            </scope>
+                            <declaration name="getter" type="Method" line="1217"/>
+                            <declaration name="propertyType" type="Type" line="1218"/>
+                            <scope line="1219">
+                                <declaration name="msg" type="String" line="1220"/>
+                            </scope>
+                        </scope>
+                        <scope line="1228">
+                            <declaration name="msg" type="String" line="1229"/>
+                        </scope>
+                        <declaration name="c" type="Constr" line="1236"/>
+                    </scope>
+                    <scope line="1255">
+                        <declaration name="seen" type="boolean" line="1256"/>
+                        <scope line="1257">
+                            <scope line="1260">
+                                <declaration name="u" type="BitSet" line="1261"/>
+                                <scope line="1263">
+                                    <declaration name="names" type="Set&lt;String&gt;" line="1264"/>
+                                    <declaration name="msg" type="String" line="1268"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="fromCompositeData" type="Object" line="1284">
+                    <params>
+                        <param name="cd" type="CompositeData"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="mappings" type="MXBeanMapping[]"/>
+                    </params>
+                    <comment line="1285">
+                        The CompositeData might come from an earlier version where                        
+                    </comment>
+                    <comment line="1286">
+                        not all the items were present.  We look for a constructor                        
+                    </comment>
+                    <comment line="1287">
+                        that accepts just the items that are present.  Because of                        
+                    </comment>
+                    <comment line="1288">
+                        the ambiguity check in applicable(), we know there must be                        
+                    </comment>
+                    <comment line="1289">
+                        at most one maximally applicable constructor.                        
+                    </comment>
+                    <declaration name="ct" type="CompositeType" line="1290"/>
+                    <declaration name="present" type="BitSet" line="1291"/>
+                    <scope line="1292"/>
+                    <declaration name="max" type="Constr" line="1297"/>
+                    <scope line="1298"/>
+                    <scope line="1305">
+                        <declaration name="msg" type="String" line="1306"/>
+                    </scope>
+                    <declaration name="params" type="Object[]" line="1312"/>
+                    <scope line="1313">
+                        <declaration name="openItem" type="Object" line="1316"/>
+                        <declaration name="javaItem" type="Object" line="1317"/>
+                        <declaration name="index" type="int" line="1318"/>
+                    </scope>
+                    <scope line="1323"/>
+                    <scope line="1325">
+                        <declaration name="msg" type="String" line="1326"/>
+                    </scope>
+                </method>
+                <method name="subset" type="boolean" line="1332">
+                    <params>
+                        <param name="sub" type="BitSet"/>
+                        <param name="sup" type="BitSet"/>
+                    </params>
+                    <declaration name="subcopy" type="BitSet" line="1333"/>
+                </method>
+                <class name="Constr" line="1338">
+                    <declaration name="constructor" type="Constructor&lt;?&gt;" line="1339"/>
+                    <declaration name="paramIndexes" type="int[]" line="1340"/>
+                    <declaration name="presentParams" type="BitSet" line="1341"/>
+                    <method name="Constr" type="constructor" line="1343">
+                        <params>
+                            <param name="constructor" type="Constructor<?>"/>
+                            <param name="paramIndexes" type="int[]"/>
+                            <param name="presentParams" type="BitSet"/>
+                        </params>
+                    </method>
+                </class>
+                <declaration name="annotatedConstructors" type="List&lt;Constr&gt;" line="1350"/>
+            </class>
+            <class name="CompositeBuilderViaProxy" line="1353">
+                <extends class="CompositeBuilder"/>
+                <javadoc line="1353">
+                    Builder for when the target class is an interface and contains
+                      no methods other than getters.  Then we can make an instance
+                      using a dynamic proxy that forwards the getters to the source
+                      CompositeData.                    
+                </javadoc>
+                <method name="CompositeBuilderViaProxy" type="constructor" line="1360">
+                    <params>
+                        <param name="targetClass" type="Class<?>"/>
+                        <param name="itemNames" type="String[]"/>
+                    </params>
+                </method>
+                <method name="applicable" type="String" line="1364">
+                    <params>
+                        <param name="getters" type="Method[]"/>
+                    </params>
+                    <comment line="1371">
+                        If the interface has any methods left over, they better be
+                         public methods that are already present in java.lang.Object.                        
+                    </comment>
+                    <comment line="1385">
+                        We don&apos;t catch SecurityException since it shouldn&apos;t
+                         happen for a method in Object and if it does we would
+                         like to know about it rather than mysteriously complaining.                        
+                    </comment>
+                    <comment line="1392">
+                        success!                        
+                    </comment>
+                    <declaration name="targetClass" type="Class&lt;?&gt;" line="1365"/>
+                    <declaration name="methods" type="Set&lt;Method&gt;" line="1368"/>
+                    <declaration name="bad" type="String" line="1374"/>
+                    <scope line="1375">
+                        <declaration name="mname" type="String" line="1376"/>
+                        <declaration name="mparams" type="Class&lt;?&gt;[]" line="1377"/>
+                        <scope line="1378">
+                            <declaration name="om" type="Method" line="1379"/>
+                        </scope>
+                        <scope line="1382"/>
+                    </scope>
+                </method>
+                <method name="fromCompositeData" type="Object" line="1397">
+                    <params>
+                        <param name="cd" type="CompositeData"/>
+                        <param name="itemNames" type="String[]"/>
+                        <param name="converters" type="MXBeanMapping[]"/>
+                    </params>
+                    <declaration name="targetClass" type="Class&lt;?&gt;" line="1398"/>
+                </method>
+            </class>
+            <method name="invalidObjectException" type="InvalidObjectException" line="1407">
+                <params>
+                    <param name="msg" type="String"/>
+                    <param name="cause" type="Throwable"/>
+                </params>
+            </method>
+            <method name="invalidObjectException" type="InvalidObjectException" line="1411">
+                <params>
+                    <param name="cause" type="Throwable"/>
+                </params>
+            </method>
+            <method name="openDataException" type="OpenDataException" line="1415">
+                <params>
+                    <param name="msg" type="String"/>
+                    <param name="cause" type="Throwable"/>
+                </params>
+            </method>
+            <method name="openDataException" type="OpenDataException" line="1419">
+                <params>
+                    <param name="cause" type="Throwable"/>
+                </params>
+            </method>
+            <method name="mustBeComparable" type="void" line="1424">
+                <params>
+                    <param name="collection" type="Class<?>"/>
+                    <param name="element" type="Type"/>
+                </params>
+                <scope line="1426">
+                    <declaration name="msg" type="String" line="1427"/>
+                </scope>
+            </method>
+            <javadoc line="1435">
+                Utility method to take a string and convert it to normal Java variable
+                  name capitalization.  This normally means converting the first
+                  character from upper case to lower case, but in the (unusual) special
+                  case when there is more than one character and both the first and
+                  second characters are upper case, we leave it alone.
+                  &lt;p&gt;
+                  Thus &quot;FooBah&quot; becomes &quot;fooBah&quot; and &quot;X&quot; becomes &quot;x&quot;, but &quot;URL&quot; stays
+                  as &quot;URL&quot;.                
+                <param>
+                    name The string to be decapitalized.                    
+                </param>
+                <return>
+                    The decapitalized version of the string.                    
+                </return>
+            </javadoc>
+            <method name="decapitalize" type="String" line="1448">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <comment line="1453">
+                    Should be name.offsetByCodePoints but 6242664 makes this fail                    
+                </comment>
+                <scope line="1449"/>
+                <declaration name="offset1" type="int" line="1452"/>
+            </method>
+            <javadoc line="1461">
+                Reverse operation for java.beans.Introspector.decapitalize.  For any s,
+                  capitalize(decapitalize(s)).equals(s).  The reverse is not true:
+                  e.g. capitalize(&quot;uRL&quot;) produces &quot;URL&quot; which is unchanged by
+                  decapitalize.                
+            </javadoc>
+            <method name="capitalize" type="String" line="1467">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <declaration name="offset1" type="int" line="1470"/>
+            </method>
+            <method name="propertyName" type="String" line="1475">
+                <params>
+                    <param name="m" type="Method"/>
+                </params>
+                <declaration name="rest" type="String" line="1476"/>
+                <declaration name="name" type="String" line="1477"/>
+            </method>
+            <declaration name="inProgress" type="Map&lt;Type,Type&gt;" line="1490"/>
+        </class>
+    </source>

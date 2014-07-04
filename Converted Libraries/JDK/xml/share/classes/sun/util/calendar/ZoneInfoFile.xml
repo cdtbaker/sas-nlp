@@ -1,0 +1,731 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.util.calendar">
+        <import package="java.io.File"/>
+        <import package="java.io.FileInputStream"/>
+        <import package="java.io.FileNotFoundException"/>
+        <import package="java.io.IOException"/>
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.nio.file.FileSystems"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.security.PrivilegedActionException"/>
+        <import package="java.security.PrivilegedExceptionAction"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <class name="ZoneInfoFile" line="43">
+            <javadoc line="43">
+                &lt;code&gt;ZoneInfoFile&lt;/code&gt; reads Zone information files in the
+                  &amp;lt;java.home&amp;gt;/lib/zi directory and provides time zone
+                  information in the form of a {@link ZoneInfo} object. Also, it
+                  reads the ZoneInfoMappings file to obtain time zone IDs information
+                  that is used by the {@link ZoneInfo} class. The directory layout
+                  and data file formats are as follows.
+                  &lt;p&gt;&lt;strong&gt;Directory layout&lt;/strong&gt;&lt;p&gt;
+                  All zone data files and ZoneInfoMappings are put under the
+                  &amp;lt;java.home&amp;gt;/lib/zi directory. A path name for a given time
+                  zone ID is a concatenation of &amp;lt;java.home&amp;gt;/lib/zi/ and the
+                  time zone ID. (The file separator is replaced with the platform
+                  dependent value. e.g., &apos;\&apos; for Win32.) An example layout will look
+                  like as follows.
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  &amp;lt;java.home&amp;gt;/lib/zi/Africa/Addis_Ababa
+                  /Africa/Dakar
+                  /America/Los_Angeles
+                  /Asia/Singapore
+                  /EET
+                  /Europe/Oslo
+                  /GMT
+                  /Pacific/Galapagos
+                  ...
+                  /ZoneInfoMappings
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  A zone data file has specific information of each zone.
+                  &lt;code&gt;ZoneInfoMappings&lt;/code&gt; has global information of zone IDs so
+                  that the information can be obtained without instantiating all time
+                  zones.
+                  &lt;p&gt;&lt;strong&gt;File format&lt;/strong&gt;&lt;p&gt;
+                  Two binary-file formats based on a simple Tag-Length-Value format are used
+                  to describe TimeZone information. The generic format of a data file is:
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  DataFile {
+                  u1              magic[7];
+                  u1              version;
+                  data_item       data[];
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  where &lt;code&gt;magic&lt;/code&gt; is a magic number identifying a file
+                  format, &lt;code&gt;version&lt;/code&gt; is the format version number, and
+                  &lt;code&gt;data&lt;/code&gt; is one or more &lt;code&gt;data_item&lt;/code&gt;s. The
+                  &lt;code&gt;data_item&lt;/code&gt; structure is:
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  data_item {
+                  u1              tag;
+                  u2              length;
+                  u1              value[length];
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  where &lt;code&gt;tag&lt;/code&gt; indicates the data type of the item,
+                  &lt;code&gt;length&lt;/code&gt; is a byte count of the following
+                  &lt;code&gt;value&lt;/code&gt; that is the content of item data.
+                  &lt;p&gt;
+                  All data is stored in the big-endian order. There is no boundary
+                  alignment between date items.
+                  &lt;p&gt;&lt;strong&gt;1. ZoneInfo data file&lt;/strong&gt;&lt;p&gt;
+                  Each ZoneInfo data file consists of the following members.
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  ZoneInfoDataFile {
+                  u1              magic[7];
+                  u1              version;
+                  SET OF&lt;sup&gt;1&lt;/sup&gt; {
+                  transition            transitions&lt;sup&gt;2&lt;/sup&gt;;
+                  offset_table          offsets&lt;sup&gt;2&lt;/sup&gt;;
+                  simpletimezone        stzparams&lt;sup&gt;2&lt;/sup&gt;;
+                  raw_offset            rawoffset;
+                  dstsaving             dst;
+                  checksum              crc32;
+                  gmtoffsetwillchange   gmtflag&lt;sup&gt;2&lt;/sup&gt;;
+                  }
+                  }
+                  1: an unordered collection of zero or one occurrences of each item
+                  2: optional item
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;code&gt;magic&lt;/code&gt; is a byte-string constant identifying the
+                  ZoneInfo data file.  This field must be &lt;code&gt;&quot;javazi&amp;#92;0&quot;&lt;/code&gt;
+                  defined as {@link #JAVAZI_LABEL}.
+                  &lt;p&gt;
+                  &lt;code&gt;version&lt;/code&gt; is the version number of the file format. This
+                  will be used for compatibility check. This field must be
+                  &lt;code&gt;0x01&lt;/code&gt; in this version.
+                  &lt;p&gt;
+                  &lt;code&gt;transition&lt;/code&gt;, &lt;code&gt;offset_table&lt;/code&gt; and
+                  &lt;code&gt;simpletimezone&lt;/code&gt; have information of time transition
+                  from the past to the future.  Therefore, these structures don&apos;t
+                  exist if the zone didn&apos;t change zone names and haven&apos;t applied DST in
+                  the past, and haven&apos;t planned to apply it.  (e.g. Asia/Tokyo zone)
+                  &lt;p&gt;
+                  &lt;code&gt;raw_offset&lt;/code&gt;, &lt;code&gt;dstsaving&lt;/code&gt; and &lt;code&gt;checksum&lt;/code&gt;
+                  exist in every zoneinfo file. They are used by TimeZone.class indirectly.
+                  &lt;p&gt;&lt;strong&gt;1.1 &lt;code&gt;transition&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;&lt;a name=&quot;transition&quot;&gt;&lt;/a&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  transition {
+                  u1      tag;              // 0x04 : constant
+                  u2      length;           // byte length of whole values
+                  s8      value[length/8];  // transitions in `long&apos;
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  See {@link ZoneInfo#transitions ZoneInfo.transitions} about the value.
+                  &lt;p&gt;&lt;strong&gt;1.2 &lt;code&gt;offset_table&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  offset_table {
+                  u1      tag;              // 0x05 : constant
+                  u2      length;           // byte length of whole values
+                  s4      value[length/4];  // offset values in `int&apos;
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;1.3 &lt;code&gt;simpletimezone&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  See {@link ZoneInfo#simpleTimeZoneParams ZoneInfo.simpleTimeZoneParams}about the value.
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  simpletimezone {
+                  u1      tag;              // 0x06 : constant
+                  u2      length;           // byte length of whole values
+                  s4      value[length/4];  // SimpleTimeZone parameters
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  See {@link ZoneInfo#offsets ZoneInfo.offsets} about the value.
+                  &lt;p&gt;&lt;strong&gt;1.4 &lt;code&gt;raw_offset&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  raw_offset {
+                  u1      tag;              // 0x01 : constant
+                  u2      length;           // must be 4.
+                  s4      value;            // raw GMT offset [millisecond]
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  See {@link ZoneInfo#rawOffset ZoneInfo.rawOffset} about the value.
+                  &lt;p&gt;&lt;strong&gt;1.5 &lt;code&gt;dstsaving&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  Value has dstSaving in seconds.
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  dstsaving {
+                  u1      tag;              // 0x02 : constant
+                  u2      length;           // must be 2.
+                  s2      value;            // DST save value [second]
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  See {@link ZoneInfo#dstSavings ZoneInfo.dstSavings} about value.
+                  &lt;p&gt;&lt;strong&gt;1.6 &lt;code&gt;checksum&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  checksum {
+                  u1      tag;              // 0x03 : constant
+                  u2      length;           // must be 4.
+                  s4      value;            // CRC32 value of transitions
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  See {@link ZoneInfo#checksum ZoneInfo.checksum}.
+                  &lt;p&gt;&lt;strong&gt;1.7 &lt;code&gt;gmtoffsetwillchange&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  This record has a flag value for {@link ZoneInfo#rawOffsetWillChange}.
+                  If this record is not present in a zoneinfo file, 0 is assumed for
+                  the value.
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  gmtoffsetwillchange {
+                  u1      tag;             // 0x07 : constant
+                  u2      length;          // must be 1.
+                  u1      value;           // 1: if the GMT raw offset will change
+                  // in the future, 0, otherwise.
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2. ZoneInfoMappings file&lt;/strong&gt;&lt;p&gt;
+                  The ZoneInfoMappings file consists of the following members.
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  ZoneInfoMappings {
+                  u1      magic[7];
+                  u1      version;
+                  SET OF {
+                  versionName                   version;
+                  zone_id_table                 zoneIDs;
+                  raw_offset_table              rawoffsets;
+                  raw_offset_index_table        rawoffsetindices;
+                  alias_table                   aliases;
+                  excluded_list                 excludedList;
+                  }
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;code&gt;magic&lt;/code&gt; is a byte-string constant which has the file type.
+                  This field must be &lt;code&gt;&quot;javazm&amp;#92;0&quot;&lt;/code&gt; defined as {@link #JAVAZM_LABEL}.
+                  &lt;p&gt;
+                  &lt;code&gt;version&lt;/code&gt; is the version number of this file
+                  format. This will be used for compatibility check. This field must
+                  be &lt;code&gt;0x01&lt;/code&gt; in this version.
+                  &lt;p&gt;
+                  &lt;code&gt;versionName&lt;/code&gt; shows which version of Olson&apos;s data has been used
+                  to generate this ZoneInfoMappings. (e.g. &lt;code&gt;tzdata2000g&lt;/code&gt;) &lt;br&gt;
+                  This field is for trouble-shooting and isn&apos;t usually used in runtime.
+                  &lt;p&gt;
+                  &lt;code&gt;zone_id_table&lt;/code&gt;, &lt;code&gt;raw_offset_index_table&lt;/code&gt; and
+                  &lt;code&gt;alias_table&lt;/code&gt; are general information of supported
+                  zones.
+                  &lt;p&gt;&lt;strong&gt;2.1 &lt;code&gt;zone_id_table&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  The list of zone IDs included in the zi database. The list does
+                  &lt;em&gt;not&lt;/em&gt; include zone IDs, if any, listed in excludedList.
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  zone_id_table {
+                  u1      tag;              // 0x40 : constant
+                  u2      length;           // byte length of whole values
+                  u2      zone_id_count;
+                  zone_id value[zone_id_count];
+                  }
+                  zone_id {
+                  u1      byte_length;      // byte length of id
+                  u1      id[byte_length];  // zone name string
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2.2 &lt;code&gt;raw_offset_table&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  raw_offset_table {
+                  u1      tag;              // 0x41 : constant
+                  u2      length;           // byte length of whole values
+                  s4      value[length/4];  // raw GMT offset in milliseconds
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2.3 &lt;code&gt;raw_offset_index_table&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  raw_offset_index_table {
+                  u1      tag;              // 0x42 : constant
+                  u2      length;           // byte length of whole values
+                  u1      value[length];
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2.4 &lt;code&gt;alias_table&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  alias_table {
+                  u1      tag;              // 0x43 : constant
+                  u2      length;           // byte length of whole values
+                  u2      nentries;         // number of id-pairs
+                  id_pair value[nentries];
+                  }
+                  id_pair {
+                  zone_id aliasname;
+                  zone_id ID;
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2.5 &lt;code&gt;versionName&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  versionName {
+                  u1      tag;              // 0x44 : constant
+                  u2      length;           // byte length of whole values
+                  u1      value[length];
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;&lt;strong&gt;2.6 &lt;code&gt;excludeList&lt;/code&gt; structure&lt;/strong&gt;&lt;p&gt;
+                  The list of zone IDs whose zones will change their GMT offsets
+                  (a.k.a. raw offsets) some time in the future. Those IDs must be
+                  added to the list of zone IDs for getAvailableIDs(). Also they must
+                  be examined for getAvailableIDs(int) to determine the
+                  &lt;em&gt;current&lt;/em&gt; GMT offsets.
+                  &lt;br&gt;
+                  &lt;blockquote&gt;
+                  &lt;pre&gt;
+                  excluded_list {
+                  u1      tag;              // 0x45 : constant
+                  u2      length;           // byte length of whole values
+                  u2      nentries;         // number of zone_ids
+                  zone_id value[nentries];  // excluded zone IDs
+                  }
+                  &lt;/pre&gt;
+                  &lt;/blockquote&gt;                
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <declaration name="JAVAZI_LABEL" type="byte[]" line="375"/>
+            <javadoc line="375">
+                The magic number for the ZoneInfo data file format.                
+            </javadoc>
+            <declaration name="JAVAZI_LABEL_LENGTH" type="int" line="381"/>
+            <declaration name="JAVAZI_VERSION" type="byte" line="383"/>
+            <javadoc line="383">
+                The ZoneInfo data file format version number. Must increase
+                  one when any incompatible change has been made.                
+            </javadoc>
+            <declaration name="TAG_RawOffset" type="byte" line="389"/>
+            <javadoc line="389">
+                Raw offset data item tag.                
+            </javadoc>
+            <declaration name="TAG_LastDSTSaving" type="byte" line="394"/>
+            <javadoc line="394">
+                Known last Daylight Saving Time save value data item tag.                
+            </javadoc>
+            <declaration name="TAG_CRC32" type="byte" line="399"/>
+            <javadoc line="399">
+                Checksum data item tag.                
+            </javadoc>
+            <declaration name="TAG_Transition" type="byte" line="404"/>
+            <javadoc line="404">
+                Transition data item tag.                
+            </javadoc>
+            <declaration name="TAG_Offset" type="byte" line="409"/>
+            <javadoc line="409">
+                Offset table data item tag.                
+            </javadoc>
+            <declaration name="TAG_SimpleTimeZone" type="byte" line="414"/>
+            <javadoc line="414">
+                SimpleTimeZone parameters data item tag.                
+            </javadoc>
+            <declaration name="TAG_GMTOffsetWillChange" type="byte" line="419"/>
+            <javadoc line="419">
+                Raw GMT offset will change in the future.                
+            </javadoc>
+            <declaration name="JAVAZM_FILE_NAME" type="String" line="425"/>
+            <javadoc line="425">
+                The ZoneInfoMappings file name.                
+            </javadoc>
+            <declaration name="JAVAZM_LABEL" type="byte[]" line="430"/>
+            <javadoc line="430">
+                The magic number for the ZoneInfoMappings file format.                
+            </javadoc>
+            <declaration name="JAVAZM_LABEL_LENGTH" type="int" line="436"/>
+            <declaration name="JAVAZM_VERSION" type="byte" line="438"/>
+            <javadoc line="438">
+                The ZoneInfoMappings file format version number. Must increase
+                  one when any incompatible change has been made.                
+            </javadoc>
+            <declaration name="TAG_ZoneIDs" type="byte" line="444"/>
+            <javadoc line="444">
+                Time zone IDs data item tag.                
+            </javadoc>
+            <declaration name="TAG_RawOffsets" type="byte" line="449"/>
+            <javadoc line="449">
+                Raw GMT offsets table data item tag.                
+            </javadoc>
+            <declaration name="TAG_RawOffsetIndices" type="byte" line="454"/>
+            <javadoc line="454">
+                Indices to the raw GMT offset table data item tag.                
+            </javadoc>
+            <declaration name="TAG_ZoneAliases" type="byte" line="459"/>
+            <javadoc line="459">
+                Time zone aliases table data item tag.                
+            </javadoc>
+            <declaration name="TAG_TZDataVersion" type="byte" line="464"/>
+            <javadoc line="464">
+                Olson&apos;s public zone information version tag.                
+            </javadoc>
+            <declaration name="TAG_ExcludedZones" type="byte" line="469"/>
+            <javadoc line="469">
+                Excluded zones item tag. (Added in Mustang)                
+            </javadoc>
+            <declaration name="zoneInfoObjects" type="Map&lt;String,ZoneInfo&gt;" line="474"/>
+            <declaration name="ziDir" type="String" line="476"/>
+            <anonymous_class line="477">
+                <method name="run" type="String" line="478">
+                    <declaration name="zi" type="String" line="479"/>
+                    <scope line="481"/>
+                    <scope line="483"/>
+                </method>
+            </anonymous_class>
+            <javadoc line="489">
+                Converts the given time zone ID to a platform dependent path
+                  name. For example, &quot;America/Los_Angeles&quot; is converted to
+                  &quot;America\Los_Angeles&quot; on Win32.                
+                <return>
+                    a modified ID replacing '/' with {@link java.io.File#separatorChar File.separatorChar} if needed.                    
+                </return>
+            </javadoc>
+            <method name="getFileName" type="String" line="496">
+                <params>
+                    <param name="ID" type="String"/>
+                </params>
+                <scope line="497"/>
+            </method>
+            <javadoc line="503">
+                Gets a ZoneInfo with the given GMT offset. The object
+                  has its ID in the format of GMT{+|-}hh:mm.                
+                <param>
+                    originalId the given custom id (before normalized such as "GMT+9")                    
+                </param>
+                <param>
+                    gmtOffset GMT offset <em>in milliseconds</em>                    
+                </param>
+                <return>
+                    a ZoneInfo constructed with the given GMT offset                    
+                </return>
+            </javadoc>
+            <method name="getCustomTimeZone" type="ZoneInfo" line="511">
+                <params>
+                    <param name="originalId" type="String"/>
+                    <param name="gmtOffset" type="int"/>
+                </params>
+                <declaration name="id" type="String" line="512"/>
+                <declaration name="zi" type="ZoneInfo" line="514"/>
+                <scope line="515">
+                    <scope line="518"/>
+                </scope>
+            </method>
+            <method name="toCustomID" type="String" line="525">
+                <params>
+                    <param name="gmtOffset" type="int"/>
+                </params>
+                <declaration name="sign" type="char" line="526"/>
+                <declaration name="offset" type="int" line="527"/>
+                <scope line="529"/>
+                <scope line="531"/>
+                <declaration name="hh" type="int" line="535"/>
+                <declaration name="mm" type="int" line="536"/>
+                <declaration name="buf" type="char[]" line="538"/>
+                <scope line="539"/>
+                <scope line="543"/>
+            </method>
+            <javadoc line="550">
+                @return a ZoneInfo instance created for the specified id, or
+                  null if there is no time zone data file found for the specified
+                  id.                
+            </javadoc>
+            <method name="getZoneInfo" type="ZoneInfo" line="555">
+                <params>
+                    <param name="id" type="String"/>
+                </params>
+                <declaration name="zi" type="ZoneInfo" line="556"/>
+                <scope line="557">
+                    <scope line="559"/>
+                </scope>
+            </method>
+            <method name="getFromCache" type="ZoneInfo" line="567">
+                <params>
+                    <param name="id" type="String"/>
+                </params>
+                <scope line="568"/>
+            </method>
+            <method name="addToCache" type="ZoneInfo" line="574">
+                <params>
+                    <param name="id" type="String"/>
+                    <param name="zi" type="ZoneInfo"/>
+                </params>
+                <scope line="575"/>
+                <scope line="577">
+                    <declaration name="zone" type="ZoneInfo" line="578"/>
+                    <scope line="579"/>
+                </scope>
+            </method>
+            <method name="createZoneInfo" type="ZoneInfo" line="587">
+                <params>
+                    <param name="id" type="String"/>
+                </params>
+                <declaration name="buf" type="byte[]" line="588"/>
+                <scope line="589"/>
+                <declaration name="index" type="int" line="593"/>
+                <declaration name="filesize" type="int" line="594"/>
+                <declaration name="rawOffset" type="int" line="595"/>
+                <declaration name="dstSavings" type="int" line="596"/>
+                <declaration name="checksum" type="int" line="597"/>
+                <declaration name="willGMTOffsetChange" type="boolean" line="598"/>
+                <declaration name="transitions" type="long[]" line="599"/>
+                <declaration name="offsets" type="int[]" line="600"/>
+                <declaration name="simpleTimeZoneParams" type="int[]" line="601"/>
+                <scope line="603">
+                    <scope line="604">
+                        <scope line="605"/>
+                    </scope>
+                    <scope line="610"/>
+                    <scope line="616">
+                        <declaration name="tag" type="byte" line="617"/>
+                        <declaration name="len" type="int" line="618"/>
+                        <scope line="620"/>
+                        <scope line="626">
+                            <declaration name="val" type="int" line="627"/>
+                        </scope>
+                        <scope line="636">
+                            <declaration name="val" type="short" line="637"/>
+                        </scope>
+                        <scope line="644">
+                            <declaration name="val" type="int" line="645"/>
+                        </scope>
+                        <scope line="654">
+                            <declaration name="n" type="int" line="655"/>
+                            <scope line="657">
+                                <declaration name="val" type="long" line="658"/>
+                            </scope>
+                        </scope>
+                        <scope line="672">
+                            <declaration name="n" type="int" line="673"/>
+                            <scope line="675">
+                                <declaration name="val" type="int" line="676"/>
+                            </scope>
+                        </scope>
+                        <scope line="686">
+                            <scope line="687"/>
+                            <declaration name="n" type="int" line="691"/>
+                            <scope line="693">
+                                <declaration name="val" type="int" line="694"/>
+                            </scope>
+                        </scope>
+                        <scope line="704">
+                            <scope line="705"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="718"/>
+                <scope line="723"/>
+            </method>
+            <declaration name="zoneIDs" type="SoftReference&lt;List&lt;String&gt;&gt;" line="733"/>
+            <method name="getZoneIDs" type="List<String>" line="735">
+                <declaration name="ids" type="List&lt;String&gt;" line="736"/>
+                <declaration name="cache" type="SoftReference&lt;List&lt;String&gt;&gt;" line="738"/>
+                <scope line="739">
+                    <scope line="741"/>
+                </scope>
+                <declaration name="buf" type="byte[]" line="746"/>
+                <declaration name="index" type="int" line="748"/>
+                <declaration name="filesize" type="int" line="749"/>
+                <scope line="751">
+                    <scope line="753">
+                        <declaration name="tag" type="byte" line="754"/>
+                        <declaration name="len" type="int" line="755"/>
+                        <scope line="759">
+                            <declaration name="n" type="int" line="760"/>
+                            <scope line="763">
+                                <declaration name="m" type="byte" line="764"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="776"/>
+            </method>
+            <javadoc line="784">
+                @return an alias table in HashMap where a key is an alias ID
+                  (e.g., &quot;PST&quot;) and its value is a real time zone ID (e.g.,
+                  &quot;America/Los_Angeles&quot;).                
+            </javadoc>
+            <method name="getZoneAliases" type="Map<String,String>" line="789">
+                <declaration name="buf" type="byte[]" line="790"/>
+                <declaration name="index" type="int" line="791"/>
+                <declaration name="filesize" type="int" line="792"/>
+                <declaration name="aliases" type="Map&lt;String,String&gt;" line="793"/>
+                <scope line="795">
+                    <scope line="797">
+                        <declaration name="tag" type="byte" line="798"/>
+                        <declaration name="len" type="int" line="799"/>
+                        <scope line="803">
+                            <declaration name="n" type="int" line="804"/>
+                            <scope line="806">
+                                <declaration name="m" type="byte" line="807"/>
+                                <declaration name="name" type="String" line="808"/>
+                                <declaration name="realName" type="String" line="811"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="823"/>
+            </method>
+            <declaration name="excludedIDs" type="SoftReference&lt;List&lt;String&gt;&gt;" line="830"/>
+            <declaration name="hasNoExcludeList" type="boolean" line="831"/>
+            <javadoc line="833">
+                @return a List of zone IDs for zones that will change their GMT
+                  offsets in some future time.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getExcludedZones" type="List<String>" line="839">
+                <scope line="840"/>
+                <declaration name="excludeList" type="List&lt;String&gt;" line="844"/>
+                <declaration name="cache" type="SoftReference&lt;List&lt;String&gt;&gt;" line="846"/>
+                <scope line="847">
+                    <scope line="849"/>
+                </scope>
+                <declaration name="buf" type="byte[]" line="854"/>
+                <declaration name="index" type="int" line="855"/>
+                <declaration name="filesize" type="int" line="856"/>
+                <scope line="858">
+                    <scope line="860">
+                        <declaration name="tag" type="byte" line="861"/>
+                        <declaration name="len" type="int" line="862"/>
+                        <scope line="866">
+                            <declaration name="n" type="int" line="867"/>
+                            <scope line="869">
+                                <declaration name="m" type="byte" line="870"/>
+                                <declaration name="name" type="String" line="871"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="883"/>
+                <scope line="888"/>
+                <scope line="890"/>
+            </method>
+            <declaration name="rawOffsetIndices" type="SoftReference&lt;byte[]&gt;" line="896"/>
+            <method name="getRawOffsetIndices" type="byte[]" line="898">
+                <declaration name="indices" type="byte[]" line="899"/>
+                <declaration name="cache" type="SoftReference&lt;byte[]&gt;" line="901"/>
+                <scope line="902">
+                    <scope line="904"/>
+                </scope>
+                <declaration name="buf" type="byte[]" line="909"/>
+                <declaration name="index" type="int" line="910"/>
+                <declaration name="filesize" type="int" line="911"/>
+                <scope line="913">
+                    <scope line="915">
+                        <declaration name="tag" type="byte" line="916"/>
+                        <declaration name="len" type="int" line="917"/>
+                        <scope line="921">
+                            <scope line="923"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="934"/>
+            </method>
+            <declaration name="rawOffsets" type="SoftReference&lt;int[]&gt;" line="942"/>
+            <method name="getRawOffsets" type="int[]" line="944">
+                <declaration name="offsets" type="int[]" line="945"/>
+                <declaration name="cache" type="SoftReference&lt;int[]&gt;" line="947"/>
+                <scope line="948">
+                    <scope line="950"/>
+                </scope>
+                <declaration name="buf" type="byte[]" line="955"/>
+                <declaration name="index" type="int" line="956"/>
+                <declaration name="filesize" type="int" line="957"/>
+                <scope line="959">
+                    <scope line="961">
+                        <declaration name="tag" type="byte" line="962"/>
+                        <declaration name="len" type="int" line="963"/>
+                        <scope line="967">
+                            <declaration name="n" type="int" line="968"/>
+                            <scope line="970">
+                                <declaration name="val" type="int" line="971"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="985"/>
+            </method>
+            <declaration name="zoneInfoMappings" type="SoftReference&lt;byte[]&gt;" line="993"/>
+            <method name="getZoneInfoMappings" type="byte[]" line="995">
+                <declaration name="data" type="byte[]" line="996"/>
+                <declaration name="cache" type="SoftReference&lt;byte[]&gt;" line="998"/>
+                <scope line="999">
+                    <scope line="1001"/>
+                </scope>
+                <scope line="1008"/>
+                <declaration name="index" type="int" line="1012"/>
+                <scope line="1013">
+                    <scope line="1014"/>
+                </scope>
+                <scope line="1019"/>
+            </method>
+            <javadoc line="1029">
+                Reads the specified file under &amp;lt;java.home&amp;gt;/lib/zi into a buffer.                
+                <return>
+                    the buffer, or null if any I/O error occurred.                    
+                </return>
+            </javadoc>
+            <method name="readZoneInfoFile" type="byte[]" line="1033">
+                <params>
+                    <param name="fileName" type="String"/>
+                </params>
+                <declaration name="buffer" type="byte[]" line="1034"/>
+                <scope line="1036">
+                    <anonymous_class line="1037">
+                        <method name="run" type="Object" line="1038">
+                            <declaration name="file" type="File" line="1039"/>
+                            <scope line="1040"/>
+                            <declaration name="path" type="String" line="1044"/>
+                            <declaration name="buf" type="byte[]" line="1045"/>
+                            <scope line="1046">
+                                <declaration name="filesize" type="int" line="1047"/>
+                                <scope line="1048">
+                                    <declaration name="fis" type="FileInputStream" line="1049"/>
+                                    <scope line="1051">
+                                        <scope line="1052"/>
+                                    </scope>
+                                    <scope line="1055"/>
+                                </scope>
+                            </scope>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="1063">
+                    <declaration name="ex" type="Exception" line="1064"/>
+                    <scope line="1065"/>
+                </scope>
+            </method>
+        </class>
+    </source>

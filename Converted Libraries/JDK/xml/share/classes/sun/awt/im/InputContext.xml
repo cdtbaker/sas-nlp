@@ -1,0 +1,932 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.awt.im">
+        <import package="java.awt.AWTEvent"/>
+        <import package="java.awt.AWTKeyStroke"/>
+        <import package="java.awt.Component"/>
+        <import package="java.awt.EventQueue"/>
+        <import package="java.awt.Frame"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.Toolkit"/>
+        <import package="java.awt.Window"/>
+        <import package="java.awt.event.ComponentEvent"/>
+        <import package="java.awt.event.ComponentListener"/>
+        <import package="java.awt.event.FocusEvent"/>
+        <import package="java.awt.event.InputEvent"/>
+        <import package="java.awt.event.InputMethodEvent"/>
+        <import package="java.awt.event.KeyEvent"/>
+        <import package="java.awt.event.WindowEvent"/>
+        <import package="java.awt.event.WindowListener"/>
+        <import package="java.awt.im.InputMethodRequests"/>
+        <import package="java.awt.im.spi.InputMethod"/>
+        <import package="java.lang.Character.Subset"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.text.MessageFormat"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.Locale"/>
+        <import package="java.util.prefs.BackingStoreException"/>
+        <import package="java.util.prefs.Preferences"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <import package="sun.awt.SunToolkit"/>
+        <class name="InputContext" line="58">
+            <extends class="java.awt.im.InputContext"/>
+            <comment line="72">
+                The current input method is represented by two objects:                
+            </comment>
+            <comment line="73">
+                a locator is used to keep information about the selected                
+            </comment>
+            <comment line="74">
+                input method and locale until we actually need a real input                
+            </comment>
+            <comment line="75">
+                method; only then the input method itself is created.                
+            </comment>
+            <comment line="76">
+                Once there is an input method, the input method&apos;s locale                
+            </comment>
+            <comment line="77">
+                takes precedence over locale information in the locator.                
+            </comment>
+            <comment line="82">
+                holding bin for previously used input method instances, but not the current one                
+            </comment>
+            <comment line="85">
+                the current client component is kept until the user focusses on a different                
+            </comment>
+            <comment line="86">
+                client component served by the same input context. When that happens, we call                
+            </comment>
+            <comment line="87">
+                endComposition so that text doesn&apos;t jump from one component to another.                
+            </comment>
+            <comment line="93">
+                true if composition area has been set to invisible when focus was lost                
+            </comment>
+            <comment line="96">
+                The input context for whose input method we may have to call hideWindows                
+            </comment>
+            <comment line="99">
+                Previously active input method to decide whether we need to call                
+            </comment>
+            <comment line="100">
+                InputMethodAdapter.stopListening() on activateInputMethod()                
+            </comment>
+            <comment line="103">
+                true if the current input method requires client window change notification                
+            </comment>
+            <comment line="105">
+                client window to which this input context is listening                
+            </comment>
+            <comment line="107">
+                cache location notification                
+            </comment>
+            <comment line="109">
+                holding the state of clientWindowNotificationEnabled of only non-current input methods                
+            </comment>
+            <comment line="112">
+                Input Method selection hot key stuff                
+            </comment>
+            <comment line="995">
+                ComponentListener and WindowListener implementation                
+            </comment>
+            <implements interface="ComponentListener"/>
+            <implements interface="WindowListener"/>
+            <javadoc line="58">
+                This InputContext class contains parts of the implementation of
+                  java.text.im.InputContext. These parts have been moved
+                  here to avoid exposing protected members that are needed by the
+                  subclass InputMethodContext.                
+                <see>
+                    java.awt.im.InputContext                    
+                </see>
+                <author>
+                    JavaSoft Asia/Pacific                    
+                </author>
+            </javadoc>
+            <declaration name="log" type="PlatformLogger" line="70"/>
+            <declaration name="inputMethodLocator" type="InputMethodLocator" line="77"/>
+            <declaration name="inputMethod" type="InputMethod" line="78"/>
+            <declaration name="inputMethodCreationFailed" type="boolean" line="79"/>
+            <declaration name="usedInputMethods" type="HashMap" line="82"/>
+            <declaration name="currentClientComponent" type="Component" line="87"/>
+            <declaration name="awtFocussedComponent" type="Component" line="88"/>
+            <declaration name="isInputMethodActive" type="boolean" line="89"/>
+            <declaration name="characterSubsets" type="Subset[]" line="90"/>
+            <declaration name="compositionAreaHidden" type="boolean" line="93"/>
+            <declaration name="inputMethodWindowContext" type="InputContext" line="96"/>
+            <declaration name="previousInputMethod" type="InputMethod" line="100"/>
+            <declaration name="clientWindowNotificationEnabled" type="boolean" line="103"/>
+            <declaration name="clientWindowListened" type="Window" line="105"/>
+            <declaration name="clientWindowLocation" type="Rectangle" line="107"/>
+            <declaration name="perInputMethodState" type="HashMap" line="109"/>
+            <declaration name="inputMethodSelectionKey" type="AWTKeyStroke" line="112"/>
+            <declaration name="inputMethodSelectionKeyInitialized" type="boolean" line="113"/>
+            <declaration name="inputMethodSelectionKeyPath" type="String" line="114"/>
+            <declaration name="inputMethodSelectionKeyCodeName" type="String" line="115"/>
+            <declaration name="inputMethodSelectionKeyModifiersName" type="String" line="116"/>
+            <javadoc line="118">
+                Constructs an InputContext.                
+            </javadoc>
+            <method name="InputContext" type="constructor" line="121">
+                <declaration name="imm" type="InputMethodManager" line="122"/>
+                <scope line="123">
+                    <scope line="124">
+                        <scope line="126"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="134">
+                @see java.awt.im.InputContext#selectInputMethod                
+                <exception>
+                    NullPointerException when the locale is null.                    
+                </exception>
+            </javadoc>
+            <method name="selectInputMethod" type="boolean" line="138">
+                <params>
+                    <param name="locale" type="Locale"/>
+                </params>
+                <comment line="143">
+                    see whether the current input method supports the locale                    
+                </comment>
+                <comment line="149">
+                    This is not 100% correct, since the input method                    
+                </comment>
+                <comment line="150">
+                    may support the locale without advertising it.                    
+                </comment>
+                <comment line="151">
+                    But before we try instantiations and setLocale,                    
+                </comment>
+                <comment line="152">
+                    we look for an input method that&apos;s more confident.                    
+                </comment>
+                <comment line="159">
+                    see whether there&apos;s some other input method that supports the locale                    
+                </comment>
+                <comment line="166">
+                    make one last desperate effort with the current input method                    
+                </comment>
+                <comment line="167">
+                    ??? is this good? This is pretty high cost for something that&apos;s likely to fail.                    
+                </comment>
+                <scope line="139"/>
+                <scope line="144">
+                    <scope line="145"/>
+                </scope>
+                <scope line="148">
+                    <scope line="153"/>
+                </scope>
+                <declaration name="newLocator" type="InputMethodLocator" line="160"/>
+                <scope line="161"/>
+                <scope line="168">
+                    <scope line="170"/>
+                </scope>
+            </method>
+            <javadoc line="177">
+                @see java.awt.im.InputContext#getLocale                
+            </javadoc>
+            <method name="getLocale" type="Locale" line="180">
+                <scope line="181"/>
+                <scope line="183"/>
+                <scope line="185"/>
+            </method>
+            <javadoc line="190">
+                @see java.awt.im.InputContext#setCharacterSubsets                
+            </javadoc>
+            <method name="setCharacterSubsets" type="void" line="193">
+                <params>
+                    <param name="subsets" type="Subset[]"/>
+                </params>
+                <scope line="194"/>
+                <scope line="196"/>
+                <scope line="201"/>
+            </method>
+            <javadoc line="206">
+                @see java.awt.im.InputContext#reconvert                
+                <since>
+                    1.3                    
+                </since>
+                <exception>
+                    UnsupportedOperationException when input method is null                    
+                </exception>
+            </javadoc>
+            <method name="reconvert" type="void" line="211">
+                <declaration name="inputMethod" type="InputMethod" line="212"/>
+                <scope line="213"/>
+            </method>
+            <javadoc line="219">
+                @see java.awt.im.InputContext#dispatchEvent                
+            </javadoc>
+            <method name="dispatchEvent" type="void" line="222">
+                <params>
+                    <param name="event" type="AWTEvent"/>
+                </params>
+                <comment line="228">
+                    Ignore focus events that relate to the InputMethodWindow of this context.                    
+                </comment>
+                <comment line="229">
+                    This is a workaround.  Should be removed after 4452384 is fixed.                    
+                </comment>
+                <comment line="253">
+                    pop up the input method selection menu                    
+                </comment>
+                <comment line="258">
+                    fall through                    
+                </comment>
+                <scope line="224"/>
+                <scope line="230">
+                    <declaration name="opposite" type="Component" line="231"/>
+                    <scope line="234"/>
+                </scope>
+                <declaration name="inputMethod" type="InputMethod" line="239"/>
+                <declaration name="id" type="int" line="240"/>
+                <scope line="252"/>
+                <scope line="261"/>
+            </method>
+            <javadoc line="267">
+                Handles focus gained events for any component that&apos;s using
+                  this input context.
+                  These events are generated by AWT when the keyboard focus
+                  moves to a component.
+                  Besides actual client components, the source components
+                  may also be the composition area or any component in an
+                  input method window.
+                  &lt;p&gt;
+                  When handling the focus event for a client component, this
+                  method checks whether the input context was previously
+                  active for a different client component, and if so, calls
+                  endComposition for the previous client component.                
+                <param>
+                    source the component gaining the focus                    
+                </param>
+            </javadoc>
+            <method name="focusGained" type="void" line="283">
+                <params>
+                    <param name="source" type="Component"/>
+                </params>
+                <comment line="285">
+                    NOTE: When a Container is removing its Component which
+                     invokes this.removeNotify(), the Container has the global
+                     Component lock. It is possible to happen that an
+                     application thread is calling this.removeNotify() while an
+                     AWT event queue thread is dispatching a focus event via
+                     this.dispatchEvent(). If an input method uses AWT
+                     components (e.g., IIIMP status window), it causes deadlock,
+                     for example, Component.show()hide() in this situation
+                     because hideshow tried to obtain the lock.  Therefore,
+                     it&apos;s necessary to obtain the global Component lock before
+                     activating or deactivating an input method.                    
+                </comment>
+                <comment line="301">
+                    no special handling for this one                    
+                </comment>
+                <comment line="303">
+                    no special handling for this one either                    
+                </comment>
+                <comment line="306">
+                    Component is being disposed                    
+                </comment>
+                <comment line="310">
+                    Focus went to a real client component.                    
+                </comment>
+                <comment line="311">
+                    Check whether we&apos;re switching between client components                    
+                </comment>
+                <comment line="312">
+                    that share an input context. We can&apos;t do that earlier                    
+                </comment>
+                <comment line="313">
+                    than here because we don&apos;t want to end composition                    
+                </comment>
+                <comment line="314">
+                    until we really know we&apos;re switching to a different component                    
+                </comment>
+                <comment line="333">
+                    it&apos;s possible that the input method is still active because                    
+                </comment>
+                <comment line="334">
+                    we suppressed a deactivate cause by an input method window                    
+                </comment>
+                <comment line="335">
+                    coming up                    
+                </comment>
+                <comment line="341">
+                    If the client component is an active client with the below-the-spot                    
+                </comment>
+                <comment line="342">
+                    input style, then make the composition window undecorated without a title bar.                    
+                </comment>
+                <comment line="352">
+                    restores the composition area if it was set to invisible                    
+                </comment>
+                <comment line="353">
+                    when focus got lost                    
+                </comment>
+                <scope line="298">
+                    <scope line="299">
+                        <scope line="300"/>
+                        <scope line="302"/>
+                        <scope line="304">
+                            <scope line="305"/>
+                            <scope line="315">
+                                <scope line="316">
+                                    <scope line="317"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="329"/>
+                        <scope line="336"/>
+                        <declaration name="inputContext" type="InputMethodContext" line="343"/>
+                        <scope line="344">
+                            <declaration name="req" type="InputMethodRequests" line="345"/>
+                            <scope line="346"/>
+                            <scope line="348"/>
+                        </scope>
+                        <scope line="354"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="362">
+                Activates the current input method of this input context, and grabs
+                  the composition area for use by this input context.
+                  If updateCompositionArea is true, the text in the composition area
+                  is updated (set to false if the text is going to change immediately
+                  to avoid screen flicker).                
+            </javadoc>
+            <method name="activateInputMethod" type="void" line="369">
+                <params>
+                    <param name="updateCompositionArea" type="boolean"/>
+                </params>
+                <comment line="370">
+                    call hideWindows() if this input context uses a different                    
+                </comment>
+                <comment line="371">
+                    input method than the previously activated one                    
+                </comment>
+                <comment line="383">
+                    let the host adapter pass through the input events for the                    
+                </comment>
+                <comment line="384">
+                    new input method                    
+                </comment>
+                <scope line="375"/>
+                <scope line="380">
+                    <scope line="382"/>
+                    <scope line="390"/>
+                    <scope line="396">
+                        <declaration name="state" type="Boolean" line="397"/>
+                        <scope line="398"/>
+                    </scope>
+                    <scope line="402">
+                        <scope line="403"/>
+                        <scope line="406">
+                            <scope line="407"/>
+                        </scope>
+                    </scope>
+                    <scope line="411">
+                        <scope line="412"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getComponentWindow" type="Window" line="422">
+                <params>
+                    <param name="component" type="Component"/>
+                </params>
+                <scope line="423">
+                    <scope line="424"/>
+                    <scope line="426"/>
+                    <scope line="428"/>
+                </scope>
+            </method>
+            <javadoc line="434">
+                Handles focus lost events for any component that&apos;s using
+                  this input context.
+                  These events are generated by AWT when the keyboard focus
+                  moves away from a component.
+                  Besides actual client components, the source components
+                  may also be the composition area or any component in an
+                  input method window.                
+                <param>
+                    source the component losing the focus                    
+                </param>
+                <isTemporary>
+                    whether the focus change is temporary                    
+                </isTemporary>
+            </javadoc>
+            <method name="focusLost" type="void" line="446">
+                <params>
+                    <param name="source" type="Component"/>
+                    <param name="isTemporary" type="boolean"/>
+                </params>
+                <comment line="448">
+                    see the note on synchronization in focusGained                    
+                </comment>
+                <comment line="452">
+                    We need to suppress deactivation if removeNotify has been called earlier.                    
+                </comment>
+                <comment line="453">
+                    This is indicated by isInputMethodActive == false.                    
+                </comment>
+                <comment line="463">
+                    hides the composition area if currently it is visible                    
+                </comment>
+                <scope line="449">
+                    <scope line="450">
+                        <scope line="454"/>
+                        <scope line="459"/>
+                        <declaration name="inputContext" type="InputMethodContext" line="464"/>
+                        <scope line="465"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="473">
+                Checks the key event is the input method selection key or not.                
+            </javadoc>
+            <method name="checkInputMethodSelectionKey" type="boolean" line="476">
+                <params>
+                    <param name="event" type="KeyEvent"/>
+                </params>
+                <scope line="477">
+                    <declaration name="aKeyStroke" type="AWTKeyStroke" line="478"/>
+                </scope>
+                <scope line="480"/>
+            </method>
+            <method name="deactivateInputMethod" type="void" line="485">
+                <params>
+                    <param name="isTemporary" type="boolean"/>
+                </params>
+                <scope line="487"/>
+            </method>
+            <javadoc line="494">
+                Switches from the current input method to the one described by newLocator.
+                  The current input method, if any, is asked to end composition, deactivated,
+                  and saved for future use. The newLocator is made the current locator. If
+                  the input context is active, an input method instance for the new locator
+                  is obtained; otherwise this is deferred until required.                
+            </javadoc>
+            <method name="changeInputMethod" type="void" line="501">
+                <params>
+                    <param name="newLocator" type="InputMethodLocator"/>
+                </params>
+                <comment line="502">
+                    If we don&apos;t have a locator yet, this must be a new input context.                    
+                </comment>
+                <comment line="503">
+                    If we created a new input method here, we might get into an                    
+                </comment>
+                <comment line="504">
+                    infinite loop: create input method -&gt; create some input method window -&gt;                    
+                </comment>
+                <comment line="505">
+                    create new input context -&gt; add input context to input method manager&apos;s context list -&gt;                    
+                </comment>
+                <comment line="506">
+                    call changeInputMethod on it.                    
+                </comment>
+                <comment line="507">
+                    So, just record the locator. dispatchEvent will create the input method when needed.                    
+                </comment>
+                <comment line="514">
+                    If the same input method is specified, just keep it.                    
+                </comment>
+                <comment line="515">
+                    Adjust the locale if necessary.                    
+                </comment>
+                <comment line="527">
+                    Switch out the old input method                    
+                </comment>
+                <comment line="550">
+                    keep the input method instance around for future use                    
+                </comment>
+                <comment line="570">
+                    Switch in the new input method                    
+                </comment>
+                <comment line="578">
+                    activate the new input method if the old one was active                    
+                </comment>
+                <comment line="587">
+                    enable/disable composition if the old one supports querying enable/disable                    
+                </comment>
+                <scope line="508"/>
+                <scope line="516">
+                    <declaration name="newLocale" type="Locale" line="517"/>
+                    <scope line="518">
+                        <scope line="519"/>
+                    </scope>
+                </scope>
+                <declaration name="savedLocale" type="Locale" line="528"/>
+                <declaration name="wasInputMethodActive" type="boolean" line="529"/>
+                <declaration name="wasCompositionEnabledSupported" type="boolean" line="530"/>
+                <declaration name="wasCompositionEnabled" type="boolean" line="531"/>
+                <scope line="532">
+                    <scope line="533"/>
+                    <scope line="536"/>
+                    <scope line="538">
+                        <scope line="539"/>
+                        <scope line="544"/>
+                    </scope>
+                    <scope line="551"/>
+                    <scope line="554"/>
+                    <scope line="561"/>
+                </scope>
+                <scope line="572"/>
+                <scope line="579">
+                    <scope line="581"/>
+                </scope>
+                <scope line="588">
+                    <scope line="590">
+                        <scope line="591"/>
+                        <scope line="593"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="598">
+                Returns the client component.                
+            </javadoc>
+            <method name="getClientComponent" type="Component" line="601"/>
+            <javadoc line="605">
+                @see java.awt.im.InputContext#removeNotify                
+                <exception>
+                    NullPointerException when the component is null.                    
+                </exception>
+            </javadoc>
+            <method name="removeNotify" type="void" line="609">
+                <params>
+                    <param name="component" type="Component"/>
+                </params>
+                <comment line="621">
+                    We may or may not get a FOCUS_LOST event for this component,                    
+                </comment>
+                <comment line="622">
+                    so do the deactivation stuff here too.                    
+                </comment>
+                <comment line="629">
+                    component wasn&apos;t the one that had the focus                    
+                </comment>
+                <comment line="641">
+                    removeNotify() can be issued from a thread other than the event dispatch                    
+                </comment>
+                <comment line="642">
+                    thread.  In that case, avoid possible deadlock between Component.AWTTreeLock                    
+                </comment>
+                <comment line="643">
+                    and InputMethodContext.compositionAreaHandlerLock by releasing the composition                    
+                </comment>
+                <comment line="644">
+                    area on the event dispatch thread.                    
+                </comment>
+                <scope line="610"/>
+                <scope line="614">
+                    <scope line="615"/>
+                </scope>
+                <scope line="623"/>
+                <scope line="627">
+                    <scope line="628"/>
+                    <scope line="633"/>
+                    <scope line="637"/>
+                    <scope line="645"/>
+                    <scope line="647">
+                        <anonymous_class line="648">
+                            <method name="run" type="void" line="649"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="657">
+                @see java.awt.im.InputContext#dispose                
+                <exception>
+                    IllegalStateException when the currentClientComponent is not null                    
+                </exception>
+            </javadoc>
+            <method name="dispose" type="void" line="661">
+                <comment line="681">
+                    in case the input method enabled the client window                    
+                </comment>
+                <comment line="682">
+                    notification in dispose(), which shouldn&apos;t happen, it                    
+                </comment>
+                <comment line="683">
+                    needs to be cleaned up again.                    
+                </comment>
+                <comment line="699">
+                    cleanup client window notification variables                    
+                </comment>
+                <scope line="662"/>
+                <scope line="665">
+                    <scope line="666"/>
+                    <scope line="670"/>
+                    <scope line="673">
+                        <scope line="674"/>
+                    </scope>
+                    <scope line="684"/>
+                </scope>
+                <scope line="691">
+                    <declaration name="iterator" type="Iterator" line="692"/>
+                    <scope line="694"/>
+                </scope>
+            </method>
+            <javadoc line="705">
+                @see java.awt.im.InputContext#getInputMethodControlObject                
+            </javadoc>
+            <method name="getInputMethodControlObject" type="Object" line="708">
+                <declaration name="inputMethod" type="InputMethod" line="709"/>
+                <scope line="711"/>
+                <scope line="713"/>
+            </method>
+            <javadoc line="718">
+                @see java.awt.im.InputContext#setCompositionEnabled(boolean)                
+                <exception>
+                    UnsupportedOperationException when input method is null                    
+                </exception>
+            </javadoc>
+            <method name="setCompositionEnabled" type="void" line="722">
+                <params>
+                    <param name="enable" type="boolean"/>
+                </params>
+                <declaration name="inputMethod" type="InputMethod" line="723"/>
+                <scope line="725"/>
+            </method>
+            <javadoc line="731">
+                @see java.awt.im.InputContext#isCompositionEnabled                
+                <exception>
+                    UnsupportedOperationException when input method is null                    
+                </exception>
+            </javadoc>
+            <method name="isCompositionEnabled" type="boolean" line="735">
+                <declaration name="inputMethod" type="InputMethod" line="736"/>
+                <scope line="738"/>
+            </method>
+            <javadoc line="744">
+                @return a string with information about the current input method.                
+                <exception>
+                    UnsupportedOperationException when input method is null                    
+                </exception>
+            </javadoc>
+            <method name="getInputMethodInfo" type="String" line="748">
+                <comment line="757">
+                    returns the information about the host native input method.                    
+                </comment>
+                <comment line="762">
+                    extracts the information from the InputMethodDescriptor                    
+                </comment>
+                <comment line="763">
+                    associated with the current java input method.                    
+                </comment>
+                <comment line="774">
+                    do our best to return something useful.                    
+                </comment>
+                <declaration name="inputMethod" type="InputMethod" line="749"/>
+                <scope line="751"/>
+                <declaration name="inputMethodInfo" type="String" line="755"/>
+                <scope line="756"/>
+                <scope line="764"/>
+                <scope line="770"/>
+            </method>
+            <javadoc line="778">
+                Turns off the native IM. The native IM is diabled when
+                  the deactive method of InputMethod is called. It is
+                  delayed until the active method is called on a different
+                  peer component. This method is provided to explicitly disable
+                  the native IM.                
+            </javadoc>
+            <method name="disableNativeIM" type="void" line="785">
+                <declaration name="inputMethod" type="InputMethod" line="786"/>
+                <scope line="787"/>
+            </method>
+            <method name="getInputMethod" type="InputMethod" line="793">
+                <scope line="794"/>
+                <scope line="798"/>
+            </method>
+            <javadoc line="806">
+                Returns an instance of the input method described by
+                  the current input method locator. This may be an input
+                  method that was previously used and switched out of,
+                  or a new instance. The locale, character subsets, and
+                  input method context of the input method are set.
+                  The inputMethodCreationFailed field is set to true if the
+                  instantiation failed.                
+                <return>
+                    an InputMethod instance                    
+                </return>
+                <see>
+                    java.awt.im.spi.InputMethod#setInputMethodContext                    
+                </see>
+                <see>
+                    java.awt.im.spi.InputMethod#setLocale                    
+                </see>
+                <see>
+                    java.awt.im.spi.InputMethod#setCharacterSubsets                    
+                </see>
+            </javadoc>
+            <method name="getInputMethodInstance" type="InputMethod" line="821">
+                <comment line="831">
+                    see whether we have a previously used input method                    
+                </comment>
+                <comment line="850">
+                    need to create new instance                    
+                </comment>
+                <comment line="863">
+                    there are a number of bad things that can happen while creating                    
+                </comment>
+                <comment line="864">
+                    the input method. In any case, we just continue without an                    
+                </comment>
+                <comment line="865">
+                    input method.                    
+                </comment>
+                <comment line="868">
+                    if the instance has been created, then it means either                    
+                </comment>
+                <comment line="869">
+                    setLocale() or setInputMethodContext() failed.                    
+                </comment>
+                <comment line="876">
+                    same as above                    
+                </comment>
+                <declaration name="locator" type="InputMethodLocator" line="822"/>
+                <scope line="823"/>
+                <declaration name="locale" type="Locale" line="828"/>
+                <declaration name="inputMethodInstance" type="InputMethod" line="829"/>
+                <scope line="832">
+                    <scope line="834">
+                        <scope line="835"/>
+                        <declaration name="state" type="Boolean" line="839"/>
+                        <scope line="840"/>
+                    </scope>
+                </scope>
+                <scope line="851">
+                    <scope line="854"/>
+                </scope>
+                <scope line="860">
+                    <scope line="870"/>
+                </scope>
+                <scope line="873"/>
+            </method>
+            <method name="logCreationFailed" type="void" line="885">
+                <params>
+                    <param name="throwable" type="Throwable"/>
+                </params>
+                <declaration name="errorTextFormat" type="String" line="886"/>
+                <declaration name="args" type="Object[]" line="888"/>
+                <declaration name="mf" type="MessageFormat" line="891"/>
+                <declaration name="logger" type="PlatformLogger" line="892"/>
+            </method>
+            <method name="getInputMethodLocator" type="InputMethodLocator" line="896">
+                <scope line="897"/>
+            </method>
+            <javadoc line="903">
+                @see java.awt.im.InputContext#endComposition                
+            </javadoc>
+            <method name="endComposition" type="void" line="906">
+                <scope line="907"/>
+            </method>
+            <javadoc line="912">
+                @see java.awt.im.spi.InputMethodContext#enableClientWindowNotification                
+            </javadoc>
+            <method name="enableClientWindowNotification" type="void" line="916">
+                <params>
+                    <param name="requester" type="InputMethod"/>
+                    <param name="enable" type="boolean"/>
+                </params>
+                <comment line="917">
+                    in case this request is not from the current input method,                    
+                </comment>
+                <comment line="918">
+                    store the request and handle it when this requesting input                    
+                </comment>
+                <comment line="919">
+                    method becomes the current one.                    
+                </comment>
+                <scope line="920">
+                    <scope line="921"/>
+                </scope>
+                <scope line="928"/>
+                <scope line="932">
+                    <scope line="933"/>
+                    <scope line="936"/>
+                </scope>
+                <scope line="940">
+                    <scope line="941"/>
+                </scope>
+            </method>
+            <method name="notifyClientWindowChange" type="void" line="947">
+                <params>
+                    <param name="window" type="Window"/>
+                </params>
+                <comment line="952">
+                    if the window is invisible or iconified, send null to the input method.                    
+                </comment>
+                <scope line="948"/>
+                <scope line="954"/>
+                <declaration name="location" type="Rectangle" line="959"/>
+                <scope line="960"/>
+            </method>
+            <method name="addClientWindowListeners" type="void" line="966">
+                <declaration name="client" type="Component" line="967"/>
+                <scope line="968"/>
+                <declaration name="window" type="Window" line="971"/>
+                <scope line="972"/>
+            </method>
+            <method name="removeClientWindowListeners" type="void" line="980"/>
+            <javadoc line="986">
+                Returns true if listeners have been set up for client window
+                  change notification.                
+            </javadoc>
+            <method name="addedClientWindowListeners" type="boolean" line="990"/>
+            <method name="componentResized" type="void" line="997">
+                <params>
+                    <param name="e" type="ComponentEvent"/>
+                </params>
+            </method>
+            <method name="componentMoved" type="void" line="1001">
+                <params>
+                    <param name="e" type="ComponentEvent"/>
+                </params>
+            </method>
+            <method name="componentShown" type="void" line="1005">
+                <params>
+                    <param name="e" type="ComponentEvent"/>
+                </params>
+            </method>
+            <method name="componentHidden" type="void" line="1009">
+                <params>
+                    <param name="e" type="ComponentEvent"/>
+                </params>
+            </method>
+            <method name="windowOpened" type="void" line="1013">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowClosing" type="void" line="1014">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowClosed" type="void" line="1015">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowIconified" type="void" line="1017">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowDeiconified" type="void" line="1021">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowActivated" type="void" line="1025">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <method name="windowDeactivated" type="void" line="1026">
+                <params>
+                    <param name="e" type="WindowEvent"/>
+                </params>
+            </method>
+            <javadoc line="1028">
+                Initializes the input method selection key definition in preference trees                
+            </javadoc>
+            <method name="initializeInputMethodSelectionKey" type="void" line="1031">
+                <comment line="1034">
+                    Look in user&apos;s tree                    
+                </comment>
+                <comment line="1039">
+                    Look in system&apos;s tree                    
+                </comment>
+                <anonymous_class line="1032">
+                    <method name="run" type="Object" line="1033">
+                        <comment line="1034">
+                            Look in user&apos;s tree                            
+                        </comment>
+                        <comment line="1039">
+                            Look in system&apos;s tree                            
+                        </comment>
+                        <declaration name="root" type="Preferences" line="1035"/>
+                        <scope line="1038"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="getInputMethodSelectionKeyStroke" type="AWTKeyStroke" line="1048">
+                <params>
+                    <param name="root" type="Preferences"/>
+                </params>
+                <scope line="1049">
+                    <scope line="1050">
+                        <declaration name="node" type="Preferences" line="1051"/>
+                        <declaration name="keyCode" type="int" line="1052"/>
+                        <scope line="1053">
+                            <declaration name="modifiers" type="int" line="1054"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="1058"/>
+            </method>
+        </class>
+    </source>

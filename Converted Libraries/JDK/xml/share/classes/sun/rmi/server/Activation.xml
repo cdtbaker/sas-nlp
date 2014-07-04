@@ -1,0 +1,2459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.server">
+        <import package="java.io.ByteArrayOutputStream"/>
+        <import package="java.io.File"/>
+        <import package="java.io.FileOutputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.io.ObjectInputStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.io.PrintStream"/>
+        <import package="java.io.PrintWriter"/>
+        <import package="java.io.Serializable"/>
+        <import package="java.lang.Process"/>
+        <import package="java.lang.reflect.InvocationTargetException"/>
+        <import package="java.lang.reflect.Method"/>
+        <import package="java.net.InetAddress"/>
+        <import package="java.net.ServerSocket"/>
+        <import package="java.net.Socket"/>
+        <import package="java.net.SocketAddress"/>
+        <import package="java.net.SocketException"/>
+        <import package="java.nio.channels.Channel"/>
+        <import package="java.nio.channels.ServerSocketChannel"/>
+        <import package="java.rmi.AccessException"/>
+        <import package="java.rmi.AlreadyBoundException"/>
+        <import package="java.rmi.ConnectException"/>
+        <import package="java.rmi.ConnectIOException"/>
+        <import package="java.rmi.MarshalledObject"/>
+        <import package="java.rmi.NoSuchObjectException"/>
+        <import package="java.rmi.NotBoundException"/>
+        <import package="java.rmi.Remote"/>
+        <import package="java.rmi.RemoteException"/>
+        <import package="java.rmi.activation.ActivationDesc"/>
+        <import package="java.rmi.activation.ActivationException"/>
+        <import package="java.rmi.activation.ActivationGroupDesc"/>
+        <import package="java.rmi.activation.ActivationGroup"/>
+        <import package="java.rmi.activation.ActivationGroupID"/>
+        <import package="java.rmi.activation.ActivationID"/>
+        <import package="java.rmi.activation.ActivationInstantiator"/>
+        <import package="java.rmi.activation.ActivationMonitor"/>
+        <import package="java.rmi.activation.ActivationSystem"/>
+        <import package="java.rmi.activation.Activator"/>
+        <import package="java.rmi.activation.UnknownGroupException"/>
+        <import package="java.rmi.activation.UnknownObjectException"/>
+        <import package="java.rmi.registry.Registry"/>
+        <import package="java.rmi.server.ObjID"/>
+        <import package="java.rmi.server.RMIClassLoader"/>
+        <import package="java.rmi.server.RMIClientSocketFactory"/>
+        <import package="java.rmi.server.RMIServerSocketFactory"/>
+        <import package="java.rmi.server.RemoteObject"/>
+        <import package="java.rmi.server.RemoteServer"/>
+        <import package="java.rmi.server.UnicastRemoteObject"/>
+        <import package="java.security.AccessControlException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.AllPermission"/>
+        <import package="java.security.CodeSource"/>
+        <import package="java.security.Permission"/>
+        <import package="java.security.PermissionCollection"/>
+        <import package="java.security.Permissions"/>
+        <import package="java.security.Policy"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.security.PrivilegedExceptionAction"/>
+        <import package="java.security.cert.Certificate"/>
+        <import package="java.text.MessageFormat"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Date"/>
+        <import package="java.util.Enumeration"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.MissingResourceException"/>
+        <import package="java.util.Properties"/>
+        <import package="java.util.ResourceBundle"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.concurrent.ConcurrentHashMap"/>
+        <import package="sun.rmi.log.LogHandler"/>
+        <import package="sun.rmi.log.ReliableLog"/>
+        <import package="sun.rmi.registry.RegistryImpl"/>
+        <import package="sun.rmi.runtime.NewThreadAction"/>
+        <import package="sun.rmi.server.UnicastServerRef"/>
+        <import package="sun.rmi.transport.LiveRef"/>
+        <import package="sun.security.action.GetBooleanAction"/>
+        <import package="sun.security.action.GetIntegerAction"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <import package="sun.security.provider.PolicyFile"/>
+        <import package="com.sun.rmi.rmid.ExecPermission"/>
+        <import package="com.sun.rmi.rmid.ExecOptionPermission"/>
+        <class name="Activation" line="116">
+            <comment line="186">
+                this should be a *private* method since it is privileged                
+            </comment>
+            <comment line="2127">
+                Dijkstra semaphore operations to limit the number of subprocesses
+                 rmid attempts to make at once.                
+            </comment>
+            <implements interface="Serializable"/>
+            <javadoc line="116">
+                The Activator facilitates remote object activation. A &quot;faulting&quot;
+                  remote reference calls the activator&apos;s &lt;code&gt;activate&lt;/code&gt; method
+                  to obtain a &quot;live&quot; reference to a activatable remote object. Upon
+                  receiving a request for activation, the activator looks up the
+                  activation descriptor for the activation identifier, id, determines
+                  the group in which the object should be activated and invokes the
+                  activate method on the object&apos;s activation group (described by the
+                  remote interface &lt;code&gt;ActivationInstantiator&lt;/code&gt;). The
+                  activator initiates the execution of activation groups as
+                  necessary. For example, if an activation group for a specific group
+                  identifier is not already executing, the activator will spawn a
+                  child process for the activation group. &lt;p&gt;
+                  The activator is responsible for monitoring and detecting when
+                  activation groups fail so that it can remove stale remote references
+                  from its internal tables. &lt;p&gt;                
+                <author>
+                    Ann Wollrath                    
+                </author>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="139"/>
+            <javadoc line="139">
+                indicate compatibility with JDK 1.2 version of class                
+            </javadoc>
+            <declaration name="MAJOR_VERSION" type="byte" line="142"/>
+            <declaration name="MINOR_VERSION" type="byte" line="143"/>
+            <declaration name="execPolicy" type="Object" line="145"/>
+            <javadoc line="145">
+                exec policy object                
+            </javadoc>
+            <declaration name="execPolicyMethod" type="Method" line="147"/>
+            <declaration name="debugExec" type="boolean" line="148"/>
+            <declaration name="idTable" type="Map&lt;ActivationID,ActivationGroupID&gt;" line="150"/>
+            <javadoc line="150">
+                maps activation id to its respective group id                
+            </javadoc>
+            <declaration name="groupTable" type="Map&lt;ActivationGroupID,GroupEntry&gt;" line="153"/>
+            <javadoc line="153">
+                maps group id to its GroupEntry groups                
+            </javadoc>
+            <declaration name="majorVersion" type="byte" line="157"/>
+            <declaration name="minorVersion" type="byte" line="158"/>
+            <declaration name="groupSemaphore" type="int" line="160"/>
+            <javadoc line="160">
+                number of simultaneous group exec&apos;s                
+            </javadoc>
+            <declaration name="groupCounter" type="int" line="162"/>
+            <javadoc line="162">
+                counter for numbering groups                
+            </javadoc>
+            <declaration name="log" type="ReliableLog" line="164"/>
+            <javadoc line="164">
+                reliable log to hold descriptor table                
+            </javadoc>
+            <declaration name="numUpdates" type="int" line="166"/>
+            <javadoc line="166">
+                number of updates since last snapshot                
+            </javadoc>
+            <declaration name="command" type="String[]" line="169"/>
+            <javadoc line="169">
+                the java command                
+            </javadoc>
+            <declaration name="groupTimeout" type="long" line="172"/>
+            <javadoc line="172">
+                timeout on wait for child process to be created or destroyed                
+            </javadoc>
+            <declaration name="snapshotInterval" type="int" line="175"/>
+            <javadoc line="175">
+                take snapshot after this many updates                
+            </javadoc>
+            <declaration name="execTimeout" type="long" line="178"/>
+            <javadoc line="178">
+                timeout on wait for child process to be created                
+            </javadoc>
+            <declaration name="initLock" type="Object" line="182"/>
+            <declaration name="initDone" type="boolean" line="183"/>
+            <method name="getInt" type="int" line="186">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="def" type="int"/>
+                </params>
+            </method>
+            <declaration name="activator" type="Activator" line="190"/>
+            <declaration name="activatorStub" type="Activator" line="191"/>
+            <declaration name="system" type="ActivationSystem" line="192"/>
+            <declaration name="systemStub" type="ActivationSystem" line="193"/>
+            <declaration name="monitor" type="ActivationMonitor" line="194"/>
+            <declaration name="registry" type="Registry" line="195"/>
+            <declaration name="shuttingDown" type="boolean" line="196"/>
+            <declaration name="startupLock" type="Object" line="197"/>
+            <declaration name="shutdownHook" type="Thread" line="198"/>
+            <declaration name="resources" type="ResourceBundle" line="200"/>
+            <javadoc line="202">
+                Create an uninitialized instance of Activation that can be
+                  populated with log data.  This is only called when the initial
+                  snapshot is taken during the first incarnation of rmid.                
+            </javadoc>
+            <method name="Activation" type="constructor" line="207"/>
+            <javadoc line="209">
+                Recover activation state from the reliable log and initialize
+                  activation services.                
+            </javadoc>
+            <method name="startActivation" type="void" line="218">
+                <params>
+                    <param name="port" type="int"/>
+                    <param name="ssf" type="RMIServerSocketFactory"/>
+                    <param name="logName" type="String"/>
+                    <param name="childArgs" type="String[]"/>
+                </params>
+                <declaration name="log" type="ReliableLog" line="219"/>
+                <declaration name="state" type="Activation" line="220"/>
+            </method>
+            <javadoc line="224">
+                Initialize the Activation instantiation; start activation
+                  services.                
+            </javadoc>
+            <method name="init" type="void" line="233">
+                <params>
+                    <param name="port" type="int"/>
+                    <param name="ssf" type="RMIServerSocketFactory"/>
+                    <param name="log" type="ReliableLog"/>
+                    <param name="childArgs" type="String[]"/>
+                </params>
+                <comment line="234">
+                    initialize                    
+                </comment>
+                <comment line="242">
+                    Use array size of 0, since the value from calling size()                    
+                </comment>
+                <comment line="243">
+                    may be out of date by the time toArray() is called.                    
+                </comment>
+                <comment line="248">
+                    all the remote methods briefly synchronize on startupLock                    
+                </comment>
+                <comment line="249">
+                    (via checkShutdown) to make sure they don&apos;t happen in the                    
+                </comment>
+                <comment line="250">
+                    middle of this block.  This block must not cause any such                    
+                </comment>
+                <comment line="251">
+                    incoming remote calls to happen, or deadlock would result!                    
+                </comment>
+                <comment line="269">
+                    restart services                    
+                </comment>
+                <declaration name="gids" type="ActivationGroupID[]" line="244"/>
+                <scope line="247">
+                    <scope line="260">
+                        <scope line="261"/>
+                    </scope>
+                </scope>
+                <scope line="270">
+                    <scope line="271"/>
+                    <scope line="273"/>
+                </scope>
+            </method>
+            <javadoc line="281">
+                Previous versions used HashMap instead of ConcurrentHashMap.
+                  Replace any HashMaps found during deserialization with
+                  ConcurrentHashMaps.                
+            </javadoc>
+            <method name="readObject" type="void" line="288">
+                <params>
+                    <param name="ois" type="ObjectInputStream"/>
+                </params>
+                <scope line="290"/>
+                <scope line="293"/>
+            </method>
+            <class name="SystemRegistryImpl" line="298">
+                <extends class="RegistryImpl"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <declaration name="NAME" type="String" line="300"/>
+                <declaration name="systemStub" type="ActivationSystem" line="301"/>
+                <method name="SystemRegistryImpl" type="constructor" line="308">
+                    <params>
+                        <param name="port" type="int"/>
+                        <param name="csf" type="RMIClientSocketFactory"/>
+                        <param name="ssf" type="RMIServerSocketFactory"/>
+                        <param name="systemStub" type="ActivationSystem"/>
+                    </params>
+                </method>
+                <javadoc line="313">
+                    Returns the activation system stub if the specified name
+                      matches the activation system&apos;s class name, otherwise
+                      returns the result of invoking super.lookup with the specified
+                      name.                    
+                </javadoc>
+                <method name="lookup" type="Remote" line="321">
+                    <params>
+                        <param name="name" type="String"/>
+                    </params>
+                    <scope line="322"/>
+                    <scope line="324"/>
+                </method>
+                <method name="list" type="String[]" line="329">
+                    <declaration name="list1" type="String[]" line="330"/>
+                    <declaration name="length" type="int" line="331"/>
+                    <declaration name="list2" type="String[]" line="332"/>
+                    <scope line="333"/>
+                </method>
+                <method name="bind" type="void" line="342">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="obj" type="Remote"/>
+                    </params>
+                    <scope line="343"/>
+                    <scope line="346"/>
+                </method>
+                <method name="unbind" type="void" line="353">
+                    <params>
+                        <param name="name" type="String"/>
+                    </params>
+                    <scope line="354"/>
+                    <scope line="357"/>
+                </method>
+                <method name="rebind" type="void" line="365">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="obj" type="Remote"/>
+                    </params>
+                    <scope line="366"/>
+                    <scope line="369"/>
+                </method>
+            </class>
+            <class name="ActivatorImpl" line="376">
+                <extends class="RemoteServer"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="Activator"/>
+                <declaration name="serialVersionUID" type="long" line="382"/>
+                <javadoc line="384">
+                    Construct a new Activator on a specified port.                    
+                </javadoc>
+                <method name="ActivatorImpl" type="constructor" line="389">
+                    <params>
+                        <param name="port" type="int"/>
+                        <param name="ssf" type="RMIServerSocketFactory"/>
+                    </params>
+                    <comment line="390">
+                        Server ref must be created and assigned before remote object
+                         &apos;this&apos; can be exported.                        
+                    </comment>
+                    <declaration name="lref" type="LiveRef" line="393"/>
+                    <declaration name="uref" type="UnicastServerRef" line="395"/>
+                </method>
+                <method name="activate" type="MarshalledObject<? extends Remote>" line="403">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="force" type="boolean"/>
+                    </params>
+                </method>
+            </class>
+            <class name="ActivationMonitorImpl" line="409">
+                <extends class="UnicastRemoteObject"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="ActivationMonitor"/>
+                <declaration name="serialVersionUID" type="long" line="412"/>
+                <method name="ActivationMonitorImpl" type="constructor" line="416">
+                    <params>
+                        <param name="port" type="int"/>
+                        <param name="ssf" type="RMIServerSocketFactory"/>
+                    </params>
+                </method>
+                <method name="inactiveObject" type="void" line="422">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                    <scope line="423"/>
+                    <scope line="425"/>
+                </method>
+                <method name="activeObject" type="void" line="435">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="mobj" type="MarshalledObject<? extends Remote>"/>
+                    </params>
+                    <scope line="436"/>
+                    <scope line="438"/>
+                </method>
+                <method name="inactiveGroup" type="void" line="448">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="incarnation" type="long"/>
+                    </params>
+                    <scope line="449"/>
+                    <scope line="451"/>
+                </method>
+            </class>
+            <class name="ActivationSystemImpl" line="460">
+                <extends class="RemoteServer"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="ActivationSystem"/>
+                <declaration name="serialVersionUID" type="long" line="464"/>
+                <method name="ActivationSystemImpl" type="constructor" line="472">
+                    <params>
+                        <param name="port" type="int"/>
+                        <param name="ssf" type="RMIServerSocketFactory"/>
+                    </params>
+                    <comment line="473">
+                        Server ref must be created and assigned before remote object
+                         &apos;this&apos; can be exported.                        
+                    </comment>
+                    <declaration name="lref" type="LiveRef" line="476"/>
+                    <declaration name="uref" type="UnicastServerRef" line="477"/>
+                </method>
+                <method name="registerObject" type="ActivationID" line="484">
+                    <params>
+                        <param name="desc" type="ActivationDesc"/>
+                    </params>
+                    <declaration name="groupID" type="ActivationGroupID" line="488"/>
+                    <declaration name="id" type="ActivationID" line="489"/>
+                </method>
+                <method name="unregisterObject" type="void" line="496">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                </method>
+                <method name="registerGroup" type="ActivationGroupID" line="504">
+                    <params>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                    </params>
+                    <comment line="511">
+                        table insertion must take place before log update                        
+                    </comment>
+                    <declaration name="id" type="ActivationGroupID" line="509"/>
+                    <declaration name="entry" type="GroupEntry" line="510"/>
+                </method>
+                <method name="activeGroup" type="ActivationMonitor" line="521">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="group" type="ActivationInstantiator"/>
+                        <param name="incarnation" type="long"/>
+                    </params>
+                </method>
+                <method name="unregisterGroup" type="void" line="531">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                    </params>
+                    <comment line="535">
+                        remove entry before unregister so state is updated before                        
+                    </comment>
+                    <comment line="536">
+                        logged                        
+                    </comment>
+                </method>
+                <method name="setActivationDesc" type="ActivationDesc" line="543">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="desc" type="ActivationDesc"/>
+                    </params>
+                    <scope line="547"/>
+                </method>
+                <method name="setActivationGroupDesc" type="ActivationGroupDesc" line="557">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                    </params>
+                </method>
+                <method name="getActivationDesc" type="ActivationDesc" line="568">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                </method>
+                <method name="getActivationGroupDesc" type="ActivationGroupDesc" line="577">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                    </params>
+                </method>
+                <javadoc line="585">
+                    Shutdown the activation system. Destroys all groups spawned by
+                      the activation daemon and exits the activation daemon.                    
+                </javadoc>
+                <method name="shutdown" type="void" line="589">
+                    <comment line="595">
+                        nothing                        
+                    </comment>
+                    <declaration name="lock" type="Object" line="592"/>
+                    <scope line="593">
+                        <scope line="594"/>
+                    </scope>
+                    <scope line="599">
+                        <scope line="600"/>
+                    </scope>
+                </method>
+            </class>
+            <method name="checkShutdown" type="void" line="608">
+                <comment line="609">
+                    if the startup critical section is running, wait until it                    
+                </comment>
+                <comment line="610">
+                    completes/fails before continuing with the remote call.                    
+                </comment>
+                <comment line="614">
+                    nothing                    
+                </comment>
+                <declaration name="lock" type="Object" line="611"/>
+                <scope line="612">
+                    <scope line="613"/>
+                </scope>
+                <scope line="618"/>
+            </method>
+            <method name="unexport" type="void" line="624">
+                <params>
+                    <param name="obj" type="Remote"/>
+                </params>
+                <scope line="625">
+                    <scope line="626">
+                        <scope line="627"/>
+                        <scope line="629"/>
+                    </scope>
+                    <scope line="632"/>
+                </scope>
+            </method>
+            <class name="Shutdown" line="638">
+                <extends class="Thread"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="638">
+                    Thread to shutdown rmid.                    
+                </javadoc>
+                <method name="Shutdown" type="constructor" line="642"/>
+                <method name="run" type="void" line="646">
+                    <comment line="648">
+                        Unexport activation system services                        
+                    </comment>
+                    <comment line="654">
+                        destroy all child processes (groups)                        
+                    </comment>
+                    <comment line="661">
+                        Unexport monitor safely since all processes are destroyed.                        
+                    </comment>
+                    <comment line="666">
+                        Close log file, fix for 4243264: rmid shutdown thread
+                         interferes with remote calls in progress.  Make sure
+                         the log file is only closed when it is impossible for
+                         its closure to interfere with any pending remote calls.
+                         We close the log when all objects in the rmid VM are
+                         unexported.                        
+                    </comment>
+                    <comment line="682">
+                        Now exit... A System.exit should only be done if
+                         the RMI activation system daemon was started up
+                         by the main method below (in which should always
+                         be the case since the Activation contructor is private).                        
+                    </comment>
+                    <scope line="647">
+                        <scope line="655"/>
+                        <scope line="674">
+                            <scope line="675"/>
+                        </scope>
+                        <scope line="678"/>
+                    </scope>
+                    <scope line="681"/>
+                </method>
+            </class>
+            <class name="ShutdownHook" line="694">
+                <extends class="Thread"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="694">
+                    Thread to destroy children in the event of abnormal termination.                    
+                </javadoc>
+                <method name="ShutdownHook" type="constructor" line="696"/>
+                <method name="run" type="void" line="700">
+                    <comment line="705">
+                        destroy all child processes (groups) quickly                        
+                    </comment>
+                    <scope line="701"/>
+                    <scope line="706"/>
+                </method>
+            </class>
+            <javadoc line="712">
+                Returns the groupID for a given id of an object in the group.
+                  Throws UnknownObjectException if the object is not registered.                
+            </javadoc>
+            <method name="getGroupID" type="ActivationGroupID" line="718">
+                <params>
+                    <param name="id" type="ActivationID"/>
+                </params>
+                <declaration name="groupID" type="ActivationGroupID" line="719"/>
+                <scope line="720"/>
+            </method>
+            <javadoc line="726">
+                Returns the group entry for the group id, optionally removing it.
+                  Throws UnknownGroupException if the group is not registered.                
+            </javadoc>
+            <method name="getGroupEntry" type="GroupEntry" line="732">
+                <params>
+                    <param name="id" type="ActivationGroupID"/>
+                    <param name="rm" type="boolean"/>
+                </params>
+                <scope line="733">
+                    <declaration name="entry" type="GroupEntry" line="734"/>
+                    <scope line="735"/>
+                    <scope line="737"/>
+                    <scope line="740"/>
+                </scope>
+            </method>
+            <javadoc line="747">
+                Returns the group entry for the group id. Throws
+                  UnknownGroupException if the group is not registered.                
+            </javadoc>
+            <method name="getGroupEntry" type="GroupEntry" line="753">
+                <params>
+                    <param name="id" type="ActivationGroupID"/>
+                </params>
+            </method>
+            <javadoc line="757">
+                Removes and returns the group entry for the group id. Throws
+                  UnknownGroupException if the group is not registered.                
+            </javadoc>
+            <method name="removeGroupEntry" type="GroupEntry" line="763">
+                <params>
+                    <param name="id" type="ActivationGroupID"/>
+                </params>
+            </method>
+            <javadoc line="767">
+                Returns the group entry for the object&apos;s id. Throws
+                  UnknownObjectException if the object is not registered or the
+                  object&apos;s group is not registered.                
+            </javadoc>
+            <method name="getGroupEntry" type="GroupEntry" line="774">
+                <params>
+                    <param name="id" type="ActivationID"/>
+                </params>
+                <declaration name="gid" type="ActivationGroupID" line="775"/>
+                <declaration name="entry" type="GroupEntry" line="776"/>
+                <scope line="777"/>
+            </method>
+            <class name="GroupEntry" line="783">
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="Serializable"/>
+                <javadoc line="783">
+                    Container for group information: group&apos;s descriptor, group&apos;s
+                      instantiator, flag to indicate pending group creation, and
+                      table of the group&apos;s actived objects.
+                      WARNING: GroupEntry objects should not be written into log file
+                      updates.  GroupEntrys are inner classes of Activation and they
+                      can not be serialized independent of this class.  If the
+                      complete Activation system is written out as a log update, the
+                      point of having updates is nullified.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="796"/>
+                <javadoc line="796">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="MAX_TRIES" type="int" line="798"/>
+                <declaration name="NORMAL" type="int" line="799"/>
+                <declaration name="CREATING" type="int" line="800"/>
+                <declaration name="TERMINATE" type="int" line="801"/>
+                <declaration name="TERMINATING" type="int" line="802"/>
+                <declaration name="desc" type="ActivationGroupDesc" line="804"/>
+                <declaration name="groupID" type="ActivationGroupID" line="805"/>
+                <declaration name="incarnation" type="long" line="806"/>
+                <declaration name="objects" type="Map&lt;ActivationID,ObjectEntry&gt;" line="807"/>
+                <declaration name="restartSet" type="Set&lt;ActivationID&gt;" line="809"/>
+                <declaration name="group" type="ActivationInstantiator" line="811"/>
+                <declaration name="status" type="int" line="812"/>
+                <declaration name="waitTime" type="long" line="813"/>
+                <declaration name="groupName" type="String" line="814"/>
+                <declaration name="child" type="Process" line="815"/>
+                <declaration name="removed" type="boolean" line="816"/>
+                <declaration name="watchdog" type="Watchdog" line="817"/>
+                <method name="GroupEntry" type="constructor" line="819">
+                    <params>
+                        <param name="groupID" type="ActivationGroupID"/>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                    </params>
+                </method>
+                <method name="restartServices" type="void" line="824">
+                    <comment line="832">
+                        Clone the restartSet so the set does not have to be locked
+                         during iteration. Locking the restartSet could cause
+                         deadlock if an object we are restarting caused another
+                         object in this group to be activated.                        
+                    </comment>
+                    <declaration name="iter" type="Iterator&lt;ActivationID&gt;" line="825"/>
+                    <scope line="827">
+                        <scope line="828"/>
+                    </scope>
+                    <scope line="841">
+                        <declaration name="id" type="ActivationID" line="842"/>
+                        <scope line="843"/>
+                        <scope line="845">
+                            <scope line="846"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="activeGroup" type="void" line="859">
+                    <params>
+                        <param name="inst" type="ActivationInstantiator"/>
+                        <param name="instIncarnation" type="long"/>
+                    </params>
+                    <scope line="860"/>
+                    <scope line="864">
+                        <scope line="865"/>
+                        <scope line="867"/>
+                    </scope>
+                    <scope line="872"/>
+                </method>
+                <method name="checkRemoved" type="void" line="881">
+                    <scope line="882"/>
+                </method>
+                <method name="getObjectEntry" type="ObjectEntry" line="889">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                    <scope line="890"/>
+                    <declaration name="objEntry" type="ObjectEntry" line="893"/>
+                    <scope line="894"/>
+                </method>
+                <method name="registerObject" type="void" line="904">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="desc" type="ActivationDesc"/>
+                        <param name="addRecord" type="boolean"/>
+                    </params>
+                    <comment line="911">
+                        table insertion must take place before log update                        
+                    </comment>
+                    <scope line="907"/>
+                    <scope line="914"/>
+                </method>
+                <method name="unregisterObject" type="void" line="921">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="addRecord" type="boolean"/>
+                    </params>
+                    <comment line="929">
+                        table removal must take place before log update                        
+                    </comment>
+                    <declaration name="objEntry" type="ObjectEntry" line="922"/>
+                    <scope line="925"/>
+                    <scope line="931"/>
+                </method>
+                <method name="unregisterGroup" type="void" line="938">
+                    <params>
+                        <param name="addRecord" type="boolean"/>
+                    </params>
+                    <comment line="954">
+                        removal should be recorded before log update                        
+                    </comment>
+                    <scope line="943">
+                        <declaration name="id" type="ActivationID" line="944"/>
+                        <declaration name="objEntry" type="ObjectEntry" line="946"/>
+                    </scope>
+                    <scope line="955"/>
+                </method>
+                <method name="setActivationDesc" type="ActivationDesc" line="965">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="desc" type="ActivationDesc"/>
+                        <param name="addRecord" type="boolean"/>
+                    </params>
+                    <comment line="974">
+                        restart information should be recorded before log update                        
+                    </comment>
+                    <declaration name="objEntry" type="ObjectEntry" line="966"/>
+                    <declaration name="oldDesc" type="ActivationDesc" line="967"/>
+                    <scope line="969"/>
+                    <scope line="971"/>
+                    <scope line="975"/>
+                </method>
+                <method name="getActivationDesc" type="ActivationDesc" line="984">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                </method>
+                <method name="setActivationGroupDesc" type="ActivationGroupDesc" line="993">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                        <param name="addRecord" type="boolean"/>
+                    </params>
+                    <comment line="997">
+                        state update should occur before log update                        
+                    </comment>
+                    <declaration name="oldDesc" type="ActivationGroupDesc" line="995"/>
+                    <scope line="998"/>
+                </method>
+                <method name="inactiveGroup" type="void" line="1006">
+                    <params>
+                        <param name="incarnation" type="long"/>
+                        <param name="failure" type="boolean"/>
+                    </params>
+                    <scope line="1008"/>
+                    <scope line="1013"/>
+                    <scope line="1015"/>
+                </method>
+                <method name="activeObject" type="void" line="1024">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="mobj" type="MarshalledObject<? extends Remote>"/>
+                    </params>
+                </method>
+                <method name="inactiveObject" type="void" line="1030">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                </method>
+                <method name="reset" type="void" line="1034">
+                    <scope line="1036"/>
+                </method>
+                <method name="childGone" type="void" line="1041">
+                    <scope line="1042"/>
+                </method>
+                <method name="terminate" type="void" line="1051">
+                    <scope line="1052"/>
+                </method>
+                <method name="await" type="void" line="1060">
+                    <comment line="1079">
+                        REMIND: print message that group did not terminate?                        
+                    </comment>
+                    <scope line="1061">
+                        <scope line="1068"/>
+                        <scope line="1070">
+                            <declaration name="now" type="long" line="1071"/>
+                            <scope line="1072">
+                                <scope line="1073"/>
+                                <scope line="1075"/>
+                            </scope>
+                        </scope>
+                        <scope line="1084"/>
+                        <scope line="1086"/>
+                    </scope>
+                </method>
+                <method name="shutdownFast" type="void" line="1093">
+                    <declaration name="p" type="Process" line="1094"/>
+                    <scope line="1095"/>
+                </method>
+                <method name="shutdown" type="void" line="1100"/>
+                <method name="activate" type="MarshalledObject<? extends Remote>" line="1109">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="force" type="boolean"/>
+                    </params>
+                    <comment line="1112">
+                        Attempt to activate object and reattempt (several times)
+                         if activation fails due to communication problems.                        
+                    </comment>
+                    <comment line="1120">
+                        look up object to activate                        
+                    </comment>
+                    <comment line="1124">
+                        if not forcing activation, return cached stub                        
+                    </comment>
+                    <comment line="1134">
+                        activate object                        
+                    </comment>
+                    <comment line="1152">
+                        REMIND: wait some here before continuing?                        
+                    </comment>
+                    <comment line="1159">
+                        group has failed or is inactive; mark inactive                        
+                    </comment>
+                    <comment line="1169">
+                        not a problem                        
+                    </comment>
+                    <comment line="1174">
+                        signal that group activation failed, nested exception
+                         specifies what exception occurred when the group did not
+                         activate                        
+                    </comment>
+                    <declaration name="detail" type="Exception" line="1110"/>
+                    <scope line="1116">
+                        <declaration name="inst" type="ActivationInstantiator" line="1117"/>
+                        <declaration name="currentIncarnation" type="long" line="1118"/>
+                        <declaration name="objEntry" type="ObjectEntry" line="1121"/>
+                        <scope line="1122">
+                            <scope line="1125"/>
+                        </scope>
+                        <declaration name="groupInactive" type="boolean" line="1132"/>
+                        <declaration name="failure" type="boolean" line="1133"/>
+                        <scope line="1135"/>
+                        <scope line="1137"/>
+                        <scope line="1140"/>
+                        <scope line="1144"/>
+                        <scope line="1148"/>
+                        <scope line="1151">
+                            <scope line="1153"/>
+                        </scope>
+                        <scope line="1158">
+                            <scope line="1160"/>
+                            <scope line="1168"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="1183">
+                    Returns the instantiator for the group specified by id and
+                      entry. If the group is currently inactive, exec some
+                      bootstrap code to create the group.                    
+                </javadoc>
+                <method name="getInstantiator" type="ActivationInstantiator" line="1190">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                    </params>
+                    <comment line="1227">
+                        handle child I/O streams before writing to child                        
+                    </comment>
+                    <scope line="1194"/>
+                    <declaration name="acquired" type="boolean" line="1198"/>
+                    <scope line="1200">
+                        <declaration name="argv" type="String[]" line="1203"/>
+                        <scope line="1206">
+                            <declaration name="sb" type="StringBuffer" line="1207"/>
+                            <declaration name="j" type="int" line="1208"/>
+                            <scope line="1209"/>
+                        </scope>
+                        <scope line="1219">
+                            <declaration name="out" type="MarshalOutputStream" line="1232"/>
+                        </scope>
+                        <scope line="1241"/>
+                        <scope line="1247">
+                            <declaration name="now" type="long" line="1248"/>
+                            <declaration name="stop" type="long" line="1249"/>
+                            <scope line="1250">
+                                <scope line="1252"/>
+                            </scope>
+                        </scope>
+                        <scope line="1257"/>
+                    </scope>
+                    <scope line="1265">
+                        <scope line="1266"/>
+                    </scope>
+                </method>
+                <class name="Watchdog" line="1272">
+                    <extends class="Thread"/>
+                    <javadoc line="1272">
+                        Waits for process termination and then restarts services.                        
+                    </javadoc>
+                    <declaration name="groupProcess" type="Process" line="1276"/>
+                    <declaration name="groupIncarnation" type="long" line="1277"/>
+                    <declaration name="canInterrupt" type="boolean" line="1278"/>
+                    <declaration name="shouldQuit" type="boolean" line="1279"/>
+                    <declaration name="shouldRestart" type="boolean" line="1280"/>
+                    <method name="Watchdog" type="constructor" line="1282"/>
+                    <method name="run" type="void" line="1287">
+                        <comment line="1293">
+                            Wait for the group to crash or exit.                            
+                        </comment>
+                        <comment line="1308">
+                            clear interrupt bit                            
+                        </comment>
+                        <comment line="1309">
+                            Since the group crashed, we should
+                             reset the entry before activating objects                            
+                        </comment>
+                        <comment line="1320">
+                            Activate those objects that require restarting
+                             after a crash.                            
+                        </comment>
+                        <scope line="1289"/>
+                        <scope line="1296"/>
+                        <scope line="1298"/>
+                        <declaration name="restart" type="boolean" line="1302"/>
+                        <scope line="1303">
+                            <scope line="1304"/>
+                            <scope line="1313"/>
+                        </scope>
+                        <scope line="1324"/>
+                    </method>
+                    <javadoc line="1329">
+                        Marks this thread as one that is no longer needed.
+                          If the thread is in a state in which it can be interrupted,
+                          then the thread is interrupted.                        
+                    </javadoc>
+                    <method name="dispose" type="void" line="1334">
+                        <scope line="1336"/>
+                    </method>
+                    <javadoc line="1341">
+                        Marks this thread as no longer needing to restart objects.                        
+                    </javadoc>
+                    <method name="noRestart" type="void" line="1344"/>
+                </class>
+            </class>
+            <method name="activationArgs" type="String[]" line="1350">
+                <params>
+                    <param name="desc" type="ActivationGroupDesc"/>
+                </params>
+                <comment line="1354">
+                    argv is the literal command to exec                    
+                </comment>
+                <comment line="1357">
+                    Command name/path                    
+                </comment>
+                <comment line="1362">
+                    Group-specific command options                    
+                </comment>
+                <comment line="1367">
+                    Properties become -D parameters                    
+                </comment>
+                <comment line="1374">
+                    Note on quoting: it would be wrong
+                     here, since argv will be passed to
+                     Runtime.exec, which should not parse
+                     arguments or split on whitespace.                    
+                </comment>
+                <comment line="1383">
+                    Finally, rmid-global command options (e.g. -C options)
+                     and the classname                    
+                </comment>
+                <declaration name="cmdenv" type="ActivationGroupDesc.CommandEnvironment" line="1351"/>
+                <declaration name="argv" type="List&lt;String&gt;" line="1355"/>
+                <scope line="1363"/>
+                <declaration name="props" type="Properties" line="1368"/>
+                <scope line="1369">
+                    <scope line="1372">
+                        <declaration name="name" type="String" line="1373"/>
+                    </scope>
+                </scope>
+                <scope line="1386"/>
+                <declaration name="realArgv" type="String[]" line="1390"/>
+            </method>
+            <method name="checkArgs" type="void" line="1398">
+                <params>
+                    <param name="desc" type="ActivationGroupDesc"/>
+                    <param name="cmd" type="String[]"/>
+                </params>
+                <comment line="1399">
+                    Check exec command using execPolicy object                    
+                </comment>
+                <scope line="1402">
+                    <scope line="1403"/>
+                    <scope line="1406"/>
+                    <scope line="1408">
+                        <declaration name="targetException" type="Throwable" line="1409"/>
+                        <scope line="1410"/>
+                        <scope line="1412"/>
+                    </scope>
+                    <scope line="1417"/>
+                </scope>
+            </method>
+            <class name="ObjectEntry" line="1424">
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="Serializable"/>
+                <declaration name="serialVersionUID" type="long" line="1426"/>
+                <declaration name="desc" type="ActivationDesc" line="1428"/>
+                <javadoc line="1428">
+                    descriptor for object                    
+                </javadoc>
+                <declaration name="stub" type="MarshalledObject&lt;? extends Remote&gt;" line="1430"/>
+                <javadoc line="1430">
+                    the stub (if active)                    
+                </javadoc>
+                <declaration name="removed" type="boolean" line="1432"/>
+                <method name="ObjectEntry" type="constructor" line="1434">
+                    <params>
+                        <param name="desc" type="ActivationDesc"/>
+                    </params>
+                </method>
+                <method name="activate" type="MarshalledObject<? extends Remote>" line="1443">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="force" type="boolean"/>
+                        <param name="inst" type="ActivationInstantiator"/>
+                    </params>
+                    <comment line="1453">
+                        stub could be set to null by a group reset, so return
+                         the newstub here to prevent returning null.                        
+                    </comment>
+                    <declaration name="nstub" type="MarshalledObject&lt;? extends Remote&gt;" line="1444"/>
+                    <scope line="1445"/>
+                    <scope line="1447"/>
+                </method>
+                <method name="reset" type="void" line="1460"/>
+            </class>
+            <javadoc line="1465">
+                Add a record to the activation log. If the number of updates
+                  passes a predetermined threshold, record a snapshot.                
+            </javadoc>
+            <method name="addLogRecord" type="void" line="1469">
+                <params>
+                    <param name="rec" type="LogRecord"/>
+                </params>
+                <comment line="1490">
+                    shutdown activation system because snapshot failed                    
+                </comment>
+                <comment line="1493">
+                    can&apos;t happen                    
+                </comment>
+                <comment line="1495">
+                    warn the client of the original update problem                    
+                </comment>
+                <scope line="1470">
+                    <scope line="1472"/>
+                    <scope line="1474"/>
+                    <scope line="1479"/>
+                    <scope line="1482"/>
+                    <scope line="1485">
+                        <scope line="1489"/>
+                        <scope line="1492"/>
+                    </scope>
+                </scope>
+            </method>
+            <class name="ActLogHandler" line="1501">
+                <extends class="LogHandler"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1501">
+                    Handler for the log that knows how to take the initial snapshot
+                      and apply an update (a LogRecord) to the current state.                    
+                </javadoc>
+                <method name="ActLogHandler" type="constructor" line="1507"/>
+                <method name="initialSnapshot" type="Object" line="1511">
+                    <comment line="1512">
+                        Return an empty Activation object.  Log will update
+                         this object with recovered state.                        
+                    </comment>
+                </method>
+                <method name="applyUpdate" type="Object" line="1521">
+                    <params>
+                        <param name="update" type="Object"/>
+                        <param name="state" type="Object"/>
+                    </params>
+                </method>
+            </class>
+            <class name="LogRecord" line="1527">
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="Serializable"/>
+                <javadoc line="1527">
+                    Abstract class for all log records. The subclass contains
+                      specific update information and implements the apply method
+                      that applys the update information contained in the record
+                      to the current state.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1534"/>
+                <javadoc line="1534">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <method name="apply" type="Object" line="1536"/>
+            </class>
+            <class name="LogRegisterObject" line="1539">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1539">
+                    Log record for registering an object.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1543"/>
+                <javadoc line="1543">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationID" line="1545"/>
+                <declaration name="desc" type="ActivationDesc" line="1546"/>
+                <method name="LogRegisterObject" type="constructor" line="1548">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="desc" type="ActivationDesc"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1553">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <scope line="1554"/>
+                    <scope line="1557"/>
+                </method>
+            </class>
+            <class name="LogUnregisterObject" line="1568">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1568">
+                    Log record for unregistering an object.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1572"/>
+                <javadoc line="1572">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationID" line="1574"/>
+                <method name="LogUnregisterObject" type="constructor" line="1576">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1580">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <scope line="1581"/>
+                    <scope line="1584"/>
+                </method>
+            </class>
+            <class name="LogRegisterGroup" line="1595">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1595">
+                    Log record for registering a group.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1599"/>
+                <javadoc line="1599">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationGroupID" line="1601"/>
+                <declaration name="desc" type="ActivationGroupDesc" line="1602"/>
+                <method name="LogRegisterGroup" type="constructor" line="1604">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1609">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <comment line="1610">
+                        modify state directly; cant ask a nonexistent GroupEntry                        
+                    </comment>
+                    <comment line="1611">
+                        to register itself.                        
+                    </comment>
+                </method>
+            </class>
+            <class name="LogUpdateDesc" line="1618">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1618">
+                    Log record for udpating an activation desc                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1622"/>
+                <javadoc line="1622">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationID" line="1625"/>
+                <declaration name="desc" type="ActivationDesc" line="1626"/>
+                <method name="LogUpdateDesc" type="constructor" line="1628">
+                    <params>
+                        <param name="id" type="ActivationID"/>
+                        <param name="desc" type="ActivationDesc"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1633">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <scope line="1634"/>
+                    <scope line="1637"/>
+                </method>
+            </class>
+            <class name="LogUpdateGroupDesc" line="1648">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1648">
+                    Log record for unregistering a group.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1652"/>
+                <javadoc line="1652">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationGroupID" line="1654"/>
+                <declaration name="desc" type="ActivationGroupDesc" line="1655"/>
+                <method name="LogUpdateGroupDesc" type="constructor" line="1657">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1662">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <scope line="1663"/>
+                    <scope line="1666"/>
+                </method>
+            </class>
+            <class name="LogUnregisterGroup" line="1677">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1677">
+                    Log record for unregistering a group.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1681"/>
+                <javadoc line="1681">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationGroupID" line="1683"/>
+                <method name="LogUnregisterGroup" type="constructor" line="1685">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1689">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <declaration name="entry" type="GroupEntry" line="1690"/>
+                    <scope line="1691"/>
+                    <scope line="1693"/>
+                </method>
+            </class>
+            <class name="LogGroupIncarnation" line="1704">
+                <extends class="LogRecord"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1704">
+                    Log record for an active group incarnation                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1708"/>
+                <javadoc line="1708">
+                    indicate compatibility with JDK 1.2 version of class                    
+                </javadoc>
+                <declaration name="id" type="ActivationGroupID" line="1710"/>
+                <declaration name="inc" type="long" line="1711"/>
+                <method name="LogGroupIncarnation" type="constructor" line="1713">
+                    <params>
+                        <param name="id" type="ActivationGroupID"/>
+                        <param name="inc" type="long"/>
+                    </params>
+                </method>
+                <method name="apply" type="Object" line="1718">
+                    <params>
+                        <param name="state" type="Object"/>
+                    </params>
+                    <scope line="1719">
+                        <declaration name="entry" type="GroupEntry" line="1720"/>
+                    </scope>
+                    <scope line="1722"/>
+                </method>
+            </class>
+            <javadoc line="1733">
+                Initialize command to exec a default group.                
+            </javadoc>
+            <method name="initCommand" type="void" line="1736">
+                <params>
+                    <param name="childArgs" type="String[]"/>
+                </params>
+                <anonymous_class line="1738">
+                    <method name="run" type="Void" line="1739">
+                        <scope line="1740"/>
+                        <scope line="1743"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="bomb" type="void" line="1755">
+                <params>
+                    <param name="error" type="String"/>
+                </params>
+                <comment line="1756">
+                    $NON-NLS$                    
+                </comment>
+            </method>
+            <class name="DefaultExecPolicy" line="1762">
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="1762">
+                    The default policy for checking a command before it is executed
+                      makes sure the appropriate com.sun.rmi.rmid.ExecPermission and
+                      set of com.sun.rmi.rmid.ExecOptionPermissions have been granted.                    
+                </javadoc>
+                <method name="checkExecCommand" type="void" line="1771">
+                    <params>
+                        <param name="desc" type="ActivationGroupDesc"/>
+                        <param name="cmd" type="String[]"/>
+                    </params>
+                    <comment line="1774">
+                        Check properties overrides.                        
+                    </comment>
+                    <comment line="1798">
+                        Check group class name (allow nothing but the default),
+                         code location (must be null), and data (must be null).                        
+                    </comment>
+                    <comment line="1813">
+                        If group descriptor has a command environment, check
+                         command and options.                        
+                    </comment>
+                    <declaration name="perms" type="PermissionCollection" line="1772"/>
+                    <declaration name="props" type="Properties" line="1777"/>
+                    <scope line="1778">
+                        <declaration name="p" type="Enumeration&lt;?&gt;" line="1779"/>
+                        <scope line="1780">
+                            <declaration name="name" type="String" line="1781"/>
+                            <declaration name="value" type="String" line="1782"/>
+                            <declaration name="option" type="String" line="1783"/>
+                            <scope line="1784"/>
+                            <scope line="1787">
+                                <scope line="1788"/>
+                                <scope line="1791"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <declaration name="groupClassName" type="String" line="1802"/>
+                    <scope line="1808"/>
+                    <declaration name="cmdenv" type="ActivationGroupDesc.CommandEnvironment" line="1817"/>
+                    <scope line="1819">
+                        <declaration name="path" type="String" line="1820"/>
+                        <scope line="1821"/>
+                        <declaration name="options" type="String[]" line="1825"/>
+                        <scope line="1826">
+                            <scope line="1827"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="1835">
+                    Prints warning message if installed Policy is the default Policy
+                      implementation and globally granted permissions do not include
+                      AllPermission or any ExecPermissions/ExecOptionPermissions.                    
+                </javadoc>
+                <method name="checkConfiguration" type="void" line="1840">
+                    <anonymous_class line="1842">
+                        <method name="run" type="Policy" line="1843"/>
+                    </anonymous_class>
+                    <declaration name="policy" type="Policy" line="1841"/>
+                    <scope line="1847"/>
+                    <declaration name="perms" type="PermissionCollection" line="1850"/>
+                    <scope line="1853">
+                        <declaration name="p" type="Permission" line="1854"/>
+                        <scope line="1858"/>
+                    </scope>
+                </method>
+                <method name="getExecPermissions" type="PermissionCollection" line="1865">
+                    <comment line="1866">
+                        The approach used here is taken from the similar method
+                         getLoaderAccessControlContext() in the class
+                         sun.rmi.server.LoaderHandler.                        
+                    </comment>
+                    <comment line="1872">
+                        obtain permissions granted to all code in current policy                        
+                    </comment>
+                    <anonymous_class line="1874">
+                        <method name="run" type="PermissionCollection" line="1875">
+                            <declaration name="codesource" type="CodeSource" line="1876"/>
+                            <declaration name="p" type="Policy" line="1878"/>
+                            <scope line="1879"/>
+                            <scope line="1881"/>
+                        </method>
+                    </anonymous_class>
+                    <declaration name="perms" type="PermissionCollection" line="1873"/>
+                </method>
+                <method name="checkPermission" type="void" line="1893">
+                    <params>
+                        <param name="perms" type="PermissionCollection"/>
+                        <param name="p" type="Permission"/>
+                    </params>
+                    <scope line="1894"/>
+                </method>
+            </class>
+            <javadoc line="1901">
+                Main program to start the activation system. &lt;br&gt;
+                  The usage is as follows: rmid [-port num] [-log dir].                
+            </javadoc>
+            <method name="main" type="void" line="1905">
+                <params>
+                    <param name="args" type="String[]"/>
+                </params>
+                <comment line="1908">
+                    Create and install the security manager if one is not installed                    
+                </comment>
+                <comment line="1909">
+                    already.                    
+                </comment>
+                <comment line="1918">
+                    If rmid has an inherited channel (meaning that it was
+                     launched from inetd), set the server socket factory to
+                     return the inherited server socket.                    
+                </comment>
+                <comment line="1933">
+                    Redirect System.err output to a file.                    
+                </comment>
+                <comment line="1962">
+                    Parse arguments                    
+                </comment>
+                <comment line="2011">
+                    Determine class name for activation exec policy (if any).                    
+                </comment>
+                <comment line="2023">
+                    Initialize method for activation exec policy.                    
+                </comment>
+                <comment line="2065">
+                    Fix for 4173960: Create and initialize activation using
+                     a static method, startActivation, which will build the
+                     Activation state in two ways: if when rmid is run, no
+                     log file is found, the ActLogHandler.recover(...)
+                     method will create a new Activation instance.
+                     Alternatively, if a logfile is available, a serialized
+                     instance of activation will be read from the log&apos;s
+                     snapshot file.  Log updates will be applied to this
+                     Activation object until rmid&apos;s state has been fully
+                     recovered.  In either case, only one instance of
+                     Activation is created.                    
+                </comment>
+                <comment line="2081">
+                    prevent activator from exiting                    
+                </comment>
+                <declaration name="stop" type="boolean" line="1906"/>
+                <scope line="1910"/>
+                <scope line="1914">
+                    <declaration name="port" type="int" line="1915"/>
+                    <declaration name="ssf" type="RMIServerSocketFactory" line="1916"/>
+                    <anonymous_class line="1924">
+                        <method name="run" type="Channel" line="1925"/>
+                    </anonymous_class>
+                    <declaration name="inheritedChannel" type="Channel" line="1923"/>
+                    <scope line="1932">
+                        <anonymous_class line="1937">
+                            <method name="run" type="Void" line="1938">
+                                <declaration name="file" type="File" line="1939"/>
+                                <declaration name="errStream" type="PrintStream" line="1941"/>
+                            </method>
+                        </anonymous_class>
+                        <declaration name="serverSocket" type="ServerSocket" line="1948"/>
+                    </scope>
+                    <declaration name="log" type="String" line="1959"/>
+                    <declaration name="childArgs" type="List&lt;String&gt;" line="1960"/>
+                    <scope line="1965">
+                        <scope line="1966">
+                            <scope line="1967"/>
+                            <scope line="1970">
+                                <scope line="1971"/>
+                                <scope line="1973"/>
+                            </scope>
+                            <scope line="1976"/>
+                        </scope>
+                        <scope line="1980">
+                            <scope line="1981"/>
+                            <scope line="1983"/>
+                        </scope>
+                        <scope line="1987"/>
+                        <scope line="1990"/>
+                        <scope line="1993"/>
+                    </scope>
+                    <scope line="2000">
+                        <scope line="2001"/>
+                        <scope line="2003"/>
+                    </scope>
+                    <declaration name="execPolicyClassName" type="String" line="2014"/>
+                    <scope line="2016">
+                        <scope line="2017"/>
+                    </scope>
+                    <scope line="2026">
+                        <scope line="2029"/>
+                        <scope line="2033">
+                            <declaration name="execPolicyClass" type="Class&lt;?&gt;" line="2034"/>
+                        </scope>
+                        <scope line="2041">
+                            <scope line="2042"/>
+                        </scope>
+                    </scope>
+                    <scope line="2051">
+                        <declaration name="finalPort" type="int" line="2052"/>
+                        <anonymous_class line="2053">
+                            <method name="run" type="Void" line="2054"/>
+                        </anonymous_class>
+                        <declaration name="system" type="ActivationSystem" line="2060"/>
+                    </scope>
+                    <scope line="2082">
+                        <scope line="2083"/>
+                        <scope line="2085"/>
+                    </scope>
+                </scope>
+                <scope line="2088"/>
+            </method>
+            <javadoc line="2097">
+                Retrieves text resources from the locale-specific properties file.                
+            </javadoc>
+            <method name="getTextResource" type="String" line="2100">
+                <params>
+                    <param name="key" type="String"/>
+                </params>
+                <comment line="2108">
+                    throwing an Error is a bit extreme, methinks                    
+                </comment>
+                <scope line="2101">
+                    <scope line="2102"/>
+                    <scope line="2105"/>
+                    <scope line="2107"/>
+                </scope>
+                <declaration name="val" type="String" line="2113"/>
+                <scope line="2114"/>
+                <scope line="2116"/>
+                <scope line="2119"/>
+                <scope line="2121"/>
+            </method>
+            <javadoc line="2130">
+                Acquire the group semaphore and return a group name.  Each
+                  Pstartgroup must be followed by a Vstartgroup.  The calling thread
+                  will wait until there are fewer than &lt;code&gt;N&lt;/code&gt; other threads
+                  holding the group semaphore.  The calling thread will then acquire
+                  the semaphore and return.                
+            </javadoc>
+            <method name="Pstartgroup" type="String" line="2137">
+                <comment line="2140">
+                    Wait until positive, then decrement.                    
+                </comment>
+                <scope line="2138">
+                    <scope line="2141"/>
+                    <scope line="2146"/>
+                    <scope line="2148"/>
+                </scope>
+            </method>
+            <javadoc line="2153">
+                Release the group semaphore.  Every P operation must be
+                  followed by a V operation.  This may cause another thread to
+                  wake up and return from its P operation.                
+            </javadoc>
+            <method name="Vstartgroup" type="void" line="2158">
+                <comment line="2159">
+                    Increment and notify a waiter (not necessarily FIFO).                    
+                </comment>
+            </method>
+            <class name="ActivationServerSocketFactory" line="2164">
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <implements interface="RMIServerSocketFactory"/>
+                <javadoc line="2164">
+                    A server socket factory to use when rmid is launched via &apos;inetd&apos;
+                      with &apos;wait&apos; status.  This socket factory&apos;s &apos;createServerSocket&apos;
+                      method returns the server socket specified during construction that
+                      is specialized to delay accepting requests until the
+                      &apos;initDone&apos; flag is &apos;true&apos;.  The server socket supplied to
+                      the constructor should be the server socket obtained from the
+                      ServerSocketChannel returned from the &apos;System.inheritedChannel&apos;
+                      method.                    
+                </javadoc>
+                <declaration name="serverSocket" type="ServerSocket" line="2177"/>
+                <javadoc line="2179">
+                    Constructs an &apos;ActivationServerSocketFactory&apos; with the specified
+                      &apos;serverSocket&apos;.                    
+                </javadoc>
+                <method name="ActivationServerSocketFactory" type="constructor" line="2183">
+                    <params>
+                        <param name="serverSocket" type="ServerSocket"/>
+                    </params>
+                </method>
+                <javadoc line="2187">
+                    Returns the server socket specified during construction wrapped
+                      in a &apos;DelayedAcceptServerSocket&apos;.                    
+                </javadoc>
+                <method name="createServerSocket" type="ServerSocket" line="2193">
+                    <params>
+                        <param name="port" type="int"/>
+                    </params>
+                </method>
+            </class>
+            <class name="DelayedAcceptServerSocket" line="2199">
+                <extends class="ServerSocket"/>
+                <comment line="171">
+                    accessed by GroupEntry                    
+                </comment>
+                <comment line="378">
+                    Because ActivatorImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="379">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="380">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="381">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="467">
+                    Because ActivationSystemImpl has a fixed ObjID, it can be                    
+                </comment>
+                <comment line="468">
+                    called by clients holding stale remote references.  Each of                    
+                </comment>
+                <comment line="469">
+                    its remote methods, then, must check startupLock (calling                    
+                </comment>
+                <comment line="470">
+                    checkShutdown() is easiest).                    
+                </comment>
+                <comment line="1093">
+                    no synchronization to avoid delay wrt getInstantiator                    
+                </comment>
+                <javadoc line="2199">
+                    A server socket that delegates all public methods to the underlying
+                      server socket specified at construction.  The accept method is
+                      overridden to delay calling accept on the underlying server socket
+                      until the &apos;initDone&apos; flag is &apos;true&apos;.                    
+                </javadoc>
+                <declaration name="serverSocket" type="ServerSocket" line="2207"/>
+                <method name="DelayedAcceptServerSocket" type="constructor" line="2211">
+                    <params>
+                        <param name="serverSocket" type="ServerSocket"/>
+                    </params>
+                </method>
+                <method name="bind" type="void" line="2215">
+                    <params>
+                        <param name="endpoint" type="SocketAddress"/>
+                    </params>
+                </method>
+                <method name="bind" type="void" line="2221">
+                    <params>
+                        <param name="endpoint" type="SocketAddress"/>
+                        <param name="backlog" type="int"/>
+                    </params>
+                </method>
+                <method name="getInetAddress" type="InetAddress" line="2225"/>
+                <method name="getLocalPort" type="int" line="2229"/>
+                <method name="getLocalSocketAddress" type="SocketAddress" line="2233"/>
+                <javadoc line="2237">
+                    Delays calling accept on the underlying server socket until the
+                      remote service is bound in the registry.                    
+                </javadoc>
+                <method name="accept" type="Socket" line="2241">
+                    <scope line="2242">
+                        <scope line="2243">
+                            <scope line="2244"/>
+                        </scope>
+                        <scope line="2247"/>
+                    </scope>
+                </method>
+                <method name="close" type="void" line="2254"/>
+                <method name="getChannel" type="ServerSocketChannel" line="2258"/>
+                <method name="isBound" type="boolean" line="2262"/>
+                <method name="isClosed" type="boolean" line="2266"/>
+                <method name="setSoTimeout" type="void" line="2272">
+                    <params>
+                        <param name="timeout" type="int"/>
+                    </params>
+                </method>
+                <method name="getSoTimeout" type="int" line="2276"/>
+                <method name="setReuseAddress" type="void" line="2280">
+                    <params>
+                        <param name="on" type="boolean"/>
+                    </params>
+                </method>
+                <method name="getReuseAddress" type="boolean" line="2284"/>
+                <method name="toString" type="String" line="2288"/>
+                <method name="setReceiveBufferSize" type="void" line="2294">
+                    <params>
+                        <param name="size" type="int"/>
+                    </params>
+                </method>
+                <method name="getReceiveBufferSize" type="int" line="2300"/>
+            </class>
+        </class>
+        <class name="PipeWriter" line="2306">
+            <comment line="186">
+                this should be a *private* method since it is privileged                
+            </comment>
+            <comment line="2127">
+                Dijkstra semaphore operations to limit the number of subprocesses
+                 rmid attempts to make at once.                
+            </comment>
+            <implements interface="Runnable"/>
+            <javadoc line="2306">
+                PipeWriter plugs together two pairs of input and output streams by
+                  providing readers for input streams and writing through to
+                  appropriate output streams.  Both output streams are annotated on a
+                  per-line basis.                
+                <author>
+                    Laird Dornin, much code borrowed from Peter Jones, Ken
+                      Arnold and Ann Wollrath.                    
+                </author>
+            </javadoc>
+            <declaration name="bufOut" type="ByteArrayOutputStream" line="2317"/>
+            <javadoc line="2317">
+                stream used for buffering lines                
+            </javadoc>
+            <declaration name="cLast" type="int" line="2320"/>
+            <javadoc line="2320">
+                count since last separator                
+            </javadoc>
+            <declaration name="currSep" type="byte[]" line="2323"/>
+            <javadoc line="2323">
+                current chunk of input being compared to lineSeparator.                
+            </javadoc>
+            <declaration name="out" type="PrintWriter" line="2326"/>
+            <declaration name="in" type="InputStream" line="2327"/>
+            <declaration name="pipeString" type="String" line="2329"/>
+            <declaration name="execString" type="String" line="2330"/>
+            <declaration name="lineSeparator" type="String" line="2332"/>
+            <declaration name="lineSeparatorLength" type="int" line="2333"/>
+            <declaration name="numExecs" type="int" line="2335"/>
+            <scope line="2337"/>
+            <javadoc line="2343">
+                Create a new PipeWriter object. All methods of PipeWriter,
+                  except plugTogetherPair, are only accesible to PipeWriter
+                  itself.  Synchronization is unnecessary on functions that will
+                  only be used internally in PipeWriter.                
+                <param>
+                    in input stream from which pipe input flows                    
+                </param>
+                <param>
+                    out output stream to which log messages will be sent                    
+                </param>
+                <param>
+                    dest String which tags output stream as 'out' or 'err'                    
+                </param>
+                <param>
+                    nExecs number of execed processes, Activation groups.                    
+                </param>
+            </javadoc>
+            <method name="PipeWriter" type="constructor" line="2355">
+                <params>
+                    <param name="in" type="InputStream"/>
+                    <param name="out" type="OutputStream"/>
+                    <param name="tag" type="String"/>
+                    <param name="nExecs" type="int"/>
+                </params>
+                <comment line="2363">
+                                        
+                </comment>
+            </method>
+            <javadoc line="2368">
+                Create a thread to listen and read from input stream, in.  buffer
+                  the data that is read until a marker which equals lineSeparator
+                  is read.  Once such a string has been discovered; write out an
+                  annotation string followed by the buffered data and a line
+                  separator.                
+            </javadoc>
+            <method name="run" type="void" line="2375">
+                <comment line="2380">
+                                        
+                </comment>
+                <comment line="2385">
+                    flush internal buffer... may not have ended on a line
+                      separator, we also need a last annotation if
+                      something was left.                    
+                </comment>
+                <comment line="2393">
+                    add a line separator                    
+                </comment>
+                <comment line="2394">
+                    to make output nicer                    
+                </comment>
+                <declaration name="buf" type="byte[]" line="2376"/>
+                <declaration name="count" type="int" line="2377"/>
+                <scope line="2379">
+                    <scope line="2381"/>
+                    <declaration name="lastInBuffer" type="String" line="2389"/>
+                    <scope line="2391"/>
+                </scope>
+                <scope line="2397"/>
+            </method>
+            <javadoc line="2401">
+                Write a subarray of bytes.  Pass each through write byte method.                
+            </javadoc>
+            <method name="write" type="void" line="2404">
+                <params>
+                    <param name="b" type="byte"/>
+                    <param name="off" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="2406"/>
+                <scope line="2409"/>
+            </method>
+            <javadoc line="2414">
+                Write a byte of data to the stream.  If we have not matched a
+                  line separator string, then the byte is appended to the internal
+                  buffer.  If we have matched a line separator, then the currently
+                  buffered line is sent to the output writer with a prepended
+                  annotation string.                
+            </javadoc>
+            <method name="write" type="void" line="2421">
+                <params>
+                    <param name="b" type="byte"/>
+                </params>
+                <comment line="2424">
+                                        
+                </comment>
+                <comment line="2431">
+                                        
+                </comment>
+                <comment line="2437">
+                                        
+                </comment>
+                <declaration name="i" type="int" line="2422"/>
+                <scope line="2425"/>
+                <scope line="2433">
+                    <scope line="2442"/>
+                </scope>
+                <scope line="2448"/>
+            </method>
+            <javadoc line="2453">
+                Create an annotation string to be printed out after
+                  a new line and end of stream.                
+            </javadoc>
+            <method name="createAnnotation" type="String" line="2457">
+                <comment line="2459">
+                    construct prefix for log messages:
+                     datetime stamp...                    
+                </comment>
+                <comment line="2463">
+                                        
+                </comment>
+            </method>
+            <javadoc line="2467">
+                Allow plugging together two pipes at a time, to associate
+                  output from an execed process.  This is the only publicly
+                  accessible method of this object; this helps ensure that
+                  synchronization will not be an issue in the annotation
+                  process.                
+                <param>
+                    in input stream from which pipe input comes                    
+                </param>
+                <param>
+                    out output stream to which log messages will be sent                    
+                </param>
+                <param>
+                    in1 input stream from which pipe input comes                    
+                </param>
+                <param>
+                    out1 output stream to which log messages will be sent                    
+                </param>
+            </javadoc>
+            <method name="plugTogetherPair" type="void" line="2482">
+                <params>
+                    <param name="in" type="InputStream"/>
+                    <param name="out" type="OutputStream"/>
+                    <param name="in1" type="InputStream"/>
+                    <param name="out1" type="OutputStream"/>
+                </params>
+                <comment line="2488">
+                                        
+                </comment>
+                <declaration name="inThread" type="Thread" line="2483"/>
+                <declaration name="outThread" type="Thread" line="2484"/>
+                <declaration name="nExecs" type="int" line="2486"/>
+            </method>
+            <method name="getNumExec" type="int" line="2499"/>
+        </class>
+    </source>

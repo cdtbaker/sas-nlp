@@ -1,0 +1,773 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.security.auth.module">
+        <import package="java.io.IOException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.net.SocketPermission"/>
+        <import package="java.security.Principal"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.ResourceBundle"/>
+        <import package="java.util.regex.Matcher"/>
+        <import package="java.util.regex.Pattern"/>
+        <import package="java.util.Set"/>
+        <import package="javax.naming"/>
+        <import package="javax.naming.directory"/>
+        <import package="javax.naming.ldap"/>
+        <import package="javax.security.auth"/>
+        <import package="javax.security.auth.callback"/>
+        <import package="javax.security.auth.login"/>
+        <import package="javax.security.auth.spi"/>
+        <import package="com.sun.security.auth.LdapPrincipal"/>
+        <import package="com.sun.security.auth.UserPrincipal"/>
+        <import package="sun.security.util.AuthResources"/>
+        <class name="LdapLoginModule" line="55">
+            <comment line="313">
+                Use the default classloader for this class to load the prompt strings.                
+            </comment>
+            <comment line="323">
+                Keys to retrieve the stored username and password                
+            </comment>
+            <comment line="328">
+                Option names                
+            </comment>
+            <comment line="334">
+                Used for the username token replacement                
+            </comment>
+            <comment line="339">
+                Configurable options                
+            </comment>
+            <comment line="354">
+                Authentication status                
+            </comment>
+            <comment line="358">
+                Supplied username and password                
+            </comment>
+            <comment line="362">
+                User&apos;s identities                
+            </comment>
+            <comment line="367">
+                Initial state                
+            </comment>
+            <implements interface="LoginModule"/>
+            <javadoc line="55">
+                This {@link LoginModule} performs LDAP-based authentication.
+                  A username and password is verified against the corresponding user
+                  credentials stored in an LDAP directory.
+                  This module requires the supplied {@link CallbackHandler} to support a{@link NameCallback} and a {@link PasswordCallback}.
+                  If authentication is successful then a new {@link LdapPrincipal} is created
+                  using the user&apos;s distinguished name and a new {@link UserPrincipal} is
+                  created using the user&apos;s username and both are associated
+                  with the current {@link Subject}.
+                  &lt;p&gt; This module operates in one of three modes: &lt;i&gt;search-first&lt;/i&gt;,
+                  &lt;i&gt;authentication-first&lt;/i&gt; or &lt;i&gt;authentication-only&lt;/i&gt;.
+                  A mode is selected by specifying a particular set of options.
+                  &lt;p&gt; In search-first mode, the LDAP directory is searched to determine the
+                  user&apos;s distinguished name and then authentication is attempted.
+                  An (anonymous) search is performed using the supplied username in
+                  conjunction with a specified search filter.
+                  If successful then authentication is attempted using the user&apos;s
+                  distinguished name and the supplied password.
+                  To enable this mode, set the &lt;code&gt;userFilter&lt;/code&gt; option and omit the
+                  &lt;code&gt;authIdentity&lt;/code&gt; option.
+                  Use search-first mode when the user&apos;s distinguished name is not
+                  known in advance.
+                  &lt;p&gt; In authentication-first mode, authentication is attempted using the
+                  supplied username and password and then the LDAP directory is searched.
+                  If authentication is successful then a search is performed using the
+                  supplied username in conjunction with a specified search filter.
+                  To enable this mode, set the &lt;code&gt;authIdentity&lt;/code&gt; and the
+                  &lt;code&gt;userFilter&lt;/code&gt; options.
+                  Use authentication-first mode when accessing an LDAP directory
+                  that has been configured to disallow anonymous searches.
+                  &lt;p&gt; In authentication-only mode, authentication is attempted using the
+                  supplied username and password. The LDAP directory is not searched because
+                  the user&apos;s distinguished name is already known.
+                  To enable this mode, set the &lt;code&gt;authIdentity&lt;/code&gt; option to a valid
+                  distinguished name and omit the &lt;code&gt;userFilter&lt;/code&gt; option.
+                  Use authentication-only mode when the user&apos;s distinguished name is
+                  known in advance.
+                  &lt;p&gt; The following option is mandatory and must be specified in this
+                  module&apos;s login {@link Configuration}:
+                  &lt;dl&gt;&lt;dt&gt;&lt;/dt&gt;&lt;dd&gt;
+                  &lt;dl&gt;
+                  &lt;dt&gt; &lt;code&gt;userProvider=&lt;b&gt;ldap_urls&lt;/b&gt;&lt;/code&gt;
+                  &lt;/dt&gt;
+                  &lt;dd&gt; This option identifies the LDAP directory that stores user entries.
+                  &lt;b&gt;ldap_urls&lt;/b&gt; is a list of space-separated LDAP URLs
+                  (&lt;a href=&quot;http://www.ietf.org/rfc/rfc2255.txt&quot;&gt;RFC 2255&lt;/a&gt;)
+                  that identifies the LDAP server to use and the position in
+                  its directory tree where user entries are located.
+                  When several LDAP URLs are specified then each is attempted,
+                  in turn, until the first successful connection is established.
+                  Spaces in the distinguished name component of the URL must be escaped
+                  using the standard mechanism of percent character (&apos;&lt;code&gt;%&lt;/code&gt;&apos;)
+                  followed by two hexadecimal digits (see {@link java.net.URI}).
+                  Query components must also be omitted from the URL.
+                  &lt;p&gt;
+                  Automatic discovery of the LDAP server via DNS
+                  (&lt;a href=&quot;http://www.ietf.org/rfc/rfc2782.txt&quot;&gt;RFC 2782&lt;/a&gt;)
+                  is supported (once DNS has been configured to support such a service).
+                  It is enabled by omitting the hostname and port number components from
+                  the LDAP URL. &lt;/dd&gt;
+                  &lt;/dl&gt;&lt;/dl&gt;
+                  &lt;p&gt; This module also recognizes the following optional {@link Configuration}options:
+                  &lt;dl&gt;&lt;dt&gt;&lt;/dt&gt;&lt;dd&gt;
+                  &lt;dl&gt;
+                  &lt;dt&gt; &lt;code&gt;userFilter=&lt;b&gt;ldap_filter&lt;/b&gt;&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; This option specifies the search filter to use to locate a user&apos;s
+                  entry in the LDAP directory. It is used to determine a user&apos;s
+                  distinguished name.
+                  &lt;code&gt;&lt;b&gt;ldap_filter&lt;/b&gt;&lt;/code&gt; is an LDAP filter string
+                  (&lt;a href=&quot;http://www.ietf.org/rfc/rfc2254.txt&quot;&gt;RFC 2254&lt;/a&gt;).
+                  If it contains the special token &quot;&lt;code&gt;&lt;b&gt;{USERNAME}&lt;/b&gt;&lt;/code&gt;&quot;
+                  then that token will be replaced with the supplied username value
+                  before the filter is used to search the directory. &lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;authIdentity=&lt;b&gt;auth_id&lt;/b&gt;&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; This option specifies the identity to use when authenticating a user
+                  to the LDAP directory.
+                  &lt;code&gt;&lt;b&gt;auth_id&lt;/b&gt;&lt;/code&gt; may be an LDAP distinguished name string
+                  (&lt;a href=&quot;http://www.ietf.org/rfc/rfc2253.txt&quot;&gt;RFC 2253&lt;/a&gt;) or some
+                  other string name.
+                  It must contain the special token &quot;&lt;code&gt;&lt;b&gt;{USERNAME}&lt;/b&gt;&lt;/code&gt;&quot;
+                  which will be replaced with the supplied username value before the
+                  name is used for authentication.
+                  Note that if this option does not contain a distinguished name then
+                  the &lt;code&gt;userFilter&lt;/code&gt; option must also be specified. &lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;authzIdentity=&lt;b&gt;authz_id&lt;/b&gt;&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; This option specifies an authorization identity for the user.
+                  &lt;code&gt;&lt;b&gt;authz_id&lt;/b&gt;&lt;/code&gt; is any string name.
+                  If it comprises a single special token with curly braces then
+                  that token is treated as a attribute name and will be replaced with a
+                  single value of that attribute from the user&apos;s LDAP entry.
+                  If the attribute cannot be found then the option is ignored.
+                  When this option is supplied and the user has been successfully
+                  authenticated then an additional {@link UserPrincipal}is created using the authorization identity and it is assocated with
+                  the current {@link Subject}. &lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;useSSL&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;false&lt;/code&gt;, this module does not establish an SSL connection
+                  to the LDAP server before attempting authentication. SSL is used to
+                  protect the privacy of the user&apos;s password because it is transmitted
+                  in the clear over LDAP.
+                  By default, this module uses SSL. &lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;useFirstPass&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;true&lt;/code&gt;, this module retrieves the username and password
+                  from the module&apos;s shared state, using &quot;javax.security.auth.login.name&quot;
+                  and &quot;javax.security.auth.login.password&quot; as the respective keys. The
+                  retrieved values are used for authentication. If authentication fails,
+                  no attempt for a retry is made, and the failure is reported back to
+                  the calling application.&lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;tryFirstPass&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;true&lt;/code&gt;, this module retrieves the username and password
+                  from the module&apos;s shared state, using &quot;javax.security.auth.login.name&quot;
+                  and &quot;javax.security.auth.login.password&quot; as the respective keys.  The
+                  retrieved values are used for authentication. If authentication fails,
+                  the module uses the {@link CallbackHandler} to retrieve a new username
+                  and password, and another attempt to authenticate is made. If the
+                  authentication fails, the failure is reported back to the calling
+                  application.&lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;storePass&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;true&lt;/code&gt;, this module stores the username and password
+                  obtained from the {@link CallbackHandler} in the module&apos;s shared state,
+                  using
+                  &quot;javax.security.auth.login.name&quot; and
+                  &quot;javax.security.auth.login.password&quot; as the respective keys.  This is
+                  not performed if existing values already exist for the username and
+                  password in the shared state, or if authentication fails.&lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;clearPass&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;true&lt;/code&gt;, this module clears the username and password
+                  stored in the module&apos;s shared state after both phases of authentication
+                  (login and commit) have completed.&lt;/dd&gt;
+                  &lt;dt&gt; &lt;code&gt;debug&lt;/code&gt; &lt;/dt&gt;
+                  &lt;dd&gt; if &lt;code&gt;true&lt;/code&gt;, debug messages are displayed on the standard
+                  output stream.
+                  &lt;/dl&gt;
+                  &lt;/dl&gt;
+                  &lt;p&gt;
+                  Arbitrary
+                  &lt;a href=&quot;{@docRoot}/../../../../../technotes/guides/jndi/jndi-ldap-gl.html#PROP&quot;&gt;JNDI properties&lt;/a&gt;
+                  may also be specified in the {@link Configuration}.
+                  They are added to the environment and passed to the LDAP provider.
+                  Note that the following four JNDI properties are set by this module directly
+                  and are ignored if also present in the configuration:
+                  &lt;ul&gt;
+                  &lt;li&gt; &lt;code&gt;java.naming.provider.url&lt;/code&gt;
+                  &lt;li&gt; &lt;code&gt;java.naming.security.principal&lt;/code&gt;
+                  &lt;li&gt; &lt;code&gt;java.naming.security.credentials&lt;/code&gt;
+                  &lt;li&gt; &lt;code&gt;java.naming.security.protocol&lt;/code&gt;
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  Three sample {@link Configuration}s are shown below.
+                  The first one activates search-first mode. It identifies the LDAP server
+                  and specifies that users&apos; entries be located by their &lt;code&gt;uid&lt;/code&gt; and
+                  &lt;code&gt;objectClass&lt;/code&gt; attributes. It also specifies that an identity
+                  based on the user&apos;s &lt;code&gt;employeeNumber&lt;/code&gt; attribute should be created.
+                  The second one activates authentication-first mode. It requests that the
+                  LDAP server be located dynamically, that authentication be performed using
+                  the supplied username directly but without the protection of SSL and that
+                  users&apos; entries be located by one of three naming attributes and their
+                  &lt;code&gt;objectClass&lt;/code&gt; attribute.
+                  The third one activates authentication-only mode. It identifies alternative
+                  LDAP servers, it specifies the distinguished name to use for
+                  authentication and a fixed identity to use for authorization. No directory
+                  search is performed.
+                  &lt;pre&gt;
+                  ExampleApplication {
+                  com.sun.security.auth.module.LdapLoginModule REQUIRED
+                  userProvider=&quot;ldap://ldap-svr/ou=people,dc=example,dc=com&quot;
+                  userFilter=&quot;(&amp;(uid={USERNAME})(objectClass=inetOrgPerson))&quot;
+                  authzIdentity=&quot;{EMPLOYEENUMBER}&quot;
+                  debug=true;
+                  };
+                  ExampleApplication {
+                  com.sun.security.auth.module.LdapLoginModule REQUIRED
+                  userProvider=&quot;ldap:///cn=users,dc=example,dc=com&quot;
+                  authIdentity=&quot;{USERNAME}&quot;
+                  userFilter=&quot;(&amp;(|(samAccountName={USERNAME})(userPrincipalName={USERNAME})(cn={USERNAME}))(objectClass=user))&quot;
+                  useSSL=false
+                  debug=true;
+                  };
+                  ExampleApplication {
+                  com.sun.security.auth.module.LdapLoginModule REQUIRED
+                  userProvider=&quot;ldap://ldap-svr1 ldap://ldap-svr2&quot;
+                  authIdentity=&quot;cn={USERNAME},ou=people,dc=example,dc=com&quot;
+                  authzIdentity=&quot;staff&quot;
+                  debug=true;
+                  };
+                  &lt;/pre&gt;
+                  &lt;dl&gt;
+                  &lt;dt&gt;&lt;b&gt;Note:&lt;/b&gt; &lt;/dt&gt;
+                  &lt;dd&gt;When a {@link SecurityManager} is active then an application
+                  that creates a {@link LoginContext} and uses a {@link LoginModule}must be granted certain permissions.
+                  &lt;p&gt;
+                  If the application creates a login context using an &lt;em&gt;installed&lt;/em&gt;{@link Configuration} then the application must be granted the{@link AuthPermission} to create login contexts.
+                  For example, the following security policy allows an application in
+                  the user&apos;s current directory to instantiate &lt;em&gt;any&lt;/em&gt; login context:
+                  &lt;pre&gt;
+                  grant codebase &quot;file:${user.dir}/&quot; {
+                  permission javax.security.auth.AuthPermission &quot;createLoginContext.&quot;;
+                  };
+                  &lt;/pre&gt;
+                  Alternatively, if the application creates a login context using a
+                  &lt;em&gt;caller-specified&lt;/em&gt; {@link Configuration} then the application
+                  must be granted the permissions required by the {@link LoginModule}.
+                  &lt;em&gt;This&lt;/em&gt; module requires the following two permissions:
+                  &lt;p&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt; The {@link SocketPermission} to connect to an LDAP server.
+                  &lt;li&gt; The {@link AuthPermission} to modify the set of {@link Principal}s
+                  associated with a {@link Subject}.
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  For example, the following security policy grants an application in the
+                  user&apos;s current directory all the permissions required by this module:
+                  &lt;pre&gt;
+                  grant codebase &quot;file:${user.dir}/&quot; {
+                  permission java.net.SocketPermission &quot;:389&quot;, &quot;connect&quot;;
+                  permission java.net.SocketPermission &quot;:636&quot;, &quot;connect&quot;;
+                  permission javax.security.auth.AuthPermission &quot;modifyPrincipals&quot;;
+                  };
+                  &lt;/pre&gt;
+                  &lt;/dd&gt;
+                  &lt;/dl&gt;                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="rb" type="ResourceBundle" line="313"/>
+            <anonymous_class line="314">
+                <method name="run" type="ResourceBundle" line="315"/>
+            </anonymous_class>
+            <declaration name="USERNAME_KEY" type="String" line="323"/>
+            <declaration name="PASSWORD_KEY" type="String" line="324"/>
+            <declaration name="USER_PROVIDER" type="String" line="328"/>
+            <declaration name="USER_FILTER" type="String" line="329"/>
+            <declaration name="AUTHC_IDENTITY" type="String" line="330"/>
+            <declaration name="AUTHZ_IDENTITY" type="String" line="331"/>
+            <declaration name="USERNAME_TOKEN" type="String" line="334"/>
+            <declaration name="USERNAME_PATTERN" type="Pattern" line="335"/>
+            <declaration name="userProvider" type="String" line="339"/>
+            <declaration name="userFilter" type="String" line="340"/>
+            <declaration name="authcIdentity" type="String" line="341"/>
+            <declaration name="authzIdentity" type="String" line="342"/>
+            <declaration name="authzIdentityAttr" type="String" line="343"/>
+            <declaration name="useSSL" type="boolean" line="344"/>
+            <declaration name="authFirst" type="boolean" line="345"/>
+            <declaration name="authOnly" type="boolean" line="346"/>
+            <declaration name="useFirstPass" type="boolean" line="347"/>
+            <declaration name="tryFirstPass" type="boolean" line="348"/>
+            <declaration name="storePass" type="boolean" line="349"/>
+            <declaration name="clearPass" type="boolean" line="350"/>
+            <declaration name="debug" type="boolean" line="351"/>
+            <declaration name="succeeded" type="boolean" line="354"/>
+            <declaration name="commitSucceeded" type="boolean" line="355"/>
+            <declaration name="username" type="String" line="358"/>
+            <declaration name="password" type="char[]" line="359"/>
+            <declaration name="ldapPrincipal" type="LdapPrincipal" line="362"/>
+            <declaration name="userPrincipal" type="UserPrincipal" line="363"/>
+            <declaration name="authzPrincipal" type="UserPrincipal" line="364"/>
+            <declaration name="subject" type="Subject" line="367"/>
+            <declaration name="callbackHandler" type="CallbackHandler" line="368"/>
+            <declaration name="sharedState" type="Map" line="369"/>
+            <declaration name="options" type="Map&lt;String,?&gt;" line="370"/>
+            <declaration name="ctx" type="LdapContext" line="371"/>
+            <declaration name="identityMatcher" type="Matcher" line="372"/>
+            <declaration name="filterMatcher" type="Matcher" line="373"/>
+            <declaration name="ldapEnvironment" type="Hashtable" line="374"/>
+            <declaration name="constraints" type="SearchControls" line="375"/>
+            <javadoc line="377">
+                Initialize this &lt;code&gt;LoginModule&lt;/code&gt;.                
+                <param>
+                    subject the <code>Subject</code> to be authenticated.                    
+                </param>
+                <param>
+                    callbackHandler a <code>CallbackHandler</code> to acquire the
+                      username and password.                    
+                </param>
+                <param>
+                    sharedState shared <code>LoginModule</code> state.                    
+                </param>
+                <param>
+                    options options specified in the login
+                      <code>Configuration</code> for this particular
+                      <code>LoginModule</code>.                    
+                </param>
+            </javadoc>
+            <method name="initialize" type="void" line="389">
+                <params>
+                    <param name="subject" type="Subject"/>
+                    <param name="callbackHandler" type="CallbackHandler"/>
+                    <param name="sharedState" type="Map<String,?>"/>
+                    <param name="options" type="Map<String,?>"/>
+                </params>
+                <comment line="400">
+                    Add any JNDI properties to the environment                    
+                </comment>
+                <comment line="407">
+                    initialize any configured options                    
+                </comment>
+                <comment line="427">
+                    return no attrs                    
+                </comment>
+                <comment line="428">
+                    to get the full DN                    
+                </comment>
+                <comment line="440">
+                    set later, from the specified attribute                    
+                </comment>
+                <comment line="443">
+                    determine mode                    
+                </comment>
+                <comment line="446">
+                    authentication-first mode                    
+                </comment>
+                <comment line="448">
+                    authentication-only mode                    
+                </comment>
+                <scope line="401">
+                    <scope line="402"/>
+                </scope>
+                <scope line="410"/>
+                <scope line="416"/>
+                <scope line="421">
+                    <scope line="422"/>
+                </scope>
+                <scope line="433">
+                    <scope line="434"/>
+                </scope>
+                <scope line="444">
+                    <scope line="445"/>
+                    <scope line="447"/>
+                </scope>
+                <scope line="452"/>
+                <scope line="455"/>
+                <scope line="471">
+                    <scope line="472"/>
+                    <scope line="476"/>
+                    <scope line="480"/>
+                </scope>
+            </method>
+            <javadoc line="488">
+                Begin user authentication.
+                  &lt;p&gt; Acquire the user&apos;s credentials and verify them against the
+                  specified LDAP directory.                
+                <return>
+                    true always, since this <code>LoginModule</code>
+                      should not be ignored.                    
+                </return>
+                <exception>
+                    FailedLoginException if the authentication fails.                    
+                </exception>
+                <exception>
+                    LoginException if this <code>LoginModule</code>
+                      is unable to perform the authentication.                    
+                </exception>
+            </javadoc>
+            <method name="login" type="boolean" line="500">
+                <comment line="512">
+                    attempt the authentication                    
+                </comment>
+                <comment line="516">
+                    attempt the authentication by getting the                    
+                </comment>
+                <comment line="517">
+                    username and password from shared state                    
+                </comment>
+                <comment line="520">
+                    authentication succeeded                    
+                </comment>
+                <comment line="529">
+                    authentication failed -- try again below by prompting                    
+                </comment>
+                <comment line="540">
+                    attempt the authentication by getting the                    
+                </comment>
+                <comment line="541">
+                    username and password from shared state                    
+                </comment>
+                <comment line="544">
+                    authentication succeeded                    
+                </comment>
+                <comment line="553">
+                    authentication failed                    
+                </comment>
+                <comment line="563">
+                    attempt the authentication by prompting for the username and pwd                    
+                </comment>
+                <comment line="567">
+                    authentication succeeded                    
+                </comment>
+                <scope line="502"/>
+                <scope line="507"/>
+                <scope line="513">
+                    <scope line="515">
+                        <scope line="522"/>
+                    </scope>
+                    <scope line="528">
+                        <scope line="531"/>
+                    </scope>
+                </scope>
+                <scope line="537">
+                    <scope line="539">
+                        <scope line="546"/>
+                    </scope>
+                    <scope line="552">
+                        <scope line="555"/>
+                    </scope>
+                </scope>
+                <scope line="564">
+                    <scope line="569"/>
+                </scope>
+                <scope line="575">
+                    <scope line="577"/>
+                </scope>
+            </method>
+            <javadoc line="585">
+                Complete user authentication.
+                  &lt;p&gt; This method is called if the LoginContext&apos;s
+                  overall authentication succeeded
+                  (the relevant REQUIRED, REQUISITE, SUFFICIENT and OPTIONAL LoginModules
+                  succeeded).
+                  &lt;p&gt; If this LoginModule&apos;s own authentication attempt
+                  succeeded (checked by retrieving the private state saved by the
+                  &lt;code&gt;login&lt;/code&gt; method), then this method associates an
+                  &lt;code&gt;LdapPrincipal&lt;/code&gt; and one or more &lt;code&gt;UserPrincipal&lt;/code&gt;s
+                  with the &lt;code&gt;Subject&lt;/code&gt; located in the
+                  &lt;code&gt;LoginModule&lt;/code&gt;.  If this LoginModule&apos;s own
+                  authentication attempted failed, then this method removes
+                  any state that was originally saved.                
+                <exception>
+                    LoginException if the commit fails                    
+                </exception>
+                <return>
+                    true if this LoginModule's own login and commit
+                      attempts succeeded, or false otherwise.                    
+                </return>
+            </javadoc>
+            <method name="commit" type="boolean" line="606">
+                <comment line="615">
+                    add Principals to the Subject                    
+                </comment>
+                <comment line="649">
+                    in any case, clean out state                    
+                </comment>
+                <scope line="608"/>
+                <scope line="610">
+                    <scope line="611"/>
+                    <declaration name="principals" type="Set&lt;Principal&gt;" line="616"/>
+                    <scope line="617"/>
+                    <scope line="620"/>
+                    <scope line="627"/>
+                    <scope line="630"/>
+                    <scope line="638">
+                        <scope line="641"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="655">
+                Abort user authentication.
+                  &lt;p&gt; This method is called if the overall authentication failed.
+                  (the relevant REQUIRED, REQUISITE, SUFFICIENT and OPTIONAL LoginModules
+                  did not succeed).
+                  &lt;p&gt; If this LoginModule&apos;s own authentication attempt
+                  succeeded (checked by retrieving the private state saved by the
+                  &lt;code&gt;login&lt;/code&gt; and &lt;code&gt;commit&lt;/code&gt; methods),
+                  then this method cleans up any state that was originally saved.                
+                <exception>
+                    LoginException if the abort fails.                    
+                </exception>
+                <return>
+                    false if this LoginModule's own login and/or commit attempts
+                      failed, and true otherwise.                    
+                </return>
+            </javadoc>
+            <method name="abort" type="boolean" line="671">
+                <comment line="680">
+                    Clean out state                    
+                </comment>
+                <comment line="688">
+                    overall authentication succeeded and commit succeeded,                    
+                </comment>
+                <comment line="689">
+                    but someone else&apos;s commit failed                    
+                </comment>
+                <scope line="676"/>
+                <scope line="678"/>
+                <scope line="687"/>
+            </method>
+            <javadoc line="695">
+                Logout a user.
+                  &lt;p&gt; This method removes the Principals
+                  that were added by the &lt;code&gt;commit&lt;/code&gt; method.                
+                <exception>
+                    LoginException if the logout fails.                    
+                </exception>
+                <return>
+                    true in all cases since this <code>LoginModule</code>
+                      should not be ignored.                    
+                </return>
+            </javadoc>
+            <method name="logout" type="boolean" line="705">
+                <comment line="717">
+                    clean out state                    
+                </comment>
+                <scope line="706"/>
+                <declaration name="principals" type="Set&lt;Principal&gt;" line="710"/>
+                <scope line="713"/>
+                <scope line="726"/>
+            </method>
+            <javadoc line="732">
+                Attempt authentication                
+                <param>
+                    getPasswdFromSharedState boolean that tells this method whether
+                      to retrieve the password from the sharedState.                    
+                </param>
+                <exception>
+                    LoginException if the authentication attempt fails.                    
+                </exception>
+            </javadoc>
+            <method name="attemptAuthentication" type="void" line="740">
+                <params>
+                    <param name="getPasswdFromSharedState" type="boolean"/>
+                </params>
+                <comment line="742">
+                    first get the username and password                    
+                </comment>
+                <comment line="756">
+                    Prepare to bind using user&apos;s username and password                    
+                </comment>
+                <comment line="766">
+                    Connect to the LDAP server (using simple bind)                    
+                </comment>
+                <comment line="775">
+                    Authentication has succeeded                    
+                </comment>
+                <comment line="777">
+                    Locate the user&apos;s distinguished name                    
+                </comment>
+                <comment line="787">
+                    Connect to the LDAP server (using anonymous bind)                    
+                </comment>
+                <comment line="796">
+                    Locate the user&apos;s distinguished name                    
+                </comment>
+                <comment line="801">
+                    Prepare to bind using user&apos;s distinguished name and password                    
+                </comment>
+                <comment line="810">
+                    Connect to the LDAP server (using simple bind)                    
+                </comment>
+                <comment line="813">
+                    Authentication has succeeded                    
+                </comment>
+                <comment line="822">
+                    Save input as shared state only if authentication succeeded                    
+                </comment>
+                <comment line="830">
+                    Create the user principals                    
+                </comment>
+                <scope line="745"/>
+                <declaration name="dn" type="String" line="750"/>
+                <scope line="752">
+                    <declaration name="id" type="String" line="754"/>
+                    <scope line="760"/>
+                    <scope line="765"/>
+                    <scope line="769"/>
+                    <scope line="778"/>
+                    <scope line="780"/>
+                </scope>
+                <scope line="784">
+                    <scope line="786"/>
+                    <scope line="790"/>
+                    <scope line="799">
+                        <scope line="806"/>
+                    </scope>
+                    <scope line="815"/>
+                </scope>
+                <scope line="825"/>
+                <scope line="832"/>
+                <scope line="836"/>
+                <scope line="840">
+                    <scope line="841"/>
+                </scope>
+            </method>
+            <javadoc line="851">
+                Search for the user&apos;s entry.
+                  Determine the distinguished name of the user&apos;s entry and optionally
+                  an authorization identity for the user.                
+                <param>
+                    ctx an LDAP context to use for the search                    
+                </param>
+                <return>
+                    the user's distinguished name or an empty string if none
+                      was found.                    
+                </return>
+                <exception>
+                    LoginException if the user's entry cannot be found.                    
+                </exception>
+            </javadoc>
+            <method name="findUserDN" type="String" line="861">
+                <params>
+                    <param name="ctx" type="LdapContext"/>
+                </params>
+                <comment line="865">
+                    Locate the user&apos;s LDAP entry                    
+                </comment>
+                <comment line="884">
+                    Extract the distinguished name of the user&apos;s entry                    
+                </comment>
+                <comment line="885">
+                    (Use the first entry if more than one is returned)                    
+                </comment>
+                <comment line="889">
+                    %%% - use the SearchResult.getNameInNamespace method                    
+                </comment>
+                <comment line="890">
+                    available in JDK 1.5 and later.                    
+                </comment>
+                <comment line="891">
+                    (can remove call to constraints.setReturningObjFlag)                    
+                </comment>
+                <comment line="899">
+                    Extract a value from user&apos;s authorization identity attribute                    
+                </comment>
+                <comment line="914">
+                    Bad username                    
+                </comment>
+                <comment line="922">
+                    ignore                    
+                </comment>
+                <declaration name="userDN" type="String" line="863"/>
+                <scope line="866">
+                    <scope line="867"/>
+                </scope>
+                <scope line="871">
+                    <scope line="872"/>
+                </scope>
+                <scope line="880">
+                    <declaration name="results" type="NamingEnumeration&lt;SearchResult&gt;" line="881"/>
+                    <scope line="886">
+                        <declaration name="entry" type="SearchResult" line="887"/>
+                        <scope line="894"/>
+                        <scope line="900">
+                            <declaration name="attr" type="Attribute" line="901"/>
+                            <scope line="903">
+                                <declaration name="val" type="Object" line="904"/>
+                                <scope line="905"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="913">
+                        <scope line="915"/>
+                    </scope>
+                </scope>
+                <scope line="921"/>
+                <scope line="925"/>
+                <scope line="928"/>
+            </method>
+            <javadoc line="933">
+                Replace the username token                
+                <param>
+                    string the target string                    
+                </param>
+                <return>
+                    the modified string                    
+                </return>
+            </javadoc>
+            <method name="replaceUsernameToken" type="String" line="939">
+                <params>
+                    <param name="matcher" type="Matcher"/>
+                    <param name="string" type="String"/>
+                </params>
+            </method>
+            <javadoc line="943">
+                Get the username and password.
+                  This method does not return any value.
+                  Instead, it sets global name and password variables.
+                  &lt;p&gt; Also note that this method will set the username and password
+                  values in the shared state in case subsequent LoginModules
+                  want to use them via use/tryFirstPass.                
+                <param>
+                    getPasswdFromSharedState boolean that tells this method whether
+                      to retrieve the password from the sharedState.                    
+                </param>
+                <exception>
+                    LoginException if the username/password cannot be acquired.                    
+                </exception>
+            </javadoc>
+            <method name="getUsernamePassword" type="void" line="957">
+                <params>
+                    <param name="getPasswdFromSharedState" type="boolean"/>
+                </params>
+                <comment line="960">
+                    use the password saved by the first module in the stack                    
+                </comment>
+                <comment line="966">
+                    prompt for a username and password                    
+                </comment>
+                <scope line="959"/>
+                <declaration name="callbacks" type="Callback[]" line="971"/>
+                <scope line="975">
+                    <declaration name="tmpPassword" type="char[]" line="978"/>
+                </scope>
+                <scope line="984"/>
+                <scope line="987"/>
+            </method>
+            <javadoc line="994">
+                Clean out state because of a failed authentication attempt                
+            </javadoc>
+            <method name="cleanState" type="void" line="997">
+                <comment line="1008">
+                    ignore                    
+                </comment>
+                <scope line="999"/>
+                <scope line="1003">
+                    <scope line="1004"/>
+                </scope>
+                <scope line="1007"/>
+                <scope line="1012"/>
+            </method>
+        </class>
+    </source>

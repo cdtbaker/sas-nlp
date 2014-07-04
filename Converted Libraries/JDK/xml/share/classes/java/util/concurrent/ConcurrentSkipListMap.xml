@@ -1,0 +1,3338 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent">
+        <import package="java.util"/>
+        <import package="java.util.concurrent.atomic"/>
+        <class name="ConcurrentSkipListMap" line="40">
+            <type_params>
+                <type_param name="K"/>
+                <type_param name="V"/>
+            </type_params>
+            <extends class="AbstractMap">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+            </extends>
+            <comment line="98">
+                This class implements a tree-like two-dimensionally linked skip
+                 list in which the index levels are represented in separate
+                 nodes from the base nodes holding data.  There are two reasons
+                 for taking this approach instead of the usual array-based
+                 structure: 1) Array based implementations seem to encounter
+                 more complexity and overhead 2) We can use cheaper algorithms
+                 for the heavily-traversed index lists than can be used for the
+                 base lists.  Here&apos;s a picture of some of the basics for a
+                 possible list with 2 levels of index:
+                
+                 Head nodes          Index nodes
+                 +-+    right        +-+                      +-+
+                 |2|----------------&gt;| |---------------------&gt;| |-&gt;null
+                 +-+                 +-+                      +-+
+                  | down              |                        |
+                  v                   v                        v
+                 +-+            +-+  +-+       +-+            +-+       +-+
+                 |1|-----------&gt;| |-&gt;| |------&gt;| |-----------&gt;| |------&gt;| |-&gt;null
+                 +-+            +-+  +-+       +-+            +-+       +-+
+                  v              |    |         |              |         |
+                 Nodes  next     v    v         v              v         v
+                 +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+
+                 | |-&gt;|A|-&gt;|B|-&gt;|C|-&gt;|D|-&gt;|E|-&gt;|F|-&gt;|G|-&gt;|H|-&gt;|I|-&gt;|J|-&gt;|K|-&gt;null
+                 +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+  +-+
+                
+                 The base lists use a variant of the HM linked ordered set
+                 algorithm. See Tim Harris, &quot;A pragmatic implementation of
+                 non-blocking linked lists&quot;
+                 http:www.cl.cam.ac.uk~tlh20publications.html and Maged
+                 Michael &quot;High Performance Dynamic Lock-Free Hash Tables and
+                 List-Based Sets&quot;
+                 http:www.research.ibm.compeoplemmichaelpubs.htm.  The
+                 basic idea in these lists is to mark the &quot;next&quot; pointers of
+                 deleted nodes when deleting to avoid conflicts with concurrent
+                 insertions, and when traversing to keep track of triples
+                 (predecessor, node, successor) in order to detect when and how
+                 to unlink these deleted nodes.
+                
+                 Rather than using mark-bits to mark list deletions (which can
+                 be slow and space-intensive using AtomicMarkedReference), nodes
+                 use direct CAS&apos;able next pointers.  On deletion, instead of
+                 marking a pointer, they splice in another node that can be
+                 thought of as standing for a marked pointer (indicating this by
+                 using otherwise impossible field values).  Using plain nodes
+                 acts roughly like &quot;boxed&quot; implementations of marked pointers,
+                 but uses new nodes only when nodes are deleted, not for every
+                 link.  This requires less space and supports faster
+                 traversal. Even if marked references were better supported by
+                 JVMs, traversal using this technique might still be faster
+                 because any search need only read ahead one more node than
+                 otherwise required (to check for trailing marker) rather than
+                 unmasking mark bits or whatever on each read.
+                
+                 This approach maintains the essential property needed in the HM
+                 algorithm of changing the next-pointer of a deleted node so
+                 that any other CAS of it will fail, but implements the idea by
+                 changing the pointer to point to a different node, not by
+                 marking it.  While it would be possible to further squeeze
+                 space by defining marker nodes not to have keyvalue fields, it
+                 isn&apos;t worth the extra type-testing overhead.  The deletion
+                 markers are rarely encountered during traversal and are
+                 normally quickly garbage collected. (Note that this technique
+                 would not work well in systems without garbage collection.)
+                
+                 In addition to using deletion markers, the lists also use
+                 nullness of value fields to indicate deletion, in a style
+                 similar to typical lazy-deletion schemes.  If a node&apos;s value is
+                 null, then it is considered logically deleted and ignored even
+                 though it is still reachable. This maintains proper control of
+                 concurrent replace vs delete operations -- an attempted replace
+                 must fail if a delete beat it by nulling field, and a delete
+                 must return the last non-null value held in the field. (Note:
+                 Null, rather than some special marker, is used for value fields
+                 here because it just so happens to mesh with the Map API
+                 requirement that method get returns null if there is no
+                 mapping, which allows nodes to remain concurrently readable
+                 even when deleted. Using any other marker value here would be
+                 messy at best.)
+                
+                 Here&apos;s the sequence of events for a deletion of node n with
+                 predecessor b and successor f, initially:
+                
+                        +------+       +------+      +------+
+                   ...  |   b  |------&gt;|   n  |-----&gt;|   f  | ...
+                        +------+       +------+      +------+
+                
+                 1. CAS n&apos;s value field from non-null to null.
+                    From this point on, no public operations encountering
+                    the node consider this mapping to exist. However, other
+                    ongoing insertions and deletions might still modify
+                    n&apos;s next pointer.
+                
+                 2. CAS n&apos;s next pointer to point to a new marker node.
+                    From this point on, no other nodes can be appended to n.
+                    which avoids deletion errors in CAS-based linked lists.
+                
+                        +------+       +------+      +------+       +------+
+                   ...  |   b  |------&gt;|   n  |-----&gt;|marker|------&gt;|   f  | ...
+                        +------+       +------+      +------+       +------+
+                
+                 3. CAS b&apos;s next pointer over both n and its marker.
+                    From this point on, no new traversals will encounter n,
+                    and it can eventually be GCed.
+                        +------+                                    +------+
+                   ...  |   b  |-----------------------------------&gt;|   f  | ...
+                        +------+                                    +------+
+                
+                 A failure at step 1 leads to simple retry due to a lost race
+                 with another operation. Steps 2-3 can fail because some other
+                 thread noticed during a traversal a node with null value and
+                 helped out by marking andor unlinking.  This helping-out
+                 ensures that no thread can become stuck waiting for progress of
+                 the deleting thread.  The use of marker nodes slightly
+                 complicates helping-out code because traversals must track
+                 consistent reads of up to four nodes (b, n, marker, f), not
+                 just (b, n, f), although the next field of a marker is
+                 immutable, and once a next field is CAS&apos;ed to point to a
+                 marker, it never again changes, so this requires less care.
+                
+                 Skip lists add indexing to this scheme, so that the base-level
+                 traversals start close to the locations being found, inserted
+                 or deleted -- usually base level traversals only traverse a few
+                 nodes. This doesn&apos;t change the basic algorithm except for the
+                 need to make sure base traversals start at predecessors (here,
+                 b) that are not (structurally) deleted, otherwise retrying
+                 after processing the deletion.
+                
+                 Index levels are maintained as lists with volatile next fields,
+                 using CAS to link and unlink.  Races are allowed in index-list
+                 operations that can (rarely) fail to link in a new index node
+                 or delete one. (We can&apos;t do this of course for data nodes.)
+                 However, even when this happens, the index lists remain sorted,
+                 so correctly serve as indices.  This can impact performance,
+                 but since skip lists are probabilistic anyway, the net result
+                 is that under contention, the effective &quot;p&quot; value may be lower
+                 than its nominal value. And race windows are kept small enough
+                 that in practice these failures are rare, even under a lot of
+                 contention.
+                
+                 The fact that retries (for both base and index lists) are
+                 relatively cheap due to indexing allows some minor
+                 simplifications of retry logic. Traversal restarts are
+                 performed after most &quot;helping-out&quot; CASes. This isn&apos;t always
+                 strictly necessary, but the implicit backoffs tend to help
+                 reduce other downstream failed CAS&apos;s enough to outweigh restart
+                 cost.  This worsens the worst case, but seems to improve even
+                 highly contended cases.
+                
+                 Unlike most skip-list implementations, index insertion and
+                 deletion here require a separate traversal pass occuring after
+                 the base-level action, to add or remove index nodes.  This adds
+                 to single-threaded overhead, but improves contended
+                 multithreaded performance by narrowing interference windows,
+                 and allows deletion to ensure that all index nodes will be made
+                 unreachable upon return from a public remove operation, thus
+                 avoiding unwanted garbage retention. This is more important
+                 here than in some other data structures because we cannot null
+                 out node fields referencing user keys since they might still be
+                 read by other ongoing traversals.
+                
+                 Indexing uses skip list parameters that maintain good search
+                 performance while using sparser-than-usual indices: The
+                 hardwired parameters k=1, p=0.5 (see method randomLevel) mean
+                 that about one-quarter of the nodes have indices. Of those that
+                 do, half have one level, a quarter have two, and so on (see
+                 Pugh&apos;s Skip List Cookbook, sec 3.4).  The expected total space
+                 requirement for a map is slightly less than for the current
+                 implementation of java.util.TreeMap.
+                
+                 Changing the level of the index (i.e, the height of the
+                 tree-like structure) also uses CAS. The head index has initial
+                 levelheight of one. Creation of an index with height greater
+                 than the current level adds a level to the head index by
+                 CAS&apos;ing on a new top-most head. To maintain good performance
+                 after a lot of removals, deletion methods heuristically try to
+                 reduce the height if the topmost levels appear to be empty.
+                 This may encounter races in which it possible (but rare) to
+                 reduce and &quot;lose&quot; a level just as it is about to contain an
+                 index (that will then never be encountered). This does no
+                 structural harm, and in practice appears to be a better option
+                 than allowing unrestrained growth of levels.
+                
+                 The code for all this is more verbose than you&apos;d like. Most
+                 operations entail locating an element (or position to insert an
+                 element). The code to do this can&apos;t be nicely factored out
+                 because subsequent uses require a snapshot of predecessor
+                 andor successor andor value fields which can&apos;t be returned
+                 all at once, at least not without creating yet another object
+                 to hold them -- creating such little objects is an especially
+                 bad idea for basic internal search operations because it adds
+                 to GC overhead.  (This is one of the few times I&apos;ve wished Java
+                 had macros.) Instead, some traversal code is interleaved within
+                 insertion and removal operations.  The control logic to handle
+                 all the retry conditions is sometimes twisty. Most search is
+                 broken into 2 parts. findPredecessor() searches index nodes
+                 only, returning a base-level predecessor of the key. findNode()
+                 finishes out the base-level search. Even with this factoring,
+                 there is a fair amount of near-duplication of code to handle
+                 variants.
+                
+                 For explanation of algorithms sharing at least a couple of
+                 features with this one, see Mikhail Fomitchev&apos;s thesis
+                 (http:www.cs.yorku.ca~mikhail), Keir Fraser&apos;s thesis
+                 (http:www.cl.cam.ac.ukuserskaf24), and Hakan Sundell&apos;s
+                 thesis (http:www.cs.chalmers.se~phs).
+                
+                 Given the use of tree-like index nodes, you might wonder why
+                 this doesn&apos;t use some kind of search tree instead, which would
+                 support somewhat faster search operations. The reason is that
+                 there are no known efficient lock-free insertion and deletion
+                 algorithms for search trees. The immutability of the &quot;down&quot;
+                 links of index nodes (as opposed to mutable &quot;left&quot; fields in
+                 true trees) makes this tractable using only CAS operations.
+                
+                 Notation guide for local variables
+                 Node:         b, n, f    for  predecessor, node, successor
+                 Index:        q, r, d    for index node, right, down.
+                               t          for another index node
+                 Head:         h
+                 Levels:       j
+                 Keys:         k, key
+                 Values:       v, value
+                 Comparisons:  c                
+            </comment>
+            <comment line="386">
+                                
+            </comment>
+            <comment line="532">
+                                
+            </comment>
+            <comment line="610">
+                                
+            </comment>
+            <comment line="623">
+                                
+            </comment>
+            <comment line="702">
+                                
+            </comment>
+            <comment line="838">
+                                
+            </comment>
+            <comment line="1026">
+                                
+            </comment>
+            <comment line="1124">
+                                
+            </comment>
+            <comment line="1189">
+                                
+            </comment>
+            <comment line="1315">
+                                
+            </comment>
+            <comment line="1317">
+                Control values OR&apos;ed as arguments to findNear                
+            </comment>
+            <comment line="1321">
+                Actually checked as !LT                
+            </comment>
+            <comment line="1377">
+                                
+            </comment>
+            <comment line="1508">
+                                
+            </comment>
+            <comment line="1596">
+                                
+            </comment>
+            <comment line="1726">
+                                
+            </comment>
+            <comment line="1728">
+                Note: Lazy initialization works for views because view classes
+                 are statelessimmutable so it doesn&apos;t matter wrt correctness if
+                 more than one is created (which will only rarely happen).  Even
+                 so, the following idiom conservatively ensures that the method
+                 returns the one it created if it does so, not one created by
+                 another racing thread.                
+            </comment>
+            <comment line="1830">
+                                
+            </comment>
+            <comment line="1868">
+                                
+            </comment>
+            <comment line="1948">
+                                
+            </comment>
+            <comment line="2042">
+                                
+            </comment>
+            <comment line="2191">
+                                
+            </comment>
+            <comment line="2276">
+                Factory methods for iterators needed by ConcurrentSkipListSet etc                
+            </comment>
+            <comment line="2290">
+                                
+            </comment>
+            <comment line="2292">
+                View classes are static, delegating to a ConcurrentNavigableMap
+                 to allow use by SubMaps, which outweighs the ugliness of
+                 needing type-tests for Iterator methods.                
+            </comment>
+            <comment line="3107">
+                Unsafe mechanics                
+            </comment>
+            <implements interface="ConcurrentNavigableMap">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+            </implements>
+            <implements interface="Cloneable"/>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="40">
+                A scalable concurrent {@link ConcurrentNavigableMap} implementation.
+                  The map is sorted according to the {@linkplain Comparable natural
+                  ordering} of its keys, or by a {@link Comparator} provided at map
+                  creation time, depending on which constructor is used.
+                  &lt;p&gt;This class implements a concurrent variant of &lt;a
+                  href=&quot;http://en.wikipedia.org/wiki/Skip_list&quot; target=&quot;_top&quot;&gt;SkipLists&lt;/a&gt;
+                  providing expected average &lt;i&gt;log(n)&lt;/i&gt; time cost for the
+                  &lt;tt&gt;containsKey&lt;/tt&gt;, &lt;tt&gt;get&lt;/tt&gt;, &lt;tt&gt;put&lt;/tt&gt; and
+                  &lt;tt&gt;remove&lt;/tt&gt; operations and their variants.  Insertion, removal,
+                  update, and access operations safely execute concurrently by
+                  multiple threads.  Iterators are &lt;i&gt;weakly consistent&lt;/i&gt;, returning
+                  elements reflecting the state of the map at some point at or since
+                  the creation of the iterator.  They do &lt;em&gt;not&lt;/em&gt; throw {@link ConcurrentModificationException}, and may proceed concurrently with
+                  other operations. Ascending key ordered views and their iterators
+                  are faster than descending ones.
+                  &lt;p&gt;All &lt;tt&gt;Map.Entry&lt;/tt&gt; pairs returned by methods in this class
+                  and its views represent snapshots of mappings at the time they were
+                  produced. They do &lt;em&gt;not&lt;/em&gt; support the &lt;tt&gt;Entry.setValue&lt;/tt&gt;
+                  method. (Note however that it is possible to change mappings in the
+                  associated map using &lt;tt&gt;put&lt;/tt&gt;, &lt;tt&gt;putIfAbsent&lt;/tt&gt;, or
+                  &lt;tt&gt;replace&lt;/tt&gt;, depending on exactly which effect you need.)
+                  &lt;p&gt;Beware that, unlike in most collections, the &lt;tt&gt;size&lt;/tt&gt;
+                  method is &lt;em&gt;not&lt;/em&gt; a constant-time operation. Because of the
+                  asynchronous nature of these maps, determining the current number
+                  of elements requires a traversal of the elements, and so may report
+                  inaccurate results if this collection is modified during traversal.
+                  Additionally, the bulk operations &lt;tt&gt;putAll&lt;/tt&gt;, &lt;tt&gt;equals&lt;/tt&gt;,
+                  &lt;tt&gt;toArray&lt;/tt&gt;, &lt;tt&gt;containsValue&lt;/tt&gt;, and &lt;tt&gt;clear&lt;/tt&gt; are
+                  &lt;em&gt;not&lt;/em&gt; guaranteed to be performed atomically. For example, an
+                  iterator operating concurrently with a &lt;tt&gt;putAll&lt;/tt&gt; operation
+                  might view only some of the added elements.
+                  &lt;p&gt;This class and its views and iterators implement all of the
+                  &lt;em&gt;optional&lt;/em&gt; methods of the {@link Map} and {@link Iterator}interfaces. Like most other concurrent collections, this class does
+                  &lt;em&gt;not&lt;/em&gt; permit the use of &lt;tt&gt;null&lt;/tt&gt; keys or values because some
+                  null return values cannot be reliably distinguished from the absence of
+                  elements.
+                  &lt;p&gt;This class is a member of the
+                  &lt;a href=&quot;{@docRoot}/../technotes/guides/collections/index.html&quot;&gt;
+                  Java Collections Framework&lt;/a&gt;.                
+                <author>
+                    Doug Lea                    
+                </author>
+                <param>
+                    <K>
+                       the type of keys maintained by this map                    
+                </param>
+                <param>
+                    <V>
+                       the type of mapped values                    
+                </param>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="323"/>
+            <declaration name="seedGenerator" type="Random" line="325"/>
+            <javadoc line="325">
+                Generates the initial random seed for the cheaper per-instance
+                  random number generators used in randomLevel.                
+            </javadoc>
+            <declaration name="BASE_HEADER" type="Object" line="331"/>
+            <javadoc line="331">
+                Special value used to identify base-level header                
+            </javadoc>
+            <declaration name="head" type="HeadIndex&lt;K,V&gt;" line="336"/>
+            <javadoc line="336">
+                The topmost head index of the skiplist.                
+            </javadoc>
+            <declaration name="comparator" type="Comparator&lt;? super K&gt;" line="341"/>
+            <javadoc line="341">
+                The comparator used to maintain order in this map, or null
+                  if using natural ordering.                
+                <serial>
+                                        
+                </serial>
+            </javadoc>
+            <declaration name="randomSeed" type="int" line="348"/>
+            <javadoc line="348">
+                Seed for simple random number generator.  Not volatile since it
+                  doesn&apos;t matter too much if different threads don&apos;t see updates.                
+            </javadoc>
+            <declaration name="keySet" type="KeySet" line="354"/>
+            <javadoc line="354">
+                Lazily initialized key set                
+            </javadoc>
+            <declaration name="entrySet" type="EntrySet" line="356"/>
+            <javadoc line="356">
+                Lazily initialized entry set                
+            </javadoc>
+            <declaration name="values" type="Values" line="358"/>
+            <javadoc line="358">
+                Lazily initialized values collection                
+            </javadoc>
+            <declaration name="descendingMap" type="ConcurrentNavigableMap&lt;K,V&gt;" line="360"/>
+            <javadoc line="360">
+                Lazily initialized descending key set                
+            </javadoc>
+            <javadoc line="363">
+                Initializes or resets state. Needed by constructors, clone,
+                  clear, readObject. and ConcurrentSkipListSet.clone.
+                  (Note that comparator must be separately initialized.)                
+            </javadoc>
+            <method name="initialize" type="void" line="368">
+                <comment line="373">
+                    ensure nonzero                    
+                </comment>
+            </method>
+            <javadoc line="378">
+                compareAndSet head node                
+            </javadoc>
+            <method name="casHead" type="boolean" line="381">
+                <params>
+                    <param name="cmp" type="HeadIndex<K,V>"/>
+                    <param name="val" type="HeadIndex<K,V>"/>
+                </params>
+            </method>
+            <class name="Node" line="387">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <javadoc line="387">
+                    Nodes hold keys and values, and are singly linked in sorted
+                      order, possibly with some intervening marker nodes. The list is
+                      headed by a dummy node accessible as head.node. The value field
+                      is declared only as Object because it takes special non-V
+                      values for marker and header nodes.                    
+                </javadoc>
+                <declaration name="key" type="K" line="395"/>
+                <declaration name="value" type="Object" line="396"/>
+                <declaration name="next" type="Node&lt;K,V&gt;" line="397"/>
+                <javadoc line="399">
+                    Creates a new regular node.                    
+                </javadoc>
+                <method name="Node" type="constructor" line="402">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="value" type="Object"/>
+                        <param name="next" type="Node<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="408">
+                    Creates a new marker node. A marker is distinguished by
+                      having its value field point to itself.  Marker nodes also
+                      have null keys, a fact that is exploited in a few places,
+                      but this doesn&apos;t distinguish markers from the base-level
+                      header node (head.node), which also has a null key.                    
+                </javadoc>
+                <method name="Node" type="constructor" line="415">
+                    <params>
+                        <param name="next" type="Node<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="421">
+                    compareAndSet value field                    
+                </javadoc>
+                <method name="casValue" type="boolean" line="424">
+                    <params>
+                        <param name="cmp" type="Object"/>
+                        <param name="val" type="Object"/>
+                    </params>
+                </method>
+                <javadoc line="428">
+                    compareAndSet next field                    
+                </javadoc>
+                <method name="casNext" type="boolean" line="431">
+                    <params>
+                        <param name="cmp" type="Node<K,V>"/>
+                        <param name="val" type="Node<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="435">
+                    Returns true if this node is a marker. This method isn&apos;t
+                      actually called in any current code checking for markers
+                      because callers will have already read value field and need
+                      to use that read (not another done here) and so directly
+                      test if value points to node.                    
+                    <param>
+                        n a possibly null reference to a node                        
+                    </param>
+                    <return>
+                        true if this node is a marker node                        
+                    </return>
+                </javadoc>
+                <method name="isMarker" type="boolean" line="444"/>
+                <javadoc line="448">
+                    Returns true if this node is the header of base-level list.                    
+                    <return>
+                        true if this node is header node                        
+                    </return>
+                </javadoc>
+                <method name="isBaseHeader" type="boolean" line="452"/>
+                <javadoc line="456">
+                    Tries to append a deletion marker to this node.                    
+                    <param>
+                        f the assumed current successor of this node                        
+                    </param>
+                    <return>
+                        true if successful                        
+                    </return>
+                </javadoc>
+                <method name="appendMarker" type="boolean" line="461">
+                    <params>
+                        <param name="f" type="Node<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="465">
+                    Helps out a deletion by appending marker or unlinking from
+                      predecessor. This is called during traversals when value
+                      field seen to be null.                    
+                    <param>
+                        b predecessor                        
+                    </param>
+                    <param>
+                        f successor                        
+                    </param>
+                </javadoc>
+                <method name="helpDelete" type="void" line="472">
+                    <params>
+                        <param name="b" type="Node<K,V>"/>
+                        <param name="f" type="Node<K,V>"/>
+                    </params>
+                    <comment line="473">
+                        Rechecking links and then doing only one of the
+                         help-out stages per call tends to minimize CAS
+                         interference among helping threads.                        
+                    </comment>
+                    <comment line="479">
+                        not already marked                        
+                    </comment>
+                    <scope line="478"/>
+                </method>
+                <javadoc line="486">
+                    Returns value if this node contains a valid key-value pair,
+                      else null.                    
+                    <return>
+                        this node's value if it isn't a marker or header or
+                          is deleted, else null.                        
+                    </return>
+                </javadoc>
+                <method name="getValidValue" type="V" line="492">
+                    <declaration name="v" type="Object" line="493"/>
+                </method>
+                <javadoc line="499">
+                    Creates and returns a new SimpleImmutableEntry holding current
+                      mapping if this node holds a valid value, else null.                    
+                    <return>
+                        new entry or null                        
+                    </return>
+                </javadoc>
+                <method name="createSnapshot" type="AbstractMap.SimpleImmutableEntry<K,V>" line="504">
+                    <declaration name="v" type="V" line="505"/>
+                </method>
+                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="513"/>
+                <declaration name="valueOffset" type="long" line="514"/>
+                <declaration name="nextOffset" type="long" line="515"/>
+                <scope line="517">
+                    <scope line="518">
+                        <declaration name="k" type="Class" line="520"/>
+                    </scope>
+                    <scope line="525"/>
+                </scope>
+            </class>
+            <class name="Index" line="533">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <javadoc line="533">
+                    Index nodes represent the levels of the skip list.  Note that
+                      even though both Nodes and Indexes have forward-pointing
+                      fields, they have different types and are handled in different
+                      ways, that can&apos;t nicely be captured by placing field in a
+                      shared abstract class.                    
+                </javadoc>
+                <declaration name="node" type="Node&lt;K,V&gt;" line="541"/>
+                <declaration name="down" type="Index&lt;K,V&gt;" line="542"/>
+                <declaration name="right" type="Index&lt;K,V&gt;" line="543"/>
+                <javadoc line="545">
+                    Creates index node with given values.                    
+                </javadoc>
+                <method name="Index" type="constructor" line="548">
+                    <params>
+                        <param name="node" type="Node<K,V>"/>
+                        <param name="down" type="Index<K,V>"/>
+                        <param name="right" type="Index<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="554">
+                    compareAndSet right field                    
+                </javadoc>
+                <method name="casRight" type="boolean" line="557">
+                    <params>
+                        <param name="cmp" type="Index<K,V>"/>
+                        <param name="val" type="Index<K,V>"/>
+                    </params>
+                </method>
+                <javadoc line="561">
+                    Returns true if the node this indexes has been deleted.                    
+                    <return>
+                        true if indexed node is known to be deleted                        
+                    </return>
+                </javadoc>
+                <method name="indexesDeletedNode" type="boolean" line="565"/>
+                <javadoc line="569">
+                    Tries to CAS newSucc as successor.  To minimize races with
+                      unlink that may lose this index node, if the node being
+                      indexed is known to be deleted, it doesn&apos;t try to link in.                    
+                    <param>
+                        succ the expected current successor                        
+                    </param>
+                    <param>
+                        newSucc the new successor                        
+                    </param>
+                    <return>
+                        true if successful                        
+                    </return>
+                </javadoc>
+                <method name="link" type="boolean" line="577">
+                    <params>
+                        <param name="succ" type="Index<K,V>"/>
+                        <param name="newSucc" type="Index<K,V>"/>
+                    </params>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="578"/>
+                </method>
+                <javadoc line="583">
+                    Tries to CAS right field to skip over apparent successor
+                      succ.  Fails (forcing a retraversal by caller) if this node
+                      is known to be deleted.                    
+                    <param>
+                        succ the expected current successor                        
+                    </param>
+                    <return>
+                        true if successful                        
+                    </return>
+                </javadoc>
+                <method name="unlink" type="boolean" line="590">
+                    <params>
+                        <param name="succ" type="Index<K,V>"/>
+                    </params>
+                </method>
+                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="595"/>
+                <declaration name="rightOffset" type="long" line="596"/>
+                <scope line="597">
+                    <scope line="598">
+                        <declaration name="k" type="Class" line="600"/>
+                    </scope>
+                    <scope line="603"/>
+                </scope>
+            </class>
+            <class name="HeadIndex" line="611">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+                <extends class="Index">
+                    <type_params>
+                        <type_param name="K"/>
+                        <type_param name="V"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <javadoc line="611">
+                    Nodes heading each level keep track of their level.                    
+                </javadoc>
+                <declaration name="level" type="int" line="615"/>
+                <method name="HeadIndex" type="constructor" line="616">
+                    <params>
+                        <param name="node" type="Node<K,V>"/>
+                        <param name="down" type="Index<K,V>"/>
+                        <param name="right" type="Index<K,V>"/>
+                        <param name="level" type="int"/>
+                    </params>
+                </method>
+            </class>
+            <class name="ComparableUsingComparator" line="624">
+                <type_params>
+                    <type_param name="K"/>
+                </type_params>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <implements interface="Comparable">
+                    <type_params>
+                        <type_param name="K"/>
+                    </type_params>
+                </implements>
+                <javadoc line="624">
+                    Represents a key with a comparator as a Comparable.
+                      Because most sorted collections seem to use natural ordering on
+                      Comparables (Strings, Integers, etc), most internal methods are
+                      geared to use them. This is generally faster than checking
+                      per-comparison whether to use comparator or comparable because
+                      it doesn&apos;t require a (Comparable) cast for each comparison.
+                      (Optimizers can only sometimes remove such redundant checks
+                      themselves.) When Comparators are used,
+                      ComparableUsingComparators are created so that they act in the
+                      same way as natural orderings. This penalizes use of
+                      Comparators vs Comparables, which seems like the right
+                      tradeoff.                    
+                </javadoc>
+                <declaration name="actualKey" type="K" line="640"/>
+                <declaration name="cmp" type="Comparator&lt;? super K&gt;" line="641"/>
+                <method name="ComparableUsingComparator" type="constructor" line="642">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="cmp" type="Comparator<? super K>"/>
+                    </params>
+                </method>
+                <method name="compareTo" type="int" line="646">
+                    <params>
+                        <param name="k2" type="K"/>
+                    </params>
+                </method>
+            </class>
+            <javadoc line="651">
+                If using comparator, return a ComparableUsingComparator, else
+                  cast key as Comparable, which may cause ClassCastException,
+                  which is propagated back to caller.                
+            </javadoc>
+            <method name="comparable" type="Comparable<? super K>" line="657">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="666">
+                Compares using comparator or natural ordering. Used when the
+                  ComparableUsingComparator approach doesn&apos;t apply.                
+            </javadoc>
+            <method name="compare" type="int" line="670">
+                <params>
+                    <param name="k1" type="K"/>
+                    <param name="k2" type="K"/>
+                </params>
+                <declaration name="cmp" type="Comparator&lt;? super K&gt;" line="671"/>
+            </method>
+            <javadoc line="678">
+                Returns true if given key greater than or equal to least and
+                  strictly less than fence, bypassing either test if least or
+                  fence are null. Needed mainly in submap operations.                
+            </javadoc>
+            <method name="inHalfOpenRange" type="boolean" line="683">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="least" type="K"/>
+                    <param name="fence" type="K"/>
+                </params>
+            </method>
+            <javadoc line="690">
+                Returns true if given key greater than or equal to least and less
+                  or equal to fence. Needed mainly in submap operations.                
+            </javadoc>
+            <method name="inOpenRange" type="boolean" line="694">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="least" type="K"/>
+                    <param name="fence" type="K"/>
+                </params>
+            </method>
+            <javadoc line="703">
+                Returns a base-level node with key strictly less than given key,
+                  or the base-level header if there is no such node.  Also
+                  unlinks indexes to deleted nodes found along the way.  Callers
+                  rely on this side-effect of clearing indices to deleted nodes.                
+                <param>
+                    key the key                    
+                </param>
+                <return>
+                    a predecessor of key                    
+                </return>
+            </javadoc>
+            <method name="findPredecessor" type="Node<K,V>" line="711">
+                <params>
+                    <param name="key" type="Comparable<? super K>"/>
+                </params>
+                <comment line="713">
+                    don&apos;t postpone errors                    
+                </comment>
+                <comment line="723">
+                    restart                    
+                </comment>
+                <comment line="724">
+                    reread r                    
+                </comment>
+                <scope line="714">
+                    <declaration name="q" type="Index&lt;K,V&gt;" line="715"/>
+                    <declaration name="r" type="Index&lt;K,V&gt;" line="716"/>
+                    <scope line="717">
+                        <scope line="718">
+                            <declaration name="n" type="Node&lt;K,V&gt;" line="719"/>
+                            <declaration name="k" type="K" line="720"/>
+                            <scope line="721"/>
+                            <scope line="727"/>
+                        </scope>
+                        <declaration name="d" type="Index&lt;K,V&gt;" line="733"/>
+                        <scope line="734"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="743">
+                Returns node holding key or null if no such, clearing out any
+                  deleted nodes seen along the way.  Repeatedly traverses at
+                  base-level looking for key starting at predecessor returned
+                  from findPredecessor, processing base-level deletions as
+                  encountered. Some callers rely on this side-effect of clearing
+                  deleted nodes.
+                  Restarts occur, at traversal step centered on node n, if:
+                  (1) After reading n&apos;s next field, n is no longer assumed
+                  predecessor b&apos;s current successor, which means that
+                  we don&apos;t have a consistent 3-node snapshot and so cannot
+                  unlink any subsequent deleted nodes encountered.
+                  (2) n&apos;s value field is null, indicating n is deleted, in
+                  which case we help out an ongoing structural deletion
+                  before retrying.  Even though there are cases where such
+                  unlinking doesn&apos;t require restart, they aren&apos;t sorted out
+                  here because doing so would not usually outweigh cost of
+                  restarting.
+                  (3) n is a marker or n&apos;s predecessor&apos;s value field is null,
+                  indicating (among other possibilities) that
+                  findPredecessor returned a deleted node. We can&apos;t unlink
+                  the node because we don&apos;t know its predecessor, so rely
+                  on another call to findPredecessor to notice and return
+                  some earlier predecessor, which it will do. This check is
+                  only strictly needed at beginning of loop, (and the
+                  b.value check isn&apos;t strictly needed at all) but is done
+                  each iteration to help avoid contention with other
+                  threads by callers that will fail to be able to change
+                  links, and so will retry anyway.
+                  The traversal loops in doPut, doRemove, and findNear all
+                  include the same three kinds of checks. And specialized
+                  versions appear in findFirst, and findLast and their
+                  variants. They can&apos;t easily share code because each uses the
+                  reads of fields held in locals occurring in the orders they
+                  were performed.                
+                <param>
+                    key the key                    
+                </param>
+                <return>
+                    node holding key, or null if no such                    
+                </return>
+            </javadoc>
+            <method name="findNode" type="Node<K,V>" line="787">
+                <params>
+                    <param name="key" type="Comparable<? super K>"/>
+                </params>
+                <comment line="795">
+                    inconsistent read                    
+                </comment>
+                <comment line="798">
+                    n is deleted                    
+                </comment>
+                <comment line="802">
+                    b is deleted                    
+                </comment>
+                <scope line="788">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="789"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="790"/>
+                    <scope line="791">
+                        <declaration name="f" type="Node&lt;K,V&gt;" line="794"/>
+                        <declaration name="v" type="Object" line="797"/>
+                        <scope line="798"/>
+                        <declaration name="c" type="int" line="804"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="815">
+                Gets value for key using findNode.                
+                <param>
+                    okey the key                    
+                </param>
+                <return>
+                    the value, or null if absent                    
+                </return>
+            </javadoc>
+            <method name="doGet" type="V" line="820">
+                <params>
+                    <param name="okey" type="Object"/>
+                </params>
+                <comment line="822">
+                    Loop needed here and elsewhere in case value field goes
+                     null just as it is about to be returned, in which case we
+                     lost a race with a deletion, so must retry.                    
+                </comment>
+                <declaration name="key" type="Comparable&lt;? super K&gt;" line="821"/>
+                <scope line="827">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="828"/>
+                    <declaration name="v" type="Object" line="831"/>
+                </scope>
+            </method>
+            <javadoc line="839">
+                Main insertion method.  Adds element if not present, or
+                  replaces value if present and onlyIfAbsent is false.                
+                <param>
+                    kkey the key                    
+                </param>
+                <param>
+                    value  the value that must be associated with key                    
+                </param>
+                <param>
+                    onlyIfAbsent if should not insert if already present                    
+                </param>
+                <return>
+                    the old value, or null if newly inserted                    
+                </return>
+            </javadoc>
+            <method name="doPut" type="V" line="847">
+                <params>
+                    <param name="kkey" type="K"/>
+                    <param name="value" type="V"/>
+                    <param name="onlyIfAbsent" type="boolean"/>
+                </params>
+                <comment line="855">
+                    inconsistent read                    
+                </comment>
+                <comment line="858">
+                    n is deleted                    
+                </comment>
+                <comment line="862">
+                    b is deleted                    
+                </comment>
+                <comment line="874">
+                    restart if lost race to replace value                    
+                </comment>
+                <comment line="876">
+                    else c &lt; 0; fall through                    
+                </comment>
+                <comment line="881">
+                    restart if lost race to append to b                    
+                </comment>
+                <declaration name="key" type="Comparable&lt;? super K&gt;" line="848"/>
+                <scope line="849">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="850"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="851"/>
+                    <scope line="852">
+                        <scope line="853">
+                            <declaration name="f" type="Node&lt;K,V&gt;" line="854"/>
+                            <declaration name="v" type="Object" line="857"/>
+                            <scope line="858"/>
+                            <declaration name="c" type="int" line="864"/>
+                            <scope line="865"/>
+                            <scope line="870"/>
+                        </scope>
+                        <declaration name="z" type="Node&lt;K,V&gt;" line="879"/>
+                        <declaration name="level" type="int" line="882"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="890">
+                Returns a random level for inserting a new node.
+                  Hardwired to k=1, p=0.5, max 31 (see above and
+                  Pugh&apos;s &quot;Skip List Cookbook&quot;, sec 3.4).
+                  This uses the simplest of the generators described in George
+                  Marsaglia&apos;s &quot;Xorshift RNGs&quot; paper.  This is not a high-quality
+                  generator but is acceptable here.                
+            </javadoc>
+            <method name="randomLevel" type="int" line="899">
+                <comment line="904">
+                    test highest and lowest bits                    
+                </comment>
+                <declaration name="x" type="int" line="900"/>
+                <declaration name="level" type="int" line="906"/>
+            </method>
+            <javadoc line="911">
+                Creates and adds index nodes for the given node.                
+                <param>
+                    z the node                    
+                </param>
+                <param>
+                    level the level of the index                    
+                </param>
+            </javadoc>
+            <method name="insertIndex" type="void" line="916">
+                <params>
+                    <param name="z" type="Node<K,V>"/>
+                    <param name="level" type="int"/>
+                </params>
+                <comment line="926">
+                    Add a new level                    
+                </comment>
+                <comment line="927">
+                    To reduce interference by other threads checking for
+                     empty levels in tryReduceLevel, new levels are added
+                     with initialized right pointers. Which in turn requires
+                     keeping levels in an array to access them while
+                     creating new head index nodes from the opposite
+                     direction.                    
+                </comment>
+                <comment line="946">
+                    lost race to add level                    
+                </comment>
+                <declaration name="h" type="HeadIndex&lt;K,V&gt;" line="917"/>
+                <declaration name="max" type="int" line="918"/>
+                <scope line="920">
+                    <declaration name="idx" type="Index&lt;K,V&gt;" line="921"/>
+                </scope>
+                <scope line="926">
+                    <declaration name="idxs" type="Index&lt;K,V&gt;[]" line="936"/>
+                    <declaration name="idx" type="Index&lt;K,V&gt;" line="937"/>
+                    <declaration name="oldh" type="HeadIndex&lt;K,V&gt;" line="941"/>
+                    <declaration name="k" type="int" line="942"/>
+                    <scope line="943">
+                        <declaration name="oldLevel" type="int" line="945"/>
+                        <scope line="946"/>
+                        <declaration name="newh" type="HeadIndex&lt;K,V&gt;" line="950"/>
+                        <declaration name="oldbase" type="Node&lt;K,V&gt;" line="951"/>
+                        <scope line="954"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="963">
+                Adds given index nodes from given level down to 1.                
+                <param>
+                    idx the topmost index node being inserted                    
+                </param>
+                <param>
+                    h the value of head to use to insert. This must be
+                      snapshotted by callers to provide correct insertion level                    
+                </param>
+                <param>
+                    indexLevel the level of the index                    
+                </param>
+            </javadoc>
+            <method name="addIndex" type="void" line="970">
+                <params>
+                    <param name="idx" type="Index<K,V>"/>
+                    <param name="h" type="HeadIndex<K,V>"/>
+                    <param name="indexLevel" type="int"/>
+                </params>
+                <comment line="971">
+                    Track next level to insert in case of retries                    
+                </comment>
+                <comment line="976">
+                    Similar to findPredecessor, but adding index nodes along                    
+                </comment>
+                <comment line="977">
+                    path to key.                    
+                </comment>
+                <comment line="986">
+                    compare before deletion check avoids needing recheck                    
+                </comment>
+                <comment line="1002">
+                    Don&apos;t insert index if node already deleted                    
+                </comment>
+                <comment line="1004">
+                    cleans up                    
+                </comment>
+                <comment line="1008">
+                    restart                    
+                </comment>
+                <comment line="1010">
+                    need final deletion check before return                    
+                </comment>
+                <declaration name="insertionLevel" type="int" line="972"/>
+                <declaration name="key" type="Comparable&lt;? super K&gt;" line="973"/>
+                <scope line="978">
+                    <declaration name="j" type="int" line="979"/>
+                    <declaration name="q" type="Index&lt;K,V&gt;" line="980"/>
+                    <declaration name="r" type="Index&lt;K,V&gt;" line="981"/>
+                    <declaration name="t" type="Index&lt;K,V&gt;" line="982"/>
+                    <scope line="983">
+                        <scope line="984">
+                            <declaration name="n" type="Node&lt;K,V&gt;" line="985"/>
+                            <declaration name="c" type="int" line="987"/>
+                            <scope line="988"/>
+                            <scope line="994"/>
+                        </scope>
+                        <scope line="1001">
+                            <scope line="1003"/>
+                            <scope line="1009"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1027">
+                Main deletion method. Locates node, nulls value, appends a
+                  deletion marker, unlinks predecessor, removes associated index
+                  nodes, and possibly reduces head index level.
+                  Index nodes are cleared out simply by calling findPredecessor.
+                  which unlinks indexes to deleted nodes found along path to key,
+                  which will include the indexes to this node.  This is done
+                  unconditionally. We can&apos;t check beforehand whether there are
+                  index nodes because it might be the case that some or all
+                  indexes hadn&apos;t been inserted yet for this node during initial
+                  search for it, and we&apos;d like to ensure lack of garbage
+                  retention, so must call to be sure.                
+                <param>
+                    okey the key                    
+                </param>
+                <param>
+                    value if non-null, the value that must be
+                      associated with key                    
+                </param>
+                <return>
+                    the node, or null if not found                    
+                </return>
+            </javadoc>
+            <method name="doRemove" type="V" line="1046">
+                <params>
+                    <param name="okey" type="Object"/>
+                    <param name="value" type="Object"/>
+                </params>
+                <comment line="1055">
+                    inconsistent read                    
+                </comment>
+                <comment line="1058">
+                    n is deleted                    
+                </comment>
+                <comment line="1062">
+                    b is deleted                    
+                </comment>
+                <comment line="1077">
+                    Retry via findNode                    
+                </comment>
+                <comment line="1079">
+                    Clean index                    
+                </comment>
+                <declaration name="key" type="Comparable&lt;? super K&gt;" line="1047"/>
+                <scope line="1048">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="1049"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1050"/>
+                    <scope line="1051">
+                        <declaration name="f" type="Node&lt;K,V&gt;" line="1054"/>
+                        <declaration name="v" type="Object" line="1057"/>
+                        <scope line="1058"/>
+                        <declaration name="c" type="int" line="1064"/>
+                        <scope line="1067"/>
+                        <scope line="1078"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1088">
+                Possibly reduce head level if it has no nodes.  This method can
+                  (rarely) make mistakes, in which case levels can disappear even
+                  though they are about to contain index nodes. This impacts
+                  performance, not correctness.  To minimize mistakes as well as
+                  to reduce hysteresis, the level is reduced by one only if the
+                  topmost three levels look empty. Also, if the removed level
+                  looks non-empty after CAS, we try to change it back quick
+                  before anyone notices our mistake! (This trick works pretty
+                  well because this method will practically never make mistakes
+                  unless current thread stalls immediately before first CAS, in
+                  which case it is very unlikely to stall again immediately
+                  afterwards, so will recover.)
+                  We put up with all this rather than just let levels grow
+                  because otherwise, even a small map that has undergone a large
+                  number of insertions and removals will have a lot of levels,
+                  slowing down access more than would an occasional unwanted
+                  reduction.                
+            </javadoc>
+            <method name="tryReduceLevel" type="void" line="1108">
+                <comment line="1118">
+                    try to set                    
+                </comment>
+                <comment line="1119">
+                    recheck                    
+                </comment>
+                <comment line="1120">
+                    try to backout                    
+                </comment>
+                <declaration name="h" type="HeadIndex&lt;K,V&gt;" line="1109"/>
+                <declaration name="d" type="HeadIndex&lt;K,V&gt;" line="1110"/>
+                <declaration name="e" type="HeadIndex&lt;K,V&gt;" line="1111"/>
+            </method>
+            <javadoc line="1125">
+                Specialized variant of findNode to get first valid node.                
+                <return>
+                    first node or null if empty                    
+                </return>
+            </javadoc>
+            <method name="findFirst" type="Node<K,V>" line="1129">
+                <scope line="1130">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="1131"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1132"/>
+                </scope>
+            </method>
+            <javadoc line="1141">
+                Removes first entry; returns its snapshot.                
+                <return>
+                    null if empty, else snapshot of first entry                    
+                </return>
+            </javadoc>
+            <method name="doRemoveFirstEntry" type="Map.Entry<K,V>" line="1145">
+                <comment line="1162">
+                    retry                    
+                </comment>
+                <scope line="1146">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="1147"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1148"/>
+                    <declaration name="f" type="Node&lt;K,V&gt;" line="1151"/>
+                    <declaration name="v" type="Object" line="1154"/>
+                    <scope line="1155"/>
+                </scope>
+            </method>
+            <javadoc line="1168">
+                Clears out index nodes associated with deleted first entry.                
+            </javadoc>
+            <method name="clearIndexToFirst" type="void" line="1171">
+                <scope line="1172">
+                    <declaration name="q" type="Index&lt;K,V&gt;" line="1173"/>
+                    <scope line="1174">
+                        <declaration name="r" type="Index&lt;K,V&gt;" line="1175"/>
+                        <scope line="1178"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1190">
+                Specialized version of find to get last valid node.                
+                <return>
+                    last node or null if empty                    
+                </return>
+            </javadoc>
+            <method name="findLast" type="Node<K,V>" line="1194">
+                <comment line="1195">
+                    findPredecessor can&apos;t be used to traverse index level
+                     because this doesn&apos;t use comparisons.  So traversals of
+                     both levels are folded together.                    
+                </comment>
+                <comment line="1206">
+                    restart                    
+                </comment>
+                <comment line="1218">
+                    inconsistent read                    
+                </comment>
+                <comment line="1222">
+                    n is deleted                    
+                </comment>
+                <comment line="1226">
+                    b is deleted                    
+                </comment>
+                <comment line="1231">
+                    restart                    
+                </comment>
+                <declaration name="q" type="Index&lt;K,V&gt;" line="1200"/>
+                <scope line="1201">
+                    <declaration name="d" type="Index&lt;K,V&gt;" line="1202"/>
+                    <scope line="1203">
+                        <scope line="1204"/>
+                    </scope>
+                    <scope line="1210"/>
+                    <scope line="1212">
+                        <declaration name="b" type="Node&lt;K,V&gt;" line="1213"/>
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="1214"/>
+                        <scope line="1215">
+                            <declaration name="f" type="Node&lt;K,V&gt;" line="1218"/>
+                            <declaration name="v" type="Object" line="1221"/>
+                            <scope line="1222"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1236">
+                Specialized variant of findPredecessor to get predecessor of last
+                  valid node.  Needed when removing the last entry.  It is possible
+                  that all successors of returned node will have been deleted upon
+                  return, in which case this method can be retried.                
+                <return>
+                    likely predecessor of last node                    
+                </return>
+            </javadoc>
+            <method name="findPredecessorOfLast" type="Node<K,V>" line="1243">
+                <comment line="1251">
+                    must restart                    
+                </comment>
+                <comment line="1253">
+                    proceed as far across as possible without overshooting                    
+                </comment>
+                <scope line="1244">
+                    <declaration name="q" type="Index&lt;K,V&gt;" line="1245"/>
+                    <scope line="1246">
+                        <declaration name="d" type="Index&lt;K,V&gt;" line="1247"/>
+                        <scope line="1248">
+                            <scope line="1249"/>
+                            <scope line="1254"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1267">
+                Removes last entry; returns its snapshot.
+                  Specialized variant of doRemove.                
+                <return>
+                    null if empty, else snapshot of last entry                    
+                </return>
+            </javadoc>
+            <method name="doRemoveLastEntry" type="Map.Entry<K,V>" line="1272">
+                <comment line="1277">
+                    empty                    
+                </comment>
+                <comment line="1280">
+                    all b&apos;s successors are deleted; retry                    
+                </comment>
+                <comment line="1284">
+                    inconsistent read                    
+                </comment>
+                <comment line="1287">
+                    n is deleted                    
+                </comment>
+                <comment line="1291">
+                    b is deleted                    
+                </comment>
+                <comment line="1303">
+                    Retry via findNode                    
+                </comment>
+                <comment line="1305">
+                    Clean index                    
+                </comment>
+                <scope line="1273">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="1274"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1275"/>
+                    <scope line="1276"/>
+                    <scope line="1282">
+                        <declaration name="f" type="Node&lt;K,V&gt;" line="1283"/>
+                        <declaration name="v" type="Object" line="1286"/>
+                        <scope line="1287"/>
+                        <scope line="1293"/>
+                        <declaration name="key" type="K" line="1300"/>
+                        <declaration name="ck" type="Comparable&lt;? super K&gt;" line="1301"/>
+                        <scope line="1304"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="EQ" type="int" line="1318"/>
+            <declaration name="LT" type="int" line="1319"/>
+            <declaration name="GT" type="int" line="1320"/>
+            <javadoc line="1322">
+                Utility for ceiling, floor, lower, higher methods.                
+                <param>
+                    kkey the key                    
+                </param>
+                <param>
+                    rel the relation -- OR'ed combination of EQ, LT, GT                    
+                </param>
+                <return>
+                    nearest node fitting relation, or null if no such                    
+                </return>
+            </javadoc>
+            <method name="findNear" type="Node<K,V>" line="1328">
+                <params>
+                    <param name="kkey" type="K"/>
+                    <param name="rel" type="int"/>
+                </params>
+                <comment line="1337">
+                    inconsistent read                    
+                </comment>
+                <comment line="1340">
+                    n is deleted                    
+                </comment>
+                <comment line="1344">
+                    b is deleted                    
+                </comment>
+                <declaration name="key" type="Comparable&lt;? super K&gt;" line="1329"/>
+                <scope line="1330">
+                    <declaration name="b" type="Node&lt;K,V&gt;" line="1331"/>
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1332"/>
+                    <scope line="1333">
+                        <declaration name="f" type="Node&lt;K,V&gt;" line="1336"/>
+                        <declaration name="v" type="Object" line="1339"/>
+                        <scope line="1340"/>
+                        <declaration name="c" type="int" line="1346"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1358">
+                Returns SimpleImmutableEntry for results of findNear.                
+                <param>
+                    key the key                    
+                </param>
+                <param>
+                    rel the relation -- OR'ed combination of EQ, LT, GT                    
+                </param>
+                <return>
+                    Entry fitting relation, or null if no such                    
+                </return>
+            </javadoc>
+            <method name="getNear" type="AbstractMap.SimpleImmutableEntry<K,V>" line="1364">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="rel" type="int"/>
+                </params>
+                <scope line="1365">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1366"/>
+                    <declaration name="e" type="AbstractMap.SimpleImmutableEntry&lt;K,V&gt;" line="1369"/>
+                </scope>
+            </method>
+            <javadoc line="1378">
+                Constructs a new, empty map, sorted according to the{@linkplain Comparable natural ordering} of the keys.                
+            </javadoc>
+            <method name="ConcurrentSkipListMap" type="constructor" line="1382"/>
+            <javadoc line="1387">
+                Constructs a new, empty map, sorted according to the specified
+                  comparator.                
+                <param>
+                    comparator the comparator that will be used to order this map.
+                      If <tt>null</tt>, the {@linkplain Comparable natural
+                      ordering} of the keys will be used.                    
+                </param>
+            </javadoc>
+            <method name="ConcurrentSkipListMap" type="constructor" line="1395">
+                <params>
+                    <param name="comparator" type="Comparator<? super K>"/>
+                </params>
+            </method>
+            <javadoc line="1400">
+                Constructs a new map containing the same mappings as the given map,
+                  sorted according to the {@linkplain Comparable natural ordering} of
+                  the keys.                
+                <param>
+                    m the map whose mappings are to be placed in this map                    
+                </param>
+                <throws>
+                    ClassCastException if the keys in <tt>m</tt> are not{@link Comparable}, or are not mutually comparable                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified map or any of its keys
+                      or values are null                    
+                </throws>
+            </javadoc>
+            <method name="ConcurrentSkipListMap" type="constructor" line="1411">
+                <params>
+                    <param name="m" type="Map<? extends K,? extends V>"/>
+                </params>
+            </method>
+            <javadoc line="1417">
+                Constructs a new map containing the same mappings and using the
+                  same ordering as the specified sorted map.                
+                <param>
+                    m the sorted map whose mappings are to be placed in this
+                      map, and whose comparator is to be used to sort this map                    
+                </param>
+                <throws>
+                    NullPointerException if the specified sorted map or any of
+                      its keys or values are null                    
+                </throws>
+            </javadoc>
+            <method name="ConcurrentSkipListMap" type="constructor" line="1426">
+                <params>
+                    <param name="m" type="SortedMap<K,? extends V>"/>
+                </params>
+            </method>
+            <javadoc line="1432">
+                Returns a shallow copy of this &lt;tt&gt;ConcurrentSkipListMap&lt;/tt&gt;
+                  instance. (The keys and values themselves are not cloned.)                
+                <return>
+                    a shallow copy of this map                    
+                </return>
+            </javadoc>
+            <method name="clone" type="ConcurrentSkipListMap<K,V>" line="1438">
+                <declaration name="clone" type="ConcurrentSkipListMap&lt;K,V&gt;" line="1439"/>
+                <scope line="1440"/>
+                <scope line="1442"/>
+            </method>
+            <javadoc line="1451">
+                Streamlined bulk insertion to initialize from elements of
+                  given sorted map.  Call only from constructor or clone
+                  method.                
+            </javadoc>
+            <method name="buildFromSorted" type="void" line="1456">
+                <params>
+                    <param name="map" type="SortedMap<K,? extends V>"/>
+                </params>
+                <comment line="1463">
+                    Track the current rightmost node at each level. Uses an                    
+                </comment>
+                <comment line="1464">
+                    ArrayList to avoid committing to initial or maximum level.                    
+                </comment>
+                <comment line="1467">
+                    initialize                    
+                </comment>
+                <declaration name="h" type="HeadIndex&lt;K,V&gt;" line="1460"/>
+                <declaration name="basepred" type="Node&lt;K,V&gt;" line="1461"/>
+                <declaration name="preds" type="ArrayList&lt;Index&lt;K,V&gt;&gt;" line="1465"/>
+                <declaration name="q" type="Index&lt;K,V&gt;" line="1470"/>
+                <scope line="1471"/>
+                <declaration name="it" type="Iterator&lt;? extends Map.Entry&lt;? extends K,? extends V&gt;&gt;" line="1476"/>
+                <scope line="1478">
+                    <declaration name="e" type="Map.Entry&lt;? extends K,? extends V&gt;" line="1479"/>
+                    <declaration name="j" type="int" line="1480"/>
+                    <declaration name="k" type="K" line="1482"/>
+                    <declaration name="v" type="V" line="1483"/>
+                    <declaration name="z" type="Node&lt;K,V&gt;" line="1486"/>
+                    <scope line="1489">
+                        <declaration name="idx" type="Index&lt;K,V&gt;" line="1490"/>
+                        <scope line="1491">
+                            <scope line="1496"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1509">
+                Save the state of this map to a stream.                
+                <serialData>
+                    The key (Object) and value (Object) for each
+                      key-value mapping represented by the map, followed by
+                      <tt>null</tt>. The key-value mappings are emitted in key-order
+                      (as determined by the Comparator, or by the keys' natural
+                      ordering if no Comparator).                    
+                </serialData>
+            </javadoc>
+            <method name="writeObject" type="void" line="1519">
+                <params>
+                    <param name="s" type="java.io.ObjectOutputStream"/>
+                </params>
+                <comment line="1520">
+                    Write out the Comparator and any hidden stuff                    
+                </comment>
+                <comment line="1523">
+                    Write out keys and values (alternating)                    
+                </comment>
+                <scope line="1524">
+                    <declaration name="v" type="V" line="1525"/>
+                    <scope line="1526"/>
+                </scope>
+            </method>
+            <javadoc line="1534">
+                Reconstitute the map from a stream.                
+            </javadoc>
+            <method name="readObject" type="void" line="1538">
+                <params>
+                    <param name="s" type="java.io.ObjectInputStream"/>
+                </params>
+                <comment line="1539">
+                    Read in the Comparator and any hidden stuff                    
+                </comment>
+                <comment line="1541">
+                    Reset transients                    
+                </comment>
+                <comment line="1544">
+                    This is nearly identical to buildFromSorted, but is
+                     distinct because readObject calls can&apos;t be nicely adapted
+                     as the kind of iterator needed by buildFromSorted. (They
+                     can be, but doing so requires type cheats andor creation
+                     of adaptor classes.) It is simpler to just adapt the code.                    
+                </comment>
+                <declaration name="h" type="HeadIndex&lt;K,V&gt;" line="1552"/>
+                <declaration name="basepred" type="Node&lt;K,V&gt;" line="1553"/>
+                <declaration name="preds" type="ArrayList&lt;Index&lt;K,V&gt;&gt;" line="1554"/>
+                <declaration name="q" type="Index&lt;K,V&gt;" line="1557"/>
+                <scope line="1558"/>
+                <scope line="1563">
+                    <declaration name="k" type="Object" line="1564"/>
+                    <declaration name="v" type="Object" line="1567"/>
+                    <declaration name="key" type="K" line="1570"/>
+                    <declaration name="val" type="V" line="1571"/>
+                    <declaration name="j" type="int" line="1572"/>
+                    <declaration name="z" type="Node&lt;K,V&gt;" line="1574"/>
+                    <scope line="1577">
+                        <declaration name="idx" type="Index&lt;K,V&gt;" line="1578"/>
+                        <scope line="1579">
+                            <scope line="1584"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1597">
+                Returns &lt;tt&gt;true&lt;/tt&gt; if this map contains a mapping for the specified
+                  key.                
+                <param>
+                    key key whose presence in this map is to be tested                    
+                </param>
+                <return>
+                    <tt>true</tt> if this map contains a mapping for the specified key                    
+                </return>
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="containsKey" type="boolean" line="1607">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="1611">
+                Returns the value to which the specified key is mapped,
+                  or {@code null} if this map contains no mapping for the key.
+                  &lt;p&gt;More formally, if this map contains a mapping from a key{@code k} to a value {@code v} such that {@code key} compares
+                  equal to {@code k} according to the map&apos;s ordering, then this
+                  method returns {@code v}; otherwise it returns {@code null}.
+                  (There can be at most one such mapping.)                
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="get" type="V" line="1625">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="1629">
+                Associates the specified value with the specified key in this map.
+                  If the map previously contained a mapping for the key, the old
+                  value is replaced.                
+                <param>
+                    key key with which the specified value is to be associated                    
+                </param>
+                <param>
+                    value value to be associated with the specified key                    
+                </param>
+                <return>
+                    the previous value associated with the specified key, or
+                      <tt>null</tt> if there was no mapping for the key                    
+                </return>
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key or value is null                    
+                </throws>
+            </javadoc>
+            <method name="put" type="V" line="1642">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="value" type="V"/>
+                </params>
+            </method>
+            <javadoc line="1648">
+                Removes the mapping for the specified key from this map if present.                
+                <param>
+                    key key for which mapping should be removed                    
+                </param>
+                <return>
+                    the previous value associated with the specified key, or
+                      <tt>null</tt> if there was no mapping for the key                    
+                </return>
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="remove" type="V" line="1658">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="1662">
+                Returns &lt;tt&gt;true&lt;/tt&gt; if this map maps one or more keys to the
+                  specified value.  This operation requires time linear in the
+                  map size. Additionally, it is possible for the map to change
+                  during execution of this method, in which case the returned
+                  result may be inaccurate.                
+                <param>
+                    value value whose presence in this map is to be tested                    
+                </param>
+                <return>
+                    <tt>true</tt> if a mapping to <tt>value</tt> exists;
+                      <tt>false</tt> otherwise                    
+                </return>
+                <throws>
+                    NullPointerException if the specified value is null                    
+                </throws>
+            </javadoc>
+            <method name="containsValue" type="boolean" line="1674">
+                <params>
+                    <param name="value" type="Object"/>
+                </params>
+                <scope line="1677">
+                    <declaration name="v" type="V" line="1678"/>
+                </scope>
+            </method>
+            <javadoc line="1685">
+                Returns the number of key-value mappings in this map.  If this map
+                  contains more than &lt;tt&gt;Integer.MAX_VALUE&lt;/tt&gt; elements, it
+                  returns &lt;tt&gt;Integer.MAX_VALUE&lt;/tt&gt;.
+                  &lt;p&gt;Beware that, unlike in most collections, this method is
+                  &lt;em&gt;NOT&lt;/em&gt; a constant-time operation. Because of the
+                  asynchronous nature of these maps, determining the current
+                  number of elements requires traversing them all to count them.
+                  Additionally, it is possible for the size to change during
+                  execution of this method, in which case the returned result
+                  will be inaccurate. Thus, this method is typically not very
+                  useful in concurrent applications.                
+                <return>
+                    the number of elements in this map                    
+                </return>
+            </javadoc>
+            <method name="size" type="int" line="1701">
+                <declaration name="count" type="long" line="1702"/>
+                <scope line="1703"/>
+            </method>
+            <javadoc line="1710">
+                Returns &lt;tt&gt;true&lt;/tt&gt; if this map contains no key-value mappings.                
+                <return>
+                    <tt>true</tt> if this map contains no key-value mappings                    
+                </return>
+            </javadoc>
+            <method name="isEmpty" type="boolean" line="1714"/>
+            <javadoc line="1718">
+                Removes all of the mappings from this map.                
+            </javadoc>
+            <method name="clear" type="void" line="1721"/>
+            <javadoc line="1736">
+                Returns a {@link NavigableSet} view of the keys contained in this map.
+                  The set&apos;s iterator returns the keys in ascending order.
+                  The set is backed by the map, so changes to the map are
+                  reflected in the set, and vice-versa.  The set supports element
+                  removal, which removes the corresponding mapping from the map,
+                  via the {@code Iterator.remove}, {@code Set.remove},{@code removeAll}, {@code retainAll}, and {@code clear}operations.  It does not support the {@code add} or {@code addAll}operations.
+                  &lt;p&gt;The view&apos;s {@code iterator} is a &quot;weakly consistent&quot; iterator
+                  that will never throw {@link ConcurrentModificationException},
+                  and guarantees to traverse elements as they existed upon
+                  construction of the iterator, and may (but is not guaranteed to)
+                  reflect any modifications subsequent to construction.
+                  &lt;p&gt;This method is equivalent to method {@code navigableKeySet}.                
+                <return>
+                    a navigable set view of the keys in this map                    
+                </return>
+            </javadoc>
+            <method name="keySet" type="NavigableSet<K>" line="1757">
+                <declaration name="ks" type="KeySet" line="1758"/>
+            </method>
+            <method name="navigableKeySet" type="NavigableSet<K>" line="1762">
+                <declaration name="ks" type="KeySet" line="1763"/>
+            </method>
+            <javadoc line="1767">
+                Returns a {@link Collection} view of the values contained in this map.
+                  The collection&apos;s iterator returns the values in ascending order
+                  of the corresponding keys.
+                  The collection is backed by the map, so changes to the map are
+                  reflected in the collection, and vice-versa.  The collection
+                  supports element removal, which removes the corresponding
+                  mapping from the map, via the &lt;tt&gt;Iterator.remove&lt;/tt&gt;,
+                  &lt;tt&gt;Collection.remove&lt;/tt&gt;, &lt;tt&gt;removeAll&lt;/tt&gt;,
+                  &lt;tt&gt;retainAll&lt;/tt&gt; and &lt;tt&gt;clear&lt;/tt&gt; operations.  It does not
+                  support the &lt;tt&gt;add&lt;/tt&gt; or &lt;tt&gt;addAll&lt;/tt&gt; operations.
+                  &lt;p&gt;The view&apos;s &lt;tt&gt;iterator&lt;/tt&gt; is a &quot;weakly consistent&quot; iterator
+                  that will never throw {@link ConcurrentModificationException},
+                  and guarantees to traverse elements as they existed upon
+                  construction of the iterator, and may (but is not guaranteed to)
+                  reflect any modifications subsequent to construction.                
+            </javadoc>
+            <method name="values" type="Collection<V>" line="1785">
+                <declaration name="vs" type="Values" line="1786"/>
+            </method>
+            <javadoc line="1790">
+                Returns a {@link Set} view of the mappings contained in this map.
+                  The set&apos;s iterator returns the entries in ascending key order.
+                  The set is backed by the map, so changes to the map are
+                  reflected in the set, and vice-versa.  The set supports element
+                  removal, which removes the corresponding mapping from the map,
+                  via the &lt;tt&gt;Iterator.remove&lt;/tt&gt;, &lt;tt&gt;Set.remove&lt;/tt&gt;,
+                  &lt;tt&gt;removeAll&lt;/tt&gt;, &lt;tt&gt;retainAll&lt;/tt&gt; and &lt;tt&gt;clear&lt;/tt&gt;
+                  operations.  It does not support the &lt;tt&gt;add&lt;/tt&gt; or
+                  &lt;tt&gt;addAll&lt;/tt&gt; operations.
+                  &lt;p&gt;The view&apos;s &lt;tt&gt;iterator&lt;/tt&gt; is a &quot;weakly consistent&quot; iterator
+                  that will never throw {@link ConcurrentModificationException},
+                  and guarantees to traverse elements as they existed upon
+                  construction of the iterator, and may (but is not guaranteed to)
+                  reflect any modifications subsequent to construction.
+                  &lt;p&gt;The &lt;tt&gt;Map.Entry&lt;/tt&gt; elements returned by
+                  &lt;tt&gt;iterator.next()&lt;/tt&gt; do &lt;em&gt;not&lt;/em&gt; support the
+                  &lt;tt&gt;setValue&lt;/tt&gt; operation.                
+                <return>
+                    a set view of the mappings contained in this map,
+                      sorted in ascending key order                    
+                </return>
+            </javadoc>
+            <method name="entrySet" type="Set<Map.Entry<K,V>>" line="1814">
+                <declaration name="es" type="EntrySet" line="1815"/>
+            </method>
+            <method name="descendingMap" type="ConcurrentNavigableMap<K,V>" line="1819">
+                <declaration name="dm" type="ConcurrentNavigableMap&lt;K,V&gt;" line="1820"/>
+            </method>
+            <method name="descendingKeySet" type="NavigableSet<K>" line="1825"/>
+            <javadoc line="1831">
+                Compares the specified object with this map for equality.
+                  Returns &lt;tt&gt;true&lt;/tt&gt; if the given object is also a map and the
+                  two maps represent the same mappings.  More formally, two maps
+                  &lt;tt&gt;m1&lt;/tt&gt; and &lt;tt&gt;m2&lt;/tt&gt; represent the same mappings if
+                  &lt;tt&gt;m1.entrySet().equals(m2.entrySet())&lt;/tt&gt;.  This
+                  operation may return misleading results if either map is
+                  concurrently modified during execution of this method.                
+                <param>
+                    o object to be compared for equality with this map                    
+                </param>
+                <return>
+                    <tt>true</tt> if the specified object is equal to this map                    
+                </return>
+            </javadoc>
+            <method name="equals" type="boolean" line="1843">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <declaration name="m" type="Map&lt;?,?&gt;" line="1848"/>
+                <scope line="1849">
+                    <scope line="1853">
+                        <declaration name="k" type="Object" line="1854"/>
+                        <declaration name="v" type="Object" line="1855"/>
+                    </scope>
+                </scope>
+                <scope line="1860"/>
+                <scope line="1862"/>
+            </method>
+            <javadoc line="1869">
+                {@inheritDoc}                
+                <return>
+                    the previous value associated with the specified key,
+                      or <tt>null</tt> if there was no mapping for the key                    
+                </return>
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key or value is null                    
+                </throws>
+            </javadoc>
+            <method name="putIfAbsent" type="V" line="1878">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="value" type="V"/>
+                </params>
+            </method>
+            <javadoc line="1884">
+                {@inheritDoc}                
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="remove" type="boolean" line="1891">
+                <params>
+                    <param name="key" type="Object"/>
+                    <param name="value" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="1899">
+                {@inheritDoc}                
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if any of the arguments are null                    
+                </throws>
+            </javadoc>
+            <method name="replace" type="boolean" line="1906">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="oldValue" type="V"/>
+                    <param name="newValue" type="V"/>
+                </params>
+                <declaration name="k" type="Comparable&lt;? super K&gt;" line="1909"/>
+                <scope line="1910">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1911"/>
+                    <declaration name="v" type="Object" line="1914"/>
+                    <scope line="1915"/>
+                </scope>
+            </method>
+            <javadoc line="1924">
+                {@inheritDoc}                
+                <return>
+                    the previous value associated with the specified key,
+                      or <tt>null</tt> if there was no mapping for the key                    
+                </return>
+                <throws>
+                    ClassCastException if the specified key cannot be compared
+                      with the keys currently in the map                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key or value is null                    
+                </throws>
+            </javadoc>
+            <method name="replace" type="V" line="1933">
+                <params>
+                    <param name="key" type="K"/>
+                    <param name="value" type="V"/>
+                </params>
+                <declaration name="k" type="Comparable&lt;? super K&gt;" line="1936"/>
+                <scope line="1937">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="1938"/>
+                    <declaration name="v" type="Object" line="1941"/>
+                </scope>
+            </method>
+            <method name="comparator" type="Comparator<? super K>" line="1949"/>
+            <javadoc line="1953">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="firstKey" type="K" line="1956">
+                <declaration name="n" type="Node&lt;K,V&gt;" line="1957"/>
+            </method>
+            <javadoc line="1963">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="lastKey" type="K" line="1966">
+                <declaration name="n" type="Node&lt;K,V&gt;" line="1967"/>
+            </method>
+            <javadoc line="1973">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code fromKey} or {@code toKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="subMap" type="ConcurrentNavigableMap<K,V>" line="1981">
+                <params>
+                    <param name="fromKey" type="K"/>
+                    <param name="fromInclusive" type="boolean"/>
+                    <param name="toKey" type="K"/>
+                    <param name="toInclusive" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="1988">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code toKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="headMap" type="ConcurrentNavigableMap<K,V>" line="1994">
+                <params>
+                    <param name="toKey" type="K"/>
+                    <param name="inclusive" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="2001">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code fromKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="tailMap" type="ConcurrentNavigableMap<K,V>" line="2007">
+                <params>
+                    <param name="fromKey" type="K"/>
+                    <param name="inclusive" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="2014">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code fromKey} or {@code toKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="subMap" type="ConcurrentNavigableMap<K,V>" line="2019">
+                <params>
+                    <param name="fromKey" type="K"/>
+                    <param name="toKey" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2023">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code toKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="headMap" type="ConcurrentNavigableMap<K,V>" line="2028">
+                <params>
+                    <param name="toKey" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2032">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if {@code fromKey} is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="tailMap" type="ConcurrentNavigableMap<K,V>" line="2037">
+                <params>
+                    <param name="fromKey" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2043">
+                Returns a key-value mapping associated with the greatest key
+                  strictly less than the given key, or &lt;tt&gt;null&lt;/tt&gt; if there is
+                  no such key. The returned entry does &lt;em&gt;not&lt;/em&gt; support the
+                  &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="lowerEntry" type="Map.Entry<K,V>" line="2052">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2056">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="lowerKey" type="K" line="2060">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+                <declaration name="n" type="Node&lt;K,V&gt;" line="2061"/>
+            </method>
+            <javadoc line="2065">
+                Returns a key-value mapping associated with the greatest key
+                  less than or equal to the given key, or &lt;tt&gt;null&lt;/tt&gt; if there
+                  is no such key. The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+                <param>
+                    key the key                    
+                </param>
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="floorEntry" type="Map.Entry<K,V>" line="2075">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2079">
+                @param key the key                
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="floorKey" type="K" line="2084">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+                <declaration name="n" type="Node&lt;K,V&gt;" line="2085"/>
+            </method>
+            <javadoc line="2089">
+                Returns a key-value mapping associated with the least key
+                  greater than or equal to the given key, or &lt;tt&gt;null&lt;/tt&gt; if
+                  there is no such entry. The returned entry does &lt;em&gt;not&lt;/em&gt;
+                  support the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="ceilingEntry" type="Map.Entry<K,V>" line="2098">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2102">
+                @throws ClassCastException {@inheritDoc}                
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="ceilingKey" type="K" line="2106">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+                <declaration name="n" type="Node&lt;K,V&gt;" line="2107"/>
+            </method>
+            <javadoc line="2111">
+                Returns a key-value mapping associated with the least key
+                  strictly greater than the given key, or &lt;tt&gt;null&lt;/tt&gt; if there
+                  is no such key. The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+                <param>
+                    key the key                    
+                </param>
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="higherEntry" type="Map.Entry<K,V>" line="2121">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+            </method>
+            <javadoc line="2125">
+                @param key the key                
+                <throws>
+                    ClassCastException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified key is null                    
+                </throws>
+            </javadoc>
+            <method name="higherKey" type="K" line="2130">
+                <params>
+                    <param name="key" type="K"/>
+                </params>
+                <declaration name="n" type="Node&lt;K,V&gt;" line="2131"/>
+            </method>
+            <javadoc line="2135">
+                Returns a key-value mapping associated with the least
+                  key in this map, or &lt;tt&gt;null&lt;/tt&gt; if the map is empty.
+                  The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+            </javadoc>
+            <method name="firstEntry" type="Map.Entry<K,V>" line="2141">
+                <scope line="2142">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="2143"/>
+                    <declaration name="e" type="AbstractMap.SimpleImmutableEntry&lt;K,V&gt;" line="2146"/>
+                </scope>
+            </method>
+            <javadoc line="2152">
+                Returns a key-value mapping associated with the greatest
+                  key in this map, or &lt;tt&gt;null&lt;/tt&gt; if the map is empty.
+                  The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+            </javadoc>
+            <method name="lastEntry" type="Map.Entry<K,V>" line="2158">
+                <scope line="2159">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="2160"/>
+                    <declaration name="e" type="AbstractMap.SimpleImmutableEntry&lt;K,V&gt;" line="2163"/>
+                </scope>
+            </method>
+            <javadoc line="2169">
+                Removes and returns a key-value mapping associated with
+                  the least key in this map, or &lt;tt&gt;null&lt;/tt&gt; if the map is empty.
+                  The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+            </javadoc>
+            <method name="pollFirstEntry" type="Map.Entry<K,V>" line="2175"/>
+            <javadoc line="2179">
+                Removes and returns a key-value mapping associated with
+                  the greatest key in this map, or &lt;tt&gt;null&lt;/tt&gt; if the map is empty.
+                  The returned entry does &lt;em&gt;not&lt;/em&gt; support
+                  the &lt;tt&gt;Entry.setValue&lt;/tt&gt; method.                
+            </javadoc>
+            <method name="pollLastEntry" type="Map.Entry<K,V>" line="2185"/>
+            <class name="Iter" line="2192">
+                <type_params>
+                    <type_param name="T"/>
+                </type_params>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <implements interface="Iterator">
+                    <type_params>
+                        <type_param name="T"/>
+                    </type_params>
+                </implements>
+                <javadoc line="2192">
+                    Base of iterator classes:                    
+                </javadoc>
+                <declaration name="lastReturned" type="Node&lt;K,V&gt;" line="2196"/>
+                <javadoc line="2196">
+                    the last node returned by next()                    
+                </javadoc>
+                <declaration name="next" type="Node&lt;K,V&gt;" line="2198"/>
+                <javadoc line="2198">
+                    the next node to return from next();                    
+                </javadoc>
+                <declaration name="nextValue" type="V" line="2200"/>
+                <javadoc line="2200">
+                    Cache of next value field to maintain weak consistency                    
+                </javadoc>
+                <javadoc line="2203">
+                    Initializes ascending iterator for entire range.                    
+                </javadoc>
+                <method name="Iter" type="constructor" line="2204">
+                    <scope line="2205">
+                        <declaration name="x" type="Object" line="2209"/>
+                        <scope line="2210"/>
+                    </scope>
+                </method>
+                <method name="hasNext" type="boolean" line="2217"/>
+                <javadoc line="2221">
+                    Advances next to higher entry.                    
+                </javadoc>
+                <method name="advance" type="void" line="2222">
+                    <scope line="2226">
+                        <declaration name="x" type="Object" line="2230"/>
+                        <scope line="2231"/>
+                    </scope>
+                </method>
+                <method name="remove" type="void" line="2238">
+                    <comment line="2242">
+                        It would not be worth all of the overhead to directly                        
+                    </comment>
+                    <comment line="2243">
+                        unlink from here. Using remove is fast enough.                        
+                    </comment>
+                    <declaration name="l" type="Node&lt;K,V&gt;" line="2239"/>
+                </method>
+            </class>
+            <class name="ValueIterator" line="2250">
+                <extends class="Iter">
+                    <type_params>
+                        <type_param name="V"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <method name="next" type="V" line="2251">
+                    <declaration name="v" type="V" line="2252"/>
+                </method>
+            </class>
+            <class name="KeyIterator" line="2258">
+                <extends class="Iter">
+                    <type_params>
+                        <type_param name="K"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <method name="next" type="K" line="2259">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="2260"/>
+                </method>
+            </class>
+            <class name="EntryIterator" line="2266">
+                <extends class="Iter">
+                    <type_params>
+                        <type_param name="Map.Entry<K,V>"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <method name="next" type="Map.Entry<K,V>" line="2267">
+                    <declaration name="n" type="Node&lt;K,V&gt;" line="2268"/>
+                    <declaration name="v" type="V" line="2269"/>
+                </method>
+            </class>
+            <method name="keyIterator" type="Iterator<K>" line="2277"/>
+            <method name="valueIterator" type="Iterator<V>" line="2281"/>
+            <method name="entryIterator" type="Iterator<Map.Entry<K,V>>" line="2285"/>
+            <method name="toList" type="List<E>" line="2297">
+                <params>
+                    <param name="c" type="Collection<E>"/>
+                </params>
+                <comment line="2298">
+                    Using size() here would be a pessimization.                    
+                </comment>
+                <declaration name="list" type="List&lt;E&gt;" line="2299"/>
+            </method>
+            <class name="KeySet" line="2305">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+                <extends class="AbstractSet">
+                    <type_params>
+                        <type_param name="E"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <implements interface="NavigableSet">
+                    <type_params>
+                        <type_param name="E"/>
+                    </type_params>
+                </implements>
+                <declaration name="m" type="ConcurrentNavigableMap&lt;E,Object&gt;" line="2307"/>
+                <method name="KeySet" type="constructor" line="2308">
+                    <params>
+                        <param name="map" type="ConcurrentNavigableMap<E,Object>"/>
+                    </params>
+                </method>
+                <method name="size" type="int" line="2309"/>
+                <method name="isEmpty" type="boolean" line="2310"/>
+                <method name="contains" type="boolean" line="2311">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                </method>
+                <method name="remove" type="boolean" line="2312">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                </method>
+                <method name="clear" type="void" line="2313"/>
+                <method name="lower" type="E" line="2314">
+                    <params>
+                        <param name="e" type="E"/>
+                    </params>
+                </method>
+                <method name="floor" type="E" line="2315">
+                    <params>
+                        <param name="e" type="E"/>
+                    </params>
+                </method>
+                <method name="ceiling" type="E" line="2316">
+                    <params>
+                        <param name="e" type="E"/>
+                    </params>
+                </method>
+                <method name="higher" type="E" line="2317">
+                    <params>
+                        <param name="e" type="E"/>
+                    </params>
+                </method>
+                <method name="comparator" type="Comparator<? super E>" line="2318"/>
+                <method name="first" type="E" line="2319"/>
+                <method name="last" type="E" line="2320"/>
+                <method name="pollFirst" type="E" line="2321">
+                    <declaration name="e" type="Map.Entry&lt;E,Object&gt;" line="2322"/>
+                </method>
+                <method name="pollLast" type="E" line="2325">
+                    <declaration name="e" type="Map.Entry&lt;E,Object&gt;" line="2326"/>
+                </method>
+                <method name="iterator" type="Iterator<E>" line="2329"/>
+                <method name="equals" type="boolean" line="2335">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                    <declaration name="c" type="Collection&lt;?&gt;" line="2340"/>
+                    <scope line="2341"/>
+                    <scope line="2343"/>
+                    <scope line="2345"/>
+                </method>
+                <method name="toArray" type="Object[]" line="2349"/>
+                <method name="toArray" type="T[]" line="2350">
+                    <params>
+                        <param name="a" type="T[]"/>
+                    </params>
+                </method>
+                <method name="descendingIterator" type="Iterator<E>" line="2351"/>
+                <method name="subSet" type="NavigableSet<E>" line="2357">
+                    <params>
+                        <param name="fromElement" type="E"/>
+                        <param name="fromInclusive" type="boolean"/>
+                        <param name="toElement" type="E"/>
+                        <param name="toInclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="headSet" type="NavigableSet<E>" line="2361">
+                    <params>
+                        <param name="toElement" type="E"/>
+                        <param name="inclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="tailSet" type="NavigableSet<E>" line="2364">
+                    <params>
+                        <param name="fromElement" type="E"/>
+                        <param name="inclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="subSet" type="NavigableSet<E>" line="2367">
+                    <params>
+                        <param name="fromElement" type="E"/>
+                        <param name="toElement" type="E"/>
+                    </params>
+                </method>
+                <method name="headSet" type="NavigableSet<E>" line="2370">
+                    <params>
+                        <param name="toElement" type="E"/>
+                    </params>
+                </method>
+                <method name="tailSet" type="NavigableSet<E>" line="2373">
+                    <params>
+                        <param name="fromElement" type="E"/>
+                    </params>
+                </method>
+                <method name="descendingSet" type="NavigableSet<E>" line="2376"/>
+            </class>
+            <class name="Values" line="2381">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+                <extends class="AbstractCollection">
+                    <type_params>
+                        <type_param name="E"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <declaration name="m" type="ConcurrentNavigableMap&lt;Object,E&gt;" line="2382"/>
+                <method name="Values" type="constructor" line="2383">
+                    <params>
+                        <param name="map" type="ConcurrentNavigableMap<Object,E>"/>
+                    </params>
+                </method>
+                <method name="iterator" type="Iterator<E>" line="2386"/>
+                <method name="isEmpty" type="boolean" line="2392"/>
+                <method name="size" type="int" line="2395"/>
+                <method name="contains" type="boolean" line="2398">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                </method>
+                <method name="clear" type="void" line="2401"/>
+                <method name="toArray" type="Object[]" line="2404"/>
+                <method name="toArray" type="T[]" line="2405">
+                    <params>
+                        <param name="a" type="T[]"/>
+                    </params>
+                </method>
+            </class>
+            <class name="EntrySet" line="2408">
+                <type_params>
+                    <type_param name="K1"/>
+                    <type_param name="V1"/>
+                </type_params>
+                <extends class="AbstractSet">
+                    <type_params>
+                        <type_param name="Map.Entry<K1,V1>"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <declaration name="m" type="ConcurrentNavigableMap&lt;K1,V1&gt;" line="2409"/>
+                <method name="EntrySet" type="constructor" line="2410">
+                    <params>
+                        <param name="map" type="ConcurrentNavigableMap<K1,V1>"/>
+                    </params>
+                </method>
+                <method name="iterator" type="Iterator<Map.Entry<K1,V1>>" line="2414"/>
+                <method name="contains" type="boolean" line="2421">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                    <declaration name="e" type="Map.Entry&lt;K1,V1&gt;" line="2424"/>
+                    <declaration name="v" type="V1" line="2425"/>
+                </method>
+                <method name="remove" type="boolean" line="2428">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                    <declaration name="e" type="Map.Entry&lt;K1,V1&gt;" line="2431"/>
+                </method>
+                <method name="isEmpty" type="boolean" line="2435"/>
+                <method name="size" type="int" line="2438"/>
+                <method name="clear" type="void" line="2441"/>
+                <method name="equals" type="boolean" line="2444">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                    <declaration name="c" type="Collection&lt;?&gt;" line="2449"/>
+                    <scope line="2450"/>
+                    <scope line="2452"/>
+                    <scope line="2454"/>
+                </method>
+                <method name="toArray" type="Object[]" line="2458"/>
+                <method name="toArray" type="T[]" line="2459">
+                    <params>
+                        <param name="a" type="T[]"/>
+                    </params>
+                </method>
+            </class>
+            <class name="SubMap" line="2462">
+                <type_params>
+                    <type_param name="K"/>
+                    <type_param name="V"/>
+                </type_params>
+                <extends class="AbstractMap">
+                    <type_params>
+                        <type_param name="K"/>
+                        <type_param name="V"/>
+                    </type_params>
+                </extends>
+                <comment line="512">
+                    UNSAFE mechanics                    
+                </comment>
+                <comment line="595">
+                    Unsafe mechanics                    
+                </comment>
+                <comment line="2493">
+                    Lazily initialized view holders                    
+                </comment>
+                <comment line="2516">
+                                        
+                </comment>
+                <comment line="2689">
+                    Almost the same as getNearEntry, except for keys                    
+                </comment>
+                <comment line="2727">
+                                        
+                </comment>
+                <comment line="2788">
+                                        
+                </comment>
+                <comment line="2810">
+                                        
+                </comment>
+                <comment line="2902">
+                                        
+                </comment>
+                <comment line="2960">
+                                        
+                </comment>
+                <implements interface="ConcurrentNavigableMap">
+                    <type_params>
+                        <type_param name="K"/>
+                        <type_param name="V"/>
+                    </type_params>
+                </implements>
+                <implements interface="Cloneable"/>
+                <implements interface="java.io.Serializable"/>
+                <javadoc line="2462">
+                    Submaps returned by {@link ConcurrentSkipListMap} submap operations
+                      represent a subrange of mappings of their underlying
+                      maps. Instances of this class support all methods of their
+                      underlying maps, differing in that mappings outside their range are
+                      ignored, and attempts to add mappings outside their ranges result
+                      in {@link IllegalArgumentException}.  Instances of this class are
+                      constructed only using the &lt;tt&gt;subMap&lt;/tt&gt;, &lt;tt&gt;headMap&lt;/tt&gt;, and
+                      &lt;tt&gt;tailMap&lt;/tt&gt; methods of their underlying maps.                    
+                    <serial>
+                        include                        
+                    </serial>
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="2477"/>
+                <declaration name="m" type="ConcurrentSkipListMap&lt;K,V&gt;" line="2479"/>
+                <javadoc line="2479">
+                    Underlying map                    
+                </javadoc>
+                <declaration name="lo" type="K" line="2481"/>
+                <javadoc line="2481">
+                    lower bound key, or null if from start                    
+                </javadoc>
+                <declaration name="hi" type="K" line="2483"/>
+                <javadoc line="2483">
+                    upper bound key, or null if to end                    
+                </javadoc>
+                <declaration name="loInclusive" type="boolean" line="2485"/>
+                <javadoc line="2485">
+                    inclusion flag for lo                    
+                </javadoc>
+                <declaration name="hiInclusive" type="boolean" line="2487"/>
+                <javadoc line="2487">
+                    inclusion flag for hi                    
+                </javadoc>
+                <declaration name="isDescending" type="boolean" line="2489"/>
+                <javadoc line="2489">
+                    direction                    
+                </javadoc>
+                <declaration name="keySetView" type="KeySet&lt;K&gt;" line="2493"/>
+                <declaration name="entrySetView" type="Set&lt;Map.Entry&lt;K,V&gt;&gt;" line="2494"/>
+                <declaration name="valuesView" type="Collection&lt;V&gt;" line="2495"/>
+                <javadoc line="2497">
+                    Creates a new submap, initializing all fields                    
+                </javadoc>
+                <method name="SubMap" type="constructor" line="2503">
+                    <params>
+                        <param name="map" type="ConcurrentSkipListMap<K,V>"/>
+                        <param name="fromKey" type="K"/>
+                        <param name="fromInclusive" type="boolean"/>
+                        <param name="toKey" type="K"/>
+                        <param name="toInclusive" type="boolean"/>
+                        <param name="isDescending" type="boolean"/>
+                    </params>
+                </method>
+                <method name="tooLow" type="boolean" line="2517">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                    <scope line="2518">
+                        <declaration name="c" type="int" line="2519"/>
+                    </scope>
+                </method>
+                <method name="tooHigh" type="boolean" line="2526">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                    <scope line="2527">
+                        <declaration name="c" type="int" line="2528"/>
+                    </scope>
+                </method>
+                <method name="inBounds" type="boolean" line="2535">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="checkKeyBounds" type="void" line="2539">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <javadoc line="2546">
+                    Returns true if node key is less than upper bound of range                    
+                </javadoc>
+                <method name="isBeforeEnd" type="boolean" line="2549">
+                    <params>
+                        <param name="n" type="ConcurrentSkipListMap.Node<K,V>"/>
+                    </params>
+                    <comment line="2555">
+                        pass by markers and headers                        
+                    </comment>
+                    <declaration name="k" type="K" line="2554"/>
+                    <declaration name="c" type="int" line="2557"/>
+                </method>
+                <javadoc line="2563">
+                    Returns lowest node. This node might not be in range, so
+                      most usages need to check bounds                    
+                </javadoc>
+                <method name="loNode" type="ConcurrentSkipListMap.Node<K,V>" line="2567"/>
+                <javadoc line="2576">
+                    Returns highest node. This node might not be in range, so
+                      most usages need to check bounds                    
+                </javadoc>
+                <method name="hiNode" type="ConcurrentSkipListMap.Node<K,V>" line="2580"/>
+                <javadoc line="2589">
+                    Returns lowest absolute key (ignoring directonality)                    
+                </javadoc>
+                <method name="lowestKey" type="K" line="2592">
+                    <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2593"/>
+                </method>
+                <javadoc line="2600">
+                    Returns highest absolute key (ignoring directonality)                    
+                </javadoc>
+                <method name="highestKey" type="K" line="2603">
+                    <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2604"/>
+                    <scope line="2605">
+                        <declaration name="last" type="K" line="2606"/>
+                    </scope>
+                </method>
+                <method name="lowestEntry" type="Map.Entry<K,V>" line="2613">
+                    <scope line="2614">
+                        <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2615"/>
+                        <declaration name="e" type="Map.Entry&lt;K,V&gt;" line="2618"/>
+                    </scope>
+                </method>
+                <method name="highestEntry" type="Map.Entry<K,V>" line="2624">
+                    <scope line="2625">
+                        <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2626"/>
+                        <declaration name="e" type="Map.Entry&lt;K,V&gt;" line="2629"/>
+                    </scope>
+                </method>
+                <method name="removeLowest" type="Map.Entry<K,V>" line="2635">
+                    <scope line="2636">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="2637"/>
+                        <declaration name="k" type="K" line="2640"/>
+                        <declaration name="v" type="V" line="2643"/>
+                    </scope>
+                </method>
+                <method name="removeHighest" type="Map.Entry<K,V>" line="2649">
+                    <scope line="2650">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="2651"/>
+                        <declaration name="k" type="K" line="2654"/>
+                        <declaration name="v" type="V" line="2657"/>
+                    </scope>
+                </method>
+                <javadoc line="2663">
+                    Submap version of ConcurrentSkipListMap.getNearEntry                    
+                </javadoc>
+                <method name="getNearEntry" type="Map.Entry<K,V>" line="2666">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="rel" type="int"/>
+                    </params>
+                    <comment line="2667">
+                        adjust relation for direction                        
+                    </comment>
+                    <scope line="2667"/>
+                    <scope line="2677">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="2678"/>
+                        <declaration name="k" type="K" line="2681"/>
+                        <declaration name="v" type="V" line="2682"/>
+                    </scope>
+                </method>
+                <method name="getNearKey" type="K" line="2689">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="rel" type="int"/>
+                    </params>
+                    <comment line="2690">
+                        adjust relation for direction                        
+                    </comment>
+                    <scope line="2690"/>
+                    <scope line="2696">
+                        <scope line="2697">
+                            <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2698"/>
+                        </scope>
+                    </scope>
+                    <scope line="2704">
+                        <scope line="2705">
+                            <declaration name="n" type="ConcurrentSkipListMap.Node&lt;K,V&gt;" line="2706"/>
+                            <scope line="2707">
+                                <declaration name="last" type="K" line="2708"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="2715">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="2716"/>
+                        <declaration name="k" type="K" line="2719"/>
+                        <declaration name="v" type="V" line="2720"/>
+                    </scope>
+                </method>
+                <method name="containsKey" type="boolean" line="2728">
+                    <params>
+                        <param name="key" type="Object"/>
+                    </params>
+                    <declaration name="k" type="K" line="2730"/>
+                </method>
+                <method name="get" type="V" line="2734">
+                    <params>
+                        <param name="key" type="Object"/>
+                    </params>
+                    <declaration name="k" type="K" line="2736"/>
+                </method>
+                <method name="put" type="V" line="2740">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="value" type="V"/>
+                    </params>
+                </method>
+                <method name="remove" type="V" line="2745">
+                    <params>
+                        <param name="key" type="Object"/>
+                    </params>
+                    <declaration name="k" type="K" line="2746"/>
+                </method>
+                <method name="size" type="int" line="2750">
+                    <declaration name="count" type="long" line="2751"/>
+                    <scope line="2754"/>
+                </method>
+                <method name="isEmpty" type="boolean" line="2761"/>
+                <method name="containsValue" type="boolean" line="2765">
+                    <params>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <scope line="2770">
+                        <declaration name="v" type="V" line="2771"/>
+                    </scope>
+                </method>
+                <method name="clear" type="void" line="2778">
+                    <scope line="2781"/>
+                </method>
+                <method name="putIfAbsent" type="V" line="2789">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="value" type="V"/>
+                    </params>
+                </method>
+                <method name="remove" type="boolean" line="2794">
+                    <params>
+                        <param name="key" type="Object"/>
+                        <param name="value" type="Object"/>
+                    </params>
+                    <declaration name="k" type="K" line="2795"/>
+                </method>
+                <method name="replace" type="boolean" line="2799">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="oldValue" type="V"/>
+                        <param name="newValue" type="V"/>
+                    </params>
+                </method>
+                <method name="replace" type="V" line="2804">
+                    <params>
+                        <param name="key" type="K"/>
+                        <param name="value" type="V"/>
+                    </params>
+                </method>
+                <method name="comparator" type="Comparator<? super K>" line="2811">
+                    <declaration name="cmp" type="Comparator&lt;? super K&gt;" line="2812"/>
+                </method>
+                <javadoc line="2819">
+                    Utility to create submaps, where given bounds override
+                      unbounded(null) ones and/or are checked against bounded ones.                    
+                </javadoc>
+                <method name="newSubMap" type="SubMap<K,V>" line="2826">
+                    <params>
+                        <param name="fromKey" type="K"/>
+                        <param name="fromInclusive" type="boolean"/>
+                        <param name="toKey" type="K"/>
+                        <param name="toInclusive" type="boolean"/>
+                    </params>
+                    <comment line="2827">
+                        flip senses                        
+                    </comment>
+                    <scope line="2827">
+                        <declaration name="tk" type="K" line="2828"/>
+                        <declaration name="ti" type="boolean" line="2831"/>
+                    </scope>
+                    <scope line="2835">
+                        <scope line="2836"/>
+                        <scope line="2840">
+                            <declaration name="c" type="int" line="2841"/>
+                        </scope>
+                    </scope>
+                    <scope line="2846">
+                        <scope line="2847"/>
+                        <scope line="2851">
+                            <declaration name="c" type="int" line="2852"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="subMap" type="SubMap<K,V>" line="2864">
+                    <params>
+                        <param name="fromKey" type="K"/>
+                        <param name="fromInclusive" type="boolean"/>
+                        <param name="toKey" type="K"/>
+                        <param name="toInclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="headMap" type="SubMap<K,V>" line="2871">
+                    <params>
+                        <param name="toKey" type="K"/>
+                        <param name="inclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="tailMap" type="SubMap<K,V>" line="2878">
+                    <params>
+                        <param name="fromKey" type="K"/>
+                        <param name="inclusive" type="boolean"/>
+                    </params>
+                </method>
+                <method name="subMap" type="SubMap<K,V>" line="2884">
+                    <params>
+                        <param name="fromKey" type="K"/>
+                        <param name="toKey" type="K"/>
+                    </params>
+                </method>
+                <method name="headMap" type="SubMap<K,V>" line="2888">
+                    <params>
+                        <param name="toKey" type="K"/>
+                    </params>
+                </method>
+                <method name="tailMap" type="SubMap<K,V>" line="2892">
+                    <params>
+                        <param name="fromKey" type="K"/>
+                    </params>
+                </method>
+                <method name="descendingMap" type="SubMap<K,V>" line="2896"/>
+                <method name="ceilingEntry" type="Map.Entry<K,V>" line="2903">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="ceilingKey" type="K" line="2907">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="lowerEntry" type="Map.Entry<K,V>" line="2911">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="lowerKey" type="K" line="2915">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="floorEntry" type="Map.Entry<K,V>" line="2919">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="floorKey" type="K" line="2923">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="higherEntry" type="Map.Entry<K,V>" line="2927">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="higherKey" type="K" line="2931">
+                    <params>
+                        <param name="key" type="K"/>
+                    </params>
+                </method>
+                <method name="firstKey" type="K" line="2935"/>
+                <method name="lastKey" type="K" line="2939"/>
+                <method name="firstEntry" type="Map.Entry<K,V>" line="2943"/>
+                <method name="lastEntry" type="Map.Entry<K,V>" line="2947"/>
+                <method name="pollFirstEntry" type="Map.Entry<K,V>" line="2951"/>
+                <method name="pollLastEntry" type="Map.Entry<K,V>" line="2955"/>
+                <method name="keySet" type="NavigableSet<K>" line="2961">
+                    <declaration name="ks" type="KeySet&lt;K&gt;" line="2962"/>
+                </method>
+                <method name="navigableKeySet" type="NavigableSet<K>" line="2966">
+                    <declaration name="ks" type="KeySet&lt;K&gt;" line="2967"/>
+                </method>
+                <method name="values" type="Collection<V>" line="2971">
+                    <declaration name="vs" type="Collection&lt;V&gt;" line="2972"/>
+                </method>
+                <method name="entrySet" type="Set<Map.Entry<K,V>>" line="2976">
+                    <declaration name="es" type="Set&lt;Map.Entry&lt;K,V&gt;&gt;" line="2977"/>
+                </method>
+                <method name="descendingKeySet" type="NavigableSet<K>" line="2981"/>
+                <method name="keyIterator" type="Iterator<K>" line="2985"/>
+                <method name="valueIterator" type="Iterator<V>" line="2989"/>
+                <method name="entryIterator" type="Iterator<Map.Entry<K,V>>" line="2993"/>
+                <class name="SubMapIter" line="2997">
+                    <type_params>
+                        <type_param name="T"/>
+                    </type_params>
+                    <implements interface="Iterator">
+                        <type_params>
+                            <type_param name="T"/>
+                        </type_params>
+                    </implements>
+                    <javadoc line="2997">
+                        Variant of main Iter class to traverse through submaps.                        
+                    </javadoc>
+                    <declaration name="lastReturned" type="Node&lt;K,V&gt;" line="3001"/>
+                    <javadoc line="3001">
+                        the last node returned by next()                        
+                    </javadoc>
+                    <declaration name="next" type="Node&lt;K,V&gt;" line="3003"/>
+                    <javadoc line="3003">
+                        the next node to return from next();                        
+                    </javadoc>
+                    <declaration name="nextValue" type="V" line="3005"/>
+                    <javadoc line="3005">
+                        Cache of next value field to maintain weak consistency                        
+                    </javadoc>
+                    <method name="SubMapIter" type="constructor" line="3008">
+                        <scope line="3009">
+                            <declaration name="x" type="Object" line="3013"/>
+                            <scope line="3014"/>
+                        </scope>
+                    </method>
+                    <method name="hasNext" type="boolean" line="3024"/>
+                    <method name="advance" type="void" line="3028"/>
+                    <method name="ascend" type="void" line="3038">
+                        <scope line="3039">
+                            <declaration name="x" type="Object" line="3043"/>
+                            <scope line="3044"/>
+                        </scope>
+                    </method>
+                    <method name="descend" type="void" line="3054">
+                        <scope line="3055">
+                            <declaration name="x" type="Object" line="3059"/>
+                            <scope line="3060"/>
+                        </scope>
+                    </method>
+                    <method name="remove" type="void" line="3070">
+                        <declaration name="l" type="Node&lt;K,V&gt;" line="3071"/>
+                    </method>
+                </class>
+                <class name="SubMapValueIterator" line="3080">
+                    <extends class="SubMapIter">
+                        <type_params>
+                            <type_param name="V"/>
+                        </type_params>
+                    </extends>
+                    <method name="next" type="V" line="3081">
+                        <declaration name="v" type="V" line="3082"/>
+                    </method>
+                </class>
+                <class name="SubMapKeyIterator" line="3088">
+                    <extends class="SubMapIter">
+                        <type_params>
+                            <type_param name="K"/>
+                        </type_params>
+                    </extends>
+                    <method name="next" type="K" line="3089">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="3090"/>
+                    </method>
+                </class>
+                <class name="SubMapEntryIterator" line="3096">
+                    <extends class="SubMapIter">
+                        <type_params>
+                            <type_param name="Map.Entry<K,V>"/>
+                        </type_params>
+                    </extends>
+                    <method name="next" type="Map.Entry<K,V>" line="3097">
+                        <declaration name="n" type="Node&lt;K,V&gt;" line="3098"/>
+                        <declaration name="v" type="V" line="3099"/>
+                    </method>
+                </class>
+            </class>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="3107"/>
+            <declaration name="headOffset" type="long" line="3108"/>
+            <scope line="3109">
+                <scope line="3110">
+                    <declaration name="k" type="Class" line="3112"/>
+                </scope>
+                <scope line="3115"/>
+            </scope>
+        </class>
+    </source>

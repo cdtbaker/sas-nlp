@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.nio.ch">
+        <import package="java.nio.channels.spi.AsynchronousChannelProvider"/>
+        <import package="java.io.IOException"/>
+        <import package="java.util.concurrent.ArrayBlockingQueue"/>
+        <import package="java.util.concurrent.RejectedExecutionException"/>
+        <import package="java.util.concurrent.atomic.AtomicInteger"/>
+        <import package="sun.nio.ch.EPoll"/>
+        <class name="EPollPort" line="35">
+            <extends class="Port"/>
+            <comment line="43">
+                maximum number of events to poll at a time                
+            </comment>
+            <comment line="46">
+                errors                
+            </comment>
+            <comment line="49">
+                epoll file descriptor                
+            </comment>
+            <comment line="52">
+                true if epoll closed                
+            </comment>
+            <comment line="55">
+                socket pair used for wakeup                
+            </comment>
+            <comment line="58">
+                number of wakeups pending                
+            </comment>
+            <comment line="61">
+                address of the poll array passed to epoll_wait                
+            </comment>
+            <comment line="64">
+                encapsulates an event for a channel                
+            </comment>
+            <comment line="78">
+                queue of events for cases that a polling thread dequeues more than one                
+            </comment>
+            <comment line="79">
+                event                
+            </comment>
+            <comment line="171">
+                invoke by clients to register a file descriptor                
+            </comment>
+            <comment line="182">
+                Task to process events from epoll and dispatch to the channel&apos;s
+                 onEvent handler.
+                
+                 Events are retreived from epoll in batch and offered to a BlockingQueue
+                 where they are consumed by handler threads. A special &quot;NEED_TO_POLL&quot;
+                 event is used to signal one consumer to re-poll when all events have
+                 been consumed.                
+            </comment>
+            <comment line="311">
+                -- Native methods --                
+            </comment>
+            <javadoc line="35">
+                AsynchronousChannelGroup implementation based on the Linux epoll facility.                
+            </javadoc>
+            <declaration name="MAX_EPOLL_EVENTS" type="int" line="43"/>
+            <declaration name="ENOENT" type="int" line="46"/>
+            <declaration name="epfd" type="int" line="49"/>
+            <declaration name="closed" type="boolean" line="52"/>
+            <declaration name="sp" type="int" line="55"/>
+            <declaration name="wakeupCount" type="AtomicInteger" line="58"/>
+            <declaration name="address" type="long" line="61"/>
+            <class name="Event" line="64">
+                <declaration name="channel" type="PollableChannel" line="65"/>
+                <declaration name="events" type="int" line="66"/>
+                <method name="Event" type="constructor" line="68">
+                    <params>
+                        <param name="channel" type="PollableChannel"/>
+                        <param name="events" type="int"/>
+                    </params>
+                </method>
+                <method name="channel" type="PollableChannel" line="73"/>
+                <method name="events" type="int" line="74"/>
+            </class>
+            <declaration name="queue" type="ArrayBlockingQueue&lt;Event&gt;" line="79"/>
+            <declaration name="NEED_TO_POLL" type="Event" line="80"/>
+            <declaration name="EXECUTE_TASK_OR_SHUTDOWN" type="Event" line="81"/>
+            <method name="EPollPort" type="constructor" line="85">
+                <params>
+                    <param name="provider" type="AsynchronousChannelProvider"/>
+                    <param name="pool" type="ThreadPool"/>
+                </params>
+                <comment line="88">
+                    open epoll                    
+                </comment>
+                <comment line="91">
+                    create socket pair for wakeup mechanism                    
+                </comment>
+                <comment line="95">
+                    register one end with epoll                    
+                </comment>
+                <comment line="103">
+                    allocate the poll array                    
+                </comment>
+                <comment line="106">
+                    create the queue and offer the special event to ensure that the first                    
+                </comment>
+                <comment line="107">
+                    threads polls                    
+                </comment>
+                <declaration name="sv" type="int[]" line="92"/>
+                <scope line="93"/>
+                <scope line="97"/>
+            </method>
+            <method name="start" type="EPollPort" line="112"/>
+            <javadoc line="117">
+                Release all resources                
+            </javadoc>
+            <method name="implClose" type="void" line="120">
+                <scope line="121"/>
+            </method>
+            <method name="wakeup" type="void" line="132">
+                <comment line="134">
+                    write byte to socketpair to force wakeup                    
+                </comment>
+                <scope line="133">
+                    <scope line="135"/>
+                    <scope line="137"/>
+                </scope>
+            </method>
+            <method name="executeOnHandlerTask" type="void" line="144">
+                <params>
+                    <param name="task" type="Runnable"/>
+                </params>
+                <scope line="145"/>
+            </method>
+            <method name="shutdownHandlerTasks" type="void" line="154">
+                <comment line="155">
+                    If no tasks are running then just release resources; otherwise
+                     write to the one end of the socketpair to wakeup any polling threads.                    
+                </comment>
+                <comment line="163">
+                    send interrupt to each thread                    
+                </comment>
+                <declaration name="nThreads" type="int" line="159"/>
+                <scope line="160"/>
+                <scope line="162">
+                    <scope line="164"/>
+                </scope>
+            </method>
+            <method name="startPoll" type="void" line="172">
+                <params>
+                    <param name="fd" type="int"/>
+                    <param name="events" type="int"/>
+                </params>
+                <comment line="173">
+                    update events (or add to epoll on first usage)                    
+                </comment>
+                <comment line="178">
+                    should not happen                    
+                </comment>
+                <declaration name="err" type="int" line="174"/>
+            </method>
+            <class name="EventHandlerTask" line="190">
+                <implements interface="Runnable"/>
+                <method name="poll" type="Event" line="191">
+                    <comment line="195">
+                        &apos;n&apos; events have been read. Here we map them to their
+                         corresponding channel in batch and queue n-1 so that
+                         they can be handled by other handler threads. The last
+                         event is handled by this thread (and so is not queued).                        
+                    </comment>
+                    <comment line="207">
+                        wakeup                        
+                    </comment>
+                    <comment line="210">
+                        no more wakeups so drain pipe                        
+                    </comment>
+                    <comment line="214">
+                        queue special event if there are more events                        
+                    </comment>
+                    <comment line="215">
+                        to handle.                        
+                    </comment>
+                    <comment line="228">
+                        n-1 events are queued; This thread handles                        
+                    </comment>
+                    <comment line="229">
+                        the last one except for the wakeup                        
+                    </comment>
+                    <comment line="242">
+                        to ensure that some thread will poll when all events have                        
+                    </comment>
+                    <comment line="243">
+                        been consumed                        
+                    </comment>
+                    <scope line="192">
+                        <scope line="193">
+                            <declaration name="n" type="int" line="194"/>
+                            <scope line="202">
+                                <scope line="203">
+                                    <declaration name="eventAddress" type="long" line="204"/>
+                                    <declaration name="fd" type="int" line="205"/>
+                                    <scope line="208">
+                                        <scope line="209"/>
+                                        <scope line="216"/>
+                                    </scope>
+                                    <declaration name="channel" type="PollableChannel" line="223"/>
+                                    <scope line="224">
+                                        <declaration name="events" type="int" line="225"/>
+                                        <declaration name="ev" type="Event" line="226"/>
+                                        <scope line="230"/>
+                                        <scope line="232"/>
+                                    </scope>
+                                </scope>
+                            </scope>
+                            <scope line="237"/>
+                        </scope>
+                    </scope>
+                    <scope line="241"/>
+                </method>
+                <method name="run" type="void" line="248">
+                    <comment line="256">
+                        reset invoke count                        
+                    </comment>
+                    <comment line="264">
+                        no events and this thread has been &quot;selected&quot; to                        
+                    </comment>
+                    <comment line="265">
+                        poll for more.                        
+                    </comment>
+                    <comment line="278">
+                        handle wakeup to execute task or shutdown                        
+                    </comment>
+                    <comment line="282">
+                        shutdown request                        
+                    </comment>
+                    <comment line="285">
+                        run task (may throw error/exception)                        
+                    </comment>
+                    <comment line="291">
+                        process event                        
+                    </comment>
+                    <comment line="301">
+                        last handler to exit when shutdown releases resources                        
+                    </comment>
+                    <declaration name="myGroupAndInvokeCount" type="Invoker.GroupAndInvokeCount" line="249"/>
+                    <declaration name="isPooledThread" type="boolean" line="251"/>
+                    <declaration name="replaceMe" type="boolean" line="252"/>
+                    <declaration name="ev" type="Event" line="253"/>
+                    <scope line="254">
+                        <scope line="255">
+                            <scope line="260">
+                                <scope line="266">
+                                    <scope line="267"/>
+                                    <scope line="269"/>
+                                </scope>
+                            </scope>
+                            <scope line="274"/>
+                            <scope line="279">
+                                <declaration name="task" type="Runnable" line="280"/>
+                                <scope line="281"/>
+                            </scope>
+                            <scope line="292"/>
+                            <scope line="294"/>
+                            <scope line="296"/>
+                        </scope>
+                    </scope>
+                    <scope line="300">
+                        <declaration name="remaining" type="int" line="302"/>
+                        <scope line="303"/>
+                    </scope>
+                </method>
+            </class>
+            <method name="socketpair" type="void" line="312"/>
+            <method name="interrupt" type="void" line="314"/>
+            <method name="drain1" type="void" line="316"/>
+            <method name="close0" type="void" line="318"/>
+            <scope line="320"/>
+        </class>
+    </source>

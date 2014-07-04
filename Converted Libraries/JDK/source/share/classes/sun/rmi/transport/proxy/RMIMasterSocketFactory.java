@@ -1,0 +1,361 @@
+package sun.rmi.transport.proxy;
+import java.io.*;
+import java.net.*;
+import java.security.*;
+import java.util.*;
+import java.rmi.server.LogStream;
+import java.rmi.server.RMISocketFactory;
+import sun.rmi.runtime.Log;
+import sun.rmi.runtime.NewThreadAction;
+import sun.security.action.GetBooleanAction;
+import sun.security.action.GetLongAction;
+/** 
+ * RMIMasterSocketFactory attempts to create a socket connection to the
+ * specified host using successively less efficient mechanisms
+ * until one succeeds.  If the host is successfully connected to,
+ * the factory for the successful mechanism is stored in an internal
+ * hash table keyed by the host name, so that future attempts to
+ * connect to the same host will automatically use the same
+ * mechanism.
+ */
+public class RMIMasterSocketFactory extends RMISocketFactory {
+  /** 
+ * "proxy" package log level 
+ */
+  static int logLevel=LogStream.parseLevel(getLogLevel());
+  private static String getLogLevel(){
+    return java.security.AccessController.doPrivileged(new sun.security.action.GetPropertyAction("sun.rmi.transport.proxy.logLevel"));
+  }
+  static final Log proxyLog=Log.getLog("sun.rmi.transport.tcp.proxy","transport",RMIMasterSocketFactory.logLevel);
+  /** 
+ * timeout for attemping direct socket connections 
+ */
+  private static long connectTimeout=getConnectTimeout();
+  private static long getConnectTimeout(){
+    return java.security.AccessController.doPrivileged(new GetLongAction("sun.rmi.transport.proxy.connectTimeout",15000)).longValue();
+  }
+  /** 
+ * whether to fallback to HTTP on general connect failures 
+ */
+  private static final boolean eagerHttpFallback=java.security.AccessController.doPrivileged(new GetBooleanAction("sun.rmi.transport.proxy.eagerHttpFallback")).booleanValue();
+  /** 
+ * table of hosts successfully connected to and the factory used 
+ */
+  private Hashtable successTable=new Hashtable();
+  /** 
+ * maximum number of hosts to remember successful connection to 
+ */
+  private static final int MaxRememberedHosts=64;
+  /** 
+ * list of the hosts in successTable in initial connection order 
+ */
+  private Vector hostList=new Vector(MaxRememberedHosts);
+  /** 
+ * default factory to initally use for direct socket connection 
+ */
+  protected RMISocketFactory initialFactory=new RMIDirectSocketFactory();
+  /** 
+ * ordered list of factories to try as alternate connection
+ * mechanisms if a direct socket connections fails 
+ */
+  protected Vector altFactoryList;
+  /** 
+ * Create a RMIMasterSocketFactory object.  Establish order of
+ * connection mechanisms to attempt on createSocket, if a direct
+ * socket connection fails.
+ */
+  public RMIMasterSocketFactory(){
+    altFactoryList=new Vector(2);
+    boolean setFactories=false;
+    try {
+      String proxyHost;
+      proxyHost=java.security.AccessController.doPrivileged(new sun.security.action.GetPropertyAction("http.proxyHost"));
+      if (proxyHost == null)       proxyHost=java.security.AccessController.doPrivileged(new sun.security.action.GetPropertyAction("proxyHost"));
+      Boolean tmp=java.security.AccessController.doPrivileged(new sun.security.action.GetBooleanAction("java.rmi.server.disableHttp"));
+      if (!tmp.booleanValue() && (proxyHost != null && proxyHost.length() > 0)) {
+        setFactories=true;
+      }
+    }
+ catch (    Exception e) {
+      setFactories=true;
+    }
+    if (setFactories) {
+      altFactoryList.addElement(new RMIHttpToPortSocketFactory());
+      altFactoryList.addElement(new RMIHttpToCGISocketFactory());
+    }
+  }
+  /** 
+ * Create a new client socket.  If we remember connecting to this host
+ * successfully before, then use the same factory again.  Otherwise,
+ * try using a direct socket connection and then the alternate factories
+ * in the order specified in altFactoryList.
+ */
+  public Socket createSocket(  String host,  int port) throws IOException {
+    if (proxyLog.isLoggable(Log.BRIEF)) {
+      proxyLog.log(Log.BRIEF,"host: " + host + ", port: "+ port);
+    }
+    if (altFactoryList.size() == 0) {
+      return initialFactory.createSocket(host,port);
+    }
+    RMISocketFactory factory;
+    factory=(RMISocketFactory)successTable.get(host);
+    if (factory != null) {
+      if (proxyLog.isLoggable(Log.BRIEF)) {
+        proxyLog.log(Log.BRIEF,"previously successful factory found: " + factory);
+      }
+      return factory.createSocket(host,port);
+    }
+    Socket initialSocket=null;
+    Socket fallbackSocket=null;
+    final AsyncConnector connector=new AsyncConnector(initialFactory,host,port,AccessController.getContext());
+    IOException initialFailure=null;
+    try {
+synchronized (connector) {
+        Thread t=java.security.AccessController.doPrivileged(new NewThreadAction(connector,"AsyncConnector",true));
+        t.start();
+        try {
+          long now=System.currentTimeMillis();
+          long deadline=now + connectTimeout;
+          do {
+            connector.wait(deadline - now);
+            initialSocket=checkConnector(connector);
+            if (initialSocket != null)             break;
+            now=System.currentTimeMillis();
+          }
+ while (now < deadline);
+        }
+ catch (        InterruptedException e) {
+          throw new InterruptedIOException("interrupted while waiting for connector");
+        }
+      }
+      if (initialSocket == null)       throw new NoRouteToHostException("connect timed out: " + host);
+      proxyLog.log(Log.BRIEF,"direct socket connection successful");
+      return initialSocket;
+    }
+ catch (    UnknownHostException e) {
+      initialFailure=e;
+    }
+catch (    NoRouteToHostException e) {
+      initialFailure=e;
+    }
+catch (    SocketException e) {
+      if (eagerHttpFallback) {
+        initialFailure=e;
+      }
+ else {
+        throw e;
+      }
+    }
+ finally {
+      if (initialFailure != null) {
+        if (proxyLog.isLoggable(Log.BRIEF)) {
+          proxyLog.log(Log.BRIEF,"direct socket connection failed: ",initialFailure);
+        }
+        for (int i=0; i < altFactoryList.size(); ++i) {
+          factory=(RMISocketFactory)altFactoryList.elementAt(i);
+          try {
+            if (proxyLog.isLoggable(Log.BRIEF)) {
+              proxyLog.log(Log.BRIEF,"trying with factory: " + factory);
+            }
+            Socket testSocket=factory.createSocket(host,port);
+            InputStream in=testSocket.getInputStream();
+            int b=in.read();
+            testSocket.close();
+          }
+ catch (          IOException ex) {
+            if (proxyLog.isLoggable(Log.BRIEF)) {
+              proxyLog.log(Log.BRIEF,"factory failed: ",ex);
+            }
+            continue;
+          }
+          proxyLog.log(Log.BRIEF,"factory succeeded");
+          try {
+            fallbackSocket=factory.createSocket(host,port);
+          }
+ catch (          IOException ex) {
+          }
+          break;
+        }
+      }
+    }
+synchronized (successTable) {
+      try {
+synchronized (connector) {
+          initialSocket=checkConnector(connector);
+        }
+        if (initialSocket != null) {
+          if (fallbackSocket != null)           fallbackSocket.close();
+          return initialSocket;
+        }
+        connector.notUsed();
+      }
+ catch (      UnknownHostException e) {
+        initialFailure=e;
+      }
+catch (      NoRouteToHostException e) {
+        initialFailure=e;
+      }
+catch (      SocketException e) {
+        if (eagerHttpFallback) {
+          initialFailure=e;
+        }
+ else {
+          throw e;
+        }
+      }
+      if (fallbackSocket != null) {
+        rememberFactory(host,factory);
+        return fallbackSocket;
+      }
+      throw initialFailure;
+    }
+  }
+  /** 
+ * Remember a successful factory for connecting to host.
+ * Currently, excess hosts are removed from the remembered list
+ * using a Least Recently Created strategy.
+ */
+  void rememberFactory(  String host,  RMISocketFactory factory){
+synchronized (successTable) {
+      while (hostList.size() >= MaxRememberedHosts) {
+        successTable.remove(hostList.elementAt(0));
+        hostList.removeElementAt(0);
+      }
+      hostList.addElement(host);
+      successTable.put(host,factory);
+    }
+  }
+  /** 
+ * Check if an AsyncConnector succeeded.  If not, return socket
+ * given to fall back to.
+ */
+  Socket checkConnector(  AsyncConnector connector) throws IOException {
+    Exception e=connector.getException();
+    if (e != null) {
+      e.fillInStackTrace();
+      if (e instanceof IOException) {
+        throw (IOException)e;
+      }
+ else       if (e instanceof RuntimeException) {
+        throw (RuntimeException)e;
+      }
+ else {
+        throw new Error("internal error: " + "unexpected checked exception: " + e.toString());
+      }
+    }
+    return connector.getSocket();
+  }
+  /** 
+ * Create a new server socket.
+ */
+  public ServerSocket createServerSocket(  int port) throws IOException {
+    return initialFactory.createServerSocket(port);
+  }
+  /** 
+ * AsyncConnector is used by RMIMasterSocketFactory to attempt socket
+ * connections on a separate thread.  This allows RMIMasterSocketFactory
+ * to control how long it will wait for the connection to succeed.
+ */
+private class AsyncConnector implements Runnable {
+    /** 
+ * what factory to use to attempt connection 
+ */
+    private RMISocketFactory factory;
+    /** 
+ * the host to connect to 
+ */
+    private String host;
+    /** 
+ * the port to connect to 
+ */
+    private int port;
+    /** 
+ * access control context to attempt connection within 
+ */
+    private AccessControlContext acc;
+    /** 
+ * exception that occurred during connection, if any 
+ */
+    private Exception exception=null;
+    /** 
+ * the connected socket, if successful 
+ */
+    private Socket socket=null;
+    /** 
+ * socket should be closed after created, if ever 
+ */
+    private boolean cleanUp=false;
+    /** 
+ * Create a new asynchronous connector object.
+ */
+    AsyncConnector(    RMISocketFactory factory,    String host,    int port,    AccessControlContext acc){
+      this.factory=factory;
+      this.host=host;
+      this.port=port;
+      this.acc=acc;
+      SecurityManager security=System.getSecurityManager();
+      if (security != null) {
+        security.checkConnect(host,port);
+      }
+    }
+    /** 
+ * Attempt socket connection in separate thread.  If successful,
+ * notify master waiting,
+ */
+    public void run(){
+      try {
+        try {
+          Socket temp=factory.createSocket(host,port);
+synchronized (this) {
+            socket=temp;
+            notify();
+          }
+          rememberFactory(host,factory);
+synchronized (this) {
+            if (cleanUp)             try {
+              socket.close();
+            }
+ catch (            IOException e) {
+            }
+          }
+        }
+ catch (        Exception e) {
+synchronized (this) {
+            exception=e;
+            notify();
+          }
+        }
+      }
+  finally {
+      }
+    }
+    /** 
+ * Get exception that occurred during connection attempt, if any.
+ * In the current implementation, this is guaranteed to be either
+ * an IOException or a RuntimeException.
+ */
+    private synchronized Exception getException(){
+      return exception;
+    }
+    /** 
+ * Get successful socket, if any.
+ */
+    private synchronized Socket getSocket(){
+      return socket;
+    }
+    /** 
+ * Note that this connector's socket, if ever successfully created,
+ * will not be used, so it should be cleaned up quickly
+ */
+    synchronized void notUsed(){
+      if (socket != null) {
+        try {
+          socket.close();
+        }
+ catch (        IOException e) {
+        }
+      }
+      cleanUp=true;
+    }
+  }
+}

@@ -1,0 +1,983 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.media.sound">
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="javax.sound.midi.MidiChannel"/>
+        <import package="javax.sound.midi.Patch"/>
+        <class name="SoftChannel" line="37">
+            <comment line="94">
+                keyschanges per control buffer time                
+            </comment>
+            <comment line="122">
+                Controller Destination Settings                
+            </comment>
+            <comment line="415">
+                A special noteOn with delay parameter, which is used to
+                 start note within control buffers.                
+            </comment>
+            <implements interface="MidiChannel"/>
+            <implements interface="ModelDirectedPlayer"/>
+            <javadoc line="37">
+                Software Synthesizer MIDI channel class.                
+                <author>
+                    Karl Helgason                    
+                </author>
+            </javadoc>
+            <declaration name="dontResetControls" type="boolean[]" line="44"/>
+            <scope line="45"/>
+            <declaration name="RPN_NULL_VALUE" type="int" line="90"/>
+            <declaration name="rpn_control" type="int" line="91"/>
+            <declaration name="nrpn_control" type="int" line="92"/>
+            <declaration name="portamento_time" type="double" line="93"/>
+            <declaration name="portamento_lastnote" type="int[]" line="94"/>
+            <declaration name="portamento_lastnote_ix" type="int" line="95"/>
+            <declaration name="portamento" type="boolean" line="96"/>
+            <declaration name="mono" type="boolean" line="97"/>
+            <declaration name="mute" type="boolean" line="98"/>
+            <declaration name="solo" type="boolean" line="99"/>
+            <declaration name="solomute" type="boolean" line="100"/>
+            <declaration name="control_mutex" type="Object" line="101"/>
+            <declaration name="channel" type="int" line="102"/>
+            <declaration name="voices" type="SoftVoice[]" line="103"/>
+            <declaration name="bank" type="int" line="104"/>
+            <declaration name="program" type="int" line="105"/>
+            <declaration name="synthesizer" type="SoftSynthesizer" line="106"/>
+            <declaration name="mainmixer" type="SoftMainMixer" line="107"/>
+            <declaration name="polypressure" type="int[]" line="108"/>
+            <declaration name="channelpressure" type="int" line="109"/>
+            <declaration name="controller" type="int[]" line="110"/>
+            <declaration name="pitchbend" type="int" line="111"/>
+            <declaration name="co_midi_pitch" type="double[]" line="112"/>
+            <declaration name="co_midi_channel_pressure" type="double[]" line="113"/>
+            <declaration name="tuning" type="SoftTuning" line="114"/>
+            <declaration name="tuning_bank" type="int" line="115"/>
+            <declaration name="tuning_program" type="int" line="116"/>
+            <declaration name="current_instrument" type="SoftInstrument" line="117"/>
+            <declaration name="current_mixer" type="ModelChannelMixer" line="118"/>
+            <declaration name="current_director" type="ModelDirector" line="119"/>
+            <declaration name="cds_control_number" type="int" line="122"/>
+            <declaration name="cds_control_connections" type="ModelConnectionBlock[]" line="123"/>
+            <declaration name="cds_channelpressure_connections" type="ModelConnectionBlock[]" line="124"/>
+            <declaration name="cds_polypressure_connections" type="ModelConnectionBlock[]" line="125"/>
+            <declaration name="sustain" type="boolean" line="126"/>
+            <declaration name="keybasedcontroller_active" type="boolean[][]" line="127"/>
+            <declaration name="keybasedcontroller_value" type="double[][]" line="128"/>
+            <class name="MidiControlObject" line="130">
+                <implements interface="SoftControl"/>
+                <declaration name="pitch" type="double[]" line="131"/>
+                <declaration name="channel_pressure" type="double[]" line="132"/>
+                <declaration name="poly_pressure" type="double[]" line="133"/>
+                <method name="get" type="double[]" line="135">
+                    <params>
+                        <param name="instance" type="int"/>
+                        <param name="name" type="String"/>
+                    </params>
+                </method>
+            </class>
+            <declaration name="co_midi" type="SoftControl[]" line="148"/>
+            <scope line="149">
+                <scope line="150"/>
+            </scope>
+            <declaration name="co_midi_cc_cc" type="double[][]" line="155"/>
+            <declaration name="co_midi_cc" type="SoftControl" line="156"/>
+            <anonymous_class line="156">
+                <declaration name="cc" type="double[][]" line="157"/>
+                <method name="get" type="double[]" line="158">
+                    <params>
+                        <param name="instance" type="int"/>
+                        <param name="name" type="String"/>
+                    </params>
+                </method>
+            </anonymous_class>
+            <declaration name="co_midi_rpn_rpn_i" type="Map&lt;Integer,int[]&gt;" line="164"/>
+            <declaration name="co_midi_rpn_rpn" type="Map&lt;Integer,double[]&gt;" line="165"/>
+            <declaration name="co_midi_rpn" type="SoftControl" line="166"/>
+            <anonymous_class line="166">
+                <declaration name="rpn" type="Map&lt;Integer,double[]&gt;" line="167"/>
+                <method name="get" type="double[]" line="168">
+                    <params>
+                        <param name="instance" type="int"/>
+                        <param name="name" type="String"/>
+                    </params>
+                    <declaration name="iname" type="int" line="171"/>
+                    <declaration name="v" type="double[]" line="172"/>
+                    <scope line="173"/>
+                </method>
+            </anonymous_class>
+            <declaration name="co_midi_nrpn_nrpn_i" type="Map&lt;Integer,int[]&gt;" line="180"/>
+            <declaration name="co_midi_nrpn_nrpn" type="Map&lt;Integer,double[]&gt;" line="181"/>
+            <declaration name="co_midi_nrpn" type="SoftControl" line="182"/>
+            <anonymous_class line="182">
+                <declaration name="nrpn" type="Map&lt;Integer,double[]&gt;" line="183"/>
+                <method name="get" type="double[]" line="184">
+                    <params>
+                        <param name="instance" type="int"/>
+                        <param name="name" type="String"/>
+                    </params>
+                    <declaration name="iname" type="int" line="187"/>
+                    <declaration name="v" type="double[]" line="188"/>
+                    <scope line="189"/>
+                </method>
+            </anonymous_class>
+            <method name="restrict7Bit" type="int" line="198">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+            </method>
+            <method name="restrict14Bit" type="int" line="205">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+            </method>
+            <method name="SoftChannel" type="constructor" line="211">
+                <params>
+                    <param name="synth" type="SoftSynthesizer"/>
+                    <param name="channel" type="int"/>
+                </params>
+            </method>
+            <method name="findFreeVoice" type="int" line="220">
+                <params>
+                    <param name="x" type="int"/>
+                </params>
+                <comment line="223">
+                    x = -1 means that there where no available voice                    
+                </comment>
+                <comment line="224">
+                    last time we called findFreeVoice                    
+                </comment>
+                <comment line="225">
+                    and it hasn&apos;t changed because no audio has been                    
+                </comment>
+                <comment line="226">
+                    rendered in the meantime.                    
+                </comment>
+                <comment line="227">
+                    Therefore we have to return -1.                    
+                </comment>
+                <comment line="234">
+                    No free voice was found, we must steal one                    
+                </comment>
+                <comment line="238">
+                    DLS Static Voice Allocation                    
+                </comment>
+                <comment line="240">
+                    * priority ( 10, 1-9, 11-16)                    
+                </comment>
+                <comment line="241">
+                    Search for channel to steal from                    
+                </comment>
+                <comment line="259">
+                    Search for oldest voice in off state on steal_channel                    
+                </comment>
+                <comment line="274">
+                    Search for oldest voice in on state on steal_channel                    
+                </comment>
+                <comment line="295">
+                    Default Voice Allocation                    
+                </comment>
+                <comment line="296">
+                    * Find voice that is on                    
+                </comment>
+                <comment line="297">
+                    and Find voice which has lowest voiceID ( oldest voice)                    
+                </comment>
+                <comment line="298">
+                    * Or find voice that is off                    
+                </comment>
+                <comment line="299">
+                    and Find voice which has lowest voiceID ( oldest voice)                    
+                </comment>
+                <comment line="304">
+                    Search for oldest voice in off state                    
+                </comment>
+                <comment line="317">
+                    Search for oldest voice in on state                    
+                </comment>
+                <scope line="222"/>
+                <declaration name="vmode" type="int" line="236"/>
+                <scope line="237">
+                    <declaration name="steal_channel" type="int" line="242"/>
+                    <scope line="243">
+                        <scope line="244">
+                            <scope line="245"/>
+                            <scope line="247">
+                                <scope line="248"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <declaration name="voiceNo" type="int" line="256"/>
+                    <declaration name="v" type="SoftVoice" line="258"/>
+                    <scope line="260">
+                        <scope line="261">
+                            <scope line="262">
+                                <scope line="263"/>
+                                <scope line="267"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="275">
+                        <scope line="276">
+                            <scope line="277">
+                                <scope line="278">
+                                    <scope line="279"/>
+                                    <scope line="283"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="294">
+                    <declaration name="voiceNo" type="int" line="301"/>
+                    <declaration name="v" type="SoftVoice" line="303"/>
+                    <scope line="305">
+                        <scope line="306">
+                            <scope line="307"/>
+                            <scope line="311"/>
+                        </scope>
+                    </scope>
+                    <scope line="318">
+                        <scope line="320">
+                            <scope line="321">
+                                <scope line="322"/>
+                                <scope line="326"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="initVoice" type="void" line="341">
+                <params>
+                    <param name="voice" type="SoftVoice"/>
+                    <param name="p" type="SoftPerformer"/>
+                    <param name="voiceID" type="int"/>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                    <param name="delay" type="int"/>
+                    <param name="connectionBlocks" type="ModelConnectionBlock[]"/>
+                    <param name="channelmixer" type="ModelChannelMixer"/>
+                    <param name="releaseTriggered" type="boolean"/>
+                </params>
+                <comment line="343">
+                    Voice is active , we must steal the voice                    
+                </comment>
+                <scope line="342"/>
+                <scope line="380"/>
+                <scope line="386">
+                    <scope line="387">
+                        <scope line="388"/>
+                    </scope>
+                    <scope line="396">
+                        <scope line="397"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="noteOn" type="void" line="410">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                </params>
+            </method>
+            <method name="noteOn" type="void" line="417">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                    <param name="delay" type="int"/>
+                </params>
+            </method>
+            <method name="noteOn_internal" type="void" line="425">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                    <param name="delay" type="int"/>
+                </params>
+                <comment line="514">
+                    SoftPerformer[] performers = current_instrument.getPerformers();
+                    for (int i = 0; i &lt; performers.length; i++) {
+                    SoftPerformer p = performers[i];
+                    if (p.keyFrom &lt;= tunedKey &amp;&amp; p.keyTo &gt;= tunedKey) {
+                    if (p.velFrom &lt;= velocity &amp;&amp; p.velTo &gt;= velocity) {
+                    if (firstVoice) {
+                    firstVoice = false;
+                    if (p.exclusiveClass != 0) {
+                    int x = p.exclusiveClass;
+                    for (int j = 0; j &lt; voices.length; j++) {
+                    if (voices[j].active
+                    &amp;&amp; voices[j].channel == channel
+                    &amp;&amp; voices[j].exclusiveClass == x) {
+                    if (!(p.selfNonExclusive
+                    &amp;&amp; voices[j].note == noteNumber))
+                    voices[j].shutdown();
+                    }
+                    }
+                    }
+                    }
+                    voiceNo = findFreeVoice(voiceNo);
+                    if (voiceNo == -1)
+                    return;
+                    initVoice(voices[voiceNo], p, prevVoiceID, noteNumber,
+                    velocity);
+                    }
+                    }
+                    }                    
+                </comment>
+                <scope line="427"/>
+                <scope line="432">
+                    <scope line="433">
+                        <scope line="435">
+                            <scope line="438"/>
+                        </scope>
+                    </scope>
+                    <scope line="449">
+                        <scope line="450">
+                            <declaration name="n_found" type="boolean" line="451"/>
+                            <scope line="452">
+                                <scope line="455"/>
+                            </scope>
+                            <scope line="461"/>
+                        </scope>
+                        <scope line="467">
+                            <declaration name="n_found" type="boolean" line="468"/>
+                            <scope line="469">
+                                <scope line="473"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="488"/>
+                    <declaration name="tunedKey" type="int" line="506"/>
+                </scope>
+            </method>
+            <method name="noteOff" type="void" line="547">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                </params>
+            </method>
+            <method name="noteOff_internal" type="void" line="556">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="velocity" type="int"/>
+                </params>
+                <comment line="575">
+                    We must also check stolen voices                    
+                </comment>
+                <comment line="589">
+                    Try play back note-off triggered voices,                    
+                </comment>
+                <scope line="557">
+                    <scope line="559">
+                        <scope line="560">
+                            <scope line="561"/>
+                        </scope>
+                    </scope>
+                    <scope line="569">
+                        <scope line="572"/>
+                        <scope line="576">
+                            <declaration name="v" type="SoftVoice" line="577"/>
+                        </scope>
+                    </scope>
+                    <scope line="591"/>
+                    <declaration name="tunedKey" type="int" line="610"/>
+                </scope>
+            </method>
+            <declaration name="lastVelocity" type="int[]" line="619"/>
+            <declaration name="prevVoiceID" type="int" line="620"/>
+            <declaration name="firstVoice" type="boolean" line="621"/>
+            <declaration name="voiceNo" type="int" line="622"/>
+            <declaration name="play_noteNumber" type="int" line="623"/>
+            <declaration name="play_velocity" type="int" line="624"/>
+            <declaration name="play_delay" type="int" line="625"/>
+            <declaration name="play_releasetriggered" type="boolean" line="626"/>
+            <method name="play" type="void" line="628">
+                <params>
+                    <param name="performerIndex" type="int"/>
+                    <param name="connectionBlocks" type="ModelConnectionBlock[]"/>
+                </params>
+                <declaration name="noteNumber" type="int" line="630"/>
+                <declaration name="velocity" type="int" line="631"/>
+                <declaration name="delay" type="int" line="632"/>
+                <declaration name="releasetriggered" type="boolean" line="633"/>
+                <declaration name="p" type="SoftPerformer" line="635"/>
+                <scope line="637">
+                    <scope line="639">
+                        <declaration name="x" type="int" line="640"/>
+                        <scope line="641">
+                            <scope line="643"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="noteOff" type="void" line="660">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                </params>
+            </method>
+            <method name="setPolyPressure" type="void" line="665">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="pressure" type="int"/>
+                </params>
+                <scope line="672">
+                    <scope line="676"/>
+                </scope>
+            </method>
+            <method name="getPolyPressure" type="int" line="683">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                </params>
+                <scope line="684"/>
+            </method>
+            <method name="setChannelPressure" type="void" line="689">
+                <params>
+                    <param name="pressure" type="int"/>
+                </params>
+                <scope line="693">
+                    <scope line="697"/>
+                </scope>
+            </method>
+            <method name="getChannelPressure" type="int" line="704">
+                <scope line="705"/>
+            </method>
+            <method name="applyInstrumentCustomization" type="void" line="710">
+                <scope line="713"/>
+                <declaration name="src_instrument" type="ModelInstrument" line="717"/>
+                <declaration name="performers" type="ModelPerformer[]" line="718"/>
+                <declaration name="new_performers" type="ModelPerformer[]" line="719"/>
+                <scope line="720">
+                    <declaration name="performer" type="ModelPerformer" line="721"/>
+                    <declaration name="new_performer" type="ModelPerformer" line="722"/>
+                    <declaration name="connblocks" type="List&lt;ModelConnectionBlock&gt;" line="734"/>
+                    <scope line="737">
+                        <declaration name="cc" type="String" line="738"/>
+                        <declaration name="iter" type="Iterator&lt;ModelConnectionBlock&gt;" line="739"/>
+                        <scope line="740">
+                            <declaration name="conn" type="ModelConnectionBlock" line="741"/>
+                            <declaration name="sources" type="ModelSource[]" line="742"/>
+                            <declaration name="removeok" type="boolean" line="743"/>
+                            <scope line="744">
+                                <scope line="745">
+                                    <declaration name="src" type="ModelSource" line="746"/>
+                                    <scope line="748"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="760">
+                        <declaration name="iter" type="Iterator&lt;ModelConnectionBlock&gt;" line="761"/>
+                        <scope line="762">
+                            <declaration name="conn" type="ModelConnectionBlock" line="763"/>
+                            <declaration name="sources" type="ModelSource[]" line="764"/>
+                            <declaration name="removeok" type="boolean" line="765"/>
+                            <scope line="766">
+                                <scope line="767">
+                                    <declaration name="src" type="ModelSource" line="768"/>
+                                    <scope line="771"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="784">
+                        <declaration name="iter" type="Iterator&lt;ModelConnectionBlock&gt;" line="785"/>
+                        <scope line="786">
+                            <declaration name="conn" type="ModelConnectionBlock" line="787"/>
+                            <declaration name="sources" type="ModelSource[]" line="788"/>
+                            <declaration name="removeok" type="boolean" line="789"/>
+                            <scope line="790">
+                                <scope line="791">
+                                    <declaration name="srcid" type="ModelIdentifier" line="792"/>
+                                    <scope line="794"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="createModelConnections" type="ModelConnectionBlock[]" line="813">
+                <params>
+                    <param name="sid" type="ModelIdentifier"/>
+                    <param name="destination" type="int[]"/>
+                    <param name="range" type="int[]"/>
+                </params>
+                <comment line="815">
+                    controlled parameter (pp)|range (rr)| Description             |Default
+                    -------------------------|----------|-------------------------|-------
+                    00 Pitch Control         | 28H..58H | -24..+24 semitones      | 40H
+                    01 Filter Cutoff Control | 00H..7FH | -9600..+9450 cents      | 40H
+                    02 Amplitude Control     | 00H..7FH | 0..(12764)100 percent | 40H
+                    03 LFO Pitch Depth       | 00H..7FH | 0..600 cents            |  0
+                    04 LFO Filter Depth      | 00H..7FH | 0..2400 cents           |  0
+                    05 LFO Amplitude Depth   | 00H..7FH | 0..100 percent          |  0                    
+                </comment>
+                <declaration name="conns" type="List&lt;ModelConnectionBlock&gt;" line="826"/>
+                <scope line="828">
+                    <declaration name="d" type="int" line="829"/>
+                    <declaration name="r" type="int" line="830"/>
+                    <scope line="831">
+                        <declaration name="scale" type="double" line="832"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="833"/>
+                    </scope>
+                    <scope line="844">
+                        <declaration name="scale" type="double" line="845"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="846"/>
+                        <scope line="847"/>
+                        <scope line="856"/>
+                    </scope>
+                    <scope line="868">
+                        <declaration name="scale" type="double" line="869"/>
+                        <anonymous_class line="870">
+                            <declaration name="s" type="double" line="871"/>
+                            <method name="transform" type="double" line="872">
+                                <params>
+                                    <param name="value" type="double"/>
+                                </params>
+                            </method>
+                        </anonymous_class>
+                        <declaration name="mt" type="ModelTransform" line="870"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="883"/>
+                    </scope>
+                    <scope line="889">
+                        <declaration name="scale" type="double" line="890"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="891"/>
+                    </scope>
+                    <scope line="905">
+                        <declaration name="scale" type="double" line="906"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="907"/>
+                    </scope>
+                    <scope line="921">
+                        <declaration name="scale" type="double" line="922"/>
+                        <anonymous_class line="924">
+                            <declaration name="s" type="double" line="925"/>
+                            <method name="transform" type="double" line="926">
+                                <params>
+                                    <param name="value" type="double"/>
+                                </params>
+                            </method>
+                        </anonymous_class>
+                        <declaration name="mt" type="ModelTransform" line="924"/>
+                        <declaration name="conn" type="ModelConnectionBlock" line="932"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="mapPolyPressureToDestination" type="void" line="948">
+                <params>
+                    <param name="destination" type="int[]"/>
+                    <param name="range" type="int[]"/>
+                </params>
+                <scope line="950"/>
+            </method>
+            <method name="mapChannelPressureToDestination" type="void" line="960">
+                <params>
+                    <param name="destination" type="int[]"/>
+                    <param name="range" type="int[]"/>
+                </params>
+                <scope line="962"/>
+            </method>
+            <method name="mapControlToDestination" type="void" line="972">
+                <params>
+                    <param name="control" type="int"/>
+                    <param name="destination" type="int[]"/>
+                    <param name="range" type="int[]"/>
+                </params>
+                <scope line="975"/>
+                <scope line="982"/>
+            </method>
+            <method name="controlChangePerNote" type="void" line="992">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="controller" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+                <comment line="994">
+                    CC# | nn   | Name                    | vv             | default    | description
+                    -----|------|-------------------------|----------------|------------|-------------------------------
+                    7    |07H   |Note Volume              |00H-40H-7FH     |40H         |0-100-(12764)100(%)(Relative)
+                    10   |0AH   |Pan                     |00H-7FH absolute|Preset Value|Left-Center-Right (absolute)
+                    33-63|21-3FH|LSB for                  |01H-1FH         |            |
+                    71   |47H   |TimbreHarmonic Intensity|00H-40H-7FH     |40H (???)   |
+                    72   |48H   |Release Time             |00H-40H-7FH     |40H (???)   |
+                    73   |49H   |Attack Time              |00H-40H-7FH     |40H (???)   |
+                    74   |4AH   |Brightness               |00H-40H-7FH     |40H (???)   |
+                    75   |4BH   |Decay Time               |00H-40H-7FH     |40H (???)   |
+                    76   |4CH   |Vibrato Rate             |00H-40H-7FH     |40H (???)   |
+                    77   |4DH   |Vibrato Depth            |00H-40H-7FH     |40H (???)   |
+                    78   |4EH   |Vibrato Delay            |00H-40H-7FH     |40H (???)   |
+                    91   |5BH   |Reverb Send             |00H-7FH absolute|Preset Value|Left-Center-Right (absolute)
+                    93   |5DH   |Chorus Send             |00H-7FH absolute|Preset Value|Left-Center-Right (absolute)
+                    120  |78H   |Fine Tuning            |00H-40H-7FH     |40H (???)   |
+                    121  |79H   |Coarse Tuning          |00H-40H-7FH     |40H (???)   |                    
+                </comment>
+                <scope line="1014"/>
+                <scope line="1018"/>
+                <scope line="1025"/>
+                <scope line="1027"/>
+                <scope line="1032"/>
+                <scope line="1036"/>
+                <scope line="1040"/>
+            </method>
+            <method name="getControlPerNote" type="int" line="1048">
+                <params>
+                    <param name="noteNumber" type="int"/>
+                    <param name="controller" type="int"/>
+                </params>
+            </method>
+            <method name="controlChange" type="void" line="1058">
+                <params>
+                    <param name="controller" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+                <comment line="1066">
+                    Map&lt;String, int[]&gt;co_midi_rpn_rpn_i = new HashMap&lt;String, int[]&gt;();
+                    Map&lt;String, double[]&gt;co_midi_rpn_rpn = new HashMap&lt;String, double[]&gt;();
+                    Map&lt;String, int[]&gt;co_midi_nrpn_nrpn_i = new HashMap&lt;String, int[]&gt;();
+                    Map&lt;String, double[]&gt;co_midi_nrpn_nrpn = new HashMap&lt;String, double[]&gt;();                    
+                </comment>
+                <comment line="1074">
+                    This produce asin-like curve                    
+                </comment>
+                <comment line="1075">
+                    as described in General Midi Level 2 Specification, page 6                    
+                </comment>
+                <comment line="1077">
+                    x is now cent/msec                    
+                </comment>
+                <comment line="1078">
+                    Convert x from cent/msec to key/controlbuffertime                    
+                </comment>
+                <comment line="1079">
+                    x is now keys/msec                    
+                </comment>
+                <comment line="1080">
+                    x is now keys/sec                    
+                </comment>
+                <comment line="1081">
+                    x is now keys/controlbuffertime                    
+                </comment>
+                <comment line="1120">
+                    Hold1 (Damper) (cc#64)                    
+                </comment>
+                <comment line="1143">
+                    allNotesOff();                    
+                </comment>
+                <comment line="1146">
+                    for (int i = 0; i &lt; portamento_lastnote.length; i++)
+                    portamento_lastnote[i] = -1;                    
+                </comment>
+                <comment line="1152">
+                    Sostenuto (cc#66)                    
+                </comment>
+                <comment line="1224">
+                                        
+                </comment>
+                <scope line="1064">
+                    <declaration name="x" type="double" line="1076"/>
+                    <declaration name="val" type="int" line="1088"/>
+                    <scope line="1089">
+                        <declaration name="val_i" type="int[]" line="1090"/>
+                    </scope>
+                    <scope line="1094">
+                        <declaration name="val_i" type="int[]" line="1095"/>
+                    </scope>
+                    <scope line="1104">
+                        <declaration name="step" type="int" line="1105"/>
+                    </scope>
+                    <declaration name="on" type="boolean" line="1121"/>
+                    <scope line="1122">
+                        <scope line="1124">
+                            <scope line="1125">
+                                <scope line="1127">
+                                    <scope line="1129"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="1135"/>
+                    </scope>
+                    <scope line="1154">
+                        <scope line="1155">
+                            <scope line="1157"/>
+                        </scope>
+                    </scope>
+                    <scope line="1162">
+                        <scope line="1163">
+                            <scope line="1165">
+                                <scope line="1167"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1223"/>
+                    <scope line="1228"/>
+                </scope>
+            </method>
+            <method name="getController" type="int" line="1244">
+                <params>
+                    <param name="controller" type="int"/>
+                </params>
+                <comment line="1246">
+                    Should only return lower 7 bits,                    
+                </comment>
+                <comment line="1247">
+                    even when controller is &quot;boosted&quot; higher.                    
+                </comment>
+                <scope line="1245"/>
+            </method>
+            <method name="tuningChange" type="void" line="1252">
+                <params>
+                    <param name="program" type="int"/>
+                </params>
+            </method>
+            <method name="tuningChange" type="void" line="1256">
+                <params>
+                    <param name="bank" type="int"/>
+                    <param name="program" type="int"/>
+                </params>
+                <scope line="1257"/>
+            </method>
+            <method name="programChange" type="void" line="1262">
+                <params>
+                    <param name="program" type="int"/>
+                </params>
+            </method>
+            <method name="programChange" type="void" line="1266">
+                <params>
+                    <param name="bank" type="int"/>
+                    <param name="program" type="int"/>
+                </params>
+                <scope line="1269">
+                    <scope line="1272"/>
+                </scope>
+            </method>
+            <method name="getProgram" type="int" line="1280">
+                <scope line="1281"/>
+            </method>
+            <method name="setPitchBend" type="void" line="1286">
+                <params>
+                    <param name="bend" type="int"/>
+                </params>
+                <scope line="1290"/>
+            </method>
+            <method name="getPitchBend" type="int" line="1300">
+                <scope line="1301"/>
+            </method>
+            <method name="nrpnChange" type="void" line="1306">
+                <params>
+                    <param name="controller" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+                <comment line="1308">
+                    System.out.println(&quot;(&quot; + channel + &quot;).nrpnChange(&quot;
+                    + Integer.toHexString(controller &gt;&gt; 7)
+                    + &quot; &quot; + Integer.toHexString(controller &amp; 127)
+                    + &quot;, &quot; + Integer.toHexString(value &gt;&gt; 7)
+                    + &quot; &quot; + Integer.toHexString(value &amp; 127) + &quot;)&quot;);                    
+                </comment>
+                <comment line="1317">
+                    Vibrato Rate                    
+                </comment>
+                <comment line="1319">
+                    Vibrato Depth                    
+                </comment>
+                <comment line="1321">
+                    Vibrato Delay                    
+                </comment>
+                <comment line="1323">
+                    Brightness                    
+                </comment>
+                <comment line="1325">
+                    Filter Resonance                    
+                </comment>
+                <comment line="1327">
+                    Attack Time                    
+                </comment>
+                <comment line="1329">
+                    Decay Time                    
+                </comment>
+                <comment line="1331">
+                    Release Time                    
+                </comment>
+                <comment line="1334">
+                    Pitch coarse                    
+                </comment>
+                <comment line="1336">
+                    Volume                    
+                </comment>
+                <comment line="1338">
+                    Panpot                    
+                </comment>
+                <comment line="1340">
+                    Reverb                    
+                </comment>
+                <comment line="1342">
+                    Chorus                    
+                </comment>
+                <scope line="1316"/>
+                <declaration name="val_i" type="int[]" line="1346"/>
+                <declaration name="val_d" type="double[]" line="1347"/>
+                <scope line="1348"/>
+                <scope line="1352"/>
+            </method>
+            <method name="rpnChange" type="void" line="1365">
+                <params>
+                    <param name="controller" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+                <comment line="1367">
+                    System.out.println(&quot;(&quot; + channel + &quot;).rpnChange(&quot;
+                    + Integer.toHexString(controller &gt;&gt; 7)
+                    + &quot; &quot; + Integer.toHexString(controller &amp; 127)
+                    + &quot;, &quot; + Integer.toHexString(value &gt;&gt; 7)
+                    + &quot; &quot; + Integer.toHexString(value &amp; 127) + &quot;)&quot;);                    
+                </comment>
+                <scope line="1375"/>
+                <scope line="1379"/>
+                <declaration name="val_i" type="int[]" line="1383"/>
+                <declaration name="val_d" type="double[]" line="1384"/>
+                <scope line="1385"/>
+                <scope line="1389"/>
+            </method>
+            <method name="resetAllControllers" type="void" line="1401"/>
+            <method name="resetAllControllers" type="void" line="1405">
+                <params>
+                    <param name="allControls" type="boolean"/>
+                </params>
+                <comment line="1419">
+                    Filter Resonance                    
+                </comment>
+                <comment line="1420">
+                    Release Time                    
+                </comment>
+                <comment line="1421">
+                    Attack Time                    
+                </comment>
+                <comment line="1422">
+                    Brightness                    
+                </comment>
+                <comment line="1423">
+                    Decay Time                    
+                </comment>
+                <comment line="1424">
+                    Vibrato Rate                    
+                </comment>
+                <comment line="1425">
+                    Vibrato Depth                    
+                </comment>
+                <comment line="1426">
+                    Vibrato Delay                    
+                </comment>
+                <comment line="1428">
+                    Balance                    
+                </comment>
+                <comment line="1429">
+                    Expression                    
+                </comment>
+                <comment line="1430">
+                    NRPN Null                    
+                </comment>
+                <comment line="1431">
+                    NRPN Null                    
+                </comment>
+                <comment line="1432">
+                    RPN = Null                    
+                </comment>
+                <comment line="1433">
+                    RPN = Null                    
+                </comment>
+                <comment line="1435">
+                    see DLS 2.1 (Power-on Default Values)                    
+                </comment>
+                <comment line="1441">
+                    Volume                    
+                </comment>
+                <comment line="1442">
+                    Pan                    
+                </comment>
+                <comment line="1443">
+                    Reverb                    
+                </comment>
+                <comment line="1446">
+                    don&apos;t reset tuning settings                    
+                </comment>
+                <comment line="1452">
+                    Bitch Bend sensitivity                    
+                </comment>
+                <comment line="1453">
+                    Channel fine tunning                    
+                </comment>
+                <comment line="1454">
+                    Channel Coarse Tuning                    
+                </comment>
+                <comment line="1455">
+                    Modulation Depth, +/- 50 cent                    
+                </comment>
+                <scope line="1406">
+                    <scope line="1409"/>
+                    <scope line="1414"/>
+                    <scope line="1436">
+                        <scope line="1445"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="allNotesOff" type="void" line="1466">
+                <scope line="1469">
+                    <scope line="1472"/>
+                </scope>
+            </method>
+            <method name="allSoundOff" type="void" line="1478">
+                <scope line="1481"/>
+            </method>
+            <method name="localControl" type="boolean" line="1488">
+                <params>
+                    <param name="on" type="boolean"/>
+                </params>
+            </method>
+            <method name="setMono" type="void" line="1492">
+                <params>
+                    <param name="on" type="boolean"/>
+                </params>
+                <scope line="1495"/>
+            </method>
+            <method name="getMono" type="boolean" line="1501">
+                <scope line="1502"/>
+            </method>
+            <method name="setOmni" type="void" line="1507">
+                <params>
+                    <param name="on" type="boolean"/>
+                </params>
+                <comment line="1511">
+                    Omni is not supported by GM2                    
+                </comment>
+            </method>
+            <method name="getOmni" type="boolean" line="1514"/>
+            <method name="setMute" type="void" line="1518">
+                <params>
+                    <param name="mute" type="boolean"/>
+                </params>
+                <scope line="1521"/>
+            </method>
+            <method name="getMute" type="boolean" line="1529">
+                <scope line="1530"/>
+            </method>
+            <method name="setSolo" type="void" line="1535">
+                <params>
+                    <param name="soloState" type="boolean"/>
+                </params>
+                <scope line="1539">
+                    <declaration name="soloinuse" type="boolean" line="1542"/>
+                    <scope line="1543">
+                        <scope line="1544"/>
+                    </scope>
+                    <scope line="1550"/>
+                </scope>
+            </method>
+            <method name="setSoloMute" type="void" line="1563">
+                <params>
+                    <param name="mute" type="boolean"/>
+                </params>
+                <scope line="1564"/>
+            </method>
+            <method name="getSolo" type="boolean" line="1574">
+                <scope line="1575"/>
+            </method>
+        </class>
+    </source>

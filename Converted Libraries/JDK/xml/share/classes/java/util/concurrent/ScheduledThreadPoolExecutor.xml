@@ -1,0 +1,1107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent">
+        <import package="java.util.concurrent.atomic"/>
+        <import package="java.util.concurrent.locks"/>
+        <import package="java.util"/>
+        <class name="ScheduledThreadPoolExecutor" line="41">
+            <extends class="ThreadPoolExecutor"/>
+            <comment line="124">
+                This class specializes ThreadPoolExecutor implementation by
+                
+                 1. Using a custom task type, ScheduledFutureTask for
+                    tasks, even those that don&apos;t require scheduling (i.e.,
+                    those submitted using ExecutorService execute, not
+                    ScheduledExecutorService methods) which are treated as
+                    delayed tasks with a delay of zero.
+                
+                 2. Using a custom queue (DelayedWorkQueue), a variant of
+                    unbounded DelayQueue. The lack of capacity constraint and
+                    the fact that corePoolSize and maximumPoolSize are
+                    effectively identical simplifies some execution mechanics
+                    (see delayedExecute) compared to ThreadPoolExecutor.
+                
+                 3. Supporting optional run-after-shutdown parameters, which
+                    leads to overrides of shutdown methods to remove and cancel
+                    tasks that should NOT be run after shutdown, as well as
+                    different recheck logic when task (re)submission overlaps
+                    with a shutdown.
+                
+                 4. Task decoration methods to allow interception and
+                    instrumentation, which are needed because subclasses cannot
+                    otherwise override submit methods to get this effect. These
+                    don&apos;t have any impact on pool control logic though.                
+            </comment>
+            <comment line="623">
+                Override AbstractExecutorService methods                
+            </comment>
+            <implements interface="ScheduledExecutorService"/>
+            <javadoc line="41">
+                A {@link ThreadPoolExecutor} that can additionally schedule
+                  commands to run after a given delay, or to execute
+                  periodically. This class is preferable to {@link java.util.Timer}when multiple worker threads are needed, or when the additional
+                  flexibility or capabilities of {@link ThreadPoolExecutor} (which
+                  this class extends) are required.
+                  &lt;p&gt;Delayed tasks execute no sooner than they are enabled, but
+                  without any real-time guarantees about when, after they are
+                  enabled, they will commence. Tasks scheduled for exactly the same
+                  execution time are enabled in first-in-first-out (FIFO) order of
+                  submission.
+                  &lt;p&gt;When a submitted task is cancelled before it is run, execution
+                  is suppressed. By default, such a cancelled task is not
+                  automatically removed from the work queue until its delay
+                  elapses. While this enables further inspection and monitoring, it
+                  may also cause unbounded retention of cancelled tasks. To avoid
+                  this, set {@link #setRemoveOnCancelPolicy} to {@code true}, which
+                  causes tasks to be immediately removed from the work queue at
+                  time of cancellation.
+                  &lt;p&gt;Successive executions of a task scheduled via{@code scheduleAtFixedRate} or{@code scheduleWithFixedDelay} do not overlap. While different
+                  executions may be performed by different threads, the effects of
+                  prior executions &lt;a
+                  href=&quot;package-summary.html#MemoryVisibility&quot;&gt;&lt;i&gt;happen-before&lt;/i&gt;&lt;/a&gt;
+                  those of subsequent ones.
+                  &lt;p&gt;While this class inherits from {@link ThreadPoolExecutor}, a few
+                  of the inherited tuning methods are not useful for it. In
+                  particular, because it acts as a fixed-sized pool using{@code corePoolSize} threads and an unbounded queue, adjustments
+                  to {@code maximumPoolSize} have no useful effect. Additionally, it
+                  is almost never a good idea to set {@code corePoolSize} to zero or
+                  use {@code allowCoreThreadTimeOut} because this may leave the pool
+                  without threads to handle tasks once they become eligible to run.
+                  &lt;p&gt;&lt;b&gt;Extension notes:&lt;/b&gt; This class overrides the{@link ThreadPoolExecutor#execute execute} and{@link AbstractExecutorService#submit(Runnable) submit}methods to generate internal {@link ScheduledFuture} objects to
+                  control per-task delays and scheduling.  To preserve
+                  functionality, any further overrides of these methods in
+                  subclasses must invoke superclass versions, which effectively
+                  disables additional task customization.  However, this class
+                  provides alternative protected extension method{@code decorateTask} (one version each for {@code Runnable} and{@code Callable}) that can be used to customize the concrete task
+                  types used to execute commands entered via {@code execute},{@code submit}, {@code schedule}, {@code scheduleAtFixedRate},
+                  and {@code scheduleWithFixedDelay}.  By default, a{@code ScheduledThreadPoolExecutor} uses a task type extending{@link FutureTask}. However, this may be modified or replaced using
+                  subclasses of the form:
+                  &lt;pre&gt; {@code}public class CustomScheduledExecutor extends ScheduledThreadPoolExecutor 
+                  static class CustomTask&lt;V&gt; implements RunnableScheduledFuture&lt;V&gt; { ... }
+                  protected &lt;V&gt; RunnableScheduledFuture&lt;V&gt; decorateTask(
+                  Runnable r, RunnableScheduledFuture&lt;V&gt; task) {
+                  return new CustomTask&lt;V&gt;(r, task);
+                  }
+                  protected &lt;V&gt; RunnableScheduledFuture&lt;V&gt; decorateTask(
+                  Callable&lt;V&gt; c, RunnableScheduledFuture&lt;V&gt; task) {
+                  return new CustomTask&lt;V&gt;(c, task);
+                  }
+                  // ... add constructors, etc.
+                  }}&lt;/pre&gt;                
+                <since>
+                    1.5                    
+                </since>
+                <author>
+                    Doug Lea                    
+                </author>
+            </javadoc>
+            <declaration name="continueExistingPeriodicTasksAfterShutdown" type="boolean" line="150"/>
+            <javadoc line="150">
+                False if should cancel/suppress periodic tasks on shutdown.                
+            </javadoc>
+            <declaration name="executeExistingDelayedTasksAfterShutdown" type="boolean" line="155"/>
+            <javadoc line="155">
+                False if should cancel non-periodic tasks on shutdown.                
+            </javadoc>
+            <declaration name="removeOnCancel" type="boolean" line="160"/>
+            <javadoc line="160">
+                True if ScheduledFutureTask.cancel should remove from queue                
+            </javadoc>
+            <declaration name="sequencer" type="AtomicLong" line="165"/>
+            <javadoc line="165">
+                Sequence number to break scheduling ties, and in turn to
+                  guarantee FIFO order among tied entries.                
+            </javadoc>
+            <javadoc line="171">
+                Returns current nanosecond time.                
+            </javadoc>
+            <method name="now" type="long" line="174"/>
+            <class name="ScheduledFutureTask" line="178">
+                <type_params>
+                    <type_param name="V"/>
+                </type_params>
+                <extends class="FutureTask">
+                    <type_params>
+                        <type_param name="V"/>
+                    </type_params>
+                </extends>
+                <comment line="811">
+                    A DelayedWorkQueue is based on a heap-based data structure
+                     like those in DelayQueue and PriorityQueue, except that
+                     every ScheduledFutureTask also records its index into the
+                     heap array. This eliminates the need to find a task upon
+                     cancellation, greatly speeding up removal (down from O(n)
+                     to O(log n)), and reducing garbage retention that would
+                     otherwise occur by waiting for the element to rise to top
+                     before clearing. But because the queue may also hold
+                     RunnableScheduledFutures that are not ScheduledFutureTasks,
+                     we are not guaranteed to have such indices available, in
+                     which case we fall back to linear search. (We expect that
+                     most tasks will not be decorated, and that the faster cases
+                     will be much more common.)
+                    
+                     All heap operations must record index changes -- mainly
+                     within siftUp and siftDown. Upon removal, a task&apos;s
+                     heapIndex is set to -1. Note that ScheduledFutureTasks can
+                     appear at most once in the queue (this need not be true for
+                     other kinds of tasks or work queues), so are uniquely
+                     identified by heapIndex.                    
+                </comment>
+                <implements interface="RunnableScheduledFuture">
+                    <type_params>
+                        <type_param name="V"/>
+                    </type_params>
+                </implements>
+                <declaration name="sequenceNumber" type="long" line="181"/>
+                <javadoc line="181">
+                    Sequence number to break ties FIFO                    
+                </javadoc>
+                <declaration name="time" type="long" line="184"/>
+                <javadoc line="184">
+                    The time the task is enabled to execute in nanoTime units                    
+                </javadoc>
+                <declaration name="period" type="long" line="187"/>
+                <javadoc line="187">
+                    Period in nanoseconds for repeating tasks.  A positive
+                      value indicates fixed-rate execution.  A negative value
+                      indicates fixed-delay execution.  A value of 0 indicates a
+                      non-repeating task.                    
+                </javadoc>
+                <declaration name="outerTask" type="RunnableScheduledFuture&lt;V&gt;" line="195"/>
+                <javadoc line="195">
+                    The actual task to be re-enqueued by reExecutePeriodic                    
+                </javadoc>
+                <declaration name="heapIndex" type="int" line="198"/>
+                <javadoc line="198">
+                    Index into delay queue, to support faster cancellation.                    
+                </javadoc>
+                <javadoc line="203">
+                    Creates a one-shot action with given nanoTime-based trigger time.                    
+                </javadoc>
+                <method name="ScheduledFutureTask" type="constructor" line="206">
+                    <params>
+                        <param name="r" type="Runnable"/>
+                        <param name="result" type="V"/>
+                        <param name="ns" type="long"/>
+                    </params>
+                </method>
+                <javadoc line="213">
+                    Creates a periodic action with given nano time and period.                    
+                </javadoc>
+                <method name="ScheduledFutureTask" type="constructor" line="216">
+                    <params>
+                        <param name="r" type="Runnable"/>
+                        <param name="result" type="V"/>
+                        <param name="ns" type="long"/>
+                        <param name="period" type="long"/>
+                    </params>
+                </method>
+                <javadoc line="223">
+                    Creates a one-shot action with given nanoTime-based trigger.                    
+                </javadoc>
+                <method name="ScheduledFutureTask" type="constructor" line="226">
+                    <params>
+                        <param name="callable" type="Callable<V>"/>
+                        <param name="ns" type="long"/>
+                    </params>
+                </method>
+                <method name="getDelay" type="long" line="233">
+                    <params>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                </method>
+                <method name="compareTo" type="int" line="237">
+                    <params>
+                        <param name="other" type="Delayed"/>
+                    </params>
+                    <comment line="238">
+                        compare zero ONLY if same object                        
+                    </comment>
+                    <scope line="240">
+                        <declaration name="x" type="ScheduledFutureTask&lt;?&gt;" line="241"/>
+                        <declaration name="diff" type="long" line="242"/>
+                    </scope>
+                    <declaration name="d" type="long" line="252"/>
+                </method>
+                <javadoc line="257">
+                    Returns true if this is a periodic (not a one-shot) action.                    
+                    <return>
+                        true if periodic                        
+                    </return>
+                </javadoc>
+                <method name="isPeriodic" type="boolean" line="262"/>
+                <javadoc line="266">
+                    Sets the next time to run for a periodic task.                    
+                </javadoc>
+                <method name="setNextRunTime" type="void" line="269">
+                    <declaration name="p" type="long" line="270"/>
+                </method>
+                <method name="cancel" type="boolean" line="277">
+                    <params>
+                        <param name="mayInterruptIfRunning" type="boolean"/>
+                    </params>
+                    <declaration name="cancelled" type="boolean" line="278"/>
+                </method>
+                <javadoc line="284">
+                    Overrides FutureTask version so as to reset/requeue if periodic.                    
+                </javadoc>
+                <method name="run" type="void" line="287">
+                    <declaration name="periodic" type="boolean" line="288"/>
+                    <scope line="293"/>
+                </method>
+            </class>
+            <javadoc line="300">
+                Returns true if can run a task given current run state
+                  and run-after-shutdown parameters.                
+                <param>
+                    periodic true if this task periodic, false if delayed                    
+                </param>
+            </javadoc>
+            <method name="canRunInCurrentRunState" type="boolean" line="306">
+                <params>
+                    <param name="periodic" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="312">
+                Main execution method for delayed or periodic tasks.  If pool
+                  is shut down, rejects the task. Otherwise adds task to queue
+                  and starts a thread, if necessary, to run it.  (We cannot
+                  prestart the thread to run the task because the task (probably)
+                  shouldn&apos;t be run yet,) If the pool is shut down while the task
+                  is being added, cancel and remove it if required by state and
+                  run-after-shutdown parameters.                
+                <param>
+                    task the task                    
+                </param>
+            </javadoc>
+            <method name="delayedExecute" type="void" line="323">
+                <params>
+                    <param name="task" type="RunnableScheduledFuture<?>"/>
+                </params>
+                <scope line="326"/>
+            </method>
+            <javadoc line="337">
+                Requeues a periodic task unless current run state precludes it.
+                  Same idea as delayedExecute except drops task rather than rejecting.                
+                <param>
+                    task the task                    
+                </param>
+            </javadoc>
+            <method name="reExecutePeriodic" type="void" line="343">
+                <params>
+                    <param name="task" type="RunnableScheduledFuture<?>"/>
+                </params>
+                <scope line="344"/>
+            </method>
+            <javadoc line="353">
+                Cancels and clears the queue of all tasks that should not be run
+                  due to shutdown policy.  Invoked within super.shutdown.                
+            </javadoc>
+            <method name="onShutdown" type="void" line="357">
+                <comment line="370">
+                    Traverse snapshot to avoid iterator exceptions                    
+                </comment>
+                <comment line="376">
+                    also remove if already cancelled                    
+                </comment>
+                <declaration name="q" type="BlockingQueue&lt;Runnable&gt;" line="358"/>
+                <declaration name="keepDelayed" type="boolean" line="359"/>
+                <declaration name="keepPeriodic" type="boolean" line="361"/>
+                <scope line="363"/>
+                <scope line="369">
+                    <scope line="371">
+                        <scope line="372">
+                            <declaration name="t" type="RunnableScheduledFuture&lt;?&gt;" line="373"/>
+                            <scope line="376"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="386">
+                Modifies or replaces the task used to execute a runnable.
+                  This method can be used to override the concrete
+                  class used for managing internal tasks.
+                  The default implementation simply returns the given task.                
+                <param>
+                    runnable the submitted Runnable                    
+                </param>
+                <param>
+                    task the task created to execute the runnable                    
+                </param>
+                <return>
+                    a task that can execute the runnable                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="decorateTask" type="RunnableScheduledFuture<V>" line="398">
+                <params>
+                    <param name="runnable" type="Runnable"/>
+                    <param name="task" type="RunnableScheduledFuture<V>"/>
+                </params>
+            </method>
+            <javadoc line="402">
+                Modifies or replaces the task used to execute a callable.
+                  This method can be used to override the concrete
+                  class used for managing internal tasks.
+                  The default implementation simply returns the given task.                
+                <param>
+                    callable the submitted Callable                    
+                </param>
+                <param>
+                    task the task created to execute the callable                    
+                </param>
+                <return>
+                    a task that can execute the callable                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="decorateTask" type="RunnableScheduledFuture<V>" line="414">
+                <params>
+                    <param name="callable" type="Callable<V>"/>
+                    <param name="task" type="RunnableScheduledFuture<V>"/>
+                </params>
+            </method>
+            <javadoc line="418">
+                Creates a new {@code ScheduledThreadPoolExecutor} with the
+                  given core pool size.                
+                <param>
+                    corePoolSize the number of threads to keep in the pool, even
+                      if they are idle, unless {@code allowCoreThreadTimeOut} is set                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code corePoolSize < 0}                    
+                </throws>
+            </javadoc>
+            <method name="ScheduledThreadPoolExecutor" type="constructor" line="426">
+                <params>
+                    <param name="corePoolSize" type="int"/>
+                </params>
+            </method>
+            <javadoc line="431">
+                Creates a new {@code ScheduledThreadPoolExecutor} with the
+                  given initial parameters.                
+                <param>
+                    corePoolSize the number of threads to keep in the pool, even
+                      if they are idle, unless {@code allowCoreThreadTimeOut} is set                    
+                </param>
+                <param>
+                    threadFactory the factory to use when the executor
+                      creates a new thread                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code corePoolSize < 0}                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code threadFactory} is null                    
+                </throws>
+            </javadoc>
+            <method name="ScheduledThreadPoolExecutor" type="constructor" line="443">
+                <params>
+                    <param name="corePoolSize" type="int"/>
+                    <param name="threadFactory" type="ThreadFactory"/>
+                </params>
+            </method>
+            <javadoc line="448">
+                Creates a new ScheduledThreadPoolExecutor with the given
+                  initial parameters.                
+                <param>
+                    corePoolSize the number of threads to keep in the pool, even
+                      if they are idle, unless {@code allowCoreThreadTimeOut} is set                    
+                </param>
+                <param>
+                    handler the handler to use when execution is blocked
+                      because the thread bounds and queue capacities are reached                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code corePoolSize < 0}                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code handler} is null                    
+                </throws>
+            </javadoc>
+            <method name="ScheduledThreadPoolExecutor" type="constructor" line="460">
+                <params>
+                    <param name="corePoolSize" type="int"/>
+                    <param name="handler" type="RejectedExecutionHandler"/>
+                </params>
+            </method>
+            <javadoc line="465">
+                Creates a new ScheduledThreadPoolExecutor with the given
+                  initial parameters.                
+                <param>
+                    corePoolSize the number of threads to keep in the pool, even
+                      if they are idle, unless {@code allowCoreThreadTimeOut} is set                    
+                </param>
+                <param>
+                    threadFactory the factory to use when the executor
+                      creates a new thread                    
+                </param>
+                <param>
+                    handler the handler to use when execution is blocked
+                      because the thread bounds and queue capacities are reached                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code corePoolSize < 0}                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code threadFactory} or{@code handler} is null                    
+                </throws>
+            </javadoc>
+            <method name="ScheduledThreadPoolExecutor" type="constructor" line="481">
+                <params>
+                    <param name="corePoolSize" type="int"/>
+                    <param name="threadFactory" type="ThreadFactory"/>
+                    <param name="handler" type="RejectedExecutionHandler"/>
+                </params>
+            </method>
+            <javadoc line="486">
+                Returns the trigger time of a delayed action.                
+            </javadoc>
+            <method name="triggerTime" type="long" line="489">
+                <params>
+                    <param name="delay" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+            </method>
+            <javadoc line="493">
+                Returns the trigger time of a delayed action.                
+            </javadoc>
+            <method name="triggerTime" type="long" line="496">
+                <params>
+                    <param name="delay" type="long"/>
+                </params>
+            </method>
+            <javadoc line="501">
+                Constrains the values of all delays in the queue to be within
+                  Long.MAX_VALUE of each other, to avoid overflow in compareTo.
+                  This may occur if a task is eligible to be dequeued, but has
+                  not yet been, while some other task is added with a delay of
+                  Long.MAX_VALUE.                
+            </javadoc>
+            <method name="overflowFree" type="long" line="508">
+                <params>
+                    <param name="delay" type="long"/>
+                </params>
+                <declaration name="head" type="Delayed" line="509"/>
+                <scope line="510">
+                    <declaration name="headDelay" type="long" line="511"/>
+                </scope>
+            </method>
+            <javadoc line="518">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="ScheduledFuture<?>" line="524">
+                <params>
+                    <param name="command" type="Runnable"/>
+                    <param name="delay" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="t" type="RunnableScheduledFuture&lt;?&gt;" line="527"/>
+            </method>
+            <javadoc line="534">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="ScheduledFuture<V>" line="540">
+                <params>
+                    <param name="callable" type="Callable<V>"/>
+                    <param name="delay" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="t" type="RunnableScheduledFuture&lt;V&gt;" line="543"/>
+            </method>
+            <javadoc line="550">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+                <throws>
+                    IllegalArgumentException   {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="scheduleAtFixedRate" type="ScheduledFuture<?>" line="558">
+                <params>
+                    <param name="command" type="Runnable"/>
+                    <param name="initialDelay" type="long"/>
+                    <param name="period" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="sft" type="ScheduledFutureTask&lt;Void&gt;" line="563"/>
+                <declaration name="t" type="RunnableScheduledFuture&lt;Void&gt;" line="568"/>
+            </method>
+            <javadoc line="574">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+                <throws>
+                    IllegalArgumentException   {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="scheduleWithFixedDelay" type="ScheduledFuture<?>" line="582">
+                <params>
+                    <param name="command" type="Runnable"/>
+                    <param name="initialDelay" type="long"/>
+                    <param name="delay" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="sft" type="ScheduledFutureTask&lt;Void&gt;" line="587"/>
+                <declaration name="t" type="RunnableScheduledFuture&lt;Void&gt;" line="592"/>
+            </method>
+            <javadoc line="598">
+                Executes {@code command} with zero required delay.
+                  This has effect equivalent to{@link #schedule(Runnable,long,TimeUnit) schedule(command, 0, anyUnit)}.
+                  Note that inspections of the queue and of the list returned by{@code shutdownNow} will access the zero-delayed{@link ScheduledFuture}, not the {@code command} itself.
+                  &lt;p&gt;A consequence of the use of {@code ScheduledFuture} objects is
+                  that {@link ThreadPoolExecutor#afterExecute afterExecute} is always
+                  called with a null second {@code Throwable} argument, even if the{@code command} terminated abruptly.  Instead, the {@code Throwable}thrown by such a task can be obtained via {@link Future#get}.                
+                <throws>
+                    RejectedExecutionException at discretion of{@code RejectedExecutionHandler}, if the task
+                      cannot be accepted for execution because the
+                      executor has been shut down                    
+                </throws>
+                <throws>
+                    NullPointerException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="execute" type="void" line="618">
+                <params>
+                    <param name="command" type="Runnable"/>
+                </params>
+            </method>
+            <javadoc line="624">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="submit" type="Future<?>" line="628">
+                <params>
+                    <param name="task" type="Runnable"/>
+                </params>
+            </method>
+            <javadoc line="632">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="submit" type="Future<T>" line="636">
+                <params>
+                    <param name="task" type="Runnable"/>
+                    <param name="result" type="T"/>
+                </params>
+            </method>
+            <javadoc line="641">
+                @throws RejectedExecutionException {@inheritDoc}                
+                <throws>
+                    NullPointerException       {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="submit" type="Future<T>" line="645">
+                <params>
+                    <param name="task" type="Callable<T>"/>
+                </params>
+            </method>
+            <javadoc line="649">
+                Sets the policy on whether to continue executing existing
+                  periodic tasks even when this executor has been {@code shutdown}.
+                  In this case, these tasks will only terminate upon{@code shutdownNow} or after setting the policy to{@code false} when already shutdown.
+                  This value is by default {@code false}.                
+                <param>
+                    value if {@code true}, continue after shutdown, else don't.                    
+                </param>
+                <see>
+                    #getContinueExistingPeriodicTasksAfterShutdownPolicy                    
+                </see>
+            </javadoc>
+            <method name="setContinueExistingPeriodicTasksAfterShutdownPolicy" type="void" line="660">
+                <params>
+                    <param name="value" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="666">
+                Gets the policy on whether to continue executing existing
+                  periodic tasks even when this executor has been {@code shutdown}.
+                  In this case, these tasks will only terminate upon{@code shutdownNow} or after setting the policy to{@code false} when already shutdown.
+                  This value is by default {@code false}.                
+                <return>
+                    {@code true} if will continue after shutdown                    
+                </return>
+                <see>
+                    #setContinueExistingPeriodicTasksAfterShutdownPolicy                    
+                </see>
+            </javadoc>
+            <method name="getContinueExistingPeriodicTasksAfterShutdownPolicy" type="boolean" line="677"/>
+            <javadoc line="681">
+                Sets the policy on whether to execute existing delayed
+                  tasks even when this executor has been {@code shutdown}.
+                  In this case, these tasks will only terminate upon{@code shutdownNow}, or after setting the policy to{@code false} when already shutdown.
+                  This value is by default {@code true}.                
+                <param>
+                    value if {@code true}, execute after shutdown, else don't.                    
+                </param>
+                <see>
+                    #getExecuteExistingDelayedTasksAfterShutdownPolicy                    
+                </see>
+            </javadoc>
+            <method name="setExecuteExistingDelayedTasksAfterShutdownPolicy" type="void" line="692">
+                <params>
+                    <param name="value" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="698">
+                Gets the policy on whether to execute existing delayed
+                  tasks even when this executor has been {@code shutdown}.
+                  In this case, these tasks will only terminate upon{@code shutdownNow}, or after setting the policy to{@code false} when already shutdown.
+                  This value is by default {@code true}.                
+                <return>
+                    {@code true} if will execute after shutdown                    
+                </return>
+                <see>
+                    #setExecuteExistingDelayedTasksAfterShutdownPolicy                    
+                </see>
+            </javadoc>
+            <method name="getExecuteExistingDelayedTasksAfterShutdownPolicy" type="boolean" line="709"/>
+            <javadoc line="713">
+                Sets the policy on whether cancelled tasks should be immediately
+                  removed from the work queue at time of cancellation.  This value is
+                  by default {@code false}.                
+                <param>
+                    value if {@code true}, remove on cancellation, else don't                    
+                </param>
+                <see>
+                    #getRemoveOnCancelPolicy                    
+                </see>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="setRemoveOnCancelPolicy" type="void" line="722">
+                <params>
+                    <param name="value" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="726">
+                Gets the policy on whether cancelled tasks should be immediately
+                  removed from the work queue at time of cancellation.  This value is
+                  by default {@code false}.                
+                <return>
+                    {@code true} if cancelled tasks are immediately removed
+                      from the queue                    
+                </return>
+                <see>
+                    #setRemoveOnCancelPolicy                    
+                </see>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getRemoveOnCancelPolicy" type="boolean" line="736"/>
+            <javadoc line="740">
+                Initiates an orderly shutdown in which previously submitted
+                  tasks are executed, but no new tasks will be accepted.
+                  Invocation has no additional effect if already shut down.
+                  &lt;p&gt;This method does not wait for previously submitted tasks to
+                  complete execution.  Use {@link #awaitTermination awaitTermination}to do that.
+                  &lt;p&gt;If the {@code ExecuteExistingDelayedTasksAfterShutdownPolicy}has been set {@code false}, existing delayed tasks whose delays
+                  have not yet elapsed are cancelled.  And unless the {@codeContinueExistingPeriodicTasksAfterShutdownPolicy} has been set{@code true}, future executions of existing periodic tasks will
+                  be cancelled.                
+                <throws>
+                    SecurityException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="shutdown" type="void" line="758"/>
+            <javadoc line="762">
+                Attempts to stop all actively executing tasks, halts the
+                  processing of waiting tasks, and returns a list of the tasks
+                  that were awaiting execution.
+                  &lt;p&gt;This method does not wait for actively executing tasks to
+                  terminate.  Use {@link #awaitTermination awaitTermination} to
+                  do that.
+                  &lt;p&gt;There are no guarantees beyond best-effort attempts to stop
+                  processing actively executing tasks.  This implementation
+                  cancels tasks via {@link Thread#interrupt}, so any task that
+                  fails to respond to interrupts may never terminate.                
+                <return>
+                    list of tasks that never commenced execution.
+                      Each element of this list is a {@link ScheduledFuture},
+                      including those tasks submitted using {@code execute},
+                      which are for scheduling purposes used as the basis of a
+                      zero-delay {@code ScheduledFuture}.                    
+                </return>
+                <throws>
+                    SecurityException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="shutdownNow" type="List<Runnable>" line="783"/>
+            <javadoc line="787">
+                Returns the task queue used by this executor.  Each element of
+                  this queue is a {@link ScheduledFuture}, including those
+                  tasks submitted using {@code execute} which are for scheduling
+                  purposes used as the basis of a zero-delay{@code ScheduledFuture}.  Iteration over this queue is
+                  &lt;em&gt;not&lt;/em&gt; guaranteed to traverse tasks in the order in
+                  which they will execute.                
+                <return>
+                    the task queue                    
+                </return>
+            </javadoc>
+            <method name="getQueue" type="BlockingQueue<Runnable>" line="798"/>
+            <class name="DelayedWorkQueue" line="802">
+                <extends class="AbstractQueue">
+                    <type_params>
+                        <type_param name="Runnable"/>
+                    </type_params>
+                </extends>
+                <comment line="811">
+                    A DelayedWorkQueue is based on a heap-based data structure
+                     like those in DelayQueue and PriorityQueue, except that
+                     every ScheduledFutureTask also records its index into the
+                     heap array. This eliminates the need to find a task upon
+                     cancellation, greatly speeding up removal (down from O(n)
+                     to O(log n)), and reducing garbage retention that would
+                     otherwise occur by waiting for the element to rise to top
+                     before clearing. But because the queue may also hold
+                     RunnableScheduledFutures that are not ScheduledFutureTasks,
+                     we are not guaranteed to have such indices available, in
+                     which case we fall back to linear search. (We expect that
+                     most tasks will not be decorated, and that the faster cases
+                     will be much more common.)
+                    
+                     All heap operations must record index changes -- mainly
+                     within siftUp and siftDown. Upon removal, a task&apos;s
+                     heapIndex is set to -1. Note that ScheduledFutureTasks can
+                     appear at most once in the queue (this need not be true for
+                     other kinds of tasks or work queues), so are uniquely
+                     identified by heapIndex.                    
+                </comment>
+                <implements interface="BlockingQueue">
+                    <type_params>
+                        <type_param name="Runnable"/>
+                    </type_params>
+                </implements>
+                <javadoc line="802">
+                    Specialized delay queue. To mesh with TPE declarations, this
+                      class must be declared as a BlockingQueue&lt;Runnable&gt; even though
+                      it can only hold RunnableScheduledFutures.                    
+                </javadoc>
+                <declaration name="INITIAL_CAPACITY" type="int" line="833"/>
+                <declaration name="queue" type="RunnableScheduledFuture[]" line="834"/>
+                <declaration name="lock" type="ReentrantLock" line="836"/>
+                <declaration name="size" type="int" line="837"/>
+                <declaration name="leader" type="Thread" line="839"/>
+                <javadoc line="839">
+                    Thread designated to wait for the task at the head of the
+                      queue.  This variant of the Leader-Follower pattern
+                      (http://www.cs.wustl.edu/~schmidt/POSA/POSA2/) serves to
+                      minimize unnecessary timed waiting.  When a thread becomes
+                      the leader, it waits only for the next delay to elapse, but
+                      other threads await indefinitely.  The leader thread must
+                      signal some other thread before returning from take() or
+                      poll(...), unless some other thread becomes leader in the
+                      interim.  Whenever the head of the queue is replaced with a
+                      task with an earlier expiration time, the leader field is
+                      invalidated by being reset to null, and some waiting
+                      thread, but not necessarily the current leader, is
+                      signalled.  So waiting threads must be prepared to acquire
+                      and lose leadership while waiting.                    
+                </javadoc>
+                <declaration name="available" type="Condition" line="857"/>
+                <javadoc line="857">
+                    Condition signalled when a newer task becomes available at the
+                      head of the queue or a new thread may need to become leader.                    
+                </javadoc>
+                <javadoc line="863">
+                    Set f&apos;s heapIndex if it is a ScheduledFutureTask.                    
+                </javadoc>
+                <method name="setIndex" type="void" line="866">
+                    <params>
+                        <param name="f" type="RunnableScheduledFuture"/>
+                        <param name="idx" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="871">
+                    Sift element added at bottom up to its heap-ordered spot.
+                      Call only when holding lock.                    
+                </javadoc>
+                <method name="siftUp" type="void" line="875">
+                    <params>
+                        <param name="k" type="int"/>
+                        <param name="key" type="RunnableScheduledFuture"/>
+                    </params>
+                    <scope line="876">
+                        <declaration name="parent" type="int" line="877"/>
+                        <declaration name="e" type="RunnableScheduledFuture" line="878"/>
+                    </scope>
+                </method>
+                <javadoc line="889">
+                    Sift element added at top down to its heap-ordered spot.
+                      Call only when holding lock.                    
+                </javadoc>
+                <method name="siftDown" type="void" line="893">
+                    <params>
+                        <param name="k" type="int"/>
+                        <param name="key" type="RunnableScheduledFuture"/>
+                    </params>
+                    <declaration name="half" type="int" line="894"/>
+                    <scope line="895">
+                        <declaration name="child" type="int" line="896"/>
+                        <declaration name="c" type="RunnableScheduledFuture" line="897"/>
+                        <declaration name="right" type="int" line="898"/>
+                    </scope>
+                </method>
+                <javadoc line="911">
+                    Resize the heap array.  Call only when holding lock.                    
+                </javadoc>
+                <method name="grow" type="void" line="914">
+                    <comment line="916">
+                        grow 50%                        
+                    </comment>
+                    <comment line="917">
+                        overflow                        
+                    </comment>
+                    <declaration name="oldCapacity" type="int" line="915"/>
+                    <declaration name="newCapacity" type="int" line="916"/>
+                </method>
+                <javadoc line="922">
+                    Find index of given object, or -1 if absent                    
+                </javadoc>
+                <method name="indexOf" type="int" line="925">
+                    <params>
+                        <param name="x" type="Object"/>
+                    </params>
+                    <comment line="929">
+                        Sanity check; x could conceivably be a                        
+                    </comment>
+                    <comment line="930">
+                        ScheduledFutureTask from some other pool.                        
+                    </comment>
+                    <scope line="926">
+                        <scope line="927">
+                            <declaration name="i" type="int" line="928"/>
+                        </scope>
+                        <scope line="933"/>
+                    </scope>
+                </method>
+                <method name="contains" type="boolean" line="942">
+                    <params>
+                        <param name="x" type="Object"/>
+                    </params>
+                    <declaration name="lock" type="ReentrantLock" line="943"/>
+                    <scope line="945"/>
+                    <scope line="947"/>
+                </method>
+                <method name="remove" type="boolean" line="952">
+                    <params>
+                        <param name="x" type="Object"/>
+                    </params>
+                    <declaration name="lock" type="ReentrantLock" line="953"/>
+                    <scope line="955">
+                        <declaration name="i" type="int" line="956"/>
+                        <declaration name="s" type="int" line="961"/>
+                        <declaration name="replacement" type="RunnableScheduledFuture" line="962"/>
+                        <scope line="964"/>
+                    </scope>
+                    <scope line="970"/>
+                </method>
+                <method name="size" type="int" line="975">
+                    <declaration name="lock" type="ReentrantLock" line="976"/>
+                    <scope line="978"/>
+                    <scope line="980"/>
+                </method>
+                <method name="isEmpty" type="boolean" line="985"/>
+                <method name="remainingCapacity" type="int" line="989"/>
+                <method name="peek" type="RunnableScheduledFuture" line="993">
+                    <declaration name="lock" type="ReentrantLock" line="994"/>
+                    <scope line="996"/>
+                    <scope line="998"/>
+                </method>
+                <method name="offer" type="boolean" line="1003">
+                    <params>
+                        <param name="x" type="Runnable"/>
+                    </params>
+                    <declaration name="e" type="RunnableScheduledFuture" line="1006"/>
+                    <declaration name="lock" type="ReentrantLock" line="1007"/>
+                    <scope line="1009">
+                        <declaration name="i" type="int" line="1010"/>
+                        <scope line="1014"/>
+                        <scope line="1017"/>
+                        <scope line="1020"/>
+                    </scope>
+                    <scope line="1024"/>
+                </method>
+                <method name="put" type="void" line="1030">
+                    <params>
+                        <param name="e" type="Runnable"/>
+                    </params>
+                </method>
+                <method name="add" type="boolean" line="1034">
+                    <params>
+                        <param name="e" type="Runnable"/>
+                    </params>
+                </method>
+                <method name="offer" type="boolean" line="1038">
+                    <params>
+                        <param name="e" type="Runnable"/>
+                        <param name="timeout" type="long"/>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                </method>
+                <javadoc line="1042">
+                    Performs common bookkeeping for poll and take: Replaces
+                      first element with last and sifts it down.  Call only when
+                      holding lock.                    
+                    <param>
+                        f the task to remove and return                        
+                    </param>
+                </javadoc>
+                <method name="finishPoll" type="RunnableScheduledFuture" line="1048">
+                    <params>
+                        <param name="f" type="RunnableScheduledFuture"/>
+                    </params>
+                    <declaration name="s" type="int" line="1049"/>
+                    <declaration name="x" type="RunnableScheduledFuture" line="1050"/>
+                </method>
+                <method name="poll" type="RunnableScheduledFuture" line="1058">
+                    <declaration name="lock" type="ReentrantLock" line="1059"/>
+                    <scope line="1061">
+                        <declaration name="first" type="RunnableScheduledFuture" line="1062"/>
+                    </scope>
+                    <scope line="1067"/>
+                </method>
+                <method name="take" type="RunnableScheduledFuture" line="1072">
+                    <declaration name="lock" type="ReentrantLock" line="1073"/>
+                    <scope line="1075">
+                        <scope line="1076">
+                            <declaration name="first" type="RunnableScheduledFuture" line="1077"/>
+                            <scope line="1080">
+                                <declaration name="delay" type="long" line="1081"/>
+                                <scope line="1086">
+                                    <declaration name="thisThread" type="Thread" line="1087"/>
+                                    <scope line="1089"/>
+                                    <scope line="1091"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1098"/>
+                </method>
+                <method name="poll" type="RunnableScheduledFuture" line="1106">
+                    <params>
+                        <param name="timeout" type="long"/>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                    <declaration name="nanos" type="long" line="1107"/>
+                    <declaration name="lock" type="ReentrantLock" line="1108"/>
+                    <scope line="1110">
+                        <scope line="1111">
+                            <declaration name="first" type="RunnableScheduledFuture" line="1112"/>
+                            <scope line="1113"/>
+                            <scope line="1118">
+                                <declaration name="delay" type="long" line="1119"/>
+                                <scope line="1126">
+                                    <declaration name="thisThread" type="Thread" line="1127"/>
+                                    <scope line="1129">
+                                        <declaration name="timeLeft" type="long" line="1130"/>
+                                    </scope>
+                                    <scope line="1132"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1139"/>
+                </method>
+                <method name="clear" type="void" line="1146">
+                    <declaration name="lock" type="ReentrantLock" line="1147"/>
+                    <scope line="1149">
+                        <scope line="1150">
+                            <declaration name="t" type="RunnableScheduledFuture" line="1151"/>
+                            <scope line="1152"/>
+                        </scope>
+                    </scope>
+                    <scope line="1158"/>
+                </method>
+                <javadoc line="1163">
+                    Return and remove first element only if it is expired.
+                      Used only by drainTo.  Call only when holding lock.                    
+                </javadoc>
+                <method name="pollExpired" type="RunnableScheduledFuture" line="1167">
+                    <declaration name="first" type="RunnableScheduledFuture" line="1168"/>
+                </method>
+                <method name="drainTo" type="int" line="1174">
+                    <params>
+                        <param name="c" type="Collection<? super Runnable>"/>
+                    </params>
+                    <declaration name="lock" type="ReentrantLock" line="1179"/>
+                    <scope line="1181">
+                        <declaration name="first" type="RunnableScheduledFuture" line="1182"/>
+                        <declaration name="n" type="int" line="1183"/>
+                        <scope line="1184"/>
+                    </scope>
+                    <scope line="1189"/>
+                </method>
+                <method name="drainTo" type="int" line="1194">
+                    <params>
+                        <param name="c" type="Collection<? super Runnable>"/>
+                        <param name="maxElements" type="int"/>
+                    </params>
+                    <declaration name="lock" type="ReentrantLock" line="1201"/>
+                    <scope line="1203">
+                        <declaration name="first" type="RunnableScheduledFuture" line="1204"/>
+                        <declaration name="n" type="int" line="1205"/>
+                        <scope line="1206"/>
+                    </scope>
+                    <scope line="1211"/>
+                </method>
+                <method name="toArray" type="Object[]" line="1216">
+                    <declaration name="lock" type="ReentrantLock" line="1217"/>
+                    <scope line="1219"/>
+                    <scope line="1221"/>
+                </method>
+                <method name="toArray" type="T[]" line="1227">
+                    <params>
+                        <param name="a" type="T[]"/>
+                    </params>
+                    <declaration name="lock" type="ReentrantLock" line="1228"/>
+                    <scope line="1230"/>
+                    <scope line="1237"/>
+                </method>
+                <method name="iterator" type="Iterator<Runnable>" line="1242"/>
+                <class name="Itr" line="1246">
+                    <comment line="1252">
+                        index of next element to return                        
+                    </comment>
+                    <comment line="1253">
+                        index of last element, or -1 if no such                        
+                    </comment>
+                    <implements interface="Iterator">
+                        <type_params>
+                            <type_param name="Runnable"/>
+                        </type_params>
+                    </implements>
+                    <javadoc line="1246">
+                        Snapshot iterator that works off copy of underlying q array.                        
+                    </javadoc>
+                    <declaration name="array" type="RunnableScheduledFuture[]" line="1250"/>
+                    <declaration name="cursor" type="int" line="1251"/>
+                    <declaration name="lastRet" type="int" line="1252"/>
+                    <method name="Itr" type="constructor" line="1254">
+                        <params>
+                            <param name="array" type="RunnableScheduledFuture[]"/>
+                        </params>
+                    </method>
+                    <method name="hasNext" type="boolean" line="1258"/>
+                    <method name="next" type="Runnable" line="1262"/>
+                    <method name="remove" type="void" line="1269"/>
+                </class>
+            </class>
+        </class>
+    </source>

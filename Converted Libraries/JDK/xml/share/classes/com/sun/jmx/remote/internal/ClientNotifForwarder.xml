@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jmx.remote.internal">
+        <import package="java.io.IOException"/>
+        <import package="java.io.NotSerializableException"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.concurrent.Executor"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="javax.security.auth.Subject"/>
+        <import package="javax.management.Notification"/>
+        <import package="javax.management.NotificationListener"/>
+        <import package="javax.management.NotificationFilter"/>
+        <import package="javax.management.ObjectName"/>
+        <import package="javax.management.MBeanServerNotification"/>
+        <import package="javax.management.InstanceNotFoundException"/>
+        <import package="javax.management.ListenerNotFoundException"/>
+        <import package="javax.management.remote.NotificationResult"/>
+        <import package="javax.management.remote.TargetedNotification"/>
+        <import package="com.sun.jmx.remote.util.ClassLogger"/>
+        <import package="com.sun.jmx.remote.util.EnvHelp"/>
+        <class name="ClientNotifForwarder" line="56">
+            <comment line="67">
+                An Executor that allows at most one executing and one pending
+                Runnable.  It uses at most one thread -- as soon as there is
+                no pending Runnable the thread can exit.  Another thread is
+                created as soon as there is a new pending Runnable.  This
+                Executor is adapted for use in a situation where each Runnable
+                usually schedules up another Runnable.  On return from the
+                first one, the second one is immediately executed.  So this
+                just becomes a complicated way to write a while loop, but with
+                the advantage that you can replace it with another Executor,
+                for instance one that you are using to execute a bunch of other
+                unrelated work.
+                
+                You might expect that a java.util.concurrent.ThreadPoolExecutor
+                with corePoolSize=0 and maximumPoolSize=1 would have the same
+                behavior, but it does not.  A ThreadPoolExecutor only creates
+                a new thread when a new task is submitted and the number of
+                existing threads is &lt; corePoolSize.  This can never happen when
+                corePoolSize=0, so new threads are never created.  Surprising,
+                but there you are.                
+            </comment>
+            <comment line="276">
+                Called when a connector is doing reconnection. Like &lt;code&gt;postReconnection&lt;code&gt;,
+                 this method is intended to be called only by a client connector:
+                 &lt;code&gt;RMIConnector&lt;code&gt; and &lt;code&gt;ClientIntermediary&lt;code&gt;.
+                 Call this method will set the flag beingReconnection to &lt;code&gt;true&lt;code&gt;,
+                 and the thread used to fetch notifis will be stopped, a new thread can be
+                 created only after the method &lt;code&gt;postReconnection&lt;code&gt; is called.
+                
+                 It is caller&apos;s responsiblity to not re-call this method before calling
+                 &lt;code&gt;postReconnection&lt;code&gt;.                
+            </comment>
+            <comment line="391">
+                -------------------------------------------------                
+            </comment>
+            <comment line="392">
+                private classes                
+            </comment>
+            <comment line="393">
+                -------------------------------------------------                
+            </comment>
+            <comment line="394">
+                                
+            </comment>
+            <comment line="731">
+                -------------------------------------------------                
+            </comment>
+            <comment line="732">
+                private methods                
+            </comment>
+            <comment line="733">
+                -------------------------------------------------                
+            </comment>
+            <comment line="743">
+                Called to decide whether need to start a thread for fetching notifs.
+                 &lt;P&gt;The parameter reconnected will decide whether to initilize the clientSequenceNumber,
+                 initilaizing the clientSequenceNumber means to ignore all notifications arrived before.
+                 If it is reconnected, we will not initialize in order to get all notifications arrived
+                 during the reconnection. It may cause the newly registered listeners to receive some
+                 notifications arrived before its registray.                
+            </comment>
+            <comment line="853">
+                -------------------------------------------------                
+            </comment>
+            <comment line="854">
+                private variables                
+            </comment>
+            <comment line="855">
+                -------------------------------------------------                
+            </comment>
+            <comment line="863">
+                notif stuff                
+            </comment>
+            <comment line="870">
+                state                
+            </comment>
+            <declaration name="acc" type="AccessControlContext" line="58"/>
+            <method name="ClientNotifForwarder" type="constructor" line="60">
+                <params>
+                    <param name="env" type="Map"/>
+                </params>
+            </method>
+            <declaration name="threadId" type="int" line="64"/>
+            <class name="LinearExecutor" line="86">
+                <comment line="408">
+                    Set new context class loader, returns previous one.                    
+                </comment>
+                <comment line="617">
+                    Fetch one notification when we suspect that it might be a
+                    notification that we can&apos;t deserialize (because of a
+                    missing class).  First we ask for 0 notifications with 0
+                    timeout.  This allows us to skip sequence numbers for
+                    notifications that don&apos;t match our filters.  Then we ask
+                    for one notification.  If that produces a
+                    ClassNotFoundException or a NotSerializableException, we
+                    increase our sequence number and ask again.  Eventually we
+                    will either get a successful notification, or a return with
+                    0 notifications.  In either case we can return a
+                    NotificationResult.  This algorithm works (albeit less
+                    well) even if the server implementation doesn&apos;t optimize a
+                    request for 0 notifications to skip sequence numbers for
+                    notifications that don&apos;t match our filters.
+                    
+                    If we had at least one ClassNotFoundException, then we
+                    must emit a JMXConnectionNotification.LOST_NOTIFS.                    
+                </comment>
+                <implements interface="Executor"/>
+                <method name="execute" type="void" line="87">
+                    <params>
+                        <param name="command" type="Runnable"/>
+                    </params>
+                    <scope line="91">
+                        <anonymous_class line="92">
+                            <method name="run" type="void" line="95">
+                                <scope line="96">
+                                    <declaration name="r" type="Runnable" line="97"/>
+                                    <scope line="98">
+                                        <scope line="99"/>
+                                        <scope line="102"/>
+                                    </scope>
+                                </scope>
+                            </method>
+                        </anonymous_class>
+                    </scope>
+                </method>
+                <declaration name="command" type="Runnable" line="117"/>
+                <declaration name="thread" type="Thread" line="118"/>
+            </class>
+            <method name="ClientNotifForwarder" type="constructor" line="121">
+                <params>
+                    <param name="defaultClassLoader" type="ClassLoader"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <comment line="125">
+                    You can supply an Executor in which the remote call to
+                    fetchNotifications will be made.  The Executor&apos;s execute
+                    method reschedules another task, so you must not use                    
+                </comment>
+                <declaration name="ex" type="Executor" line="129"/>
+            </method>
+            <method name="fetchNotifs" type="NotificationResult" line="141"/>
+            <javadoc line="141">
+                Called to to fetch notifications from a server.                
+            </javadoc>
+            <method name="addListenerForMBeanRemovedNotif" type="Integer" line="149"/>
+            <method name="removeListenerForMBeanRemovedNotif" type="void" line="152"/>
+            <method name="lostNotifs" type="void" line="156"/>
+            <javadoc line="156">
+                Used to send out a notification about lost notifs                
+            </javadoc>
+            <method name="addNotificationListener" type="void" line="168">
+                <params>
+                    <param name="listenerID" type="Integer"/>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="170"/>
+            </method>
+            <method name="removeNotificationListener" type="Integer[]" line="190">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="NotificationListener"/>
+                </params>
+                <scope line="194"/>
+                <declaration name="ids" type="List&lt;Integer&gt;" line="199"/>
+                <declaration name="values" type="List&lt;ClientListenerInfo&gt;" line="200"/>
+                <scope line="202">
+                    <declaration name="li" type="ClientListenerInfo" line="203"/>
+                    <scope line="205"/>
+                </scope>
+            </method>
+            <method name="removeNotificationListener" type="Integer" line="223">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                </params>
+                <scope line="225"/>
+                <declaration name="id" type="Integer" line="232"/>
+                <declaration name="values" type="List&lt;ClientListenerInfo&gt;" line="234"/>
+                <scope line="236">
+                    <declaration name="li" type="ClientListenerInfo" line="237"/>
+                    <scope line="238"/>
+                </scope>
+            </method>
+            <method name="removeNotificationListener" type="Integer[]" line="253">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                </params>
+                <scope line="254"/>
+                <declaration name="ids" type="List&lt;Integer&gt;" line="259"/>
+                <declaration name="values" type="List&lt;ClientListenerInfo&gt;" line="261"/>
+                <scope line="263">
+                    <declaration name="li" type="ClientListenerInfo" line="264"/>
+                    <scope line="265"/>
+                </scope>
+            </method>
+            <method name="preReconnection" type="ClientListenerInfo[]" line="286">
+                <comment line="287">
+                    should never                    
+                </comment>
+                <scope line="287"/>
+                <declaration name="tmp" type="ClientListenerInfo[]" line="291"/>
+            </method>
+            <javadoc line="302">
+                Called after reconnection is finished.
+                  This method is intended to be called only by a client connector:
+                  &lt;code&gt;RMIConnector&lt;/code&gt; and &lt;code&gt;ClientIntermediary&lt;/code&gt;.                
+            </javadoc>
+            <method name="postReconnection" type="void" line="308">
+                <params>
+                    <param name="listenerInfos" type="ClientListenerInfo[]"/>
+                </params>
+                <comment line="341">
+                    doing or waiting reconnection                    
+                </comment>
+                <comment line="342">
+                    only update mbeanRemovedNotifID                    
+                </comment>
+                <comment line="365">
+                    old listeners are re-added                    
+                </comment>
+                <comment line="366">
+                    not update clientSequenceNumber                    
+                </comment>
+                <comment line="367">
+                    only new listeners added during reconnection                    
+                </comment>
+                <comment line="368">
+                    need update clientSequenceNumber                    
+                </comment>
+                <scope line="310"/>
+                <scope line="314">
+                    <scope line="315"/>
+                    <scope line="317">
+                        <declaration name="ioe" type="IOException" line="318"/>
+                    </scope>
+                </scope>
+                <declaration name="trace" type="boolean" line="324"/>
+                <declaration name="len" type="int" line="325"/>
+                <scope line="327">
+                    <scope line="328"/>
+                </scope>
+                <scope line="341">
+                    <scope line="343"/>
+                    <scope line="345">
+                        <declaration name="msg" type="String" line="346"/>
+                        <scope line="350"/>
+                    </scope>
+                </scope>
+                <scope line="354">
+                    <scope line="355">
+                        <scope line="356"/>
+                        <scope line="358">
+                            <declaration name="ioe" type="IOException" line="359"/>
+                        </scope>
+                    </scope>
+                    <scope line="365"/>
+                    <scope line="367"/>
+                </scope>
+            </method>
+            <method name="terminate" type="void" line="373">
+                <scope line="374"/>
+                <scope line="378"/>
+                <scope line="382"/>
+            </method>
+            <class name="NotifFetcher" line="395">
+                <comment line="408">
+                    Set new context class loader, returns previous one.                    
+                </comment>
+                <comment line="617">
+                    Fetch one notification when we suspect that it might be a
+                    notification that we can&apos;t deserialize (because of a
+                    missing class).  First we ask for 0 notifications with 0
+                    timeout.  This allows us to skip sequence numbers for
+                    notifications that don&apos;t match our filters.  Then we ask
+                    for one notification.  If that produces a
+                    ClassNotFoundException or a NotSerializableException, we
+                    increase our sequence number and ask again.  Eventually we
+                    will either get a successful notification, or a return with
+                    0 notifications.  In either case we can return a
+                    NotificationResult.  This algorithm works (albeit less
+                    well) even if the server implementation doesn&apos;t optimize a
+                    request for 0 notifications to skip sequence numbers for
+                    notifications that don&apos;t match our filters.
+                    
+                    If we had at least one ClassNotFoundException, then we
+                    must emit a JMXConnectionNotification.LOST_NOTIFS.                    
+                </comment>
+                <implements interface="Runnable"/>
+                <declaration name="alreadyLogged" type="boolean" line="397"/>
+                <method name="logOnce" type="void" line="399">
+                    <params>
+                        <param name="msg" type="String"/>
+                        <param name="x" type="SecurityException"/>
+                    </params>
+                    <comment line="401">
+                        Log only once.                        
+                    </comment>
+                </method>
+                <method name="setContextClassLoader" type="ClassLoader" line="408">
+                    <params>
+                        <param name="loader" type="ClassLoader"/>
+                    </params>
+                    <comment line="410">
+                        if ctxt is null, log a config message and throw a                        
+                    </comment>
+                    <comment line="411">
+                        SecurityException.                        
+                    </comment>
+                    <comment line="420">
+                        get context class loader - may throw                        
+                    </comment>
+                    <comment line="421">
+                        SecurityException - though unlikely.                        
+                    </comment>
+                    <comment line="425">
+                        if nothing needs to be done, break here...                        
+                    </comment>
+                    <comment line="428">
+                        reset context class loader - may throw                        
+                    </comment>
+                    <comment line="429">
+                        SecurityException                        
+                    </comment>
+                    <declaration name="ctxt" type="AccessControlContext" line="409"/>
+                    <scope line="412"/>
+                    <anonymous_class line="417">
+                        <method name="run" type="ClassLoader" line="418">
+                            <comment line="420">
+                                get context class loader - may throw                                
+                            </comment>
+                            <comment line="421">
+                                SecurityException - though unlikely.                                
+                            </comment>
+                            <comment line="425">
+                                if nothing needs to be done, break here...                                
+                            </comment>
+                            <comment line="428">
+                                reset context class loader - may throw                                
+                            </comment>
+                            <comment line="429">
+                                SecurityException                                
+                            </comment>
+                            <scope line="419">
+                                <declaration name="previous" type="ClassLoader" line="422"/>
+                            </scope>
+                            <scope line="432"/>
+                        </method>
+                    </anonymous_class>
+                </method>
+                <method name="run" type="void" line="443">
+                    <declaration name="previous" type="ClassLoader" line="444"/>
+                    <scope line="445"/>
+                    <scope line="447"/>
+                    <scope line="450"/>
+                    <scope line="452">
+                        <scope line="453"/>
+                    </scope>
+                </method>
+                <method name="doRun" type="void" line="459">
+                    <comment line="471">
+                        nr == null means got exception                        
+                    </comment>
+                    <comment line="482">
+                        check sequence number.                        
+                    </comment>
+                    <comment line="483">
+                                                
+                    </comment>
+                    <comment line="497">
+                        check if an mbean unregistration notif                        
+                    </comment>
+                    <comment line="529">
+                        forward                        
+                    </comment>
+                    <comment line="541">
+                        tell that the thread is REALLY stopped                        
+                    </comment>
+                    <scope line="460">
+                        <scope line="463"/>
+                    </scope>
+                    <declaration name="nr" type="NotificationResult" line="469"/>
+                    <scope line="470">
+                        <declaration name="notifs" type="TargetedNotification[]" line="473"/>
+                        <declaration name="len" type="int" line="475"/>
+                        <declaration name="listeners" type="Map&lt;Integer,ClientListenerInfo&gt;" line="476"/>
+                        <declaration name="myListenerID" type="Integer" line="477"/>
+                        <declaration name="missed" type="long" line="479"/>
+                        <scope line="481">
+                            <scope line="484"/>
+                            <scope line="493">
+                                <declaration name="tn" type="TargetedNotification" line="494"/>
+                                <declaration name="listenerID" type="Integer" line="495"/>
+                                <scope line="498">
+                                    <declaration name="li" type="ClientListenerInfo" line="499"/>
+                                    <scope line="500"/>
+                                </scope>
+                                <declaration name="notif" type="Notification" line="505"/>
+                                <declaration name="unreg" type="String" line="506"/>
+                                <scope line="509">
+                                    <declaration name="mbsn" type="MBeanServerNotification" line="511"/>
+                                    <declaration name="name" type="ObjectName" line="513"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="521">
+                            <declaration name="msg" type="String" line="522"/>
+                        </scope>
+                        <scope line="530">
+                            <declaration name="tn" type="TargetedNotification" line="531"/>
+                        </scope>
+                    </scope>
+                    <scope line="536"/>
+                    <scope line="540">
+                        <scope line="544"/>
+                        <scope line="546">
+                            <scope line="547"/>
+                        </scope>
+                    </scope>
+                    <scope line="552"/>
+                </method>
+                <method name="dispatchNotification" type="void" line="559">
+                    <params>
+                        <param name="tn" type="TargetedNotification"/>
+                        <param name="myListenerID" type="Integer"/>
+                        <param name="listeners" type="Map<Integer,ClientListenerInfo>"/>
+                    </params>
+                    <declaration name="notif" type="Notification" line="560"/>
+                    <declaration name="listenerID" type="Integer" line="561"/>
+                    <declaration name="li" type="ClientListenerInfo" line="564"/>
+                    <scope line="566"/>
+                    <declaration name="l" type="NotificationListener" line="572"/>
+                    <declaration name="h" type="Object" line="573"/>
+                    <scope line="574"/>
+                    <scope line="576">
+                        <declaration name="msg" type="String" line="577"/>
+                    </scope>
+                </method>
+                <method name="fetchNotifs" type="NotificationResult" line="585">
+                    <comment line="611">
+                        no more fetching                        
+                    </comment>
+                    <scope line="586">
+                        <declaration name="nr" type="NotificationResult" line="587"/>
+                        <scope line="591"/>
+                    </scope>
+                    <scope line="597"/>
+                    <scope line="600"/>
+                    <scope line="603">
+                        <scope line="604"/>
+                    </scope>
+                </method>
+                <method name="fetchOneNotif" type="NotificationResult" line="634">
+                    <comment line="648">
+                        0 notifs to update startSequenceNumber                        
+                    </comment>
+                    <comment line="669">
+                        1 notif to skip possible missing class                        
+                    </comment>
+                    <comment line="697">
+                        Even if result.getEarliestSequenceNumber() is now greater than                        
+                    </comment>
+                    <comment line="698">
+                        it was initially, meaning some notifs have been dropped                        
+                    </comment>
+                    <comment line="699">
+                        from the buffer, we don&apos;t want the caller to see that                        
+                    </comment>
+                    <comment line="700">
+                        because it is then likely to renotify about the lost notifs.                        
+                    </comment>
+                    <comment line="701">
+                        So we put back the first value of earliestSequenceNumber                        
+                    </comment>
+                    <comment line="702">
+                        that we saw.                        
+                    </comment>
+                    <declaration name="cnf" type="ClientNotifForwarder" line="635"/>
+                    <declaration name="startSequenceNumber" type="long" line="637"/>
+                    <declaration name="notFoundCount" type="int" line="639"/>
+                    <declaration name="result" type="NotificationResult" line="641"/>
+                    <declaration name="firstEarliest" type="long" line="642"/>
+                    <scope line="644">
+                        <declaration name="nr" type="NotificationResult" line="645"/>
+                        <scope line="647"/>
+                        <scope line="650"/>
+                        <scope line="655"/>
+                        <scope line="668"/>
+                        <scope line="671">
+                            <scope line="673">
+                                <scope line="676"/>
+                            </scope>
+                            <scope line="683"/>
+                        </scope>
+                    </scope>
+                    <scope line="691">
+                        <declaration name="msg" type="String" line="692"/>
+                        <scope line="703"/>
+                    </scope>
+                </method>
+                <method name="shouldStop" type="boolean" line="713">
+                    <comment line="718">
+                        no more listener, stop fetching                        
+                    </comment>
+                    <scope line="714">
+                        <scope line="715"/>
+                        <scope line="717"/>
+                    </scope>
+                </method>
+            </class>
+            <method name="setState" type="void" line="733">
+                <params>
+                    <param name="newState" type="int"/>
+                </params>
+                <scope line="734"/>
+            </method>
+            <method name="init" type="void" line="750">
+                <params>
+                    <param name="reconnected" type="boolean"/>
+                </params>
+                <comment line="760">
+                    wait for another thread to do, which is doing reconnection                    
+                </comment>
+                <comment line="764">
+                    make sure only one fetching thread.                    
+                </comment>
+                <comment line="775">
+                    re-call this method to check the state again,                    
+                </comment>
+                <comment line="776">
+                    the state can be other value like TERMINATED.                    
+                </comment>
+                <comment line="782">
+                    wait for another thread to do, which is doing reconnection                    
+                </comment>
+                <comment line="790">
+                    init the clientSequenceNumber if not reconnected.                    
+                </comment>
+                <comment line="796">
+                    can&apos;t happen                    
+                </comment>
+                <comment line="802">
+                    for cleaning                    
+                </comment>
+                <comment line="817">
+                    start fetching                    
+                </comment>
+                <comment line="822">
+                    should not                    
+                </comment>
+                <scope line="759"/>
+                <scope line="764">
+                    <scope line="765"/>
+                    <scope line="767">
+                        <declaration name="ioe" type="IOException" line="768"/>
+                    </scope>
+                </scope>
+                <scope line="781"/>
+                <scope line="786"/>
+                <scope line="791">
+                    <scope line="792">
+                        <declaration name="nr" type="NotificationResult" line="793"/>
+                    </scope>
+                    <scope line="795"/>
+                </scope>
+                <scope line="803"/>
+                <scope line="805">
+                    <declaration name="msg" type="String" line="806"/>
+                    <scope line="810"/>
+                </scope>
+            </method>
+            <javadoc line="827">
+                Import: should not remove a listener during reconnection, the reconnection
+                  needs to change the listener list and that will possibly make removal fail.                
+            </javadoc>
+            <method name="beforeRemove" type="void" line="831">
+                <scope line="832">
+                    <scope line="833"/>
+                    <scope line="837"/>
+                    <scope line="839">
+                        <declaration name="ioe" type="IOException" line="840"/>
+                    </scope>
+                </scope>
+                <scope line="847"/>
+            </method>
+            <declaration name="defaultClassLoader" type="ClassLoader" line="856"/>
+            <declaration name="executor" type="Executor" line="857"/>
+            <declaration name="infoList" type="Map&lt;Integer,ClientListenerInfo&gt;" line="859"/>
+            <declaration name="clientSequenceNumber" type="long" line="863"/>
+            <declaration name="maxNotifications" type="int" line="864"/>
+            <declaration name="timeout" type="long" line="865"/>
+            <declaration name="mbeanRemovedNotifID" type="Integer" line="866"/>
+            <declaration name="currentFetchThread" type="Thread" line="867"/>
+            <declaration name="STARTING" type="int" line="870"/>
+            <javadoc line="870">
+                This state means that a thread is being created for fetching and forwarding notifications.                
+            </javadoc>
+            <declaration name="STARTED" type="int" line="875"/>
+            <javadoc line="875">
+                This state tells that a thread has been started for fetching and forwarding notifications.                
+            </javadoc>
+            <declaration name="STOPPING" type="int" line="880"/>
+            <javadoc line="880">
+                This state means that the fetching thread is informed to stop.                
+            </javadoc>
+            <declaration name="STOPPED" type="int" line="885"/>
+            <javadoc line="885">
+                This state means that the fetching thread is already stopped.                
+            </javadoc>
+            <declaration name="TERMINATED" type="int" line="890"/>
+            <javadoc line="890">
+                This state means that this object is terminated and no more thread will be created
+                  for fetching notifications.                
+            </javadoc>
+            <declaration name="state" type="int" line="896"/>
+            <declaration name="beingReconnected" type="boolean" line="898"/>
+            <javadoc line="898">
+                This variable is used to tell whether a connector (RMIConnector or ClientIntermediary)
+                  is doing reconnection.
+                  This variable will be set to true by the method &lt;code&gt;preReconnection&lt;/code&gt;, and set
+                  to false by &lt;code&gt;postReconnection&lt;/code&gt;.
+                  When beingReconnected == true, no thread will be created for fetching notifications.                
+            </javadoc>
+            <declaration name="logger" type="ClassLogger" line="907"/>
+        </class>
+    </source>

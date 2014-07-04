@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jndi.ldap">
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Vector"/>
+        <import package="java.util.Enumeration"/>
+        <import package="java.util.EventObject"/>
+        <import package="javax.naming"/>
+        <import package="javax.naming.directory"/>
+        <import package="javax.naming.event"/>
+        <import package="javax.naming.directory.SearchControls"/>
+        <import package="javax.naming.ldap.UnsolicitedNotificationListener"/>
+        <import package="javax.naming.ldap.UnsolicitedNotificationEvent"/>
+        <import package="javax.naming.ldap.UnsolicitedNotification"/>
+        <class name="EventSupport" line="41">
+            <comment line="321">
+                The queue of events to be delivered.                
+            </comment>
+            <comment line="348">
+                No finalize() needed because EventSupport is always owned by                
+            </comment>
+            <comment line="349">
+                an LdapCtx. LdapCtx&apos;s finalize() and close() always call cleanup() so                
+            </comment>
+            <comment line="350">
+                there is no need for EventSupport to have a finalize().                
+            </comment>
+            <javadoc line="41">
+                This is a utility class that can be used by a context that supports
+                  event notification.  You can use an instance of this class as a member field
+                  of your context and delegate various work to it.
+                  It is currently structured so that each context should have its own
+                  EventSupport (instead of static version shared by all contexts
+                  of a service provider).
+                  &lt;p&gt;
+                  This class supports two types of listeners: those that register for
+                  NamingEvents, and those for UnsolicitedNotificationEvents (they can be mixed
+                  into the same listener).
+                  For NamingEvent listeners, it maintains a hashtable that maps
+                  registration requests--the key--to
+                  &lt;em&gt;notifiers&lt;/em&gt;--the value. Each registration request consists of:
+                  &lt;ul&gt;
+                  &lt;li&gt;The name argument of the registration.
+                  &lt;li&gt;The filter (default is &quot;(objectclass=)&quot;).
+                  &lt;li&gt;The search controls (default is null SearchControls).
+                  &lt;li&gt;The events that the listener is interested in. This is determined by
+                  finding out which &lt;tt&gt;NamingListener&lt;/tt&gt; interface the listener supports.
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  A notifier (&lt;tt&gt;NamingEventNotifier&lt;/tt&gt;) is a worker thread that is responsible
+                  for gathering information for generating events requested by its listeners.
+                  Each notifier maintains its own list of listeners; these listeners have
+                  all made the same registration request (at different times) and implements
+                  the same &lt;tt&gt;NamingListener&lt;/tt&gt; interfaces.
+                  &lt;p&gt;
+                  For unsolicited listeners, this class maintains a vector, unsolicited.
+                  When an unsolicited listener is registered, this class adds itself
+                  to the context&apos;s LdapClient. When LdapClient receives an unsolicited
+                  notification, it notifies this EventSupport to fire an event to the
+                  the listeners. Special handling in LdapClient is done for the DISCONNECT
+                  notification. [It results in the EventSupport firing also a
+                  NamingExceptionEvent to the unsolicited listeners.]
+                  &lt;p&gt;
+                  When a context no longer needs this EventSupport, it should invoke
+                  cleanup() on it.
+                  &lt;p&gt;
+                  &lt;h4&gt;Registration&lt;/h4&gt;
+                  When a registration request is made, this class attempts to find an
+                  existing notifier that&apos;s already working on the request. If one is
+                  found, the listener is added to the notifier&apos;s list. If one is not found,
+                  a new notifier is created for the listener.
+                  &lt;h4&gt;Deregistration&lt;/h4&gt;
+                  When a deregistration request is made, this class attemps to find its
+                  corresponding notifier. If the notifier is found, the listener is removed
+                  from the notifier&apos;s list. If the listener is the last listener on the list,
+                  the notifier&apos;s thread is terminated and removed from this class&apos;s hashtable.
+                  Nothing happens if the notifier is not found.
+                  &lt;h4&gt;Event Dispatching&lt;/h4&gt;
+                  The notifiers are responsible for gather information for generating events
+                  requested by their respective listeners. When a notifier gets sufficient
+                  information to generate an event, it creates invokes the
+                  appropriate &lt;tt&gt;fireXXXEvent&lt;/tt&gt; on this class with the information and list of
+                  listeners. This causes an event and the list of listeners to be added
+                  to the &lt;em&gt;event queue&lt;/em&gt;.
+                  This class maintains an event queue and a dispatching thread that dequeues
+                  events from the queue and dispatches them to the listeners.
+                  &lt;h4&gt;Synchronization&lt;/h4&gt;
+                  This class is used by the main thread (LdapCtx) to add/remove listeners.
+                  It is also used asynchronously by NamingEventNotifiers threads and
+                  the context&apos;s Connection thread. It is used by the notifier threads to
+                  queue events and to update the notifiers list when the notifiers exit.
+                  It is used by the Connection thread to fire unsolicited notifications.
+                  Methods that access/update the &apos;unsolicited&apos; and &apos;notifiers&apos; lists are
+                  thread-safe.                
+                <author>
+                    Rosanna Lee                    
+                </author>
+            </javadoc>
+            <declaration name="debug" type="boolean" line="116"/>
+            <declaration name="ctx" type="LdapCtx" line="118"/>
+            <declaration name="notifiers" type="Hashtable" line="120"/>
+            <javadoc line="120">
+                NamingEventNotifiers; hashed by search arguments;                
+            </javadoc>
+            <declaration name="unsolicited" type="Vector" line="125"/>
+            <javadoc line="125">
+                List of unsolicited notification listeners.                
+            </javadoc>
+            <javadoc line="130">
+                Constructs EventSupport for ctx.
+                  &lt;em&gt;Do we need to record the name of the target context?
+                  Or can we assume that EventSupport is called on a resolved
+                  context? Do we need other add/remove-NamingListener methods?
+                  package private;                
+            </javadoc>
+            <method name="EventSupport" type="constructor" line="137">
+                <params>
+                    <param name="ctx" type="LdapCtx"/>
+                </params>
+            </method>
+            <javadoc line="141">
+                Adds &lt;tt&gt;l&lt;/tt&gt; to list of listeners interested in &lt;tt&gt;nm&lt;/tt&gt;.                
+            </javadoc>
+            <method name="addNamingListener" type="void" line="152">
+                <params>
+                    <param name="nm" type="String"/>
+                    <param name="scope" type="int"/>
+                    <param name="l" type="NamingListener"/>
+                </params>
+                <comment line="144">
+                    Make the addremoveNamingListeners synchronized to:
+                     1. protect usage of &apos;unsolicited&apos;, which may be read by
+                        the Connection thread when dispatching unsolicited notification.
+                     2. ensure that NamingEventNotifier thread&apos;s access to &apos;notifiers&apos;
+                        is safe                    
+                </comment>
+                <comment line="168">
+                    Add listener to this&apos;s list of unsolicited notifiers                    
+                </comment>
+                <scope line="155">
+                    <declaration name="args" type="NotifierArgs" line="156"/>
+                    <declaration name="notifier" type="NamingEventNotifier" line="158"/>
+                    <scope line="160"/>
+                    <scope line="163"/>
+                </scope>
+                <scope line="167">
+                    <scope line="169"/>
+                </scope>
+            </method>
+            <javadoc line="177">
+                Adds &lt;tt&gt;l&lt;/tt&gt; to list of listeners interested in &lt;tt&gt;nm&lt;/tt&gt;
+                  and filter.                
+            </javadoc>
+            <method name="addNamingListener" type="void" line="182">
+                <params>
+                    <param name="nm" type="String"/>
+                    <param name="filter" type="String"/>
+                    <param name="ctls" type="SearchControls"/>
+                    <param name="l" type="NamingListener"/>
+                </params>
+                <comment line="198">
+                    Add listener to this&apos;s list of unsolicited notifiers                    
+                </comment>
+                <scope line="185">
+                    <declaration name="args" type="NotifierArgs" line="186"/>
+                    <declaration name="notifier" type="NamingEventNotifier" line="188"/>
+                    <scope line="190"/>
+                    <scope line="193"/>
+                </scope>
+                <scope line="197">
+                    <scope line="199"/>
+                </scope>
+            </method>
+            <javadoc line="206">
+                Removes &lt;tt&gt;l&lt;/tt&gt; from all notifiers in this context.                
+            </javadoc>
+            <method name="removeNamingListener" type="void" line="209">
+                <params>
+                    <param name="l" type="NamingListener"/>
+                </params>
+                <comment line="215">
+                    Go through list of notifiers, remove &apos;l&apos; from each.                    
+                </comment>
+                <comment line="216">
+                    If &apos;l&apos; is notifier&apos;s only listener, remove notifier too.                    
+                </comment>
+                <comment line="232">
+                    Remove from list of unsolicited notifier                    
+                </comment>
+                <declaration name="allnotifiers" type="Enumeration" line="210"/>
+                <declaration name="notifier" type="NamingEventNotifier" line="211"/>
+                <scope line="217">
+                    <scope line="219">
+                        <scope line="223"/>
+                    </scope>
+                </scope>
+                <scope line="235"/>
+            </method>
+            <method name="hasUnsolicited" type="boolean" line="241"/>
+            <javadoc line="245">
+                package private;
+                  Called by NamingEventNotifier to remove itself when it encounters
+                  a NamingException.                
+            </javadoc>
+            <method name="removeDeadNotifier" type="void" line="250">
+                <params>
+                    <param name="info" type="NotifierArgs"/>
+                </params>
+                <scope line="251"/>
+            </method>
+            <javadoc line="257">
+                Fire an event to unsolicited listeners.
+                  package private;
+                  Called by LdapCtx when its clnt receives an unsolicited notification.                
+            </javadoc>
+            <method name="fireUnsolicited" type="void" line="262">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+                <comment line="268">
+                    This shouldn&apos;t really happen, but might in case                    
+                </comment>
+                <comment line="269">
+                    there is a timing problem that removes a listener                    
+                </comment>
+                <comment line="270">
+                    before a fired event event reaches here.                    
+                </comment>
+                <comment line="276">
+                    Fire UnsolicitedNotification to unsolicited listeners                    
+                </comment>
+                <comment line="284">
+                    Fire NamingExceptionEvent to unsolicited listeners.                    
+                </comment>
+                <comment line="290">
+                    When an exception occurs, the unsolicited listeners                    
+                </comment>
+                <comment line="291">
+                    are automatically deregistered.                    
+                </comment>
+                <comment line="292">
+                    When LdapClient.processUnsolicited() fires a NamingException,                    
+                </comment>
+                <comment line="293">
+                    it will update its listener list so we don&apos;t have to.                    
+                </comment>
+                <comment line="294">
+                    Likewise for LdapCtx.                    
+                </comment>
+                <scope line="263"/>
+                <scope line="267"/>
+                <scope line="274">
+                    <declaration name="evt" type="UnsolicitedNotificationEvent" line="278"/>
+                </scope>
+                <scope line="282">
+                    <declaration name="evt" type="NamingExceptionEvent" line="286"/>
+                </scope>
+            </method>
+            <javadoc line="300">
+                Stops notifier threads that are collecting event data and
+                  stops the event queue from dispatching events.
+                  Package private; used by LdapCtx.                
+            </javadoc>
+            <method name="cleanup" type="void" line="305">
+                <comment line="317">
+                    %%% Should we fire NamingExceptionEvents to unsolicited listeners?                    
+                </comment>
+                <scope line="307">
+                    <scope line="308"/>
+                </scope>
+                <scope line="313"/>
+            </method>
+            <declaration name="eventQueue" type="EventQueue" line="323"/>
+            <javadoc line="325">
+                Add the event and vector of listeners to the queue to be delivered.
+                  An event dispatcher thread dequeues events from the queue and dispatches
+                  them to the registered listeners.
+                  Package private; used by NamingEventNotifier to fire events                
+            </javadoc>
+            <method name="queueEvent" type="void" line="331">
+                <params>
+                    <param name="event" type="EventObject"/>
+                    <param name="vector" type="Vector"/>
+                </params>
+                <comment line="335">
+                    Copy the vector in order to freeze the state of the set
+                     of EventListeners the event should be delivered to prior
+                     to delivery.  This ensures that any changes made to the
+                     Vector from a target listener&apos;s method during the delivery
+                     of this event will not take effect until after the event is
+                     delivered.                    
+                </comment>
+                <declaration name="v" type="Vector" line="343"/>
+            </method>
+        </class>
+    </source>

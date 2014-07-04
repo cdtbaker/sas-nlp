@@ -1,0 +1,852 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.org.apache.xml.internal.security.signature">
+        <import package="java.io.IOException"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.security.Key"/>
+        <import package="java.security.PublicKey"/>
+        <import package="java.security.cert.X509Certificate"/>
+        <import package="javax.crypto.SecretKey"/>
+        <import package="com.sun.org.apache.xml.internal.security.algorithms.SignatureAlgorithm"/>
+        <import package="com.sun.org.apache.xml.internal.security.c14n.CanonicalizationException"/>
+        <import package="com.sun.org.apache.xml.internal.security.c14n.Canonicalizer"/>
+        <import package="com.sun.org.apache.xml.internal.security.c14n.InvalidCanonicalizerException"/>
+        <import package="com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException"/>
+        <import package="com.sun.org.apache.xml.internal.security.exceptions.XMLSecurityException"/>
+        <import package="com.sun.org.apache.xml.internal.security.keys.KeyInfo"/>
+        <import package="com.sun.org.apache.xml.internal.security.keys.content.X509Data"/>
+        <import package="com.sun.org.apache.xml.internal.security.transforms.Transforms"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.Base64"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.Constants"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.I18n"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.IdResolver"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.SignatureElementProxy"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.SignerOutputStream"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.UnsyncBufferedOutputStream"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.XMLUtils"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.resolver.ResourceResolver"/>
+        <import package="com.sun.org.apache.xml.internal.security.utils.resolver.ResourceResolverSpi"/>
+        <import package="org.w3c.dom.Document"/>
+        <import package="org.w3c.dom.Element"/>
+        <import package="org.w3c.dom.Node"/>
+        <import package="org.w3c.dom.Text"/>
+        <class name="XMLSignature" line="58">
+            <extends class="SignatureElementProxy"/>
+            <comment line="87">
+                J-                
+            </comment>
+            <comment line="123">
+                J+                
+            </comment>
+            <javadoc line="58">
+                Handles &lt;code&gt;&amp;lt;ds:Signature&amp;gt;&lt;/code&gt; elements.
+                  This is the main class that deals with creating and verifying signatures.
+                  &lt;p&gt;There are 2 types of constructors for this class. The ones that take a
+                  document, baseURI and 1 or more Java Objects. This is mostly used for
+                  signing purposes.
+                  The other constructor is the one that takes a DOM Element and a BaseURI.
+                  This is used mostly with for verifying, when you have a SignatureElement.
+                  There are a few different types of methods:
+                  &lt;ul&gt;&lt;li&gt;The addDocument methods are used to add References with optional
+                  transforms during signing. &lt;/li&gt;
+                  &lt;li&gt;addKeyInfo methods are to add Certificates and Keys to the
+                  KeyInfo tags during signing. &lt;/li&gt;
+                  &lt;li&gt;appendObject allows a user to add any XML Structure as an
+                  ObjectContainer during signing.&lt;/li&gt;
+                  &lt;li&gt;sign and checkSignatureValue methods are used to sign and validate the
+                  signature. &lt;/li&gt;&lt;/ul&gt;                
+                <author>
+                    $Author: mullan $                    
+                </author>
+            </javadoc>
+            <declaration name="log" type="java.util.logging.Logger" line="82"/>
+            <javadoc line="82">
+                {@link java.util.logging} logging facility                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_SHA1" type="String" line="87"/>
+            <javadoc line="87">
+                MAC - Required HMAC-SHA1                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_DSA" type="String" line="90"/>
+            <javadoc line="90">
+                Signature - Required DSAwithSHA1 (DSS)                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA" type="String" line="93"/>
+            <javadoc line="93">
+                Signature - Recommended RSAwithSHA1                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA_SHA1" type="String" line="95"/>
+            <javadoc line="95">
+                Signature - Recommended RSAwithSHA1                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_NOT_RECOMMENDED_RSA_MD5" type="String" line="97"/>
+            <javadoc line="97">
+                Signature - NOT Recommended RSAwithMD5                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA_RIPEMD160" type="String" line="99"/>
+            <javadoc line="99">
+                Signature - Optional RSAwithRIPEMD160                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA_SHA256" type="String" line="101"/>
+            <javadoc line="101">
+                Signature - Optional RSAwithSHA256                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA_SHA384" type="String" line="103"/>
+            <javadoc line="103">
+                Signature - Optional RSAwithSHA384                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_RSA_SHA512" type="String" line="105"/>
+            <javadoc line="105">
+                Signature - Optional RSAwithSHA512                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_NOT_RECOMMENDED_MD5" type="String" line="108"/>
+            <javadoc line="108">
+                HMAC - NOT Recommended HMAC-MD5                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_RIPEMD160" type="String" line="110"/>
+            <javadoc line="110">
+                HMAC - Optional HMAC-RIPEMD160                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_SHA256" type="String" line="112"/>
+            <javadoc line="112">
+                HMAC - Optional HMAC-SHA256                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_SHA384" type="String" line="114"/>
+            <javadoc line="114">
+                HMAC - Optional HMAC-SHA284                
+            </javadoc>
+            <declaration name="ALGO_ID_MAC_HMAC_SHA512" type="String" line="116"/>
+            <javadoc line="116">
+                HMAC - Optional HMAC-SHA512                
+            </javadoc>
+            <declaration name="ALGO_ID_SIGNATURE_ECDSA_SHA1" type="String" line="118"/>
+            <javadoc line="118">
+                Signature - Optional ECDSAwithSHA1                
+            </javadoc>
+            <declaration name="_signedInfo" type="SignedInfo" line="124"/>
+            <javadoc line="124">
+                ds:Signature.ds:SignedInfo element                
+            </javadoc>
+            <declaration name="_keyInfo" type="KeyInfo" line="127"/>
+            <javadoc line="127">
+                ds:Signature.ds:KeyInfo                
+            </javadoc>
+            <declaration name="_followManifestsDuringValidation" type="boolean" line="130"/>
+            <javadoc line="130">
+                Checking the digests in References in a Signature are mandatory, but for
+                  References inside a Manifest it is application specific. This boolean is
+                  to indicate that the References inside Manifests should be validated.                
+            </javadoc>
+            <declaration name="signatureValueElement" type="Element" line="137"/>
+            <javadoc line="139">
+                This creates a new &lt;CODE&gt;ds:Signature&lt;/CODE&gt; Element and adds an empty
+                  &lt;CODE&gt;ds:SignedInfo&lt;/CODE&gt;.
+                  The &lt;code&gt;ds:SignedInfo&lt;/code&gt; is initialized with the specified Signature
+                  algorithm and Canonicalizer.ALGO_ID_C14N_OMIT_COMMENTS which is REQUIRED
+                  by the spec. This method&apos;s main use is for creating a new signature.                
+                <param>
+                    doc Document in which the signature will be appended after creation.                    
+                </param>
+                <param>
+                    BaseURI URI to be used as context for all relative URIs.                    
+                </param>
+                <param>
+                    SignatureMethodURI signature algorithm to use.                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="152">
+                <params>
+                    <param name="doc" type="Document"/>
+                    <param name="BaseURI" type="String"/>
+                    <param name="SignatureMethodURI" type="String"/>
+                </params>
+            </method>
+            <javadoc line="157">
+                Constructor XMLSignature                
+                <param>
+                    doc                    
+                </param>
+                <param>
+                    BaseURI                    
+                </param>
+                <param>
+                    SignatureMethodURI the Signature method to be used.                    
+                </param>
+                <param>
+                    HMACOutputLength                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="168">
+                <params>
+                    <param name="doc" type="Document"/>
+                    <param name="BaseURI" type="String"/>
+                    <param name="SignatureMethodURI" type="String"/>
+                    <param name="HMACOutputLength" type="int"/>
+                </params>
+            </method>
+            <javadoc line="173">
+                Constructor XMLSignature                
+                <param>
+                    doc                    
+                </param>
+                <param>
+                    BaseURI                    
+                </param>
+                <param>
+                    SignatureMethodURI the Signature method to be used.                    
+                </param>
+                <param>
+                    CanonicalizationMethodURI the canonicalization algorithm to be used to c14nize the SignedInfo element.                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="184">
+                <params>
+                    <param name="doc" type="Document"/>
+                    <param name="BaseURI" type="String"/>
+                    <param name="SignatureMethodURI" type="String"/>
+                    <param name="CanonicalizationMethodURI" type="String"/>
+                </params>
+            </method>
+            <javadoc line="188">
+                Constructor XMLSignature                
+                <param>
+                    doc                    
+                </param>
+                <param>
+                    BaseURI                    
+                </param>
+                <param>
+                    SignatureMethodURI                    
+                </param>
+                <param>
+                    HMACOutputLength                    
+                </param>
+                <param>
+                    CanonicalizationMethodURI                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="200">
+                <params>
+                    <param name="doc" type="Document"/>
+                    <param name="BaseURI" type="String"/>
+                    <param name="SignatureMethodURI" type="String"/>
+                    <param name="HMACOutputLength" type="int"/>
+                    <param name="CanonicalizationMethodURI" type="String"/>
+                </params>
+                <comment line="223">
+                    create an empty SignatureValue; this is filled by setSignatureValueElement                    
+                </comment>
+                <declaration name="xmlnsDsPrefix" type="String" line="204"/>
+                <scope line="206"/>
+                <scope line="209"/>
+            </method>
+            <javadoc line="231">
+                Creates a XMLSignature in a Document                
+                <param>
+                    doc                    
+                </param>
+                <param>
+                    BaseURI                    
+                </param>
+                <param>
+                    SignatureMethodElem                    
+                </param>
+                <param>
+                    CanonicalizationMethodElem                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="241">
+                <params>
+                    <param name="doc" type="Document"/>
+                    <param name="BaseURI" type="String"/>
+                    <param name="SignatureMethodElem" type="Element"/>
+                    <param name="CanonicalizationMethodElem" type="Element"/>
+                </params>
+                <comment line="262">
+                    create an empty SignatureValue; this is filled by setSignatureValueElement                    
+                </comment>
+                <declaration name="xmlnsDsPrefix" type="String" line="245"/>
+                <scope line="247"/>
+                <scope line="250"/>
+            </method>
+            <javadoc line="271">
+                This will parse the element and construct the Java Objects.
+                  That will allow a user to validate the signature.                
+                <param>
+                    element ds:Signature element that contains the whole signature                    
+                </param>
+                <param>
+                    BaseURI URI to be prepended to all relative URIs                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+                <throws>
+                    XMLSignatureException if the signature is badly formatted                    
+                </throws>
+            </javadoc>
+            <method name="XMLSignature" type="constructor" line="281">
+                <params>
+                    <param name="element" type="Element"/>
+                    <param name="BaseURI" type="String"/>
+                </params>
+                <comment line="285">
+                    check out SignedInfo child                    
+                </comment>
+                <comment line="286">
+                    XMLUtils.selectDsNode(this._constructionElement.getFirstChild(),                    
+                </comment>
+                <comment line="287">
+                    Constants._TAG_SIGNEDINFO,0);                    
+                </comment>
+                <comment line="289">
+                    check to see if it is there                    
+                </comment>
+                <comment line="297">
+                    create a SignedInfo object from that element                    
+                </comment>
+                <comment line="300">
+                    check out SignatureValue child                    
+                </comment>
+                <comment line="301">
+                    XMLUtils.selectDsNode(this._constructionElement.getFirstChild(),                    
+                </comment>
+                <comment line="302">
+                    Constants._TAG_SIGNATUREVALUE,0);                    
+                </comment>
+                <comment line="304">
+                    check to see if it exists                    
+                </comment>
+                <comment line="312">
+                    &lt;element ref=&quot;ds:KeyInfo&quot; minOccurs=&quot;0&quot;/&gt;                    
+                </comment>
+                <comment line="313">
+                    XMLUtils.selectDsNode(this._constructionElement.getFirstChild(),                    
+                </comment>
+                <comment line="314">
+                    Constants._TAG_KEYINFO,0);                    
+                </comment>
+                <comment line="316">
+                    If it exists use it, but it&apos;s not mandatory                    
+                </comment>
+                <declaration name="signedInfoElem" type="Element" line="286"/>
+                <scope line="290">
+                    <declaration name="exArgs" type="Object" line="291"/>
+                </scope>
+                <scope line="305">
+                    <declaration name="exArgs" type="Object" line="306"/>
+                </scope>
+                <declaration name="keyInfoElem" type="Element" line="313"/>
+                <scope line="318"/>
+            </method>
+            <javadoc line="323">
+                Sets the &lt;code&gt;Id&lt;/code&gt; attribute                
+                <param>
+                    Id Id value to be used by the id attribute on the Signature Element                    
+                </param>
+            </javadoc>
+            <method name="setId" type="void" line="328">
+                <params>
+                    <param name="Id" type="String"/>
+                </params>
+                <scope line="330"/>
+            </method>
+            <javadoc line="336">
+                Returns the &lt;code&gt;Id&lt;/code&gt; attribute                
+                <return>
+                    the <code>Id</code> attribute                    
+                </return>
+            </javadoc>
+            <method name="getId" type="String" line="341"/>
+            <javadoc line="345">
+                Returns the completely parsed &lt;code&gt;SignedInfo&lt;/code&gt; object.                
+                <return>
+                    the completely parsed <code>SignedInfo</code> object.                    
+                </return>
+            </javadoc>
+            <method name="getSignedInfo" type="SignedInfo" line="350"/>
+            <javadoc line="354">
+                Returns the octet value of the SignatureValue element.
+                  Throws an XMLSignatureException if it has no or wrong content.                
+                <return>
+                    the value of the SignatureValue element.                    
+                </return>
+                <throws>
+                    XMLSignatureException If there is no content                    
+                </throws>
+            </javadoc>
+            <method name="getSignatureValue" type="byte[]" line="361">
+                <scope line="363">
+                    <declaration name="signatureValue" type="byte[]" line="364"/>
+                </scope>
+                <scope line="367"/>
+            </method>
+            <javadoc line="372">
+                Base64 encodes and sets the bytes as the content of the SignatureValue
+                  Node.                
+                <param>
+                    bytes bytes to be used by SignatureValue before Base64 encoding                    
+                </param>
+            </javadoc>
+            <method name="setSignatureValueElement" type="void" line="378">
+                <params>
+                    <param name="bytes" type="byte[]"/>
+                </params>
+                <scope line="380"/>
+                <declaration name="base64codedValue" type="String" line="385"/>
+                <scope line="387"/>
+                <declaration name="t" type="Text" line="391"/>
+            </method>
+            <javadoc line="395">
+                Returns the KeyInfo child. If we are in signing mode and the KeyInfo
+                  does not exist yet, it is created on demand and added to the Signature.
+                  &lt;br&gt;
+                  This allows to add arbitrary content to the KeyInfo during signing.                
+                <return>
+                    the KeyInfo object                    
+                </return>
+            </javadoc>
+            <method name="getKeyInfo" type="KeyInfo" line="403">
+                <comment line="405">
+                    check to see if we are signing and if we have to create a keyinfo                    
+                </comment>
+                <comment line="408">
+                    create the KeyInfo                    
+                </comment>
+                <comment line="411">
+                    get the Element from KeyInfo                    
+                </comment>
+                <comment line="419">
+                    add it before the object                    
+                </comment>
+                <comment line="425">
+                    add it as the last element to the signature                    
+                </comment>
+                <scope line="406">
+                    <declaration name="keyInfoElement" type="Element" line="412"/>
+                    <declaration name="firstObject" type="Element" line="413"/>
+                    <declaration name="sibling" type="Node" line="414"/>
+                    <scope line="417"/>
+                    <scope line="423"/>
+                </scope>
+            </method>
+            <javadoc line="434">
+                Appends an Object (not a &lt;code&gt;java.lang.Object&lt;/code&gt; but an Object
+                  element) to the Signature. Please note that this is only possible
+                  when signing.                
+                <param>
+                    object ds:Object to be appended.                    
+                </param>
+                <throws>
+                    XMLSignatureException When this object is used to verify.                    
+                </throws>
+            </javadoc>
+            <method name="appendObject" type="void" line="443">
+                <params>
+                    <param name="object" type="ObjectContainer"/>
+                </params>
+                <comment line="445">
+                    try {                    
+                </comment>
+                <comment line="446">
+                    if (this._state != MODE_SIGN) {                    
+                </comment>
+                <comment line="447">
+                    throw new XMLSignatureException(                    
+                </comment>
+                <comment line="448">
+                    &quot;signature.operationOnlyBeforeSign&quot;);                    
+                </comment>
+                <comment line="449">
+                    }                    
+                </comment>
+                <comment line="453">
+                    } catch (XMLSecurityException ex) {                    
+                </comment>
+                <comment line="454">
+                    throw new XMLSignatureException(&quot;empty&quot;, ex);                    
+                </comment>
+                <comment line="455">
+                    }                    
+                </comment>
+            </method>
+            <javadoc line="458">
+                Returns the &lt;code&gt;i&lt;code&gt;th &lt;code&gt;ds:Object&lt;/code&gt; child of the signature
+                  or null if no such &lt;code&gt;ds:Object&lt;/code&gt; element exists.                
+                <param>
+                    i                    
+                </param>
+                <return>
+                    the <code>i<code>th <code>ds:Object</code> child of the signature or null if no such <code>ds:Object</code> element exists.                    
+                </return>
+            </javadoc>
+            <method name="getObjectItem" type="ObjectContainer" line="465">
+                <params>
+                    <param name="i" type="int"/>
+                </params>
+                <declaration name="objElem" type="Element" line="467"/>
+                <scope line="470"/>
+                <scope line="472"/>
+            </method>
+            <javadoc line="477">
+                Returns the number of all &lt;code&gt;ds:Object&lt;/code&gt; elements.                
+                <return>
+                    the number of all <code>ds:Object</code> elements.                    
+                </return>
+            </javadoc>
+            <method name="getObjectLength" type="int" line="482"/>
+            <javadoc line="486">
+                Digests all References in the SignedInfo, calculates the signature value and
+                  sets it in the SignatureValue Element.                
+                <param>
+                    signingKey the {@link java.security.PrivateKey} or {@link javax.crypto.SecretKey} that is used to sign.                    
+                </param>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="sign" type="void" line="493">
+                <params>
+                    <param name="signingKey" type="Key"/>
+                </params>
+                <comment line="501">
+                    if (this._state == MODE_SIGN) {                    
+                </comment>
+                <comment line="502">
+                    Create a SignatureAlgorithm object                    
+                </comment>
+                <comment line="505">
+                    initialize SignatureAlgorithm for signing                    
+                </comment>
+                <comment line="508">
+                    generate digest values for all References in this SignedInfo                    
+                </comment>
+                <comment line="514">
+                    Imposible                    
+                </comment>
+                <comment line="516">
+                    get the canonicalized bytes from SignedInfo                    
+                </comment>
+                <comment line="521">
+                    set them on the SignateValue element                    
+                </comment>
+                <comment line="523">
+                    }                    
+                </comment>
+                <scope line="495"/>
+                <scope line="500">
+                    <declaration name="si" type="SignedInfo" line="503"/>
+                    <declaration name="sa" type="SignatureAlgorithm" line="504"/>
+                    <declaration name="so" type="OutputStream" line="510"/>
+                    <scope line="511"/>
+                    <scope line="513"/>
+                    <declaration name="jcebytes" type="byte" line="519"/>
+                </scope>
+                <scope line="524"/>
+                <scope line="526"/>
+                <scope line="528"/>
+            </method>
+            <javadoc line="533">
+                Adds a {@link ResourceResolver} to enable the retrieval of resources.                
+                <param>
+                    resolver                    
+                </param>
+            </javadoc>
+            <method name="addResourceResolver" type="void" line="538">
+                <params>
+                    <param name="resolver" type="ResourceResolver"/>
+                </params>
+            </method>
+            <javadoc line="542">
+                Adds a {@link ResourceResolverSpi} to enable the retrieval of resources.                
+                <param>
+                    resolver                    
+                </param>
+            </javadoc>
+            <method name="addResourceResolver" type="void" line="547">
+                <params>
+                    <param name="resolver" type="ResourceResolverSpi"/>
+                </params>
+            </method>
+            <javadoc line="551">
+                Extracts the public key from the certificate and verifies if the signature
+                  is valid by re-digesting all References, comparing those against the
+                  stored DigestValues and then checking to see if the Signatures match on
+                  the SignedInfo.                
+                <param>
+                    cert Certificate that contains the public key part of the keypair that was used to sign.                    
+                </param>
+                <return>
+                    true if the signature is valid, false otherwise                    
+                </return>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="checkSignatureValue" type="boolean" line="562">
+                <params>
+                    <param name="cert" type="X509Certificate"/>
+                </params>
+                <comment line="564">
+                    see if cert is null                    
+                </comment>
+                <comment line="567">
+                    check the values with the public key from the cert                    
+                </comment>
+                <scope line="565"/>
+                <declaration name="exArgs" type="Object" line="571"/>
+            </method>
+            <javadoc line="576">
+                Verifies if the signature is valid by redigesting all References,
+                  comparing those against the stored DigestValues and then checking to see
+                  if the Signatures match on the SignedInfo.                
+                <param>
+                    pk {@link java.security.PublicKey} part of the keypair or {@link javax.crypto.SecretKey} that was used to sign                    
+                </param>
+                <return>
+                    true if the signature is valid, false otherwise                    
+                </return>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="checkSignatureValue" type="boolean" line="585">
+                <params>
+                    <param name="pk" type="Key"/>
+                </params>
+                <comment line="587">
+                    COMMENT: pk suggests it can only be a public key?                    
+                </comment>
+                <comment line="588">
+                    check to see if the key is not null                    
+                </comment>
+                <comment line="594">
+                    all references inside the signedinfo need to be dereferenced and                    
+                </comment>
+                <comment line="595">
+                    digested again to see if the outcome matches the stored value in the                    
+                </comment>
+                <comment line="596">
+                    SignedInfo.                    
+                </comment>
+                <comment line="597">
+                    If _followManifestsDuringValidation is true it will do the same for                    
+                </comment>
+                <comment line="598">
+                    References inside a Manifest.                    
+                </comment>
+                <comment line="601">
+                    create a SignatureAlgorithms from the SignatureMethod inside                    
+                </comment>
+                <comment line="602">
+                    SignedInfo. This is used to validate the signature.                    
+                </comment>
+                <comment line="612">
+                    Get the canonicalized (normalized) SignedInfo                    
+                </comment>
+                <comment line="619">
+                    Imposible                    
+                </comment>
+                <comment line="622">
+                    retrieve the byte[] from the stored signature                    
+                </comment>
+                <comment line="625">
+                    Have SignatureAlgorithm sign the input bytes and compare them to the                    
+                </comment>
+                <comment line="626">
+                    bytes that were stored in the signature.                    
+                </comment>
+                <scope line="589">
+                    <declaration name="exArgs" type="Object" line="590"/>
+                </scope>
+                <scope line="599">
+                    <declaration name="si" type="SignedInfo" line="600"/>
+                    <declaration name="sa" type="SignatureAlgorithm" line="603"/>
+                    <scope line="604"/>
+                    <declaration name="so" type="SignerOutputStream" line="613"/>
+                    <declaration name="bos" type="OutputStream" line="614"/>
+                    <scope line="616"/>
+                    <scope line="618"/>
+                    <declaration name="sigBytes" type="byte" line="623"/>
+                    <scope line="627"/>
+                </scope>
+                <scope line="633"/>
+            </method>
+            <javadoc line="638">
+                Add a Reference with full parameters to this Signature                
+                <param>
+                    referenceURI URI of the resource to be signed. Can be null in which
+                      case the dereferencing is application specific. Can be "" in which it's
+                      the parent node (or parent document?). There can only be one "" in each
+                      signature.                    
+                </param>
+                <param>
+                    trans Optional list of transformations to be done before digesting                    
+                </param>
+                <param>
+                    digestURI Mandatory URI of the digesting algorithm to use.                    
+                </param>
+                <param>
+                    ReferenceId Optional id attribute for this Reference                    
+                </param>
+                <param>
+                    ReferenceType Optional mimetype for the URI                    
+                </param>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="addDocument" type="void" line="653">
+                <params>
+                    <param name="referenceURI" type="String"/>
+                    <param name="trans" type="Transforms"/>
+                    <param name="digestURI" type="String"/>
+                    <param name="ReferenceId" type="String"/>
+                    <param name="ReferenceType" type="String"/>
+                </params>
+            </method>
+            <javadoc line="658">
+                This method is a proxy method for the {@link Manifest#addDocument} method.                
+                <param>
+                    referenceURI URI according to the XML Signature specification.                    
+                </param>
+                <param>
+                    trans List of transformations to be applied.                    
+                </param>
+                <param>
+                    digestURI URI of the digest algorithm to be used.                    
+                </param>
+                <see>
+                    Manifest#addDocument                    
+                </see>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="addDocument" type="void" line="669">
+                <params>
+                    <param name="referenceURI" type="String"/>
+                    <param name="trans" type="Transforms"/>
+                    <param name="digestURI" type="String"/>
+                </params>
+            </method>
+            <javadoc line="674">
+                Adds a Reference with just the URI and the transforms. This used the
+                  SHA1 algorithm as a default digest algorithm.                
+                <param>
+                    referenceURI URI according to the XML Signature specification.                    
+                </param>
+                <param>
+                    trans List of transformations to be applied.                    
+                </param>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="addDocument" type="void" line="683">
+                <params>
+                    <param name="referenceURI" type="String"/>
+                    <param name="trans" type="Transforms"/>
+                </params>
+            </method>
+            <javadoc line="688">
+                Add a Reference with just this URI. It uses SHA1 by default as the digest
+                  algorithm                
+                <param>
+                    referenceURI URI according to the XML Signature specification.                    
+                </param>
+                <throws>
+                    XMLSignatureException                    
+                </throws>
+            </javadoc>
+            <method name="addDocument" type="void" line="695">
+                <params>
+                    <param name="referenceURI" type="String"/>
+                </params>
+            </method>
+            <javadoc line="700">
+                Add an X509 Certificate to the KeyInfo. This will include the whole cert
+                  inside X509Data/X509Certificate tags.                
+                <param>
+                    cert Certificate to be included. This should be the certificate of the key that was used to sign.                    
+                </param>
+                <throws>
+                    XMLSecurityException                    
+                </throws>
+            </javadoc>
+            <method name="addKeyInfo" type="void" line="707">
+                <params>
+                    <param name="cert" type="X509Certificate"/>
+                </params>
+                <declaration name="x509data" type="X509Data" line="709"/>
+            </method>
+            <javadoc line="715">
+                Add this public key to the KeyInfo. This will include the complete key in
+                  the KeyInfo structure.                
+                <param>
+                    pk                    
+                </param>
+            </javadoc>
+            <method name="addKeyInfo" type="void" line="721">
+                <params>
+                    <param name="pk" type="PublicKey"/>
+                </params>
+            </method>
+            <javadoc line="725">
+                Proxy method for {@link SignedInfo#createSecretKey(byte[])}. If you want to
+                  create a MAC, this method helps you to obtain the {@link javax.crypto.SecretKey}from octets.                
+                <param>
+                    secretKeyBytes                    
+                </param>
+                <return>
+                    the secret key created.                    
+                </return>
+                <see>
+                    SignedInfo#createSecretKey(byte[])                    
+                </see>
+            </javadoc>
+            <method name="createSecretKey" type="SecretKey" line="735">
+                <params>
+                    <param name="secretKeyBytes" type="byte[]"/>
+                </params>
+            </method>
+            <javadoc line="739">
+                Signal wether Manifest should be automatically validated.
+                  Checking the digests in References in a Signature are mandatory, but for
+                  References inside a Manifest it is application specific. This boolean is
+                  to indicate that the References inside Manifests should be validated.                
+                <param>
+                    followManifests                    
+                </param>
+                <see>
+                    <a href="http://www.w3.org/TR/xmldsig-core/#sec-CoreValidation">Core validation section in the XML Signature Rec.</a>                    
+                </see>
+            </javadoc>
+            <method name="setFollowNestedManifests" type="void" line="748">
+                <params>
+                    <param name="followManifests" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="752">
+                Get the local name of this element                
+                <return>
+                    Constant._TAG_SIGNATURE                    
+                </return>
+            </javadoc>
+            <method name="getBaseLocalName" type="String" line="757"/>
+        </class>
+    </source>

@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.provider.certpath">
+        <import package="java.io.InputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.net.HttpURLConnection"/>
+        <import package="java.net.URI"/>
+        <import package="java.net.URLConnection"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.security.InvalidAlgorithmParameterException"/>
+        <import package="java.security.NoSuchAlgorithmException"/>
+        <import package="java.security.Provider"/>
+        <import package="java.security.cert.CertificateException"/>
+        <import package="java.security.cert.CertificateFactory"/>
+        <import package="java.security.cert.CertSelector"/>
+        <import package="java.security.cert.CertStore"/>
+        <import package="java.security.cert.CertStoreException"/>
+        <import package="java.security.cert.CertStoreParameters"/>
+        <import package="java.security.cert.CertStoreSpi"/>
+        <import package="java.security.cert.CRLException"/>
+        <import package="java.security.cert.CRLSelector"/>
+        <import package="java.security.cert.X509Certificate"/>
+        <import package="java.security.cert.X509CertSelector"/>
+        <import package="java.security.cert.X509CRL"/>
+        <import package="java.security.cert.X509CRLSelector"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Locale"/>
+        <import package="sun.security.x509.AccessDescription"/>
+        <import package="sun.security.x509.GeneralNameInterface"/>
+        <import package="sun.security.x509.URIName"/>
+        <import package="sun.security.util.Cache"/>
+        <import package="sun.security.util.Debug"/>
+        <class name="URICertStore" line="62">
+            <extends class="CertStoreSpi"/>
+            <comment line="95">
+                interval between checks for update of cached Certificates/CRLs                
+            </comment>
+            <comment line="96">
+                (30 seconds)                
+            </comment>
+            <comment line="99">
+                size of the cache (see Cache class for sizing recommendations)                
+            </comment>
+            <comment line="102">
+                X.509 certificate factory instance                
+            </comment>
+            <comment line="105">
+                cached Collection of X509Certificates (may be empty, never null)                
+            </comment>
+            <comment line="109">
+                cached X509CRL (may be null)                
+            </comment>
+            <comment line="112">
+                time we last checked for an update                
+            </comment>
+            <comment line="115">
+                time server returned as last modified time stamp                
+            </comment>
+            <comment line="116">
+                or 0 if not available                
+            </comment>
+            <comment line="119">
+                the URI of this CertStore                
+            </comment>
+            <comment line="122">
+                true if URI is ldap                
+            </comment>
+            <javadoc line="62">
+                A &lt;code&gt;CertStore&lt;/code&gt; that retrieves &lt;code&gt;Certificates&lt;/code&gt; or
+                  &lt;code&gt;CRL&lt;/code&gt;s from a URI, for example, as specified in an X.509
+                  AuthorityInformationAccess or CRLDistributionPoint extension.
+                  &lt;p&gt;
+                  For CRLs, this implementation retrieves a single DER encoded CRL per URI.
+                  For Certificates, this implementation retrieves a single DER encoded CRL or
+                  a collection of Certificates encoded as a PKCS#7 &quot;certs-only&quot; CMS message.
+                  &lt;p&gt;
+                  This &lt;code&gt;CertStore&lt;/code&gt; also implements Certificate/CRL caching.
+                  Currently, the cache is shared between all applications in the VM and uses a
+                  hardcoded policy. The cache has a maximum size of 185 entries, which are held
+                  by SoftReferences. A request will be satisfied from the cache if we last
+                  checked for an update within CHECK_INTERVAL (last 30 seconds). Otherwise,
+                  we open an URLConnection to download the Certificate(s)/CRL using an
+                  If-Modified-Since request (HTTP) if possible. Note that both positive and
+                  negative responses are cached, i.e. if we are unable to open the connection
+                  or the Certificate(s)/CRL cannot be parsed, we remember this result and
+                  additional calls during the CHECK_INTERVAL period do not try to open another
+                  connection.
+                  &lt;p&gt;
+                  The URICertStore is not currently a standard CertStore type. We should
+                  consider adding a standard &quot;URI&quot; CertStore type.                
+                <author>
+                    Andreas Sterbenz                    
+                </author>
+                <author>
+                    Sean Mullan                    
+                </author>
+                <since>
+                    7.0                    
+                </since>
+            </javadoc>
+            <declaration name="debug" type="Debug" line="92"/>
+            <declaration name="CHECK_INTERVAL" type="int" line="96"/>
+            <declaration name="CACHE_SIZE" type="int" line="99"/>
+            <declaration name="factory" type="CertificateFactory" line="102"/>
+            <declaration name="certs" type="Collection&lt;X509Certificate&gt;" line="105"/>
+            <declaration name="crl" type="X509CRL" line="109"/>
+            <declaration name="lastChecked" type="long" line="112"/>
+            <declaration name="lastModified" type="long" line="116"/>
+            <declaration name="uri" type="URI" line="119"/>
+            <declaration name="ldap" type="boolean" line="122"/>
+            <declaration name="ldapCertStore" type="CertStore" line="123"/>
+            <declaration name="ldapPath" type="String" line="124"/>
+            <class name="LDAP" line="126">
+                <javadoc line="126">
+                    Holder class to lazily load LDAPCertStoreHelper if present.                    
+                </javadoc>
+                <declaration name="CERT_STORE_HELPER" type="String" line="130"/>
+                <declaration name="helper" type="CertStoreHelper" line="132"/>
+                <anonymous_class line="134">
+                    <method name="run" type="CertStoreHelper" line="135">
+                        <scope line="136">
+                            <declaration name="c" type="Class&lt;?&gt;" line="137"/>
+                        </scope>
+                        <scope line="139"/>
+                        <scope line="141"/>
+                        <scope line="143"/>
+                    </method>
+                </anonymous_class>
+                <method name="helper" type="CertStoreHelper" line="147"/>
+            </class>
+            <javadoc line="152">
+                Creates a URICertStore.                
+                <param>
+                    parameters specifying the URI                    
+                </param>
+            </javadoc>
+            <method name="URICertStore" type="constructor" line="158">
+                <params>
+                    <param name="params" type="CertStoreParameters"/>
+                </params>
+                <comment line="165">
+                    if ldap URI, use an LDAPCertStore to fetch certs and CRLs                    
+                </comment>
+                <comment line="172">
+                    strip off leading &apos;/&apos;                    
+                </comment>
+                <scope line="160"/>
+                <scope line="166">
+                    <scope line="173"/>
+                </scope>
+                <scope line="177"/>
+                <scope line="179"/>
+            </method>
+            <declaration name="certStoreCache" type="Cache" line="184"/>
+            <javadoc line="184">
+                Returns a URI CertStore. This method consults a cache of
+                  CertStores (shared per JVM) using the URI as a key.                
+            </javadoc>
+            <method name="getInstance" type="CertStore" line="191">
+                <params>
+                    <param name="params" type="URICertStoreParameters"/>
+                </params>
+                <scope line="192"/>
+                <declaration name="ucs" type="CertStore" line="195"/>
+                <scope line="196"/>
+                <scope line="199">
+                    <scope line="200"/>
+                </scope>
+            </method>
+            <javadoc line="207">
+                Creates a CertStore from information included in the AccessDescription
+                  object of a certificate&apos;s Authority Information Access Extension.                
+            </javadoc>
+            <method name="getInstance" type="CertStore" line="211">
+                <params>
+                    <param name="ad" type="AccessDescription"/>
+                </params>
+                <scope line="212"/>
+                <declaration name="gn" type="GeneralNameInterface" line="215"/>
+                <scope line="216"/>
+                <declaration name="uri" type="URI" line="219"/>
+                <scope line="220"/>
+                <scope line="223">
+                    <scope line="224"/>
+                </scope>
+            </method>
+            <javadoc line="232">
+                Returns a &lt;code&gt;Collection&lt;/code&gt; of &lt;code&gt;X509Certificate&lt;/code&gt;s that
+                  match the specified selector. If no &lt;code&gt;X509Certificate&lt;/code&gt;s
+                  match the selector, an empty &lt;code&gt;Collection&lt;/code&gt; will be returned.                
+                <param>
+                    selector a <code>CertSelector</code> used to select which
+                      <code>X509Certificate</code>s should be returned. Specify
+                      <code>null</code> to return all <code>X509Certificate</code>s.                    
+                </param>
+                <return>
+                    a <code>Collection</code> of <code>X509Certificate</code>s that
+                      match the specified selector                    
+                </return>
+                <throws>
+                    CertStoreException if an exception occurs                    
+                </throws>
+            </javadoc>
+            <method name="engineGetCertificates" type="Collection<X509Certificate>" line="245">
+                <params>
+                    <param name="selector" type="CertSelector"/>
+                </params>
+                <comment line="247">
+                    if ldap URI we wrap the CertSelector in an LDAPCertSelector to                    
+                </comment>
+                <comment line="248">
+                    avoid LDAP DN matching issues (see LDAPCertSelector for more info)                    
+                </comment>
+                <comment line="256">
+                    Fetch the certificates via LDAP. LDAPCertStore has its own                    
+                </comment>
+                <comment line="257">
+                    caching mechanism, see the class description for more info.                    
+                </comment>
+                <comment line="262">
+                    Return the Certificates for this entry. It returns the cached value                    
+                </comment>
+                <comment line="263">
+                    if it is still current and fetches the Certificates otherwise.                    
+                </comment>
+                <comment line="264">
+                    For the caching details, see the top of this class.                    
+                </comment>
+                <comment line="289">
+                    some proxy servers omit last modified                    
+                </comment>
+                <comment line="321">
+                    ignore                    
+                </comment>
+                <comment line="325">
+                    exception, forget previous values                    
+                </comment>
+                <scope line="249">
+                    <declaration name="xsel" type="X509CertSelector" line="250"/>
+                    <scope line="251"/>
+                    <scope line="253"/>
+                </scope>
+                <declaration name="time" type="long" line="265"/>
+                <scope line="266">
+                    <scope line="267"/>
+                </scope>
+                <declaration name="in" type="InputStream" line="273"/>
+                <scope line="274">
+                    <declaration name="connection" type="URLConnection" line="275"/>
+                    <scope line="276"/>
+                    <declaration name="oldLastModified" type="long" line="280"/>
+                    <scope line="282">
+                        <scope line="283">
+                            <scope line="284"/>
+                        </scope>
+                        <scope line="288">
+                            <declaration name="hconn" type="HttpURLConnection" line="290"/>
+                            <scope line="292">
+                                <scope line="293"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="300"/>
+                </scope>
+                <scope line="306">
+                    <scope line="307"/>
+                </scope>
+                <scope line="311">
+                    <scope line="312"/>
+                </scope>
+                <scope line="316">
+                    <scope line="317">
+                        <scope line="318"/>
+                        <scope line="320"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="331">
+                Iterates over the specified Collection of X509Certificates and
+                  returns only those that match the criteria specified in the
+                  CertSelector.                
+            </javadoc>
+            <method name="getMatchingCerts" type="Collection<X509Certificate>" line="337">
+                <params>
+                    <param name="certs" type="Collection<X509Certificate>"/>
+                    <param name="selector" type="CertSelector"/>
+                </params>
+                <comment line="338">
+                    if selector not specified, all certs match                    
+                </comment>
+                <scope line="339"/>
+                <declaration name="matchedCerts" type="List&lt;X509Certificate&gt;" line="342"/>
+                <scope line="344">
+                    <scope line="345"/>
+                </scope>
+            </method>
+            <javadoc line="352">
+                Returns a &lt;code&gt;Collection&lt;/code&gt; of &lt;code&gt;X509CRL&lt;/code&gt;s that
+                  match the specified selector. If no &lt;code&gt;X509CRL&lt;/code&gt;s
+                  match the selector, an empty &lt;code&gt;Collection&lt;/code&gt; will be returned.                
+                <param>
+                    selector A <code>CRLSelector</code> used to select which
+                      <code>X509CRL</code>s should be returned. Specify <code>null</code>
+                      to return all <code>X509CRL</code>s.                    
+                </param>
+                <return>
+                    A <code>Collection</code> of <code>X509CRL</code>s that
+                      match the specified selector                    
+                </return>
+                <throws>
+                    CertStoreException if an exception occurs                    
+                </throws>
+            </javadoc>
+            <method name="engineGetCRLs" type="Collection<X509CRL>" line="365">
+                <params>
+                    <param name="selector" type="CRLSelector"/>
+                </params>
+                <comment line="367">
+                    if ldap URI we wrap the CRLSelector in an LDAPCRLSelector to                    
+                </comment>
+                <comment line="368">
+                    avoid LDAP DN matching issues (see LDAPCRLSelector for more info)                    
+                </comment>
+                <comment line="376">
+                    Fetch the CRLs via LDAP. LDAPCertStore has its own                    
+                </comment>
+                <comment line="377">
+                    caching mechanism, see the class description for more info.                    
+                </comment>
+                <comment line="381">
+                    Return the CRLs for this entry. It returns the cached value                    
+                </comment>
+                <comment line="382">
+                    if it is still current and fetches the CRLs otherwise.                    
+                </comment>
+                <comment line="383">
+                    For the caching details, see the top of this class.                    
+                </comment>
+                <comment line="408">
+                    some proxy servers omit last modified                    
+                </comment>
+                <comment line="439">
+                    ignore                    
+                </comment>
+                <comment line="443">
+                    exception, forget previous values                    
+                </comment>
+                <scope line="369">
+                    <declaration name="xsel" type="X509CRLSelector" line="370"/>
+                    <scope line="371"/>
+                    <scope line="373"/>
+                </scope>
+                <declaration name="time" type="long" line="384"/>
+                <scope line="385">
+                    <scope line="386"/>
+                </scope>
+                <declaration name="in" type="InputStream" line="392"/>
+                <scope line="393">
+                    <declaration name="connection" type="URLConnection" line="394"/>
+                    <scope line="395"/>
+                    <declaration name="oldLastModified" type="long" line="399"/>
+                    <scope line="401">
+                        <scope line="402">
+                            <scope line="403"/>
+                        </scope>
+                        <scope line="407">
+                            <declaration name="hconn" type="HttpURLConnection" line="409"/>
+                            <scope line="411">
+                                <scope line="412"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="419"/>
+                </scope>
+                <scope line="424">
+                    <scope line="425"/>
+                </scope>
+                <scope line="429">
+                    <scope line="430"/>
+                </scope>
+                <scope line="434">
+                    <scope line="435">
+                        <scope line="436"/>
+                        <scope line="438"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="449">
+                Checks if the specified X509CRL matches the criteria specified in the
+                  CRLSelector.                
+            </javadoc>
+            <method name="getMatchingCRLs" type="Collection<X509CRL>" line="454">
+                <params>
+                    <param name="crl" type="X509CRL"/>
+                    <param name="selector" type="CRLSelector"/>
+                </params>
+                <scope line="455"/>
+                <scope line="457"/>
+            </method>
+            <class name="URICertStoreParameters" line="462">
+                <implements interface="CertStoreParameters"/>
+                <javadoc line="462">
+                    CertStoreParameters for the URICertStore.                    
+                </javadoc>
+                <declaration name="uri" type="URI" line="466"/>
+                <declaration name="hashCode" type="int" line="467"/>
+                <method name="URICertStoreParameters" type="constructor" line="468">
+                    <params>
+                        <param name="uri" type="URI"/>
+                    </params>
+                </method>
+                <method name="equals" type="boolean" line="471">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                    <scope line="472"/>
+                    <declaration name="params" type="URICertStoreParameters" line="475"/>
+                </method>
+                <method name="hashCode" type="int" line="478">
+                    <scope line="479">
+                        <declaration name="result" type="int" line="480"/>
+                    </scope>
+                </method>
+                <method name="clone" type="Object" line="486">
+                    <comment line="490">
+                                                
+                    </comment>
+                    <scope line="487"/>
+                    <scope line="489"/>
+                </method>
+            </class>
+            <class name="UCS" line="496">
+                <extends class="CertStore"/>
+                <javadoc line="496">
+                    This class allows the URICertStore to be accessed as a CertStore.                    
+                </javadoc>
+                <method name="UCS" type="constructor" line="501">
+                    <params>
+                        <param name="spi" type="CertStoreSpi"/>
+                        <param name="p" type="Provider"/>
+                        <param name="type" type="String"/>
+                        <param name="params" type="CertStoreParameters"/>
+                    </params>
+                </method>
+            </class>
+        </class>
+    </source>

@@ -1,0 +1,1496 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.beans">
+        <import package="com.sun.beans.WeakCache"/>
+        <import package="com.sun.beans.finder.BeanInfoFinder"/>
+        <import package="com.sun.beans.finder.ClassFinder"/>
+        <import package="java.awt.Component"/>
+        <import package="java.lang.ref.Reference"/>
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.lang.reflect.Method"/>
+        <import package="java.lang.reflect.Modifier"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.EventListener"/>
+        <import package="java.util.EventObject"/>
+        <import package="java.util.List"/>
+        <import package="java.util.TreeMap"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="sun.awt.AppContext"/>
+        <import package="sun.reflect.misc.ReflectUtil"/>
+        <class name="Introspector" line="52">
+            <comment line="96">
+                Flags that can be used to control getBeanInfo:                
+            </comment>
+            <comment line="101">
+                Static Caches to speed up introspection.                
+            </comment>
+            <comment line="115">
+                These should be removed.                
+            </comment>
+            <comment line="121">
+                Methods maps from Method objects to MethodDescriptors                
+            </comment>
+            <comment line="124">
+                properties maps from String names to PropertyDescriptors                
+            </comment>
+            <comment line="127">
+                events maps from String names to EventSetDescriptors                
+            </comment>
+            <comment line="140">
+                ======================================================================                
+            </comment>
+            <comment line="141">
+                Public methods                
+            </comment>
+            <comment line="142">
+                ======================================================================                
+            </comment>
+            <comment line="383">
+                ======================================================================                
+            </comment>
+            <comment line="384">
+                Private implementation methods                
+            </comment>
+            <comment line="385">
+                ======================================================================                
+            </comment>
+            <comment line="876">
+                Handle regular pd merge                
+            </comment>
+            <comment line="886">
+                Handle regular ipd merge                
+            </comment>
+            <comment line="1270">
+                Internal method to return public methods within a class.                
+            </comment>
+            <comment line="1295">
+                ======================================================================                
+            </comment>
+            <comment line="1296">
+                Package private support methods.                
+            </comment>
+            <comment line="1297">
+                ======================================================================                
+            </comment>
+            <javadoc line="52">
+                The Introspector class provides a standard way for tools to learn about
+                  the properties, events, and methods supported by a target Java Bean.
+                  &lt;p&gt;
+                  For each of those three kinds of information, the Introspector will
+                  separately analyze the bean&apos;s class and superclasses looking for
+                  either explicit or implicit information and use that information to
+                  build a BeanInfo object that comprehensively describes the target bean.
+                  &lt;p&gt;
+                  For each class &quot;Foo&quot;, explicit information may be available if there exists
+                  a corresponding &quot;FooBeanInfo&quot; class that provides a non-null value when
+                  queried for the information.   We first look for the BeanInfo class by
+                  taking the full package-qualified name of the target bean class and
+                  appending &quot;BeanInfo&quot; to form a new class name.  If this fails, then
+                  we take the final classname component of this name, and look for that
+                  class in each of the packages specified in the BeanInfo package search
+                  path.
+                  &lt;p&gt;
+                  Thus for a class such as &quot;sun.xyz.OurButton&quot; we would first look for a
+                  BeanInfo class called &quot;sun.xyz.OurButtonBeanInfo&quot; and if that failed we&apos;d
+                  look in each package in the BeanInfo search path for an OurButtonBeanInfo
+                  class.  With the default search path, this would mean looking for
+                  &quot;sun.beans.infos.OurButtonBeanInfo&quot;.
+                  &lt;p&gt;
+                  If a class provides explicit BeanInfo about itself then we add that to
+                  the BeanInfo information we obtained from analyzing any derived classes,
+                  but we regard the explicit information as being definitive for the current
+                  class and its base classes, and do not proceed any further up the superclass
+                  chain.
+                  &lt;p&gt;
+                  If we don&apos;t find explicit BeanInfo on a class, we use low-level
+                  reflection to study the methods of the class and apply standard design
+                  patterns to identify property accessors, event sources, or public
+                  methods.  We then proceed to analyze the class&apos;s superclass and add
+                  in the information from it (and possibly on up the superclass chain).
+                  &lt;p&gt;
+                  For more information about introspection and design patterns, please
+                  consult the
+                  &lt;a href=&quot;http://java.sun.com/products/javabeans/docs/index.html&quot;&gt;JavaBeans&amp;trade; specification&lt;/a&gt;.                
+            </javadoc>
+            <declaration name="USE_ALL_BEANINFO" type="int" line="96"/>
+            <declaration name="IGNORE_IMMEDIATE_BEANINFO" type="int" line="97"/>
+            <declaration name="IGNORE_ALL_BEANINFO" type="int" line="98"/>
+            <declaration name="declaredMethodCache" type="WeakCache&lt;Class&lt;?&gt;,Method[]&gt;" line="101"/>
+            <declaration name="BEANINFO_CACHE" type="Object" line="104"/>
+            <declaration name="beanClass" type="Class" line="106"/>
+            <declaration name="explicitBeanInfo" type="BeanInfo" line="107"/>
+            <declaration name="superBeanInfo" type="BeanInfo" line="108"/>
+            <declaration name="additionalBeanInfo" type="BeanInfo" line="109"/>
+            <declaration name="propertyChangeSource" type="boolean" line="111"/>
+            <declaration name="eventListenerType" type="Class" line="112"/>
+            <declaration name="defaultEventName" type="String" line="115"/>
+            <declaration name="defaultPropertyName" type="String" line="116"/>
+            <declaration name="defaultEventIndex" type="int" line="117"/>
+            <declaration name="defaultPropertyIndex" type="int" line="118"/>
+            <declaration name="methods" type="Map" line="121"/>
+            <declaration name="properties" type="Map" line="124"/>
+            <declaration name="events" type="Map" line="127"/>
+            <declaration name="EMPTY_EVENTSETDESCRIPTORS" type="EventSetDescriptor[]" line="129"/>
+            <declaration name="ADD_PREFIX" type="String" line="131"/>
+            <declaration name="REMOVE_PREFIX" type="String" line="132"/>
+            <declaration name="GET_PREFIX" type="String" line="133"/>
+            <declaration name="SET_PREFIX" type="String" line="134"/>
+            <declaration name="IS_PREFIX" type="String" line="135"/>
+            <declaration name="FINDER_KEY" type="Object" line="137"/>
+            <javadoc line="143">
+                Introspect on a Java Bean and learn about all its properties, exposed
+                  methods, and events.
+                  &lt;p&gt;
+                  If the BeanInfo class for a Java Bean has been previously Introspected
+                  then the BeanInfo class is retrieved from the BeanInfo cache.                
+                <param>
+                    beanClass  The bean class to be analyzed.                    
+                </param>
+                <return>
+                    A BeanInfo object describing the target bean.                    
+                </return>
+                <exception>
+                    IntrospectionException if an exception occurs during
+                      introspection.                    
+                </exception>
+                <see>
+                    #flushCaches                    
+                </see>
+                <see>
+                    #flushFromCaches                    
+                </see>
+            </javadoc>
+            <method name="getBeanInfo" type="BeanInfo" line="159">
+                <params>
+                    <param name="beanClass" type="Class<?>"/>
+                </params>
+                <scope line="160"/>
+                <declaration name="beanInfoCache" type="Map&lt;Class&lt;?&gt;,BeanInfo&gt;" line="163"/>
+                <declaration name="beanInfo" type="BeanInfo" line="164"/>
+                <scope line="165">
+                    <scope line="167"/>
+                </scope>
+                <scope line="173">
+                    <scope line="175"/>
+                </scope>
+            </method>
+            <javadoc line="182">
+                Introspect on a Java bean and learn about all its properties, exposed
+                  methods, and events, subject to some control flags.
+                  &lt;p&gt;
+                  If the BeanInfo class for a Java Bean has been previously Introspected
+                  based on the same arguments then the BeanInfo class is retrieved
+                  from the BeanInfo cache.                
+                <param>
+                    beanClass  The bean class to be analyzed.                    
+                </param>
+                <param>
+                    flags  Flags to control the introspection.
+                      If flags == USE_ALL_BEANINFO then we use all of the BeanInfo
+                      classes we can discover.
+                      If flags == IGNORE_IMMEDIATE_BEANINFO then we ignore any
+                      BeanInfo associated with the specified beanClass.
+                      If flags == IGNORE_ALL_BEANINFO then we ignore all BeanInfo
+                      associated with the specified beanClass or any of its
+                      parent classes.                    
+                </param>
+                <return>
+                    A BeanInfo object describing the target bean.                    
+                </return>
+                <exception>
+                    IntrospectionException if an exception occurs during
+                      introspection.                    
+                </exception>
+            </javadoc>
+            <method name="getBeanInfo" type="BeanInfo" line="204">
+                <params>
+                    <param name="beanClass" type="Class<?>"/>
+                    <param name="flags" type="int"/>
+                </params>
+            </method>
+            <javadoc line="208">
+                Introspect on a Java bean and learn all about its properties, exposed
+                  methods, below a given &quot;stop&quot; point.
+                  &lt;p&gt;
+                  If the BeanInfo class for a Java Bean has been previously Introspected
+                  based on the same arguments, then the BeanInfo class is retrieved
+                  from the BeanInfo cache.                
+                <param>
+                    beanClass The bean class to be analyzed.                    
+                </param>
+                <param>
+                    stopClass The baseclass at which to stop the analysis.  Any
+                      methods/properties/events in the stopClass or in its baseclasses
+                      will be ignored in the analysis.                    
+                </param>
+                <exception>
+                    IntrospectionException if an exception occurs during
+                      introspection.                    
+                </exception>
+            </javadoc>
+            <method name="getBeanInfo" type="BeanInfo" line="224">
+                <params>
+                    <param name="beanClass" type="Class<?>"/>
+                    <param name="stopClass" type="Class<?>"/>
+                </params>
+            </method>
+            <javadoc line="228">
+                Introspect on a Java Bean and learn about all its properties,
+                  exposed methods and events, below a given {@code stopClass} point
+                  subject to some control {@code flags}.
+                  &lt;dl&gt;
+                  &lt;dt&gt;USE_ALL_BEANINFO&lt;/dt&gt;
+                  &lt;dd&gt;Any BeanInfo that can be discovered will be used.&lt;/dd&gt;
+                  &lt;dt&gt;IGNORE_IMMEDIATE_BEANINFO&lt;/dt&gt;
+                  &lt;dd&gt;Any BeanInfo associated with the specified {@code beanClass} will be ignored.&lt;/dd&gt;
+                  &lt;dt&gt;IGNORE_ALL_BEANINFO&lt;/dt&gt;
+                  &lt;dd&gt;Any BeanInfo associated with the specified {@code beanClass}or any of its parent classes will be ignored.&lt;/dd&gt;
+                  &lt;/dl&gt;
+                  Any methods/properties/events in the {@code stopClass}or in its parent classes will be ignored in the analysis.
+                  &lt;p&gt;
+                  If the BeanInfo class for a Java Bean has been
+                  previously introspected based on the same arguments then
+                  the BeanInfo class is retrieved from the BeanInfo cache.                
+                <param>
+                    beanClass  the bean class to be analyzed                    
+                </param>
+                <param>
+                    stopClass  the parent class at which to stop the analysis                    
+                </param>
+                <param>
+                    flags      flags to control the introspection                    
+                </param>
+                <return>
+                    a BeanInfo object describing the target bean                    
+                </return>
+                <exception>
+                    IntrospectionException if an exception occurs during introspection                    
+                </exception>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getBeanInfo" type="BeanInfo" line="257">
+                <params>
+                    <param name="beanClass" type="Class<?>"/>
+                    <param name="stopClass" type="Class<?>"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="260">
+                    Same parameters to take advantage of caching.                    
+                </comment>
+                <comment line="267">
+                    Old behaviour: Make an independent copy of the BeanInfo.                    
+                </comment>
+                <comment line="268">
+                    return new GenericBeanInfo(bi);                    
+                </comment>
+                <declaration name="bi" type="BeanInfo" line="258"/>
+                <scope line="259"/>
+                <scope line="262"/>
+            </method>
+            <javadoc line="272">
+                Utility method to take a string and convert it to normal Java variable
+                  name capitalization.  This normally means converting the first
+                  character from upper case to lower case, but in the (unusual) special
+                  case when there is more than one character and both the first and
+                  second characters are upper case, we leave it alone.
+                  &lt;p&gt;
+                  Thus &quot;FooBah&quot; becomes &quot;fooBah&quot; and &quot;X&quot; becomes &quot;x&quot;, but &quot;URL&quot; stays
+                  as &quot;URL&quot;.                
+                <param>
+                    name The string to be decapitalized.                    
+                </param>
+                <return>
+                    The decapitalized version of the string.                    
+                </return>
+            </javadoc>
+            <method name="decapitalize" type="String" line="285">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <scope line="286"/>
+                <scope line="290"/>
+                <declaration name="chars" type="char" line="293"/>
+            </method>
+            <javadoc line="298">
+                Gets the list of package names that will be used for
+                  finding BeanInfo classes.                
+                <return>
+                    The array of package names that will be searched in
+                      order to find BeanInfo classes. The default value
+                      for this array is implementation-dependent; e.g.
+                      Sun implementation initially sets to {"sun.beans.infos"}.                    
+                </return>
+            </javadoc>
+            <method name="getBeanInfoSearchPath" type="String[]" line="308"/>
+            <javadoc line="312">
+                Change the list of package names that will be used for
+                  finding BeanInfo classes.  The behaviour of
+                  this method is undefined if parameter path
+                  is null.
+                  &lt;p&gt;First, if there is a security manager, its &lt;code&gt;checkPropertiesAccess&lt;/code&gt;
+                  method is called. This could result in a SecurityException.                
+                <param>
+                    path  Array of package names.                    
+                </param>
+                <exception>
+                    SecurityException  if a security manager exists and its
+                      <code>checkPropertiesAccess</code> method doesn't allow setting
+                      of system properties.                    
+                </exception>
+                <see>
+                    SecurityManager#checkPropertiesAccess                    
+                </see>
+            </javadoc>
+            <method name="setBeanInfoSearchPath" type="void" line="328">
+                <params>
+                    <param name="path" type="String[]"/>
+                </params>
+                <declaration name="sm" type="SecurityManager" line="329"/>
+                <scope line="330"/>
+            </method>
+            <javadoc line="337">
+                Flush all of the Introspector&apos;s internal caches.  This method is
+                  not normally required.  It is normally only needed by advanced
+                  tools that update existing &quot;Class&quot; objects in-place and need
+                  to make the Introspector re-analyze existing Class objects.                
+            </javadoc>
+            <method name="flushCaches" type="void" line="344">
+                <scope line="345">
+                    <declaration name="beanInfoCache" type="Map" line="346"/>
+                    <scope line="347"/>
+                </scope>
+            </method>
+            <javadoc line="354">
+                Flush the Introspector&apos;s internal cached information for a given class.
+                  This method is not normally required.  It is normally only needed
+                  by advanced tools that update existing &quot;Class&quot; objects in-place
+                  and need to make the Introspector re-analyze an existing Class object.
+                  Note that only the direct state associated with the target Class
+                  object is flushed.  We do not flush state for other Class objects
+                  with the same name, nor do we flush state for any related Class
+                  objects (such as subclasses), even though their state may include
+                  information indirectly obtained from the target Class object.                
+                <param>
+                    clz  Class object to be flushed.                    
+                </param>
+                <throws>
+                    NullPointerException If the Class object is null.                    
+                </throws>
+            </javadoc>
+            <method name="flushFromCaches" type="void" line="369">
+                <params>
+                    <param name="clz" type="Class<?>"/>
+                </params>
+                <scope line="370"/>
+                <scope line="373">
+                    <declaration name="beanInfoCache" type="Map" line="374"/>
+                    <scope line="375"/>
+                </scope>
+            </method>
+            <method name="Introspector" type="constructor" line="387">
+                <params>
+                    <param name="beanClass" type="Class"/>
+                    <param name="stopClass" type="Class"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="390">
+                    Check stopClass is a superClass of startClass.                    
+                </comment>
+                <scope line="391">
+                    <declaration name="isSuper" type="boolean" line="392"/>
+                    <scope line="393">
+                        <scope line="394"/>
+                    </scope>
+                    <scope line="398"/>
+                </scope>
+                <scope line="404"/>
+                <declaration name="superClass" type="Class" line="408"/>
+                <scope line="409">
+                    <declaration name="newFlags" type="int" line="410"/>
+                    <scope line="411"/>
+                </scope>
+                <scope line="416"/>
+                <scope line="419"/>
+            </method>
+            <javadoc line="424">
+                Constructs a GenericBeanInfo class from the state of the Introspector                
+            </javadoc>
+            <method name="getBeanInfo" type="BeanInfo" line="427">
+                <comment line="429">
+                    the evaluation order here is import, as we evaluate the                    
+                </comment>
+                <comment line="430">
+                    event sets and locate PropertyChangeListeners before we                    
+                </comment>
+                <comment line="431">
+                    look for properties.                    
+                </comment>
+                <declaration name="bd" type="BeanDescriptor" line="432"/>
+                <declaration name="mds" type="MethodDescriptor" line="433"/>
+                <declaration name="esds" type="EventSetDescriptor" line="434"/>
+                <declaration name="pds" type="PropertyDescriptor" line="435"/>
+                <declaration name="defaultEvent" type="int" line="437"/>
+                <declaration name="defaultProperty" type="int" line="438"/>
+            </method>
+            <javadoc line="445">
+                Looks for an explicit BeanInfo class that corresponds to the Class.
+                  First it looks in the existing package that the Class is defined in,
+                  then it checks to see if the class is its own BeanInfo. Finally,
+                  the BeanInfo search path is prepended to the class and searched.                
+                <param>
+                    beanClass  the class type of the bean                    
+                </param>
+                <return>
+                    Instance of an explicit BeanInfo class or null if one isn't found.                    
+                </return>
+            </javadoc>
+            <method name="findExplicitBeanInfo" type="BeanInfo" line="454">
+                <params>
+                    <param name="beanClass" type="Class"/>
+                </params>
+            </method>
+            <javadoc line="458">
+                @return An array of PropertyDescriptors describing the editable
+                  properties supported by the target bean.                
+            </javadoc>
+            <method name="getTargetPropertyInfo" type="PropertyDescriptor[]" line="463">
+                <comment line="465">
+                    Check if the bean has its own BeanInfo that will provide                    
+                </comment>
+                <comment line="466">
+                    explicit information.                    
+                </comment>
+                <comment line="473">
+                    We have no explicit BeanInfo properties.  Check with our parent.                    
+                </comment>
+                <comment line="482">
+                    Add the explicit BeanInfo data to our results.                    
+                </comment>
+                <comment line="487">
+                    Apply some reflection to the current class.                    
+                </comment>
+                <comment line="489">
+                    First get an array of all the public methods at this level                    
+                </comment>
+                <comment line="492">
+                    Now analyze each method.                    
+                </comment>
+                <comment line="498">
+                    skip static methods.                    
+                </comment>
+                <comment line="510">
+                    Optimization. Don&apos;t bother with invalid propertyNames.                    
+                </comment>
+                <comment line="518">
+                    Simple getter                    
+                </comment>
+                <comment line="521">
+                    Boolean getter                    
+                </comment>
+                <comment line="528">
+                    Simple setter                    
+                </comment>
+                <comment line="543">
+                    This happens if a PropertyDescriptor or IndexedPropertyDescriptor                    
+                </comment>
+                <comment line="544">
+                    constructor fins that the method violates details of the deisgn                    
+                </comment>
+                <comment line="545">
+                    pattern, e.g. by having an empty name, or a getter returning                    
+                </comment>
+                <comment line="546">
+                    void , or whatever.                    
+                </comment>
+                <comment line="551">
+                    If this class or one of its base classes is a PropertyChange                    
+                </comment>
+                <comment line="552">
+                    source, then we assume that any properties we discover are &quot;bound&quot;.                    
+                </comment>
+                <comment line="562">
+                    Allocate and populate the result array.                    
+                </comment>
+                <comment line="566">
+                    Set the default index.                    
+                </comment>
+                <declaration name="explicitProperties" type="PropertyDescriptor[]" line="467"/>
+                <scope line="468"/>
+                <scope line="472"/>
+                <scope line="477"/>
+                <scope line="481"/>
+                <scope line="485">
+                    <declaration name="methodList" type="Method" line="490"/>
+                    <scope line="493">
+                        <declaration name="method" type="Method" line="494"/>
+                        <scope line="495"/>
+                        <declaration name="mods" type="int" line="499"/>
+                        <scope line="500"/>
+                        <declaration name="name" type="String" line="503"/>
+                        <declaration name="argTypes" type="Class" line="504"/>
+                        <declaration name="resultType" type="Class" line="505"/>
+                        <declaration name="argCount" type="int" line="506"/>
+                        <declaration name="pd" type="PropertyDescriptor" line="507"/>
+                        <scope line="509"/>
+                        <scope line="514">
+                            <scope line="516">
+                                <scope line="517"/>
+                                <scope line="520"/>
+                            </scope>
+                            <scope line="524">
+                                <scope line="525"/>
+                                <scope line="527">
+                                    <scope line="530"/>
+                                </scope>
+                            </scope>
+                            <scope line="534">
+                                <scope line="535">
+                                    <scope line="537"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="542"/>
+                        <scope line="550">
+                            <scope line="553"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <declaration name="result" type="PropertyDescriptor" line="563"/>
+                <scope line="567">
+                    <scope line="568">
+                        <scope line="569"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="pdStore" type="HashMap" line="578"/>
+            <javadoc line="580">
+                Adds the property descriptor to the list store.                
+            </javadoc>
+            <method name="addPropertyDescriptor" type="void" line="583">
+                <params>
+                    <param name="pd" type="PropertyDescriptor"/>
+                </params>
+                <comment line="591">
+                    replace existing property descriptor                    
+                </comment>
+                <comment line="592">
+                    only if we have types to resolve                    
+                </comment>
+                <comment line="593">
+                    in the context of this.beanClass                    
+                </comment>
+                <declaration name="propName" type="String" line="584"/>
+                <declaration name="list" type="List" line="585"/>
+                <scope line="586"/>
+                <scope line="590">
+                    <scope line="594">
+                        <declaration name="name" type="String" line="595"/>
+                        <declaration name="read" type="Method" line="596"/>
+                        <declaration name="write" type="Method" line="597"/>
+                        <declaration name="cls" type="boolean" line="598"/>
+                        <scope line="601">
+                            <declaration name="ipd" type="IndexedPropertyDescriptor" line="602"/>
+                            <declaration name="readI" type="Method" line="603"/>
+                            <declaration name="writeI" type="Method" line="604"/>
+                            <scope line="607"/>
+                        </scope>
+                        <scope line="610"/>
+                    </scope>
+                    <scope line="613"/>
+                </scope>
+            </method>
+            <method name="addPropertyDescriptors" type="void" line="619">
+                <params>
+                    <param name="descriptors" type="PropertyDescriptor[]"/>
+                </params>
+                <scope line="620">
+                    <scope line="621"/>
+                </scope>
+            </method>
+            <method name="getPropertyDescriptors" type="PropertyDescriptor[]" line="627">
+                <params>
+                    <param name="info" type="BeanInfo"/>
+                </params>
+                <declaration name="descriptors" type="PropertyDescriptor[]" line="628"/>
+                <declaration name="index" type="int" line="629"/>
+                <scope line="630"/>
+            </method>
+            <javadoc line="636">
+                Populates the property descriptor table by merging the
+                  lists of Property descriptors.                
+            </javadoc>
+            <method name="processPropertyDescriptors" type="void" line="640">
+                <comment line="657">
+                    First pass. Find the latest getter method. Merge properties                    
+                </comment>
+                <comment line="658">
+                    of previous getter methods.                    
+                </comment>
+                <comment line="673">
+                    Don&apos;t replace the existing read                    
+                </comment>
+                <comment line="674">
+                    method if it starts with &quot;is&quot;                    
+                </comment>
+                <comment line="686">
+                    Second pass. Find the latest setter method which                    
+                </comment>
+                <comment line="687">
+                    has the same type as the getter method.                    
+                </comment>
+                <comment line="731">
+                    At this stage we should have either PDs or IPDs for the                    
+                </comment>
+                <comment line="732">
+                    representative getters and setters. The order at which the                    
+                </comment>
+                <comment line="733">
+                    property descriptors are determined represent the                    
+                </comment>
+                <comment line="734">
+                    precedence of the property ordering.                    
+                </comment>
+                <comment line="738">
+                    Complete indexed properties set                    
+                </comment>
+                <comment line="739">
+                    Merge any classic property descriptors                    
+                </comment>
+                <comment line="758">
+                    Complete simple properties set                    
+                </comment>
+                <comment line="765">
+                    indexed setter                    
+                </comment>
+                <comment line="767">
+                    Merge any classic property descriptors                    
+                </comment>
+                <comment line="775">
+                    indexed getter                    
+                </comment>
+                <comment line="777">
+                    Merge any classic property descriptors                    
+                </comment>
+                <comment line="785">
+                    simple setter                    
+                </comment>
+                <comment line="788">
+                    simple getter                    
+                </comment>
+                <comment line="792">
+                    Very special case to ensure that an IndexedPropertyDescriptor                    
+                </comment>
+                <comment line="793">
+                    doesn&apos;t contain less information than the enclosed                    
+                </comment>
+                <comment line="794">
+                    PropertyDescriptor. If it does, then recreate as a                    
+                </comment>
+                <comment line="795">
+                    PropertyDescriptor. See 4168833                    
+                </comment>
+                <comment line="803">
+                    Find the first property descriptor                    
+                </comment>
+                <comment line="804">
+                    which does not have getter and setter methods.                    
+                </comment>
+                <comment line="805">
+                    See regression bug 4984912.                    
+                </comment>
+                <scope line="641"/>
+                <declaration name="list" type="List" line="645"/>
+                <declaration name="pd" type="PropertyDescriptor" line="647"/>
+                <declaration name="ipd" type="IndexedPropertyDescriptor" line="648"/>
+                <declaration name="it" type="Iterator" line="650"/>
+                <scope line="651">
+                    <scope line="659">
+                        <scope line="661">
+                            <scope line="663">
+                                <scope line="664"/>
+                                <scope line="666"/>
+                            </scope>
+                        </scope>
+                        <scope line="670">
+                            <scope line="671">
+                                <scope line="672">
+                                    <declaration name="method" type="Method" line="675"/>
+                                    <scope line="676"/>
+                                </scope>
+                                <scope line="679"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="688">
+                        <scope line="690">
+                            <scope line="692">
+                                <scope line="693">
+                                    <scope line="695">
+                                        <scope line="696"/>
+                                        <scope line="698"/>
+                                    </scope>
+                                </scope>
+                                <scope line="702">
+                                    <scope line="703"/>
+                                    <scope line="705"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="710">
+                            <scope line="711">
+                                <scope line="712">
+                                    <scope line="713">
+                                        <scope line="714"/>
+                                        <scope line="716"/>
+                                    </scope>
+                                </scope>
+                                <scope line="720">
+                                    <scope line="721"/>
+                                    <scope line="723"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="737">
+                        <scope line="740">
+                            <declaration name="tpd" type="PropertyDescriptor" line="741"/>
+                            <scope line="742"/>
+                        </scope>
+                        <scope line="746">
+                            <declaration name="tpd" type="PropertyDescriptor" line="747"/>
+                            <scope line="748"/>
+                        </scope>
+                        <scope line="752"/>
+                        <scope line="754"/>
+                    </scope>
+                    <scope line="757">
+                        <scope line="759"/>
+                        <scope line="761"/>
+                    </scope>
+                    <scope line="764">
+                        <scope line="768"/>
+                        <scope line="771"/>
+                    </scope>
+                    <scope line="774">
+                        <scope line="778"/>
+                        <scope line="781"/>
+                    </scope>
+                    <scope line="784"/>
+                    <scope line="787"/>
+                    <scope line="796">
+                        <scope line="798"/>
+                    </scope>
+                    <scope line="806"/>
+                    <scope line="810"/>
+                </scope>
+            </method>
+            <javadoc line="816">
+                Adds the property descriptor to the indexedproperty descriptor only if the
+                  types are the same.
+                  The most specific property descriptor will take precedence.                
+            </javadoc>
+            <method name="mergePropertyDescriptor" type="PropertyDescriptor" line="823">
+                <params>
+                    <param name="ipd" type="IndexedPropertyDescriptor"/>
+                    <param name="pd" type="PropertyDescriptor"/>
+                </params>
+                <comment line="836">
+                    Cannot merge the pd because of type mismatch                    
+                </comment>
+                <comment line="837">
+                    Return the most specific pd                    
+                </comment>
+                <comment line="842">
+                    Try to add methods which may have been lost in the type change                    
+                </comment>
+                <comment line="843">
+                    See 4168833                    
+                </comment>
+                <comment line="854">
+                    no consequences for failure.                    
+                </comment>
+                <comment line="866">
+                    no consequences for failure.                    
+                </comment>
+                <declaration name="result" type="PropertyDescriptor" line="824"/>
+                <declaration name="propType" type="Class" line="826"/>
+                <declaration name="ipropType" type="Class" line="827"/>
+                <scope line="829">
+                    <scope line="830"/>
+                    <scope line="832"/>
+                </scope>
+                <scope line="835">
+                    <scope line="838"/>
+                    <scope line="840">
+                        <declaration name="write" type="Method" line="844"/>
+                        <declaration name="read" type="Method" line="845"/>
+                        <scope line="847">
+                            <scope line="850">
+                                <scope line="851"/>
+                                <scope line="853"/>
+                            </scope>
+                        </scope>
+                        <scope line="858">
+                            <scope line="862">
+                                <scope line="863"/>
+                                <scope line="865"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="mergePropertyDescriptor" type="PropertyDescriptor" line="877">
+                <params>
+                    <param name="pd1" type="PropertyDescriptor"/>
+                    <param name="pd2" type="PropertyDescriptor"/>
+                </params>
+                <scope line="878"/>
+                <scope line="880"/>
+            </method>
+            <method name="mergePropertyDescriptor" type="PropertyDescriptor" line="887">
+                <params>
+                    <param name="ipd1" type="IndexedPropertyDescriptor"/>
+                    <param name="ipd2" type="IndexedPropertyDescriptor"/>
+                </params>
+                <scope line="888"/>
+                <scope line="890"/>
+            </method>
+            <javadoc line="895">
+                @return An array of EventSetDescriptors describing the kinds of
+                  events fired by the target bean.                
+            </javadoc>
+            <method name="getTargetEventInfo" type="EventSetDescriptor[]" line="899">
+                <comment line="904">
+                    Check if the bean has its own BeanInfo that will provide                    
+                </comment>
+                <comment line="905">
+                    explicit information.                    
+                </comment>
+                <comment line="916">
+                    We have no explicit BeanInfo events.  Check with our parent.                    
+                </comment>
+                <comment line="937">
+                    Add the explicit explicitBeanInfo data to our results.                    
+                </comment>
+                <comment line="944">
+                    Apply some reflection to the current class.                    
+                </comment>
+                <comment line="946">
+                    Get an array of all the public beans methods at this level                    
+                </comment>
+                <comment line="949">
+                    Find all suitable &quot;add&quot;, &quot;remove&quot; and &quot;get&quot; Listener methods                    
+                </comment>
+                <comment line="950">
+                    The name of the listener type is the key for these hashtables                    
+                </comment>
+                <comment line="951">
+                    i.e, ActionListener                    
+                </comment>
+                <comment line="961">
+                    skip static methods.                    
+                </comment>
+                <comment line="967">
+                    Optimization avoid getParameterTypes                    
+                </comment>
+                <comment line="1016">
+                    Now look for matching addFooListener+removeFooListener pairs.                    
+                </comment>
+                <comment line="1017">
+                    Bonus if there is a matching getFooListeners method as well.                    
+                </comment>
+                <comment line="1021">
+                    Skip any &quot;add&quot; which doesn&apos;t have a matching &quot;remove&quot; or                    
+                </comment>
+                <comment line="1022">
+                    a listener name that doesn&apos;t end with Listener                    
+                </comment>
+                <comment line="1035">
+                    generate a list of Method objects for each of the target methods:                    
+                </comment>
+                <comment line="1054">
+                    If the adder method throws the TooManyListenersException then it                    
+                </comment>
+                <comment line="1055">
+                    is a Unicast event source.                    
+                </comment>
+                <comment line="1062">
+                    if (adds != null ...                    
+                </comment>
+                <comment line="1068">
+                    Allocate and populate the result array.                    
+                </comment>
+                <comment line="1072">
+                    Set the default index.                    
+                </comment>
+                <scope line="900"/>
+                <declaration name="explicitEvents" type="EventSetDescriptor[]" line="906"/>
+                <scope line="907">
+                    <declaration name="ix" type="int" line="909"/>
+                    <scope line="910"/>
+                </scope>
+                <scope line="915">
+                    <declaration name="supers" type="EventSetDescriptor" line="917"/>
+                    <scope line="918"/>
+                    <declaration name="ix" type="int" line="921"/>
+                    <scope line="922"/>
+                </scope>
+                <scope line="927">
+                    <declaration name="additional" type="EventSetDescriptor" line="928"/>
+                    <scope line="929">
+                        <scope line="930"/>
+                    </scope>
+                </scope>
+                <scope line="936">
+                    <scope line="938"/>
+                </scope>
+                <scope line="942">
+                    <declaration name="methodList" type="Method" line="947"/>
+                    <declaration name="adds" type="Map" line="952"/>
+                    <declaration name="removes" type="Map" line="953"/>
+                    <declaration name="gets" type="Map" line="954"/>
+                    <scope line="956">
+                        <declaration name="method" type="Method" line="957"/>
+                        <scope line="958"/>
+                        <declaration name="mods" type="int" line="962"/>
+                        <scope line="963"/>
+                        <declaration name="name" type="String" line="966"/>
+                        <scope line="969"/>
+                        <declaration name="argTypes" type="Class" line="973"/>
+                        <declaration name="resultType" type="Class" line="974"/>
+                        <scope line="978">
+                            <declaration name="listenerName" type="String" line="979"/>
+                            <scope line="981">
+                                <scope line="982"/>
+                            </scope>
+                        </scope>
+                        <scope line="990">
+                            <declaration name="listenerName" type="String" line="991"/>
+                            <scope line="993">
+                                <scope line="994"/>
+                            </scope>
+                        </scope>
+                        <scope line="1003">
+                            <declaration name="listenerName" type="String" line="1004"/>
+                            <scope line="1006">
+                                <scope line="1007"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1015">
+                        <declaration name="keys" type="Iterator" line="1018"/>
+                        <scope line="1019">
+                            <declaration name="listenerName" type="String" line="1020"/>
+                            <scope line="1023"/>
+                            <declaration name="eventName" type="String" line="1026"/>
+                            <declaration name="addMethod" type="Method" line="1027"/>
+                            <declaration name="removeMethod" type="Method" line="1028"/>
+                            <declaration name="getMethod" type="Method" line="1029"/>
+                            <scope line="1030"/>
+                            <declaration name="argType" type="Class" line="1033"/>
+                            <declaration name="allMethods" type="Method" line="1036"/>
+                            <declaration name="validMethods" type="List" line="1037"/>
+                            <scope line="1038">
+                                <scope line="1039"/>
+                                <scope line="1043"/>
+                            </scope>
+                            <declaration name="methods" type="Method[]" line="1047"/>
+                            <declaration name="esd" type="EventSetDescriptor" line="1049"/>
+                            <scope line="1057"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <declaration name="result" type="EventSetDescriptor[]" line="1064"/>
+                <scope line="1065"/>
+                <scope line="1067">
+                    <scope line="1073">
+                        <scope line="1074">
+                            <scope line="1075"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="addEvent" type="void" line="1084">
+                <params>
+                    <param name="esd" type="EventSetDescriptor"/>
+                </params>
+                <declaration name="key" type="String" line="1085"/>
+                <scope line="1086"/>
+                <declaration name="old" type="EventSetDescriptor" line="1089"/>
+                <scope line="1090"/>
+                <declaration name="composite" type="EventSetDescriptor" line="1094"/>
+            </method>
+            <javadoc line="1098">
+                @return An array of MethodDescriptors describing the private
+                  methods supported by the target bean.                
+            </javadoc>
+            <method name="getTargetMethodInfo" type="MethodDescriptor[]" line="1102">
+                <comment line="1107">
+                    Check if the bean has its own BeanInfo that will provide                    
+                </comment>
+                <comment line="1108">
+                    explicit information.                    
+                </comment>
+                <comment line="1115">
+                    We have no explicit BeanInfo methods.  Check with our parent.                    
+                </comment>
+                <comment line="1132">
+                    Add the explicit explicitBeanInfo data to our results.                    
+                </comment>
+                <comment line="1139">
+                    Apply some reflection to the current class.                    
+                </comment>
+                <comment line="1141">
+                    First get an array of all the beans methods at this level                    
+                </comment>
+                <comment line="1144">
+                    Now analyze each method.                    
+                </comment>
+                <comment line="1155">
+                    Allocate and populate the result array.                    
+                </comment>
+                <scope line="1103"/>
+                <declaration name="explicitMethods" type="MethodDescriptor[]" line="1109"/>
+                <scope line="1110"/>
+                <scope line="1114">
+                    <declaration name="supers" type="MethodDescriptor" line="1116"/>
+                    <scope line="1117"/>
+                </scope>
+                <scope line="1122">
+                    <declaration name="additional" type="MethodDescriptor" line="1123"/>
+                    <scope line="1124">
+                        <scope line="1125"/>
+                    </scope>
+                </scope>
+                <scope line="1131">
+                    <scope line="1133"/>
+                </scope>
+                <scope line="1137">
+                    <declaration name="methodList" type="Method" line="1142"/>
+                    <scope line="1145">
+                        <declaration name="method" type="Method" line="1146"/>
+                        <scope line="1147"/>
+                        <declaration name="md" type="MethodDescriptor" line="1150"/>
+                    </scope>
+                </scope>
+                <declaration name="result" type="MethodDescriptor" line="1156"/>
+            </method>
+            <method name="addMethod" type="void" line="1162">
+                <params>
+                    <param name="md" type="MethodDescriptor"/>
+                </params>
+                <comment line="1163">
+                    We have to be careful here to distinguish method by both name                    
+                </comment>
+                <comment line="1164">
+                    and argument lists.                    
+                </comment>
+                <comment line="1165">
+                    This method gets called a *lot, so we try to be efficient.                    
+                </comment>
+                <comment line="1170">
+                    This is the common case.                    
+                </comment>
+                <comment line="1175">
+                    We have a collision on method names.  This is rare.                    
+                </comment>
+                <comment line="1177">
+                    Check if old and md have the same type.                    
+                </comment>
+                <comment line="1197">
+                    We have a collision on method names with different type signatures.                    
+                </comment>
+                <comment line="1198">
+                    This is very rare.                    
+                </comment>
+                <declaration name="name" type="String" line="1166"/>
+                <declaration name="old" type="MethodDescriptor" line="1168"/>
+                <scope line="1169"/>
+                <declaration name="p1" type="String[]" line="1178"/>
+                <declaration name="p2" type="String[]" line="1179"/>
+                <declaration name="match" type="boolean" line="1181"/>
+                <scope line="1182">
+                    <scope line="1184">
+                        <scope line="1185"/>
+                    </scope>
+                </scope>
+                <scope line="1191">
+                    <declaration name="composite" type="MethodDescriptor" line="1192"/>
+                </scope>
+                <declaration name="longKey" type="String" line="1200"/>
+                <scope line="1202"/>
+                <declaration name="composite" type="MethodDescriptor" line="1206"/>
+            </method>
+            <javadoc line="1210">
+                Creates a key for a method in a method cache.                
+            </javadoc>
+            <method name="makeQualifiedMethodName" type="String" line="1213">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="params" type="String[]"/>
+                </params>
+                <declaration name="sb" type="StringBuffer" line="1214"/>
+                <scope line="1216"/>
+            </method>
+            <method name="getTargetDefaultEventIndex" type="int" line="1223"/>
+            <method name="getTargetDefaultPropertyIndex" type="int" line="1227"/>
+            <method name="getTargetBeanDescriptor" type="BeanDescriptor" line="1231">
+                <comment line="1232">
+                    Use explicit info, if available,                    
+                </comment>
+                <comment line="1239">
+                    OK, fabricate a default BeanDescriptor.                    
+                </comment>
+                <scope line="1233">
+                    <declaration name="bd" type="BeanDescriptor" line="1234"/>
+                    <scope line="1235"/>
+                </scope>
+            </method>
+            <method name="findCustomizerClass" type="Class<?>" line="1243">
+                <params>
+                    <param name="type" type="Class<?>"/>
+                </params>
+                <comment line="1247">
+                    Each customizer should inherit java.awt.Component and implement java.beans.Customizer                    
+                </comment>
+                <comment line="1248">
+                    according to the section 9.3 of JavaBeans&amp;trade; specification                    
+                </comment>
+                <comment line="1254">
+                    ignore any exceptions                    
+                </comment>
+                <declaration name="name" type="String" line="1244"/>
+                <scope line="1245">
+                    <scope line="1249"/>
+                </scope>
+                <scope line="1253"/>
+            </method>
+            <method name="isEventHandler" type="boolean" line="1259">
+                <params>
+                    <param name="m" type="Method"/>
+                </params>
+                <comment line="1260">
+                    We assume that a method is an event handler if it has a single                    
+                </comment>
+                <comment line="1261">
+                    argument, whose type inherit from java.util.Event.                    
+                </comment>
+                <declaration name="argTypes" type="Class" line="1262"/>
+                <scope line="1263"/>
+            </method>
+            <method name="getPublicDeclaredMethods" type="Method[]" line="1272">
+                <params>
+                    <param name="clz" type="Class"/>
+                </params>
+                <comment line="1273">
+                    Looking up Class.getDeclaredMethods is relatively expensive,                    
+                </comment>
+                <comment line="1274">
+                    so we cache the results.                    
+                </comment>
+                <scope line="1275"/>
+                <scope line="1278">
+                    <declaration name="result" type="Method[]" line="1279"/>
+                    <scope line="1280">
+                        <scope line="1282">
+                            <declaration name="method" type="Method" line="1283"/>
+                            <scope line="1284"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1298">
+                Internal support for finding a target methodName with a given
+                  parameter list on a given class.                
+            </javadoc>
+            <method name="internalFindMethod" type="Method" line="1303">
+                <params>
+                    <param name="start" type="Class"/>
+                    <param name="methodName" type="String"/>
+                    <param name="argCount" type="int"/>
+                    <param name="args" type="Class"/>
+                </params>
+                <comment line="1304">
+                    For overriden methods we need to find the most derived version.                    
+                </comment>
+                <comment line="1305">
+                    So we start with the given class and walk up the superclass chain.                    
+                </comment>
+                <comment line="1317">
+                    make sure method signature matches.                    
+                </comment>
+                <comment line="1341">
+                    Now check any inherited interfaces.  This is necessary both when                    
+                </comment>
+                <comment line="1342">
+                    the argument class is itself an interface, and when the argument                    
+                </comment>
+                <comment line="1343">
+                    class is an abstract class.                    
+                </comment>
+                <comment line="1346">
+                    Note: The original implementation had both methods calling                    
+                </comment>
+                <comment line="1347">
+                    the 3 arg method. This is preserved but perhaps it should                    
+                </comment>
+                <comment line="1348">
+                    pass the args array instead of null.                    
+                </comment>
+                <declaration name="method" type="Method" line="1307"/>
+                <scope line="1309">
+                    <declaration name="methods" type="Method" line="1310"/>
+                    <scope line="1311">
+                        <scope line="1313"/>
+                        <declaration name="params" type="Class" line="1318"/>
+                        <scope line="1320">
+                            <scope line="1321">
+                                <declaration name="different" type="boolean" line="1322"/>
+                                <scope line="1323">
+                                    <scope line="1324">
+                                        <scope line="1325"/>
+                                    </scope>
+                                    <scope line="1330"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <declaration name="ifcs" type="Class" line="1344"/>
+                <scope line="1345">
+                    <scope line="1350"/>
+                </scope>
+            </method>
+            <javadoc line="1357">
+                Find a target methodName on a given class.                
+            </javadoc>
+            <method name="findMethod" type="Method" line="1360">
+                <params>
+                    <param name="cls" type="Class"/>
+                    <param name="methodName" type="String"/>
+                    <param name="argCount" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1364">
+                Find a target methodName with specific parameter list on a given class.
+                  &lt;p&gt;
+                  Used in the contructors of the EventSetDescriptor,
+                  PropertyDescriptor and the IndexedPropertyDescriptor.
+                  &lt;p&gt;                
+                <param>
+                    cls The Class object on which to retrieve the method.                    
+                </param>
+                <param>
+                    methodName Name of the method.                    
+                </param>
+                <param>
+                    argCount Number of arguments for the desired method.                    
+                </param>
+                <param>
+                    args Array of argument types for the method.                    
+                </param>
+                <return>
+                    the method or null if not found                    
+                </return>
+            </javadoc>
+            <method name="findMethod" type="Method" line="1377">
+                <params>
+                    <param name="cls" type="Class"/>
+                    <param name="methodName" type="String"/>
+                    <param name="argCount" type="int"/>
+                    <param name="args" type="Class"/>
+                </params>
+                <scope line="1378"/>
+            </method>
+            <javadoc line="1384">
+                Return true if class a is either equivalent to class b, or
+                  if class a is a subclass of class b, i.e. if a either &quot;extends&quot;
+                  or &quot;implements&quot; b.
+                  Note tht either or both &quot;Class&quot; objects may represent interfaces.                
+            </javadoc>
+            <method name="isSubclass" type="boolean" line="1390">
+                <params>
+                    <param name="a" type="Class"/>
+                    <param name="b" type="Class"/>
+                </params>
+                <comment line="1391">
+                    We rely on the fact that for any given java class or                    
+                </comment>
+                <comment line="1392">
+                    primtitive type there is a unqiue Class object, so                    
+                </comment>
+                <comment line="1393">
+                    we can use object equivalence in the comparisons.                    
+                </comment>
+                <scope line="1394"/>
+                <scope line="1397"/>
+                <scope line="1400">
+                    <scope line="1401"/>
+                    <scope line="1404">
+                        <declaration name="interfaces" type="Class" line="1405"/>
+                        <scope line="1406">
+                            <scope line="1407"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1416">
+                Return true iff the given method throws the given exception.                
+            </javadoc>
+            <method name="throwsException" type="boolean" line="1419">
+                <params>
+                    <param name="method" type="Method"/>
+                    <param name="exception" type="Class"/>
+                </params>
+                <declaration name="exs" type="Class" line="1420"/>
+                <scope line="1421">
+                    <scope line="1422"/>
+                </scope>
+            </method>
+            <method name="getFinder" type="BeanInfoFinder" line="1429">
+                <declaration name="context" type="AppContext" line="1430"/>
+                <declaration name="object" type="Object" line="1431"/>
+                <scope line="1432"/>
+                <declaration name="finder" type="BeanInfoFinder" line="1435"/>
+            </method>
+            <javadoc line="1440">
+                Try to create an instance of a named class.
+                  First try the classloader of &quot;sibling&quot;, then try the system
+                  classloader then the class loader of the current Thread.                
+            </javadoc>
+            <method name="instantiate" type="Object" line="1447">
+                <params>
+                    <param name="sibling" type="Class"/>
+                    <param name="className" type="String"/>
+                </params>
+                <comment line="1448">
+                    First check with sibling&apos;s classloader (if any).                    
+                </comment>
+                <declaration name="cl" type="ClassLoader" line="1449"/>
+                <declaration name="cls" type="Class" line="1450"/>
+            </method>
+        </class>
+        <class name="GenericBeanInfo" line="1458">
+            <extends class="SimpleBeanInfo"/>
+            <comment line="96">
+                Flags that can be used to control getBeanInfo:                
+            </comment>
+            <comment line="101">
+                Static Caches to speed up introspection.                
+            </comment>
+            <comment line="115">
+                These should be removed.                
+            </comment>
+            <comment line="121">
+                Methods maps from Method objects to MethodDescriptors                
+            </comment>
+            <comment line="124">
+                properties maps from String names to PropertyDescriptors                
+            </comment>
+            <comment line="127">
+                events maps from String names to EventSetDescriptors                
+            </comment>
+            <comment line="140">
+                ======================================================================                
+            </comment>
+            <comment line="141">
+                Public methods                
+            </comment>
+            <comment line="142">
+                ======================================================================                
+            </comment>
+            <comment line="383">
+                ======================================================================                
+            </comment>
+            <comment line="384">
+                Private implementation methods                
+            </comment>
+            <comment line="385">
+                ======================================================================                
+            </comment>
+            <comment line="876">
+                Handle regular pd merge                
+            </comment>
+            <comment line="886">
+                Handle regular ipd merge                
+            </comment>
+            <comment line="1270">
+                Internal method to return public methods within a class.                
+            </comment>
+            <comment line="1295">
+                ======================================================================                
+            </comment>
+            <comment line="1296">
+                Package private support methods.                
+            </comment>
+            <comment line="1297">
+                ======================================================================                
+            </comment>
+            <javadoc line="1458">
+                Package private implementation support class for Introspector&apos;s
+                  internal use.
+                  &lt;p&gt;
+                  Mostly this is used as a placeholder for the descriptors.                
+            </javadoc>
+            <declaration name="beanDescriptor" type="BeanDescriptor" line="1467"/>
+            <declaration name="events" type="EventSetDescriptor[]" line="1468"/>
+            <declaration name="defaultEvent" type="int" line="1469"/>
+            <declaration name="properties" type="PropertyDescriptor[]" line="1470"/>
+            <declaration name="defaultProperty" type="int" line="1471"/>
+            <declaration name="methods" type="MethodDescriptor[]" line="1472"/>
+            <declaration name="targetBeanInfoRef" type="Reference&lt;BeanInfo&gt;" line="1473"/>
+            <method name="GenericBeanInfo" type="constructor" line="1478">
+                <params>
+                    <param name="beanDescriptor" type="BeanDescriptor"/>
+                    <param name="events" type="EventSetDescriptor[]"/>
+                    <param name="defaultEvent" type="int"/>
+                    <param name="properties" type="PropertyDescriptor[]"/>
+                    <param name="defaultProperty" type="int"/>
+                    <param name="methods" type="MethodDescriptor[]"/>
+                    <param name="targetBeanInfo" type="BeanInfo"/>
+                </params>
+            </method>
+            <javadoc line="1488">
+                Package-private dup constructor
+                  This must isolate the new object from any changes to the old object.                
+            </javadoc>
+            <method name="GenericBeanInfo" type="constructor" line="1492">
+                <params>
+                    <param name="old" type="GenericBeanInfo"/>
+                </params>
+                <scope line="1495">
+                    <declaration name="len" type="int" line="1496"/>
+                    <scope line="1498"/>
+                </scope>
+                <scope line="1503">
+                    <declaration name="len" type="int" line="1504"/>
+                    <scope line="1506">
+                        <declaration name="oldp" type="PropertyDescriptor" line="1507"/>
+                        <scope line="1508"/>
+                        <scope line="1511"/>
+                    </scope>
+                </scope>
+                <scope line="1517">
+                    <declaration name="len" type="int" line="1518"/>
+                    <scope line="1520"/>
+                </scope>
+            </method>
+            <method name="getPropertyDescriptors" type="PropertyDescriptor[]" line="1527"/>
+            <method name="getDefaultPropertyIndex" type="int" line="1531"/>
+            <method name="getEventSetDescriptors" type="EventSetDescriptor[]" line="1535"/>
+            <method name="getDefaultEventIndex" type="int" line="1539"/>
+            <method name="getMethodDescriptors" type="MethodDescriptor[]" line="1543"/>
+            <method name="getBeanDescriptor" type="BeanDescriptor" line="1547"/>
+            <method name="getIcon" type="java.awt.Image" line="1551">
+                <params>
+                    <param name="iconKind" type="int"/>
+                </params>
+                <declaration name="targetBeanInfo" type="BeanInfo" line="1552"/>
+                <scope line="1553"/>
+            </method>
+        </class>
+    </source>

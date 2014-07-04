@@ -1,0 +1,636 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.optimization.general">
+        <import package="org.apache.commons.math3.analysis.DifferentiableMultivariateVectorFunction"/>
+        <import package="org.apache.commons.math3.analysis.FunctionUtils"/>
+        <import package="org.apache.commons.math3.analysis.differentiation.DerivativeStructure"/>
+        <import package="org.apache.commons.math3.analysis.differentiation.MultivariateDifferentiableVectorFunction"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooSmallException"/>
+        <import package="org.apache.commons.math3.exception.util.LocalizedFormats"/>
+        <import package="org.apache.commons.math3.linear.ArrayRealVector"/>
+        <import package="org.apache.commons.math3.linear.RealMatrix"/>
+        <import package="org.apache.commons.math3.linear.DiagonalMatrix"/>
+        <import package="org.apache.commons.math3.linear.DecompositionSolver"/>
+        <import package="org.apache.commons.math3.linear.MatrixUtils"/>
+        <import package="org.apache.commons.math3.linear.QRDecomposition"/>
+        <import package="org.apache.commons.math3.linear.EigenDecomposition"/>
+        <import package="org.apache.commons.math3.optimization.OptimizationData"/>
+        <import package="org.apache.commons.math3.optimization.InitialGuess"/>
+        <import package="org.apache.commons.math3.optimization.Target"/>
+        <import package="org.apache.commons.math3.optimization.Weight"/>
+        <import package="org.apache.commons.math3.optimization.ConvergenceChecker"/>
+        <import package="org.apache.commons.math3.optimization.DifferentiableMultivariateVectorOptimizer"/>
+        <import package="org.apache.commons.math3.optimization.PointVectorValuePair"/>
+        <import package="org.apache.commons.math3.optimization.direct.BaseAbstractMultivariateVectorOptimizer"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <class name="AbstractLeastSquaresOptimizer" line="44">
+            <extends class="BaseAbstractMultivariateVectorOptimizer">
+                <type_params>
+                    <type_param name="DifferentiableMultivariateVectorFunction"/>
+                </type_params>
+            </extends>
+            <implements interface="DifferentiableMultivariateVectorOptimizer"/>
+            <javadoc line="44">
+                Base class for implementing least squares optimizers.
+                  It handles the boilerplate methods associated to thresholds settings,
+                  Jacobian and error estimation.
+                  &lt;br/&gt;
+                  This class constructs the Jacobian matrix of the function argument in method{@link BaseAbstractMultivariateVectorOptimizer#optimize(int,MultivariateVectorFunction,OptimizationData[])optimize} and assumes that the rows of that matrix iterate on the model
+                  functions while the columns iterate on the parameters; thus, the numbers
+                  of rows is equal to the dimension of the{@link org.apache.commons.math3.optimization.Target Target} while
+                  the number of columns is equal to the dimension of the{@link org.apache.commons.math3.optimization.InitialGuess InitialGuess}.                
+                <version>
+                    $Id: AbstractLeastSquaresOptimizer.java 1426759 2012-12-29 13:26:44Z erans $                    
+                </version>
+                <deprecated>
+                    As of 3.1 (to be removed in 4.0).                    
+                </deprecated>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <declaration name="DEFAULT_SINGULARITY_THRESHOLD" type="double" line="66"/>
+            <javadoc line="66">
+                Singularity threshold (cf. {@link #getCovariances(double)}).                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="weightedResidualJacobian" type="double[][]" line="72"/>
+            <javadoc line="72">
+                Jacobian matrix of the weighted residuals.
+                  This matrix is in canonical form just after the calls to{@link #updateJacobian()}, but may be modified by the solver
+                  in the derived class (the {@link LevenbergMarquardtOptimizerLevenberg-Marquardt optimizer} does this).                
+                <deprecated>
+                    As of 3.1. To be removed in 4.0. Please use{@link #computeWeightedJacobian(double[])} instead.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="cols" type="int" line="83"/>
+            <javadoc line="83">
+                Number of columns of the jacobian matrix.                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="rows" type="int" line="88"/>
+            <javadoc line="88">
+                Number of rows of the jacobian matrix.                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="point" type="double[]" line="93"/>
+            <javadoc line="93">
+                Current point.                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="objective" type="double[]" line="98"/>
+            <javadoc line="98">
+                Current objective function value.                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="weightedResiduals" type="double[]" line="103"/>
+            <javadoc line="103">
+                Weighted residuals                
+                <deprecated>
+                    As of 3.1.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="cost" type="double" line="108"/>
+            <javadoc line="108">
+                Cost value (square root of the sum of the residuals).                
+                <deprecated>
+                    As of 3.1. Field to become "private" in 4.0.
+                      Please use {@link #setCost(double)}.                    
+                </deprecated>
+            </javadoc>
+            <declaration name="jF" type="MultivariateDifferentiableVectorFunction" line="114"/>
+            <javadoc line="114">
+                Objective function derivatives.                
+            </javadoc>
+            <declaration name="jacobianEvaluations" type="int" line="116"/>
+            <javadoc line="116">
+                Number of evaluations of the Jacobian.                
+            </javadoc>
+            <declaration name="weightMatrixSqrt" type="RealMatrix" line="118"/>
+            <javadoc line="118">
+                Square-root of the weight matrix.                
+            </javadoc>
+            <javadoc line="121">
+                Simple constructor with default settings.
+                  The convergence check is set to a {@link org.apache.commons.math3.optimization.SimpleVectorValueChecker}.                
+                <deprecated>
+                    See {@link org.apache.commons.math3.optimization.SimpleValueChecker#SimpleValueChecker()}                    
+                </deprecated>
+            </javadoc>
+            <method name="AbstractLeastSquaresOptimizer" type="constructor" line="128"/>
+            <javadoc line="130">
+                @param checker Convergence checker.                
+            </javadoc>
+            <method name="AbstractLeastSquaresOptimizer" type="constructor" line="133">
+                <params>
+                    <param name="checker" type="ConvergenceChecker<PointVectorValuePair>"/>
+                </params>
+            </method>
+            <javadoc line="137">
+                @return the number of evaluations of the Jacobian function.                
+            </javadoc>
+            <method name="getJacobianEvaluations" type="int" line="140"/>
+            <javadoc line="144">
+                Update the jacobian matrix.                
+                <throws>
+                    DimensionMismatchException if the Jacobian dimension does not
+                      match problem dimension.                    
+                </throws>
+                <deprecated>
+                    As of 3.1. Please use {@link #computeWeightedJacobian(double[])}instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="updateJacobian" type="void" line="153">
+                <declaration name="weightedJacobian" type="RealMatrix" line="154"/>
+            </method>
+            <javadoc line="158">
+                Computes the Jacobian matrix.                
+                <param>
+                    params Model parameters at which to compute the Jacobian.                    
+                </param>
+                <return>
+                    the weighted Jacobian: W<sup>1/2</sup> J.                    
+                </return>
+                <throws>
+                    DimensionMismatchException if the Jacobian dimension does not
+                      match problem dimension.                    
+                </throws>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="computeWeightedJacobian" type="RealMatrix" line="167">
+                <params>
+                    <param name="params" type="double[]"/>
+                </params>
+                <declaration name="dsPoint" type="DerivativeStructure[]" line="170"/>
+                <declaration name="nC" type="int" line="171"/>
+                <scope line="172"/>
+                <declaration name="dsValue" type="DerivativeStructure[]" line="175"/>
+                <declaration name="nR" type="int" line="176"/>
+                <scope line="177"/>
+                <declaration name="jacobianData" type="double[][]" line="180"/>
+                <scope line="181">
+                    <declaration name="orders" type="int[]" line="182"/>
+                    <scope line="183"/>
+                </scope>
+            </method>
+            <javadoc line="193">
+                Update the residuals array and cost function value.                
+                <throws>
+                    DimensionMismatchException if the dimension does not match the
+                      problem dimension.                    
+                </throws>
+                <throws>
+                    org.apache.commons.math3.exception.TooManyEvaluationsExceptionif the maximal number of evaluations is exceeded.                    
+                </throws>
+                <deprecated>
+                    As of 3.1. Please use {@link #computeResiduals(double[])},{@link #computeObjectiveValue(double[])}, {@link #computeCost(double[])}and {@link #setCost(double)} instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="updateResidualsAndCost" type="void" line="204">
+                <comment line="208">
+                    Compute cost.                    
+                </comment>
+                <comment line="211">
+                    Compute weighted residuals.                    
+                </comment>
+                <declaration name="res" type="double[]" line="206"/>
+                <declaration name="residuals" type="ArrayRealVector" line="212"/>
+            </method>
+            <javadoc line="216">
+                Computes the cost.                
+                <param>
+                    residuals Residuals.                    
+                </param>
+                <return>
+                    the cost.                    
+                </return>
+                <see>
+                    #computeResiduals(double[])                    
+                </see>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="computeCost" type="double" line="224">
+                <params>
+                    <param name="residuals" type="double[]"/>
+                </params>
+                <declaration name="r" type="ArrayRealVector" line="225"/>
+            </method>
+            <javadoc line="229">
+                Get the Root Mean Square value.
+                  Get the Root Mean Square value, i.e. the root of the arithmetic
+                  mean of the square of all weighted residuals. This is related to the
+                  criterion that is minimized by the optimizer as follows: if
+                  &lt;em&gt;c&lt;/em&gt; if the criterion, and &lt;em&gt;n&lt;/em&gt; is the number of
+                  measurements, then the RMS is &lt;em&gt;sqrt (c/n)&lt;/em&gt;.                
+                <return>
+                    RMS value                    
+                </return>
+            </javadoc>
+            <method name="getRMS" type="double" line="239"/>
+            <javadoc line="243">
+                Get a Chi-Square-like value assuming the N residuals follow N
+                  distinct normal distributions centered on 0 and whose variances are
+                  the reciprocal of the weights.                
+                <return>
+                    chi-square value                    
+                </return>
+            </javadoc>
+            <method name="getChiSquare" type="double" line="249"/>
+            <javadoc line="253">
+                Gets the square-root of the weight matrix.                
+                <return>
+                    the square-root of the weight matrix.                    
+                </return>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="getWeightSquareRoot" type="RealMatrix" line="259"/>
+            <javadoc line="263">
+                Sets the cost.                
+                <param>
+                    cost Cost value.                    
+                </param>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="setCost" type="void" line="269">
+                <params>
+                    <param name="cost" type="double"/>
+                </params>
+            </method>
+            <javadoc line="273">
+                Get the covariance matrix of the optimized parameters.                
+                <return>
+                    the covariance matrix.                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.linear.SingularMatrixExceptionif the covariance matrix cannot be computed (singular problem).                    
+                </throws>
+                <see>
+                    #getCovariances(double)                    
+                </see>
+                <deprecated>
+                    As of 3.1. Please use {@link #computeCovariances(double[],double)}instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="getCovariances" type="double[][]" line="284"/>
+            <javadoc line="288">
+                Get the covariance matrix of the optimized parameters.
+                  &lt;br/&gt;
+                  Note that this operation involves the inversion of the
+                  &lt;code&gt;J&lt;sup&gt;T&lt;/sup&gt;J&lt;/code&gt; matrix, where {@code J} is the
+                  Jacobian matrix.
+                  The {@code threshold} parameter is a way for the caller to specify
+                  that the result of this computation should be considered meaningless,
+                  and thus trigger an exception.                
+                <param>
+                    threshold Singularity threshold.                    
+                </param>
+                <return>
+                    the covariance matrix.                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.linear.SingularMatrixExceptionif the covariance matrix cannot be computed (singular problem).                    
+                </throws>
+                <deprecated>
+                    As of 3.1. Please use {@link #computeCovariances(double[],double)}instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="getCovariances" type="double[][]" line="306">
+                <params>
+                    <param name="threshold" type="double"/>
+                </params>
+            </method>
+            <javadoc line="310">
+                Get the covariance matrix of the optimized parameters.
+                  &lt;br/&gt;
+                  Note that this operation involves the inversion of the
+                  &lt;code&gt;J&lt;sup&gt;T&lt;/sup&gt;J&lt;/code&gt; matrix, where {@code J} is the
+                  Jacobian matrix.
+                  The {@code threshold} parameter is a way for the caller to specify
+                  that the result of this computation should be considered meaningless,
+                  and thus trigger an exception.                
+                <param>
+                    params Model parameters.                    
+                </param>
+                <param>
+                    threshold Singularity threshold.                    
+                </param>
+                <return>
+                    the covariance matrix.                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.linear.SingularMatrixExceptionif the covariance matrix cannot be computed (singular problem).                    
+                </throws>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="computeCovariances" type="double[][]" line="328">
+                <params>
+                    <param name="params" type="double[]"/>
+                    <param name="threshold" type="double"/>
+                </params>
+                <comment line="329">
+                    Set up the Jacobian.                    
+                </comment>
+                <comment line="332">
+                    Compute transpose(J)J.                    
+                </comment>
+                <comment line="335">
+                    Compute the covariances matrix.                    
+                </comment>
+                <declaration name="j" type="RealMatrix" line="330"/>
+                <declaration name="jTj" type="RealMatrix" line="333"/>
+                <declaration name="solver" type="DecompositionSolver" line="336"/>
+            </method>
+            <javadoc line="341">
+                &lt;p&gt;
+                  Returns an estimate of the standard deviation of each parameter. The
+                  returned values are the so-called (asymptotic) standard errors on the
+                  parameters, defined as {@code sd(a[i]) = sqrt(S / (n - m)  C[i][i])},
+                  where {@code a[i]} is the optimized value of the {@code i}-th parameter,{@code S} is the minimized value of the sum of squares objective function
+                  (as returned by {@link #getChiSquare()}), {@code n} is the number of
+                  observations, {@code m} is the number of parameters and {@code C} is the
+                  covariance matrix.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  See also
+                  &lt;a href=&quot;http://en.wikipedia.org/wiki/Least_squares&quot;&gt;Wikipedia&lt;/a&gt;,
+                  or
+                  &lt;a href=&quot;http://mathworld.wolfram.com/LeastSquaresFitting.html&quot;&gt;MathWorld&lt;/a&gt;,
+                  equations (34) and (35) for a particular case.
+                  &lt;/p&gt;                
+                <return>
+                    an estimate of the standard deviation of the optimized parameters                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.linear.SingularMatrixExceptionif the covariance matrix cannot be computed.                    
+                </throws>
+                <throws>
+                    NumberIsTooSmallException if the number of degrees of freedom is not
+                      positive, i.e. the number of measurements is less or equal to the number of
+                      parameters.                    
+                </throws>
+                <deprecated>
+                    as of version 3.1, {@link #computeSigma(double[],double)} should be used
+                      instead. It should be emphasized that {@code guessParametersErrors} and{@code computeSigma} are <em>not</em> strictly equivalent.                    
+                </deprecated>
+            </javadoc>
+            <method name="guessParametersErrors" type="double[]" line="371">
+                <scope line="372"/>
+                <declaration name="errors" type="double[]" line="376"/>
+                <declaration name="c" type="double" line="377"/>
+                <declaration name="covar" type="double[][]" line="378"/>
+                <scope line="379"/>
+            </method>
+            <javadoc line="385">
+                Computes an estimate of the standard deviation of the parameters. The
+                  returned values are the square root of the diagonal coefficients of the
+                  covariance matrix, {@code sd(a[i]) ~= sqrt(C[i][i])}, where {@code a[i]}is the optimized value of the {@code i}-th parameter, and {@code C} is
+                  the covariance matrix.                
+                <param>
+                    params Model parameters.                    
+                </param>
+                <param>
+                    covarianceSingularityThreshold Singularity threshold (see{@link #computeCovariances(double[],double) computeCovariances}).                    
+                </param>
+                <return>
+                    an estimate of the standard deviation of the optimized parameters                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.linear.SingularMatrixExceptionif the covariance matrix cannot be computed.                    
+                </throws>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="computeSigma" type="double[]" line="401">
+                <params>
+                    <param name="params" type="double[]"/>
+                    <param name="covarianceSingularityThreshold" type="double"/>
+                </params>
+                <declaration name="nC" type="int" line="402"/>
+                <declaration name="sig" type="double[]" line="403"/>
+                <declaration name="cov" type="double[][]" line="404"/>
+                <scope line="405"/>
+            </method>
+            <javadoc line="411">
+                {@inheritDoc}                
+                <deprecated>
+                    As of 3.1. Please use{@link BaseAbstractMultivariateVectorOptimizer#optimize(int,MultivariateVectorFunction,OptimizationData[])optimize(int,MultivariateDifferentiableVectorFunction,OptimizationData...)}instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="optimize" type="PointVectorValuePair" line="422">
+                <params>
+                    <param name="maxEval" type="int"/>
+                    <param name="f" type="DifferentiableMultivariateVectorFunction"/>
+                    <param name="target" type="double[]"/>
+                    <param name="weights" type="double[]"/>
+                    <param name="startPoint" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="430">
+                Optimize an objective function.
+                  Optimization is considered to be a weighted least-squares minimization.
+                  The cost function to be minimized is
+                  &lt;code&gt;&amp;sum;weight&lt;sub&gt;i&lt;/sub&gt;(objective&lt;sub&gt;i&lt;/sub&gt; - target&lt;sub&gt;i&lt;/sub&gt;)&lt;sup&gt;2&lt;/sup&gt;&lt;/code&gt;                
+                <param>
+                    f Objective function.                    
+                </param>
+                <param>
+                    target Target value for the objective functions at optimum.                    
+                </param>
+                <param>
+                    weights Weights for the least squares cost computation.                    
+                </param>
+                <param>
+                    startPoint Start point for optimization.                    
+                </param>
+                <return>
+                    the point/value pair giving the optimal value for objective
+                      function.                    
+                </return>
+                <param>
+                    maxEval Maximum number of function evaluations.                    
+                </param>
+                <throws>
+                    org.apache.commons.math3.exception.DimensionMismatchExceptionif the start point dimension is wrong.                    
+                </throws>
+                <throws>
+                    org.apache.commons.math3.exception.TooManyEvaluationsExceptionif the maximal number of evaluations is exceeded.                    
+                </throws>
+                <throws>
+                    org.apache.commons.math3.exception.NullArgumentException if
+                      any argument is {@code null}.                    
+                </throws>
+                <deprecated>
+                    As of 3.1. Please use{@link BaseAbstractMultivariateVectorOptimizer#optimize(int,MultivariateVectorFunction,OptimizationData[])optimize(int,MultivariateDifferentiableVectorFunction,OptimizationData...)}instead.                    
+                </deprecated>
+            </javadoc>
+            <method name="optimize" type="PointVectorValuePair" line="458">
+                <params>
+                    <param name="maxEval" type="int"/>
+                    <param name="f" type="MultivariateDifferentiableVectorFunction"/>
+                    <param name="target" type="double[]"/>
+                    <param name="weights" type="double[]"/>
+                    <param name="startPoint" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="465">
+                Optimize an objective function.
+                  Optimization is considered to be a weighted least-squares minimization.
+                  The cost function to be minimized is
+                  &lt;code&gt;&amp;sum;weight&lt;sub&gt;i&lt;/sub&gt;(objective&lt;sub&gt;i&lt;/sub&gt; - target&lt;sub&gt;i&lt;/sub&gt;)&lt;sup&gt;2&lt;/sup&gt;&lt;/code&gt;                
+                <param>
+                    maxEval Allowed number of evaluations of the objective function.                    
+                </param>
+                <param>
+                    f Objective function.                    
+                </param>
+                <param>
+                    optData Optimization data. The following data will be looked for:
+                      <ul>
+                      <li>{@link Target}</li>
+                      <li>{@link Weight}</li>
+                      <li>{@link InitialGuess}</li>
+                      </ul>                    
+                </param>
+                <return>
+                    the point/value pair giving the optimal value of the objective
+                      function.                    
+                </return>
+                <throws>
+                    org.apache.commons.math3.exception.TooManyEvaluationsException if
+                      the maximal number of evaluations is exceeded.                    
+                </throws>
+                <throws>
+                    DimensionMismatchException if the target, and weight arguments
+                      have inconsistent dimensions.                    
+                </throws>
+                <see>
+                    BaseAbstractMultivariateVectorOptimizer#optimizeInternal(int,MultivariateVectorFunction,OptimizationData[])                    
+                </see>
+                <since>
+                    3.1                    
+                </since>
+                <deprecated>
+                    As of 3.1. Override is necessary only until this class's generic
+                      argument is changed to {@code MultivariateDifferentiableVectorFunction}.                    
+                </deprecated>
+            </javadoc>
+            <method name="optimizeInternal" type="PointVectorValuePair" line="493">
+                <params>
+                    <param name="maxEval" type="int"/>
+                    <param name="f" type="MultivariateDifferentiableVectorFunction"/>
+                    <param name="optData" type="OptimizationData"/>
+                </params>
+                <comment line="494">
+                    XXX Conversion will be removed when the generic argument of the                    
+                </comment>
+                <comment line="495">
+                    base class becomes &quot;MultivariateDifferentiableVectorFunction&quot;.                    
+                </comment>
+            </method>
+            <javadoc line="499">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setUp" type="void" line="501">
+                <comment line="504">
+                    Reset counter.                    
+                </comment>
+                <comment line="507">
+                    Square-root of the weight matrix.                    
+                </comment>
+                <comment line="510">
+                    Store least squares problem characteristics.                    
+                </comment>
+                <comment line="511">
+                    XXX The conversion won&apos;t be necessary when the generic argument of                    
+                </comment>
+                <comment line="512">
+                    the base class becomes &quot;MultivariateDifferentiableVectorFunction&quot;.                    
+                </comment>
+                <comment line="513">
+                    XXX &quot;jF&quot; is not strictly necessary anymore but is currently more                    
+                </comment>
+                <comment line="514">
+                    efficient than converting the value returned from &quot;getObjectiveFunction()&quot;                    
+                </comment>
+                <comment line="515">
+                    every time it is used.                    
+                </comment>
+                <comment line="518">
+                    Arrays shared with &quot;private&quot; and &quot;protected&quot; methods.                    
+                </comment>
+            </method>
+            <javadoc line="524">
+                Computes the residuals.
+                  The residual is the difference between the observed (target)
+                  values and the model (objective function) value.
+                  There is one residual for each element of the vector-valued
+                  function.                
+                <param>
+                    objectiveValue Value of the the objective function. This is
+                      the value returned from a call to{@link #computeObjectiveValue(double[]) computeObjectiveValue}(whose array argument contains the model parameters).                    
+                </param>
+                <return>
+                    the residuals.                    
+                </return>
+                <throws>
+                    DimensionMismatchException if {@code params} has a wrong
+                      length.                    
+                </throws>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="computeResiduals" type="double[]" line="540">
+                <params>
+                    <param name="objectiveValue" type="double[]"/>
+                </params>
+                <declaration name="target" type="double[]" line="541"/>
+                <scope line="542"/>
+                <declaration name="residuals" type="double[]" line="547"/>
+                <scope line="548"/>
+            </method>
+            <javadoc line="555">
+                Computes the square-root of the weight matrix.                
+                <param>
+                    m Symmetric, positive-definite (weight) matrix.                    
+                </param>
+                <return>
+                    the square-root of the weight matrix.                    
+                </return>
+            </javadoc>
+            <method name="squareRoot" type="RealMatrix" line="561">
+                <params>
+                    <param name="m" type="RealMatrix"/>
+                </params>
+                <scope line="562">
+                    <declaration name="dim" type="int" line="563"/>
+                    <declaration name="sqrtM" type="RealMatrix" line="564"/>
+                    <scope line="565"/>
+                </scope>
+                <scope line="569">
+                    <declaration name="dec" type="EigenDecomposition" line="570"/>
+                </scope>
+            </method>
+        </class>
+    </source>

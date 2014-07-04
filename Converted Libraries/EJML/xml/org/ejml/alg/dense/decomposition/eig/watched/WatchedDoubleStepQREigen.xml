@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.ejml.alg.dense.decomposition.eig.watched">
+        <import package="org.ejml.UtilEjml"/>
+        <import package="org.ejml.alg.dense.decomposition.eig.EigenvalueSmall"/>
+        <import package="org.ejml.alg.dense.decomposition.qr.QrHelperFunctions"/>
+        <import package="org.ejml.data.Complex64F"/>
+        <import package="org.ejml.data.DenseMatrix64F"/>
+        <import package="org.ejml.ops.MatrixFeatures"/>
+        <import package="java.util.Random"/>
+        <class name="WatchedDoubleStepQREigen" line="30">
+            <comment line="43">
+                TODO make rank1UpdateMultR efficient once again by setting 0 to x1 and creating a new one that updates all the rows                
+            </comment>
+            <comment line="44">
+                TODO option of modifying original matrix                
+            </comment>
+            <comment line="57">
+                how many steps did it take to find the eigenvalue                
+            </comment>
+            <comment line="63">
+                computes eigenvalues for 2 by 2 submatrices                
+            </comment>
+            <javadoc line="30">
+                &lt;p&gt;
+                  The double step implicit Eigenvalue decomposition algorithm is fairly complicated and needs to be designed so that
+                  it can handle several special cases.  To aid in development and debugging this class was created.  It allows
+                  individual components to be tested and to print out their results.  This shows how each step is performed.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  Do not use this class to compute the eigenvalues since it is much slower than a non-debug implementation.
+                  &lt;/p&gt;                
+            </javadoc>
+            <declaration name="rand" type="Random" line="46"/>
+            <declaration name="N" type="int" line="48"/>
+            <declaration name="A" type="DenseMatrix64F" line="50"/>
+            <declaration name="u" type="DenseMatrix64F" line="51"/>
+            <declaration name="gamma" type="double" line="52"/>
+            <declaration name="_temp" type="DenseMatrix64F" line="54"/>
+            <declaration name="numStepsFind" type="int" line="57"/>
+            <declaration name="steps" type="int" line="58"/>
+            <declaration name="eigenvalues" type="Complex64F" line="59"/>
+            <declaration name="numEigen" type="int" line="60"/>
+            <declaration name="valueSmall" type="EigenvalueSmall" line="63"/>
+            <declaration name="temp" type="double" line="65"/>
+            <declaration name="printHumps" type="boolean" line="67"/>
+            <declaration name="checkHessenberg" type="boolean" line="68"/>
+            <declaration name="checkOrthogonal" type="boolean" line="69"/>
+            <declaration name="checkUncountable" type="boolean" line="70"/>
+            <declaration name="useStandardEq" type="boolean" line="72"/>
+            <declaration name="useCareful2x2" type="boolean" line="73"/>
+            <declaration name="normalize" type="boolean" line="75"/>
+            <declaration name="lastExceptional" type="int" line="77"/>
+            <declaration name="numExceptional" type="int" line="78"/>
+            <declaration name="exceptionalThreshold" type="int" line="79"/>
+            <declaration name="maxIterations" type="int" line="80"/>
+            <declaration name="createR" type="boolean" line="82"/>
+            <declaration name="Q" type="DenseMatrix64F" line="84"/>
+            <method name="incrementSteps" type="void" line="86"/>
+            <method name="setQ" type="void" line="90">
+                <params>
+                    <param name="Q" type="DenseMatrix64F"/>
+                </params>
+            </method>
+            <method name="addEigenvalue" type="void" line="94">
+                <params>
+                    <param name="v" type="double"/>
+                </params>
+            </method>
+            <method name="addEigenvalue" type="void" line="102">
+                <params>
+                    <param name="v" type="double"/>
+                    <param name="i" type="double"/>
+                </params>
+            </method>
+            <method name="setChecks" type="void" line="110">
+                <params>
+                    <param name="hessenberg" type="boolean"/>
+                    <param name="orthogonal" type="boolean"/>
+                    <param name="uncountable" type="boolean"/>
+                </params>
+            </method>
+            <method name="isZero" type="boolean" line="117">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                </params>
+                <comment line="118">
+                    this provides a relative threshold for when dealing with very large/small numbers                    
+                </comment>
+                <comment line="123">
+                    according to Matrix Computations page 352 this is what is done in Eispack                    
+                </comment>
+                <declaration name="target" type="double" line="119"/>
+                <declaration name="above" type="double" line="121"/>
+                <declaration name="right" type="double" line="124"/>
+            </method>
+            <method name="setup" type="void" line="128">
+                <params>
+                    <param name="A" type="DenseMatrix64F"/>
+                </params>
+                <comment line="145">
+                    zero all the off numbers that should be zero for a hessenberg matrix                    
+                </comment>
+                <scope line="132"/>
+                <scope line="140"/>
+                <scope line="146">
+                    <scope line="147"/>
+                </scope>
+                <scope line="153"/>
+            </method>
+            <javadoc line="163">
+                Perform a shift in a random direction that is of the same magnitude as the elements in the matrix.                
+            </javadoc>
+            <method name="exceptionalShift" type="void" line="166">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                </params>
+                <comment line="170">
+                    perform a random shift that is of the same magnitude as the matrix                    
+                </comment>
+                <comment line="177">
+                    the closer the value is the better it handles identical eigenvalues cases                    
+                </comment>
+                <declaration name="val" type="double" line="171"/>
+                <declaration name="p" type="double" line="178"/>
+            </method>
+            <javadoc line="189">
+                Performs an implicit double step using the values contained in the lower right hand side
+                  of the submatrix for the estimated eigenvector values.                
+                <param>
+                    x1                    
+                </param>
+                <param>
+                    x2                    
+                </param>
+            </javadoc>
+            <method name="implicitDoubleStep" type="void" line="195">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                </params>
+                <comment line="199">
+                    compute the wilkinson shift                    
+                </comment>
+                <comment line="224">
+                    these equations are derived when the eigenvalues are extracted from the lower right                    
+                </comment>
+                <comment line="225">
+                    2 by 2 matrix.  See page 388 of Fundamentals of Matrix Computations 2nd ed for details.                    
+                </comment>
+                <comment line="232">
+                    this is different from the version in the book and seems in my testing to be more resilient to                    
+                </comment>
+                <comment line="233">
+                    over flow issues                    
+                </comment>
+                <declaration name="z11" type="double" line="200"/>
+                <declaration name="z12" type="double" line="201"/>
+                <declaration name="z21" type="double" line="202"/>
+                <declaration name="z22" type="double" line="203"/>
+                <declaration name="a11" type="double" line="205"/>
+                <declaration name="a21" type="double" line="206"/>
+                <declaration name="a12" type="double" line="207"/>
+                <declaration name="a22" type="double" line="208"/>
+                <declaration name="a32" type="double" line="209"/>
+                <scope line="211">
+                    <declaration name="max" type="double" line="215"/>
+                    <scope line="216"/>
+                </scope>
+                <declaration name="b11" type="double" line="226"/>
+                <scope line="227"/>
+                <scope line="231"/>
+            </method>
+            <javadoc line="242">
+                Performs an implicit double step given the set of two imaginary eigenvalues provided.
+                  Since one eigenvalue is the complex conjugate of the other only one set of real and imaginary
+                  numbers is needed.                
+                <param>
+                    x1 upper index of submatrix.                    
+                </param>
+                <param>
+                    x2 lower index of submatrix.                    
+                </param>
+                <param>
+                    real Real component of each of the eigenvalues.                    
+                </param>
+                <param>
+                    img Imaginary component of one of the eigenvalues.                    
+                </param>
+            </javadoc>
+            <method name="performImplicitDoubleStep" type="void" line="252">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                    <param name="real" type="double"/>
+                    <param name="img" type="double"/>
+                </params>
+                <comment line="268">
+                    this is different from the version in the book and seems in my testing to be more resilient to                    
+                </comment>
+                <comment line="269">
+                    over flow issues                    
+                </comment>
+                <declaration name="a11" type="double" line="253"/>
+                <declaration name="a21" type="double" line="254"/>
+                <declaration name="a12" type="double" line="255"/>
+                <declaration name="a22" type="double" line="256"/>
+                <declaration name="a32" type="double" line="257"/>
+                <declaration name="p_plus_t" type="double" line="259"/>
+                <declaration name="p_times_t" type="double" line="260"/>
+                <declaration name="b11" type="double" line="262"/>
+                <scope line="263"/>
+                <scope line="267"/>
+            </method>
+            <method name="performImplicitDoubleStep" type="void" line="279">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                    <param name="b11" type="double"/>
+                    <param name="b21" type="double"/>
+                    <param name="b31" type="double"/>
+                </params>
+                <comment line="283">
+                    get rid of the bump                    
+                </comment>
+                <comment line="300">
+                    perform double steps                    
+                </comment>
+                <comment line="315">
+                    the last one has to be a single step                    
+                </comment>
+                <comment line="326">
+                    A.print(&quot;%12.3e&quot;);                    
+                </comment>
+                <scope line="284">
+                    <scope line="286"/>
+                </scope>
+                <scope line="294"/>
+                <scope line="301">
+                    <scope line="302"/>
+                    <scope line="308"/>
+                </scope>
+                <scope line="316"/>
+                <scope line="322"/>
+                <scope line="328"/>
+            </method>
+            <method name="performImplicitSingleStep" type="void" line="335">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                    <param name="eigenvalue" type="double"/>
+                </params>
+                <comment line="339">
+                    get rid of the bump                    
+                </comment>
+                <comment line="352">
+                    perform simple steps                    
+                </comment>
+                <scope line="340"/>
+                <scope line="346"/>
+                <scope line="353">
+                    <scope line="354"/>
+                    <scope line="360"/>
+                </scope>
+                <scope line="366"/>
+            </method>
+            <method name="createBulgeSingleStep" type="boolean" line="372">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="eigenvalue" type="double"/>
+                </params>
+                <declaration name="b11" type="double" line="374"/>
+                <declaration name="b21" type="double" line="375"/>
+                <declaration name="threshold" type="double" line="377"/>
+            </method>
+            <method name="bulgeDoubleStepQn" type="boolean" line="382">
+                <params>
+                    <param name="i" type="int"/>
+                </params>
+                <declaration name="a11" type="double" line="383"/>
+                <declaration name="a21" type="double" line="384"/>
+                <declaration name="a31" type="double" line="385"/>
+                <declaration name="threshold" type="double" line="387"/>
+            </method>
+            <method name="bulgeDoubleStepQn" type="boolean" line="395">
+                <params>
+                    <param name="i" type="int"/>
+                    <param name="a11" type="double"/>
+                    <param name="a21" type="double"/>
+                    <param name="a31" type="double"/>
+                    <param name="threshold" type="double"/>
+                    <param name="set" type="boolean"/>
+                </params>
+                <comment line="405">
+                    if( max &lt;= Math.abs(A.get(i,i))*UtilEjml.EPS ) {                    
+                </comment>
+                <comment line="422">
+                    compute the reflector using the b&apos;s above                    
+                </comment>
+                <comment line="435">
+                    compute A_1 = Q_1^T * A * Q_1                    
+                </comment>
+                <comment line="437">
+                    apply Q*A  - just do the 3 rows                    
+                </comment>
+                <comment line="451">
+                    apply A*Q - just the three things                    
+                </comment>
+                <comment line="454">
+                    System.out.println(&quot;  after Q*A*Q &quot;);                    
+                </comment>
+                <comment line="455">
+                    A.print();                    
+                </comment>
+                <declaration name="max" type="double" line="396"/>
+                <scope line="397">
+                    <declaration name="absA11" type="double" line="398"/>
+                    <declaration name="absA21" type="double" line="399"/>
+                    <declaration name="absA31" type="double" line="400"/>
+                    <scope line="406">
+                        <scope line="407"/>
+                    </scope>
+                </scope>
+                <scope line="418"/>
+                <declaration name="tau" type="double" line="424"/>
+                <declaration name="div" type="double" line="427"/>
+                <scope line="440"/>
+                <scope line="446"/>
+                <scope line="457"/>
+            </method>
+            <method name="bulgeSingleStepQn" type="boolean" line="465">
+                <params>
+                    <param name="i" type="int"/>
+                </params>
+                <declaration name="a11" type="double" line="466"/>
+                <declaration name="a21" type="double" line="467"/>
+                <declaration name="threshold" type="double" line="469"/>
+            </method>
+            <method name="bulgeSingleStepQn" type="boolean" line="477">
+                <params>
+                    <param name="i" type="int"/>
+                    <param name="a11" type="double"/>
+                    <param name="a21" type="double"/>
+                    <param name="threshold" type="double"/>
+                    <param name="set" type="boolean"/>
+                </params>
+                <comment line="484">
+                    if( max &lt;= Math.abs(A.get(i,i))*UtilEjml.EPS ) {                    
+                </comment>
+                <comment line="486">
+                    System.out.println(&quot;i = &quot;+i);                    
+                </comment>
+                <comment line="487">
+                    A.print();                    
+                </comment>
+                <comment line="501">
+                    compute the reflector using the b&apos;s above                    
+                </comment>
+                <comment line="513">
+                    compute A_1 = Q_1^T * A * Q_1                    
+                </comment>
+                <comment line="515">
+                    apply Q*A  - just do the 3 rows                    
+                </comment>
+                <comment line="523">
+                    apply A*Q - just the three things                    
+                </comment>
+                <declaration name="max" type="double" line="479"/>
+                <scope line="480">
+                    <scope line="485">
+                        <scope line="488"/>
+                    </scope>
+                </scope>
+                <scope line="497"/>
+                <declaration name="tau" type="double" line="503"/>
+                <declaration name="div" type="double" line="506"/>
+                <scope line="518"/>
+                <scope line="526"/>
+            </method>
+            <method name="eigen2by2_scale" type="void" line="534">
+                <params>
+                    <param name="a11" type="double"/>
+                    <param name="a12" type="double"/>
+                    <param name="a21" type="double"/>
+                    <param name="a22" type="double"/>
+                </params>
+                <comment line="564">
+                    System.out.printf(&quot;eigen (%6.3f , %6.3f) (%6.3f , %6.3f)\n&quot;,p0_real,p0_img,p1_real,p1_img);                    
+                </comment>
+                <declaration name="abs11" type="double" line="535"/>
+                <declaration name="abs22" type="double" line="536"/>
+                <declaration name="abs12" type="double" line="537"/>
+                <declaration name="abs21" type="double" line="538"/>
+                <declaration name="max" type="double" line="540"/>
+                <scope line="544"/>
+                <scope line="549">
+                    <scope line="552"/>
+                    <scope line="554"/>
+                </scope>
+            </method>
+            <method name="getNumberOfEigenvalues" type="int" line="567"/>
+            <method name="getEigenvalues" type="Complex64F[]" line="571"/>
+            <method name="addComputedEigen2x2" type="void" line="575">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                </params>
+                <scope line="579"/>
+            </method>
+            <method name="isReal2x2" type="boolean" line="587">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="x2" type="int"/>
+                </params>
+            </method>
+            <method name="addEigenAt" type="void" line="593">
+                <params>
+                    <param name="x1" type="int"/>
+                </params>
+            </method>
+            <method name="printSteps" type="void" line="597">
+                <scope line="598"/>
+            </method>
+        </class>
+    </source>

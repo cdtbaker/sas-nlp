@@ -1,0 +1,853 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.nio.ch">
+        <import package="java.io.FileDescriptor"/>
+        <import package="java.io.IOException"/>
+        <import package="java.net"/>
+        <import package="java.nio.ByteBuffer"/>
+        <import package="java.nio.channels"/>
+        <import package="java.nio.channels.spi"/>
+        <import package="java.util"/>
+        <import package="sun.net.NetHooks"/>
+        <class name="SocketChannelImpl" line="38">
+            <extends class="SocketChannel"/>
+            <comment line="48">
+                Used to make native read and write calls                
+            </comment>
+            <comment line="51">
+                Our file descriptor object                
+            </comment>
+            <comment line="54">
+                fd value needed for dev/poll. This value will remain valid                
+            </comment>
+            <comment line="55">
+                even after the value in the file descriptor object has been set to -1                
+            </comment>
+            <comment line="58">
+                IDs of native threads doing reads and writes, for signalling                
+            </comment>
+            <comment line="62">
+                Lock held by current reading or connecting thread                
+            </comment>
+            <comment line="65">
+                Lock held by current writing or connecting thread                
+            </comment>
+            <comment line="68">
+                Lock held by any thread that modifies the state fields declared below                
+            </comment>
+            <comment line="69">
+                DO NOT invoke a blocking I/O operation while holding this lock!                
+            </comment>
+            <comment line="72">
+                -- The following fields are protected by stateLock                
+            </comment>
+            <comment line="74">
+                State, increases monotonically                
+            </comment>
+            <comment line="83">
+                Binding                
+            </comment>
+            <comment line="87">
+                Input/Output open                
+            </comment>
+            <comment line="92">
+                Socket adaptor, created on demand                
+            </comment>
+            <comment line="95">
+                -- End of fields protected by stateLock                
+            </comment>
+            <comment line="98">
+                Constructor for normal connecting sockets                
+            </comment>
+            <comment line="99">
+                                
+            </comment>
+            <comment line="120">
+                Constructor for sockets obtained from server sockets                
+            </comment>
+            <comment line="121">
+                                
+            </comment>
+            <comment line="501">
+                package-private                
+            </comment>
+            <comment line="805">
+                AbstractInterruptibleChannel synchronizes invocations of this method                
+            </comment>
+            <comment line="806">
+                using AbstractInterruptibleChannel.closeLock, and also ensures that this                
+            </comment>
+            <comment line="807">
+                method is only ever invoked once.  Before we get to this method, isOpen                
+            </comment>
+            <comment line="808">
+                (which is volatile) will have been set to false.                
+            </comment>
+            <comment line="809">
+                                
+            </comment>
+            <comment line="984">
+                -- Native methods --                
+            </comment>
+            <implements interface="SelChImpl"/>
+            <javadoc line="38">
+                An implementation of SocketChannels                
+            </javadoc>
+            <declaration name="nd" type="NativeDispatcher" line="48"/>
+            <declaration name="fd" type="FileDescriptor" line="51"/>
+            <declaration name="fdVal" type="int" line="55"/>
+            <declaration name="readerThread" type="long" line="58"/>
+            <declaration name="writerThread" type="long" line="59"/>
+            <declaration name="readLock" type="Object" line="62"/>
+            <declaration name="writeLock" type="Object" line="65"/>
+            <declaration name="stateLock" type="Object" line="69"/>
+            <declaration name="ST_UNINITIALIZED" type="int" line="74"/>
+            <declaration name="ST_UNCONNECTED" type="int" line="75"/>
+            <declaration name="ST_PENDING" type="int" line="76"/>
+            <declaration name="ST_CONNECTED" type="int" line="77"/>
+            <declaration name="ST_KILLPENDING" type="int" line="78"/>
+            <declaration name="ST_KILLED" type="int" line="79"/>
+            <declaration name="state" type="int" line="80"/>
+            <declaration name="localAddress" type="SocketAddress" line="83"/>
+            <declaration name="remoteAddress" type="SocketAddress" line="84"/>
+            <declaration name="isInputOpen" type="boolean" line="87"/>
+            <declaration name="isOutputOpen" type="boolean" line="88"/>
+            <declaration name="readyToConnect" type="boolean" line="89"/>
+            <declaration name="socket" type="Socket" line="92"/>
+            <method name="SocketChannelImpl" type="constructor" line="99">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                </params>
+            </method>
+            <method name="SocketChannelImpl" type="constructor" line="110">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="bound" type="boolean"/>
+                </params>
+            </method>
+            <method name="SocketChannelImpl" type="constructor" line="124">
+                <params>
+                    <param name="sp" type="SelectorProvider"/>
+                    <param name="fd" type="FileDescriptor"/>
+                    <param name="remote" type="InetSocketAddress"/>
+                </params>
+            </method>
+            <method name="socket" type="Socket" line="133">
+                <scope line="134"/>
+            </method>
+            <method name="getLocalAddress" type="SocketAddress" line="142">
+                <scope line="143"/>
+            </method>
+            <method name="getRemoteAddress" type="SocketAddress" line="151">
+                <scope line="152"/>
+            </method>
+            <method name="setOption" type="SocketChannel" line="162">
+                <params>
+                    <param name="name" type="SocketOption<T>"/>
+                    <param name="value" type="T"/>
+                </params>
+                <comment line="172">
+                    special handling for IP_TOS: no-op when IPv6                    
+                </comment>
+                <comment line="179">
+                    no options that require special handling                    
+                </comment>
+                <scope line="168">
+                    <scope line="173"/>
+                </scope>
+            </method>
+            <method name="getOption" type="T" line="189">
+                <params>
+                    <param name="name" type="SocketOption<T>"/>
+                </params>
+                <comment line="199">
+                    special handling for IP_TOS: always return 0 when IPv6                    
+                </comment>
+                <comment line="205">
+                    no options that require special handling                    
+                </comment>
+                <scope line="195">
+                    <scope line="200"/>
+                </scope>
+            </method>
+            <class name="DefaultOptionsHolder" line="210">
+                <declaration name="defaultOptions" type="Set&lt;SocketOption&lt;?&gt;&gt;" line="211"/>
+                <method name="defaultOptions" type="Set<SocketOption<?>>" line="213">
+                    <comment line="221">
+                        additional options required by socket adaptor                        
+                    </comment>
+                    <declaration name="set" type="HashSet&lt;SocketOption&lt;?&gt;&gt;" line="214"/>
+                </method>
+            </class>
+            <method name="supportedOptions" type="Set<SocketOption<?>>" line="229"/>
+            <method name="ensureReadOpen" type="boolean" line="233">
+                <scope line="234"/>
+            </method>
+            <method name="ensureWriteOpen" type="void" line="246">
+                <scope line="247"/>
+            </method>
+            <method name="readerCleanup" type="void" line="257">
+                <scope line="258"/>
+            </method>
+            <method name="writerCleanup" type="void" line="265">
+                <scope line="266"/>
+            </method>
+            <method name="read" type="int" line="273">
+                <params>
+                    <param name="buf" type="ByteBuffer"/>
+                </params>
+                <comment line="284">
+                    Set up the interruption machinery; see                    
+                </comment>
+                <comment line="285">
+                    AbstractInterruptibleChannel for details                    
+                </comment>
+                <comment line="286">
+                                        
+                </comment>
+                <comment line="291">
+                    Either the current thread is already interrupted, so                    
+                </comment>
+                <comment line="292">
+                    begin() closed the channel, or another thread closed the                    
+                </comment>
+                <comment line="293">
+                    channel since we checked it a few bytecodes ago.  In                    
+                </comment>
+                <comment line="294">
+                    either case the value returned here is irrelevant since                    
+                </comment>
+                <comment line="295">
+                    the invocation of end() in the finally block will throw                    
+                </comment>
+                <comment line="296">
+                    an appropriate exception.                    
+                </comment>
+                <comment line="297">
+                                        
+                </comment>
+                <comment line="302">
+                    Save this thread so that it can be signalled on those                    
+                </comment>
+                <comment line="303">
+                    platforms that require it                    
+                </comment>
+                <comment line="304">
+                                        
+                </comment>
+                <comment line="308">
+                    Between the previous test of isOpen() and the return of the                    
+                </comment>
+                <comment line="309">
+                    IOUtil.read invocation below, this channel might be closed                    
+                </comment>
+                <comment line="310">
+                    or this thread might be interrupted.  We rely upon the                    
+                </comment>
+                <comment line="311">
+                    implicit synchronization point in the kernel read() call to                    
+                </comment>
+                <comment line="312">
+                    make sure that the right thing happens.  In either case the                    
+                </comment>
+                <comment line="313">
+                    implCloseSelectableChannel method is ultimately invoked in                    
+                </comment>
+                <comment line="314">
+                    some other thread, so there are three possibilities:                    
+                </comment>
+                <comment line="315">
+                                        
+                </comment>
+                <comment line="316">
+                    - implCloseSelectableChannel() invokes nd.preClose()                    
+                </comment>
+                <comment line="317">
+                    before this thread invokes read(), in which case the                    
+                </comment>
+                <comment line="318">
+                    read returns immediately with either EOF or an error,                    
+                </comment>
+                <comment line="319">
+                    the latter of which will cause an IOException to be                    
+                </comment>
+                <comment line="320">
+                    thrown.                    
+                </comment>
+                <comment line="321">
+                                        
+                </comment>
+                <comment line="322">
+                    - implCloseSelectableChannel() invokes nd.preClose() after                    
+                </comment>
+                <comment line="323">
+                    this thread is blocked in read().  On some operating                    
+                </comment>
+                <comment line="324">
+                    systems (e.g., Solaris and Windows) this causes the read                    
+                </comment>
+                <comment line="325">
+                    to return immediately with either EOF or an error                    
+                </comment>
+                <comment line="326">
+                    indication.                    
+                </comment>
+                <comment line="327">
+                                        
+                </comment>
+                <comment line="328">
+                    - implCloseSelectableChannel() invokes nd.preClose() after                    
+                </comment>
+                <comment line="329">
+                    this thread is blocked in read() but the operating                    
+                </comment>
+                <comment line="330">
+                    system (e.g., Linux) doesn&apos;t support preemptive close,                    
+                </comment>
+                <comment line="331">
+                    so implCloseSelectableChannel() proceeds to signal this                    
+                </comment>
+                <comment line="332">
+                    thread, thereby causing the read to return immediately                    
+                </comment>
+                <comment line="333">
+                    with IOStatus.INTERRUPTED.                    
+                </comment>
+                <comment line="334">
+                                        
+                </comment>
+                <comment line="335">
+                    In all three cases the invocation of end() in the finally                    
+                </comment>
+                <comment line="336">
+                    clause will notice that the channel has been closed and                    
+                </comment>
+                <comment line="337">
+                    throw an appropriate exception (AsynchronousCloseException                    
+                </comment>
+                <comment line="338">
+                    or ClosedByInterruptException) if necessary.                    
+                </comment>
+                <comment line="339">
+                                        
+                </comment>
+                <comment line="340">
+                    *There is A fourth possibility. implCloseSelectableChannel()                    
+                </comment>
+                <comment line="341">
+                    invokes nd.preClose(), signals reader/writer thred and quickly                    
+                </comment>
+                <comment line="342">
+                    moves on to nd.close() in kill(), which does a real close.                    
+                </comment>
+                <comment line="343">
+                    Then a third thread accepts a new connection, opens file or                    
+                </comment>
+                <comment line="344">
+                    whatever that causes the released &quot;fd&quot; to be recycled. All                    
+                </comment>
+                <comment line="345">
+                    above happens just between our last isOpen() check and the                    
+                </comment>
+                <comment line="346">
+                    next kernel read reached, with the recycled &quot;fd&quot;. The solution                    
+                </comment>
+                <comment line="347">
+                    is to postpone the real kill() if there is a reader or/and                    
+                </comment>
+                <comment line="348">
+                    writer thread(s) over there &quot;waiting&quot;, leave the cleanup/kill                    
+                </comment>
+                <comment line="349">
+                    to the reader or writer thread. (the preClose() still happens                    
+                </comment>
+                <comment line="350">
+                    so the connection gets cut off as usual).                    
+                </comment>
+                <comment line="351">
+                                        
+                </comment>
+                <comment line="352">
+                    For socket channels there is the additional wrinkle that                    
+                </comment>
+                <comment line="353">
+                    asynchronous shutdown works much like asynchronous close,                    
+                </comment>
+                <comment line="354">
+                    except that the channel is shutdown rather than completely                    
+                </comment>
+                <comment line="355">
+                    closed.  This is analogous to the first two cases above,                    
+                </comment>
+                <comment line="356">
+                    except that the shutdown operation plays the role of                    
+                </comment>
+                <comment line="357">
+                    nd.preClose().                    
+                </comment>
+                <comment line="361">
+                    The system call was interrupted but the channel                    
+                </comment>
+                <comment line="362">
+                    is still open, so retry                    
+                </comment>
+                <comment line="369">
+                    Clear reader thread                    
+                </comment>
+                <comment line="370">
+                    The end method, which is defined in our superclass                    
+                </comment>
+                <comment line="371">
+                    AbstractInterruptibleChannel, resets the interruption                    
+                </comment>
+                <comment line="372">
+                    machinery.  If its argument is true then it returns                    
+                </comment>
+                <comment line="373">
+                    normally; otherwise it checks the interrupt and open state                    
+                </comment>
+                <comment line="374">
+                    of this channel and throws an appropriate exception if                    
+                </comment>
+                <comment line="375">
+                    necessary.                    
+                </comment>
+                <comment line="376">
+                                        
+                </comment>
+                <comment line="377">
+                    So, if we actually managed to do any I/O in the above try                    
+                </comment>
+                <comment line="378">
+                    block then we pass true to the end method.  We also pass                    
+                </comment>
+                <comment line="379">
+                    true if the channel was in non-blocking mode when the I/O                    
+                </comment>
+                <comment line="380">
+                    operation was initiated but no data could be transferred;                    
+                </comment>
+                <comment line="381">
+                    this prevents spurious exceptions from being thrown in the                    
+                </comment>
+                <comment line="382">
+                    rare event that a channel is closed or a thread is                    
+                </comment>
+                <comment line="383">
+                    interrupted at the exact moment that a non-blocking I/O                    
+                </comment>
+                <comment line="384">
+                    request is made.                    
+                </comment>
+                <comment line="385">
+                                        
+                </comment>
+                <comment line="388">
+                    Extra case for socket channels: Asynchronous shutdown                    
+                </comment>
+                <comment line="389">
+                                        
+                </comment>
+                <scope line="278">
+                    <declaration name="n" type="int" line="281"/>
+                    <scope line="282">
+                        <scope line="289">
+                            <scope line="290"/>
+                        </scope>
+                        <scope line="358">
+                            <scope line="360"/>
+                        </scope>
+                    </scope>
+                    <scope line="368">
+                        <scope line="390"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="read" type="long" line="403">
+                <params>
+                    <param name="dsts" type="ByteBuffer[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <scope line="406">
+                    <declaration name="n" type="long" line="409"/>
+                    <scope line="410">
+                        <scope line="412"/>
+                        <scope line="418"/>
+                    </scope>
+                    <scope line="424">
+                        <scope line="427"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="write" type="int" line="436">
+                <params>
+                    <param name="buf" type="ByteBuffer"/>
+                </params>
+                <scope line="439">
+                    <declaration name="n" type="int" line="441"/>
+                    <scope line="442">
+                        <scope line="444"/>
+                        <scope line="449"/>
+                    </scope>
+                    <scope line="455">
+                        <scope line="458"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="write" type="long" line="469">
+                <params>
+                    <param name="srcs" type="ByteBuffer[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <scope line="472">
+                    <declaration name="n" type="long" line="474"/>
+                    <scope line="475">
+                        <scope line="477"/>
+                        <scope line="482"/>
+                    </scope>
+                    <scope line="488">
+                        <scope line="491"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="sendOutOfBandData" type="int" line="501">
+                <params>
+                    <param name="b" type="byte"/>
+                </params>
+                <scope line="502">
+                    <declaration name="n" type="int" line="504"/>
+                    <scope line="505">
+                        <scope line="507"/>
+                        <scope line="512"/>
+                    </scope>
+                    <scope line="518">
+                        <scope line="521"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="implConfigureBlocking" type="void" line="530">
+                <params>
+                    <param name="block" type="boolean"/>
+                </params>
+            </method>
+            <method name="localAddress" type="SocketAddress" line="534">
+                <scope line="535"/>
+            </method>
+            <method name="remoteAddress" type="SocketAddress" line="540">
+                <scope line="541"/>
+            </method>
+            <method name="bind" type="SocketChannel" line="547">
+                <params>
+                    <param name="local" type="SocketAddress"/>
+                </params>
+                <scope line="548">
+                    <scope line="549">
+                        <scope line="550">
+                            <declaration name="isa" type="InetSocketAddress" line="557"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="isConnected" type="boolean" line="568">
+                <scope line="569"/>
+            </method>
+            <method name="isConnectionPending" type="boolean" line="574">
+                <scope line="575"/>
+            </method>
+            <method name="ensureOpenAndUnconnected" type="void" line="580">
+                <scope line="581"/>
+            </method>
+            <method name="connect" type="boolean" line="591">
+                <params>
+                    <param name="sa" type="SocketAddress"/>
+                </params>
+                <comment line="611">
+                    notify hook only if unbound                    
+                </comment>
+                <comment line="637">
+                    Socket was not bound before connecting or                    
+                </comment>
+                <comment line="638">
+                    Socket was bound with an &quot;anyLocalAddress&quot;                    
+                </comment>
+                <comment line="649">
+                    If an exception was thrown, close the channel after                    
+                </comment>
+                <comment line="650">
+                    invoking end() so as to avoid bogus                    
+                </comment>
+                <comment line="651">
+                    AsynchronousCloseExceptions                    
+                </comment>
+                <comment line="659">
+                    Connection succeeded; disallow further                    
+                </comment>
+                <comment line="660">
+                    invocation                    
+                </comment>
+                <comment line="664">
+                    If nonblocking and no exception then connection                    
+                </comment>
+                <comment line="665">
+                    pending; disallow another invocation                    
+                </comment>
+                <declaration name="localPort" type="int" line="592"/>
+                <scope line="594">
+                    <scope line="595">
+                        <declaration name="isa" type="InetSocketAddress" line="597"/>
+                        <declaration name="sm" type="SecurityManager" line="598"/>
+                        <scope line="602">
+                            <declaration name="n" type="int" line="603"/>
+                            <scope line="604">
+                                <scope line="605">
+                                    <scope line="607">
+                                        <scope line="608"/>
+                                        <scope line="612"/>
+                                    </scope>
+                                    <scope line="619">
+                                        <declaration name="ia" type="InetAddress" line="620"/>
+                                    </scope>
+                                    <scope line="632">
+                                        <scope line="636"/>
+                                    </scope>
+                                </scope>
+                                <scope line="643"/>
+                            </scope>
+                            <scope line="648"/>
+                            <scope line="655">
+                                <scope line="657"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="finishConnect" type="boolean" line="677">
+                <comment line="713">
+                    Loop in case of                    
+                </comment>
+                <comment line="714">
+                    spurious notifications                    
+                </comment>
+                <comment line="729">
+                    poll()/getsockopt() does not report                    
+                </comment>
+                <comment line="730">
+                    error (throws exception, with n = 0)                    
+                </comment>
+                <comment line="731">
+                    on Linux platform after dup2 and                    
+                </comment>
+                <comment line="732">
+                    signal-wakeup. Force n to 0 so the                    
+                </comment>
+                <comment line="733">
+                    end() can throw appropriate exception                    
+                </comment>
+                <comment line="741">
+                    If an exception was thrown, close the channel after                    
+                </comment>
+                <comment line="742">
+                    invoking end() so as to avoid bogus                    
+                </comment>
+                <comment line="743">
+                    AsynchronousCloseExceptions                    
+                </comment>
+                <scope line="678">
+                    <scope line="679">
+                        <scope line="680"/>
+                        <declaration name="n" type="int" line="688"/>
+                        <scope line="689">
+                            <scope line="690">
+                                <scope line="692">
+                                    <scope line="693">
+                                        <scope line="694"/>
+                                    </scope>
+                                    <scope line="699">
+                                        <scope line="700"/>
+                                    </scope>
+                                    <scope line="708">
+                                        <scope line="709">
+                                            <scope line="712"/>
+                                        </scope>
+                                    </scope>
+                                </scope>
+                            </scope>
+                            <scope line="724">
+                                <scope line="725">
+                                    <scope line="727"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="740"/>
+                        <scope line="747">
+                            <scope line="748"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="shutdownInput" type="SocketChannel" line="759">
+                <scope line="760">
+                    <scope line="765"/>
+                </scope>
+            </method>
+            <method name="shutdownOutput" type="SocketChannel" line="776">
+                <scope line="777">
+                    <scope line="782"/>
+                </scope>
+            </method>
+            <method name="isInputOpen" type="boolean" line="792">
+                <scope line="793"/>
+            </method>
+            <method name="isOutputOpen" type="boolean" line="798">
+                <scope line="799"/>
+            </method>
+            <method name="implCloseSelectableChannel" type="void" line="809">
+                <comment line="814">
+                    Close the underlying file descriptor and dup it to a known fd                    
+                </comment>
+                <comment line="815">
+                    that&apos;s already closed.  This prevents other operations on this                    
+                </comment>
+                <comment line="816">
+                    channel from using the old fd, which might be recycled in the                    
+                </comment>
+                <comment line="817">
+                    meantime and allocated to an entirely different channel.                    
+                </comment>
+                <comment line="818">
+                                        
+                </comment>
+                <comment line="821">
+                    Signal native threads, if needed.  If a target thread is not                    
+                </comment>
+                <comment line="822">
+                    currently blocked in an I/O operation then no harm is done since                    
+                </comment>
+                <comment line="823">
+                    the signal handler doesn&apos;t actually do anything.                    
+                </comment>
+                <comment line="824">
+                                        
+                </comment>
+                <comment line="831">
+                    If this channel is not registered then it&apos;s safe to close the fd                    
+                </comment>
+                <comment line="832">
+                    immediately since we know at this point that no thread is                    
+                </comment>
+                <comment line="833">
+                    blocked in an I/O operation upon the channel and, since the                    
+                </comment>
+                <comment line="834">
+                    channel is marked closed, no thread will start another such                    
+                </comment>
+                <comment line="835">
+                    operation.  If this channel is registered then we don&apos;t close                    
+                </comment>
+                <comment line="836">
+                    the fd since it might be in use by a selector.  In that case                    
+                </comment>
+                <comment line="837">
+                    closing this channel caused its keys to be cancelled, so the                    
+                </comment>
+                <comment line="838">
+                    last selector to deregister a key for this channel will invoke                    
+                </comment>
+                <comment line="839">
+                    kill() to close the fd.                    
+                </comment>
+                <comment line="840">
+                                        
+                </comment>
+                <scope line="810"/>
+            </method>
+            <method name="kill" type="void" line="846">
+                <comment line="856">
+                    Postpone the kill if there is a waiting reader                    
+                </comment>
+                <comment line="857">
+                    or writer thread. See the comments in read() for                    
+                </comment>
+                <comment line="858">
+                    more detailed explanation.                    
+                </comment>
+                <scope line="847">
+                    <scope line="850"/>
+                    <scope line="859"/>
+                    <scope line="862"/>
+                </scope>
+            </method>
+            <javadoc line="868">
+                Translates native poll revent ops into a ready operation ops                
+            </javadoc>
+            <method name="translateReadyOps" type="boolean" line="872">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="initialOps" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+                <comment line="873">
+                    Do this just once, it synchronizes                    
+                </comment>
+                <comment line="878">
+                    This should only happen if this channel is pre-closed while a                    
+                </comment>
+                <comment line="879">
+                    selection operation is in progress                    
+                </comment>
+                <comment line="880">
+                    ## Throw an error if this channel has not been pre-closed                    
+                </comment>
+                <comment line="888">
+                    No need to poll again in checkConnect,                    
+                </comment>
+                <comment line="889">
+                    the error will be detected there                    
+                </comment>
+                <declaration name="intOps" type="int" line="873"/>
+                <declaration name="oldOps" type="int" line="874"/>
+                <declaration name="newOps" type="int" line="875"/>
+                <scope line="877"/>
+                <scope line="885"/>
+                <scope line="901"/>
+            </method>
+            <method name="translateAndUpdateReadyOps" type="boolean" line="915">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+            </method>
+            <method name="translateAndSetReadyOps" type="boolean" line="919">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+            </method>
+            <javadoc line="923">
+                Translates an interest operation set into a native poll event set                
+            </javadoc>
+            <method name="translateAndSetInterestOps" type="void" line="926">
+                <params>
+                    <param name="ops" type="int"/>
+                    <param name="sk" type="SelectionKeyImpl"/>
+                </params>
+                <declaration name="newOps" type="int" line="927"/>
+            </method>
+            <method name="getFD" type="FileDescriptor" line="937"/>
+            <method name="getFDVal" type="int" line="941"/>
+            <method name="toString" type="String" line="945">
+                <declaration name="sb" type="StringBuffer" line="946"/>
+                <scope line="951">
+                    <scope line="952">
+                        <scope line="968"/>
+                        <scope line="972"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="checkConnect" type="int" line="985"/>
+            <method name="sendOutOfBandData" type="int" line="989"/>
+            <scope line="992"/>
+        </class>
+    </source>

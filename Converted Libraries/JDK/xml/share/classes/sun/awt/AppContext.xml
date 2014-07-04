@@ -1,0 +1,931 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.awt">
+        <import package="java.awt.EventQueue"/>
+        <import package="java.awt.Window"/>
+        <import package="java.awt.SystemTray"/>
+        <import package="java.awt.TrayIcon"/>
+        <import package="java.awt.Toolkit"/>
+        <import package="java.awt.GraphicsEnvironment"/>
+        <import package="java.awt.event.InvocationEvent"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.IdentityHashMap"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.beans.PropertyChangeSupport"/>
+        <import package="java.beans.PropertyChangeListener"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <import package="java.util.concurrent.locks.Condition"/>
+        <import package="java.util.concurrent.locks.Lock"/>
+        <import package="java.util.concurrent.locks.ReentrantLock"/>
+        <class name="AppContext" line="50">
+            <comment line="136">
+                Since the contents of an AppContext are unique to each Java                
+            </comment>
+            <comment line="139">
+                The key to put()get() the Java EventQueue intofrom the AppContext.                
+            </comment>
+            <comment line="144">
+                The keys to store EventQueue pushpop lock and condition.                
+            </comment>
+            <comment line="150">
+                A map of AppContexts, referenced by ThreadGroup.                
+            </comment>
+            <comment line="164">
+                The main &quot;system&quot; AppContext, used by everything not otherwise
+                contained in another AppContext.                
+            </comment>
+            <comment line="169">
+                The hash map associated with this AppContext.  A private delegate
+                 is used instead of subclassing HashMap so as to avoid all of
+                 HashMap&apos;s potentially risky methods, such as clear(), elements(),
+                 putAll(), etc.                
+            </comment>
+            <comment line="192">
+                true if AppContext is disposed                
+            </comment>
+            <comment line="219">
+                The total number of AppContexts, system-wide.  This number is
+                 incremented at the beginning of the constructor, and decremented
+                 at the end of dispose().  getAppContext() checks to see if this
+                 number is 1.  If so, it returns the sole AppContext without
+                 checking Thread.currentThread().                
+            </comment>
+            <comment line="228">
+                The context ClassLoader that was used to create this AppContext.                
+            </comment>
+            <comment line="346">
+                Default to 5-second timeout                
+            </comment>
+            <comment line="347">
+                for disposal of all Frames                
+            </comment>
+            <comment line="348">
+                (we wait for this time twice,                
+            </comment>
+            <comment line="349">
+                once for dispose(), and once                
+            </comment>
+            <comment line="350">
+                to clear the EventQueue).                
+            </comment>
+            <comment line="353">
+                Default to 1-second timeout for all                
+            </comment>
+            <comment line="354">
+                interrupted Threads to exit, and another                
+            </comment>
+            <comment line="355">
+                1 second for all stopped Threads to die.                
+            </comment>
+            <javadoc line="50">
+                The AppContext is a table referenced by ThreadGroup which stores
+                  application service instances.  (If you are not writing an application
+                  service, or don&apos;t know what one is, please do not use this class.)
+                  The AppContext allows applet access to what would otherwise be
+                  potentially dangerous services, such as the ability to peek at
+                  EventQueues or change the look-and-feel of a Swing application.&lt;p&gt;
+                  Most application services use a singleton object to provide their
+                  services, either as a default (such as getSystemEventQueue or
+                  getDefaultToolkit) or as static methods with class data (System).
+                  The AppContext works with the former method by extending the concept
+                  of &quot;default&quot; to be ThreadGroup-specific.  Application services
+                  lookup their singleton in the AppContext.&lt;p&gt;
+                  For example, here we have a Foo service, with its pre-AppContext
+                  code:&lt;p&gt;
+                  &lt;code&gt;&lt;pre&gt;
+                  public class Foo {
+                  private static Foo defaultFoo = new Foo();
+                  public static Foo getDefaultFoo() {
+                  return defaultFoo;
+                  }
+                  ... Foo service methods
+                  }&lt;/pre&gt;&lt;/code&gt;&lt;p&gt;
+                  The problem with the above is that the Foo service is global in scope,
+                  so that applets and other untrusted code can execute methods on the
+                  single, shared Foo instance.  The Foo service therefore either needs
+                  to block its use by untrusted code using a SecurityManager test, or
+                  restrict its capabilities so that it doesn&apos;t matter if untrusted code
+                  executes it.&lt;p&gt;
+                  Here&apos;s the Foo class written to use the AppContext:&lt;p&gt;
+                  &lt;code&gt;&lt;pre&gt;
+                  public class Foo {
+                  public static Foo getDefaultFoo() {
+                  Foo foo = (Foo)AppContext.getAppContext().get(Foo.class);
+                  if (foo == null) {
+                  foo = new Foo();
+                  getAppContext().put(Foo.class, foo);
+                  }
+                  return foo;
+                  }
+                  ... Foo service methods
+                  }&lt;/pre&gt;&lt;/code&gt;&lt;p&gt;
+                  Since a separate AppContext can exist for each ThreadGroup, trusted
+                  and untrusted code have access to different Foo instances.  This allows
+                  untrusted code access to &quot;system-wide&quot; services -- the service remains
+                  within the AppContext &quot;sandbox&quot;.  For example, say a malicious applet
+                  wants to peek all of the key events on the EventQueue to listen for
+                  passwords; if separate EventQueues are used for each ThreadGroup
+                  using AppContexts, the only key events that applet will be able to
+                  listen to are its own.  A more reasonable applet request would be to
+                  change the Swing default look-and-feel; with that default stored in
+                  an AppContext, the applet&apos;s look-and-feel will change without
+                  disrupting other applets or potentially the browser itself.&lt;p&gt;
+                  Because the AppContext is a facility for safely extending application
+                  service support to applets, none of its methods may be blocked by a
+                  a SecurityManager check in a valid Java implementation.  Applets may
+                  therefore safely invoke any of its methods without worry of being
+                  blocked.
+                  Note: If a SecurityManager is installed which derives from
+                  sun.awt.AWTSecurityManager, it may override the
+                  AWTSecurityManager.getAppContext() method to return the proper
+                  AppContext based on the execution context, in the case where
+                  the default ThreadGroup-based AppContext indexing would return
+                  the main &quot;system&quot; AppContext.  For example, in an applet situation,
+                  if a system thread calls into an applet, rather than returning the
+                  main &quot;system&quot; AppContext (the one corresponding to the system thread),
+                  an installed AWTSecurityManager may return the applet&apos;s AppContext
+                  based on the execution context.                
+                <author>
+                    Thomas Ball                    
+                </author>
+                <author>
+                    Fred Ecks                    
+                </author>
+            </javadoc>
+            <declaration name="log" type="PlatformLogger" line="133"/>
+            <declaration name="EVENT_QUEUE_KEY" type="Object" line="141"/>
+            <declaration name="EVENT_QUEUE_LOCK_KEY" type="Object" line="146"/>
+            <declaration name="EVENT_QUEUE_COND_KEY" type="Object" line="147"/>
+            <declaration name="threadGroup2appContext" type="Map&lt;ThreadGroup,AppContext&gt;" line="151"/>
+            <javadoc line="154">
+                Returns a set containing all &lt;code&gt;AppContext&lt;/code&gt;s.                
+            </javadoc>
+            <method name="getAppContexts" type="Set<AppContext>" line="157">
+                <scope line="158"/>
+            </method>
+            <declaration name="mainAppContext" type="AppContext" line="166"/>
+            <declaration name="table" type="HashMap" line="174"/>
+            <declaration name="threadGroup" type="ThreadGroup" line="176"/>
+            <declaration name="changeSupport" type="PropertyChangeSupport" line="178"/>
+            <javadoc line="178">
+                If any &lt;code&gt;PropertyChangeListeners&lt;/code&gt; have been registered,
+                  the &lt;code&gt;changeSupport&lt;/code&gt; field describes them.                
+                <see>
+                    #addPropertyChangeListener                    
+                </see>
+                <see>
+                    #removePropertyChangeListener                    
+                </see>
+                <see>
+                    #firePropertyChange                    
+                </see>
+            </javadoc>
+            <declaration name="DISPOSED_PROPERTY_NAME" type="String" line="188"/>
+            <declaration name="GUI_DISPOSED" type="String" line="189"/>
+            <declaration name="isDisposed" type="boolean" line="191"/>
+            <method name="isDisposed" type="boolean" line="193"/>
+            <scope line="197">
+                <anonymous_class line="201">
+                    <method name="run" type="Object" line="202">
+                        <comment line="207">
+                            Find the root ThreadGroup to construct our main AppContext                            
+                        </comment>
+                        <declaration name="currentThreadGroup" type="ThreadGroup" line="203"/>
+                        <declaration name="parentThreadGroup" type="ThreadGroup" line="205"/>
+                        <scope line="206"/>
+                    </method>
+                </anonymous_class>
+            </scope>
+            <declaration name="numAppContexts" type="int" line="225"/>
+            <declaration name="contextClassLoader" type="ClassLoader" line="230"/>
+            <javadoc line="232">
+                Constructor for AppContext.  This method is &lt;i&gt;not&lt;/i&gt; public,
+                  nor should it ever be used as such.  The proper way to construct
+                  an AppContext is through the use of SunToolkit.createNewAppContext.
+                  A ThreadGroup is created for the new AppContext, a Thread is
+                  created within that ThreadGroup, and that Thread calls
+                  SunToolkit.createNewAppContext before calling anything else.
+                  That creates both the new AppContext and its EventQueue.                
+                <param>
+                    threadGroup     The ThreadGroup for the new AppContext                    
+                </param>
+                <see>
+                    sun.awt.SunToolkit                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="AppContext" type="constructor" line="245">
+                <params>
+                    <param name="threadGroup" type="ThreadGroup"/>
+                </params>
+                <comment line="258">
+                    Initialize push/pop lock and its condition to be used by all the                    
+                </comment>
+                <comment line="259">
+                    EventQueues within this AppContext                    
+                </comment>
+                <anonymous_class line="252">
+                    <method name="run" type="ClassLoader" line="253"/>
+                </anonymous_class>
+                <declaration name="eventQueuePushPopLock" type="Lock" line="260"/>
+                <declaration name="eventQueuePushPopCond" type="Condition" line="262"/>
+            </method>
+            <declaration name="threadAppContext" type="ThreadLocal&lt;AppContext&gt;" line="266"/>
+            <javadoc line="269">
+                Returns the appropriate AppContext for the caller,
+                  as determined by its ThreadGroup.  If the main &quot;system&quot; AppContext
+                  would be returned and there&apos;s an AWTSecurityManager installed, it
+                  is called to get the proper AppContext based on the execution
+                  context.                
+                <return>
+                    the AppContext for the caller.                    
+                </return>
+                <see>
+                    java.lang.ThreadGroup                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getAppContext" type="AppContext" line="280">
+                <comment line="281">
+                    If there&apos;s only one system-wide,                    
+                </comment>
+                <comment line="282">
+                    return the main system AppContext.                    
+                </comment>
+                <comment line="290">
+                    Get the current ThreadGroup, and look for it and its                    
+                </comment>
+                <comment line="291">
+                    parents in the hash from ThreadGroup to AppContext --                    
+                </comment>
+                <comment line="292">
+                    it should be found, because we use createNewContext()                    
+                </comment>
+                <comment line="293">
+                    when new AppContext objects are created.                    
+                </comment>
+                <comment line="300">
+                    If we get here, we&apos;re running under a ThreadGroup that                    
+                </comment>
+                <comment line="301">
+                    has no AppContext associated with it.  This should never                    
+                </comment>
+                <comment line="302">
+                    happen, because createNewContext() should be used by the                    
+                </comment>
+                <comment line="303">
+                    toolkit to create the ThreadGroup that everything runs                    
+                </comment>
+                <comment line="304">
+                    under.                    
+                </comment>
+                <comment line="309">
+                    In case we did anything in the above while loop, we add                    
+                </comment>
+                <comment line="310">
+                    all the intermediate ThreadGroups to threadGroup2appContext                    
+                </comment>
+                <comment line="311">
+                    so we won&apos;t spin again.                    
+                </comment>
+                <comment line="315">
+                    Now we&apos;re done, so we cache the latest key/value pair.                    
+                </comment>
+                <comment line="316">
+                    (we do this before checking with any AWTSecurityManager, so if                    
+                </comment>
+                <comment line="317">
+                    this Thread equates with the main AppContext in the cache, it                    
+                </comment>
+                <comment line="318">
+                    still will)                    
+                </comment>
+                <comment line="327">
+                    Before we return the main &quot;system&quot; AppContext, check to                    
+                </comment>
+                <comment line="328">
+                    see if there&apos;s an AWTSecurityManager installed.  If so,                    
+                </comment>
+                <comment line="329">
+                    allow it to choose the AppContext to return.                    
+                </comment>
+                <comment line="337">
+                    Return what we&apos;re told                    
+                </comment>
+                <declaration name="appContext" type="AppContext" line="284"/>
+                <scope line="286">
+                    <anonymous_class line="288">
+                        <method name="run" type="AppContext" line="289">
+                            <comment line="290">
+                                Get the current ThreadGroup, and look for it and its                                
+                            </comment>
+                            <comment line="291">
+                                parents in the hash from ThreadGroup to AppContext --                                
+                            </comment>
+                            <comment line="292">
+                                it should be found, because we use createNewContext()                                
+                            </comment>
+                            <comment line="293">
+                                when new AppContext objects are created.                                
+                            </comment>
+                            <comment line="300">
+                                If we get here, we&apos;re running under a ThreadGroup that                                
+                            </comment>
+                            <comment line="301">
+                                has no AppContext associated with it.  This should never                                
+                            </comment>
+                            <comment line="302">
+                                happen, because createNewContext() should be used by the                                
+                            </comment>
+                            <comment line="303">
+                                toolkit to create the ThreadGroup that everything runs                                
+                            </comment>
+                            <comment line="304">
+                                under.                                
+                            </comment>
+                            <comment line="309">
+                                In case we did anything in the above while loop, we add                                
+                            </comment>
+                            <comment line="310">
+                                all the intermediate ThreadGroups to threadGroup2appContext                                
+                            </comment>
+                            <comment line="311">
+                                so we won&apos;t spin again.                                
+                            </comment>
+                            <comment line="315">
+                                Now we&apos;re done, so we cache the latest key/value pair.                                
+                            </comment>
+                            <comment line="316">
+                                (we do this before checking with any AWTSecurityManager, so if                                
+                            </comment>
+                            <comment line="317">
+                                this Thread equates with the main AppContext in the cache, it                                
+                            </comment>
+                            <comment line="318">
+                                still will)                                
+                            </comment>
+                            <declaration name="currentThreadGroup" type="ThreadGroup" line="294"/>
+                            <declaration name="threadGroup" type="ThreadGroup" line="295"/>
+                            <declaration name="context" type="AppContext" line="296"/>
+                            <scope line="297">
+                                <scope line="299"/>
+                            </scope>
+                            <scope line="312"/>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="326">
+                    <declaration name="securityManager" type="SecurityManager" line="330"/>
+                    <scope line="333">
+                        <declaration name="awtSecMgr" type="AWTSecurityManager" line="334"/>
+                        <declaration name="secAppContext" type="AppContext" line="335"/>
+                        <scope line="336"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="DISPOSAL_TIMEOUT" type="long" line="345"/>
+            <declaration name="THREAD_INTERRUPT_TIMEOUT" type="long" line="351"/>
+            <javadoc line="356">
+                Disposes of this AppContext, all of its top-level Frames, and
+                  all Threads and ThreadGroups contained within it.
+                  This method must be called from a Thread which is not contained
+                  within this AppContext.                
+                <exception>
+                    IllegalThreadStateException  if the current thread is
+                      contained within this AppContext                    
+                </exception>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="dispose" type="void" line="367">
+                <comment line="368">
+                    Check to be sure that the current Thread isn&apos;t in this AppContext                    
+                </comment>
+                <comment line="377">
+                    If already disposed, bail.                    
+                </comment>
+                <comment line="387">
+                    First, we post an InvocationEvent to be run on the                    
+                </comment>
+                <comment line="388">
+                    EventDispatchThread which disposes of all top-level Frames and TrayIcons                    
+                </comment>
+                <comment line="415">
+                    Alert PropertyChangeListeners that the GUI has been disposed.                    
+                </comment>
+                <comment line="420">
+                    Notify caller that we&apos;re done                    
+                </comment>
+                <comment line="432">
+                    Next, we post another InvocationEvent to the end of the                    
+                </comment>
+                <comment line="433">
+                    EventQueue.  When it&apos;s executed, we know we&apos;ve executed all                    
+                </comment>
+                <comment line="434">
+                    events in the queue.                    
+                </comment>
+                <comment line="438">
+                    Notify caller that we&apos;re done                    
+                </comment>
+                <comment line="449">
+                    Next, we interrupt all Threads in the ThreadGroup                    
+                </comment>
+                <comment line="451">
+                    Note, the EventDispatchThread we&apos;ve interrupted may dump an                    
+                </comment>
+                <comment line="452">
+                    InterruptedException to the console here.  This needs to be                    
+                </comment>
+                <comment line="453">
+                    fixed in the EventDispatchThread, not here.                    
+                </comment>
+                <comment line="455">
+                    Next, we sleep 10ms at a time, waiting for all of the active                    
+                </comment>
+                <comment line="456">
+                    Threads in the ThreadGroup to exit.                    
+                </comment>
+                <comment line="467">
+                    Then, we stop any remaining Threads                    
+                </comment>
+                <comment line="470">
+                    Next, we sleep 10ms at a time, waiting for all of the active                    
+                </comment>
+                <comment line="471">
+                    Threads in the ThreadGroup to die.                    
+                </comment>
+                <comment line="482">
+                    Next, we remove this and all subThreadGroups from threadGroup2appContext                    
+                </comment>
+                <comment line="495">
+                    Finally, we destroy the ThreadGroup entirely.                    
+                </comment>
+                <comment line="499">
+                    Fired if not all the Threads died, ignore it and proceed                    
+                </comment>
+                <comment line="503">
+                    Clear out the Hashtable to ease garbage collection                    
+                </comment>
+                <scope line="369"/>
+                <scope line="375">
+                    <scope line="376"/>
+                </scope>
+                <declaration name="changeSupport" type="PropertyChangeSupport" line="382"/>
+                <scope line="383"/>
+                <declaration name="notificationLock" type="Object" line="390"/>
+                <anonymous_class line="392">
+                    <method name="run" type="void" line="393">
+                        <comment line="415">
+                            Alert PropertyChangeListeners that the GUI has been disposed.                            
+                        </comment>
+                        <comment line="420">
+                            Notify caller that we&apos;re done                            
+                        </comment>
+                        <declaration name="windowsToDispose" type="Window[]" line="394"/>
+                        <scope line="395">
+                            <scope line="396"/>
+                            <scope line="398"/>
+                        </scope>
+                        <anonymous_class line="402">
+                            <method name="run" type="Object" line="403">
+                                <scope line="405">
+                                    <declaration name="systemTray" type="SystemTray" line="406"/>
+                                    <declaration name="trayIconsToDispose" type="TrayIcon[]" line="407"/>
+                                    <scope line="408"/>
+                                </scope>
+                            </method>
+                        </anonymous_class>
+                        <scope line="416"/>
+                        <scope line="419"/>
+                    </method>
+                </anonymous_class>
+                <declaration name="runnable" type="Runnable" line="392"/>
+                <scope line="424">
+                    <scope line="427"/>
+                    <scope line="429"/>
+                </scope>
+                <anonymous_class line="436">
+                    <method name="run" type="void" line="436">
+                        <comment line="438">
+                            Notify caller that we&apos;re done                            
+                        </comment>
+                        <scope line="437"/>
+                    </method>
+                </anonymous_class>
+                <scope line="441">
+                    <scope line="444"/>
+                    <scope line="446"/>
+                </scope>
+                <declaration name="startTime" type="long" line="458"/>
+                <declaration name="endTime" type="long" line="459"/>
+                <scope line="461">
+                    <scope line="462"/>
+                    <scope line="464"/>
+                </scope>
+                <scope line="476">
+                    <scope line="477"/>
+                    <scope line="479"/>
+                </scope>
+                <declaration name="numSubGroups" type="int" line="483"/>
+                <scope line="484">
+                    <declaration name="subGroups" type="ThreadGroup[]" line="485"/>
+                    <scope line="487"/>
+                </scope>
+                <scope line="496"/>
+                <scope line="498"/>
+                <scope line="502"/>
+            </method>
+            <class name="PostShutdownEventRunnable" line="511">
+                <implements interface="Runnable"/>
+                <declaration name="appContext" type="AppContext" line="512"/>
+                <method name="PostShutdownEventRunnable" type="constructor" line="514">
+                    <params>
+                        <param name="ac" type="AppContext"/>
+                    </params>
+                </method>
+                <method name="run" type="void" line="518">
+                    <declaration name="eq" type="EventQueue" line="519"/>
+                    <scope line="520"/>
+                </method>
+            </class>
+            <class name="CreateThreadAction" line="526">
+                <implements interface="PrivilegedAction"/>
+                <declaration name="appContext" type="AppContext" line="527"/>
+                <declaration name="runnable" type="Runnable" line="528"/>
+                <method name="CreateThreadAction" type="constructor" line="530">
+                    <params>
+                        <param name="ac" type="AppContext"/>
+                        <param name="r" type="Runnable"/>
+                    </params>
+                </method>
+                <method name="run" type="Object" line="535">
+                    <declaration name="t" type="Thread" line="536"/>
+                </method>
+            </class>
+            <method name="stopEventDispatchThreads" type="void" line="544">
+                <comment line="550">
+                    For security reasons EventQueue.postEvent should only be called                    
+                </comment>
+                <comment line="551">
+                    on a thread that belongs to the corresponding thread group.                    
+                </comment>
+                <comment line="553">
+                    Create a thread that belongs to the thread group associated                    
+                </comment>
+                <comment line="554">
+                    with the AppContext and invokes EventQueue.postEvent.                    
+                </comment>
+                <scope line="545">
+                    <scope line="546"/>
+                    <declaration name="r" type="Runnable" line="549"/>
+                    <scope line="552">
+                        <declaration name="action" type="PrivilegedAction" line="555"/>
+                        <declaration name="thread" type="Thread" line="556"/>
+                    </scope>
+                    <scope line="558"/>
+                </scope>
+            </method>
+            <declaration name="mostRecentKeyValue" type="MostRecentKeyValue" line="564"/>
+            <declaration name="shadowMostRecentKeyValue" type="MostRecentKeyValue" line="565"/>
+            <javadoc line="567">
+                Returns the value to which the specified key is mapped in this context.                
+                <param>
+                    key   a key in the AppContext.                    
+                </param>
+                <return>
+                    the value to which the key is mapped in this AppContext;
+                      <code>null</code> if the key is not mapped to any value.                    
+                </return>
+                <see>
+                    #put(Object,Object)                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="get" type="Object" line="576">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+                <comment line="577">
+                    The most recent reference should be updated inside a synchronized
+                     block to avoid a race when put() and get() are executed in
+                     parallel on different threads.                    
+                </comment>
+                <comment line="583">
+                    Note: this most recent key/value caching is thread-hot.                    
+                </comment>
+                <comment line="584">
+                    A simple test using SwingSet found that 72% of lookups                    
+                </comment>
+                <comment line="585">
+                    were matched using the most recent key/value.  By instantiating                    
+                </comment>
+                <comment line="586">
+                    a simple MostRecentKeyValue object on cache misses, the                    
+                </comment>
+                <comment line="587">
+                    cache hits can be processed without synchronization.                    
+                </comment>
+                <scope line="582">
+                    <declaration name="recent" type="MostRecentKeyValue" line="589"/>
+                    <scope line="590"/>
+                    <declaration name="value" type="Object" line="594"/>
+                    <scope line="595"/>
+                    <scope line="598">
+                        <declaration name="auxKeyValue" type="MostRecentKeyValue" line="599"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="608">
+                Maps the specified &lt;code&gt;key&lt;/code&gt; to the specified
+                  &lt;code&gt;value&lt;/code&gt; in this AppContext.  Neither the key nor the
+                  value can be &lt;code&gt;null&lt;/code&gt;.
+                  &lt;p&gt;
+                  The value can be retrieved by calling the &lt;code&gt;get&lt;/code&gt; method
+                  with a key that is equal to the original key.                
+                <param>
+                    key     the AppContext key.                    
+                </param>
+                <param>
+                    value   the value.                    
+                </param>
+                <return>
+                    the previous value of the specified key in this
+                      AppContext, or <code>null</code> if it did not have one.                    
+                </return>
+                <exception>
+                    NullPointerException  if the key or value is
+                      <code>null</code>.                    
+                </exception>
+                <see>
+                    #get(Object)                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="put" type="Object" line="625">
+                <params>
+                    <param name="key" type="Object"/>
+                    <param name="value" type="Object"/>
+                </params>
+                <scope line="626">
+                    <declaration name="recent" type="MostRecentKeyValue" line="627"/>
+                </scope>
+            </method>
+            <javadoc line="634">
+                Removes the key (and its corresponding value) from this
+                  AppContext. This method does nothing if the key is not in the
+                  AppContext.                
+                <param>
+                    key   the key that needs to be removed.                    
+                </param>
+                <return>
+                    the value to which the key had been mapped in this AppContext,
+                      or <code>null</code> if the key did not have a mapping.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="remove" type="Object" line="644">
+                <params>
+                    <param name="key" type="Object"/>
+                </params>
+                <scope line="645">
+                    <declaration name="recent" type="MostRecentKeyValue" line="646"/>
+                </scope>
+            </method>
+            <javadoc line="653">
+                Returns the root ThreadGroup for all Threads contained within
+                  this AppContext.                
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getThreadGroup" type="ThreadGroup" line="658"/>
+            <javadoc line="662">
+                Returns the context ClassLoader that was used to create this
+                  AppContext.                
+                <see>
+                    java.lang.Thread#getContextClassLoader                    
+                </see>
+            </javadoc>
+            <method name="getContextClassLoader" type="ClassLoader" line="668"/>
+            <javadoc line="672">
+                Returns a string representation of this AppContext.                
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="toString" type="String" line="677"/>
+            <javadoc line="681">
+                Returns an array of all the property change listeners
+                  registered on this component.                
+                <return>
+                    all of this component's <code>PropertyChangeListener</code>s
+                      or an empty array if no property change
+                      listeners are currently registered                    
+                </return>
+                <see>
+                    #addPropertyChangeListener                    
+                </see>
+                <see>
+                    #removePropertyChangeListener                    
+                </see>
+                <see>
+                    #getPropertyChangeListeners(java.lang.String)                    
+                </see>
+                <see>
+                    java.beans.PropertyChangeSupport#getPropertyChangeListeners                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getPropertyChangeListeners" type="PropertyChangeListener[]" line="695">
+                <scope line="696"/>
+            </method>
+            <javadoc line="702">
+                Adds a PropertyChangeListener to the listener list for a specific
+                  property. The specified property may be one of the following:
+                  &lt;ul&gt;
+                  &lt;li&gt;if this AppContext is disposed (&quot;disposed&quot;)&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;if this AppContext&apos;s unowned Windows have been disposed
+                  (&quot;guidisposed&quot;).  Code to cleanup after the GUI is disposed
+                  (such as LookAndFeel.uninitialize()) should execute in response to
+                  this property being fired.  Notifications for the &quot;guidisposed&quot;
+                  property are sent on the event dispatch thread.&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  If listener is null, no exception is thrown and no action is performed.                
+                <param>
+                    propertyName one of the property names listed above                    
+                </param>
+                <param>
+                    listener the PropertyChangeListener to be added                    
+                </param>
+                <see>
+                    #removePropertyChangeListener(java.lang.String,java.beans.PropertyChangeListener)                    
+                </see>
+                <see>
+                    #getPropertyChangeListeners(java.lang.String)                    
+                </see>
+                <see>
+                    #addPropertyChangeListener(java.lang.String,java.beans.PropertyChangeListener)                    
+                </see>
+            </javadoc>
+            <method name="addPropertyChangeListener" type="void" line="727">
+                <params>
+                    <param name="propertyName" type="String"/>
+                    <param name="listener" type="PropertyChangeListener"/>
+                </params>
+                <scope line="728"/>
+                <scope line="731"/>
+            </method>
+            <javadoc line="737">
+                Removes a PropertyChangeListener from the listener list for a specific
+                  property. This method should be used to remove PropertyChangeListeners
+                  that were registered for a specific bound property.
+                  &lt;p&gt;
+                  If listener is null, no exception is thrown and no action is performed.                
+                <param>
+                    propertyName a valid property name                    
+                </param>
+                <param>
+                    listener the PropertyChangeListener to be removed                    
+                </param>
+                <see>
+                    #addPropertyChangeListener(java.lang.String,java.beans.PropertyChangeListener)                    
+                </see>
+                <see>
+                    #getPropertyChangeListeners(java.lang.String)                    
+                </see>
+                <see>
+                    #removePropertyChangeListener(java.beans.PropertyChangeListener)                    
+                </see>
+            </javadoc>
+            <method name="removePropertyChangeListener" type="void" line="753">
+                <params>
+                    <param name="propertyName" type="String"/>
+                    <param name="listener" type="PropertyChangeListener"/>
+                </params>
+                <scope line="754"/>
+            </method>
+            <javadoc line="760">
+                Returns an array of all the listeners which have been associated
+                  with the named property.                
+                <return>
+                    all of the <code>PropertyChangeListeners</code> associated with
+                      the named property or an empty array if no listeners have
+                      been added                    
+                </return>
+                <see>
+                    #addPropertyChangeListener(java.lang.String,java.beans.PropertyChangeListener)                    
+                </see>
+                <see>
+                    #removePropertyChangeListener(java.lang.String,java.beans.PropertyChangeListener)                    
+                </see>
+                <see>
+                    #getPropertyChangeListeners                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getPropertyChangeListeners" type="PropertyChangeListener[]" line="774">
+                <params>
+                    <param name="propertyName" type="String"/>
+                </params>
+                <scope line="775"/>
+            </method>
+        </class>
+        <class name="MostRecentKeyValue" line="782">
+            <comment line="136">
+                Since the contents of an AppContext are unique to each Java                
+            </comment>
+            <comment line="139">
+                The key to put()get() the Java EventQueue intofrom the AppContext.                
+            </comment>
+            <comment line="144">
+                The keys to store EventQueue pushpop lock and condition.                
+            </comment>
+            <comment line="150">
+                A map of AppContexts, referenced by ThreadGroup.                
+            </comment>
+            <comment line="164">
+                The main &quot;system&quot; AppContext, used by everything not otherwise
+                contained in another AppContext.                
+            </comment>
+            <comment line="169">
+                The hash map associated with this AppContext.  A private delegate
+                 is used instead of subclassing HashMap so as to avoid all of
+                 HashMap&apos;s potentially risky methods, such as clear(), elements(),
+                 putAll(), etc.                
+            </comment>
+            <comment line="192">
+                true if AppContext is disposed                
+            </comment>
+            <comment line="219">
+                The total number of AppContexts, system-wide.  This number is
+                 incremented at the beginning of the constructor, and decremented
+                 at the end of dispose().  getAppContext() checks to see if this
+                 number is 1.  If so, it returns the sole AppContext without
+                 checking Thread.currentThread().                
+            </comment>
+            <comment line="228">
+                The context ClassLoader that was used to create this AppContext.                
+            </comment>
+            <comment line="346">
+                Default to 5-second timeout                
+            </comment>
+            <comment line="347">
+                for disposal of all Frames                
+            </comment>
+            <comment line="348">
+                (we wait for this time twice,                
+            </comment>
+            <comment line="349">
+                once for dispose(), and once                
+            </comment>
+            <comment line="350">
+                to clear the EventQueue).                
+            </comment>
+            <comment line="353">
+                Default to 1-second timeout for all                
+            </comment>
+            <comment line="354">
+                interrupted Threads to exit, and another                
+            </comment>
+            <comment line="355">
+                1 second for all stopped Threads to die.                
+            </comment>
+            <declaration name="key" type="Object" line="783"/>
+            <declaration name="value" type="Object" line="784"/>
+            <method name="MostRecentKeyValue" type="constructor" line="785">
+                <params>
+                    <param name="k" type="Object"/>
+                    <param name="v" type="Object"/>
+                </params>
+            </method>
+            <method name="setPair" type="void" line="789">
+                <params>
+                    <param name="k" type="Object"/>
+                    <param name="v" type="Object"/>
+                </params>
+            </method>
+        </class>
+    </source>

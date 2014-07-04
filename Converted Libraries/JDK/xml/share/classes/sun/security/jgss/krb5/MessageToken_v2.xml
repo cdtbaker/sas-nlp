@@ -1,0 +1,650 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.jgss.krb5">
+        <import package="org.ietf.jgss"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.ByteArrayInputStream"/>
+        <import package="java.io.ByteArrayOutputStream"/>
+        <import package="java.security.MessageDigest"/>
+        <import package="java.util.Arrays"/>
+        <class name="MessageToken_v2" line="37">
+            <extends class="Krb5Token"/>
+            <comment line="112">
+                RFC 4121, key usage values                
+            </comment>
+            <comment line="118">
+                RFC 4121, Flags Field                
+            </comment>
+            <comment line="126">
+                Common field                
+            </comment>
+            <comment line="129">
+                content of token, without the header                
+            </comment>
+            <comment line="132">
+                Key usage number for crypto action                
+            </comment>
+            <comment line="135">
+                EC and RRC fields, WrapToken only                
+            </comment>
+            <comment line="139">
+                Checksum. Always in MicToken, might be in WrapToken                
+            </comment>
+            <comment line="142">
+                Context properties                
+            </comment>
+            <comment line="146">
+                                
+            </comment>
+            <comment line="490">
+                ******************************************* //                
+            </comment>
+            <comment line="491">
+                I N N E R    C L A S S E S    F O L L O W                
+            </comment>
+            <comment line="492">
+                ******************************************* //                
+            </comment>
+            <comment line="641">
+                end of class MessageTokenHeader                
+            </comment>
+            <javadoc line="37">
+                This class is a base class for new GSS token definitions, as defined
+                  in RFC 4121, that pertain to per-message GSS-API calls. Conceptually
+                  GSS-API has two types of per-message tokens: WrapToken and MicToken.
+                  They differ in the respect that a WrapToken carries additional plaintext
+                  or ciphertext application data besides just the sequence number and
+                  checksum. This class encapsulates the commonality in the structure of
+                  the WrapToken and the MicToken. This structure can be represented as:
+                  &lt;p&gt;
+                  &lt;pre&gt;
+                  Wrap Tokens
+                  Octet no   Name        Description
+                  ---------------------------------------------------------------
+                  0..1     TOK_ID     Identification field.  Tokens emitted by
+                  GSS_Wrap() contain the hex value 05 04
+                  expressed in big-endian order in this field.
+                  2        Flags      Attributes field, as described in section
+                  4.2.2.
+                  3        Filler     Contains the hex value FF.
+                  4..5     EC         Contains the &quot;extra count&quot; field, in big-
+                  endian order as described in section 4.2.3.
+                  6..7     RRC        Contains the &quot;right rotation count&quot; in big
+                  endian order, as described in section 4.2.5.
+                  8..15    SND_SEQ    Sequence number field in clear text,
+                  expressed in big-endian order.
+                  16..last Data       Encrypted data for Wrap tokens with
+                  confidentiality, or plaintext data followed
+                  by the checksum for Wrap tokens without
+                  confidentiality, as described in section
+                  4.2.4.
+                  MIC Tokens
+                  Octet no   Name        Description
+                  -----------------------------------------------------------------
+                  0..1     TOK_ID     Identification field.  Tokens emitted by
+                  GSS_GetMIC() contain the hex value 04 04
+                  expressed in big-endian order in this field.
+                  2        Flags      Attributes field, as described in section
+                  4.2.2.
+                  3..7     Filler     Contains five octets of hex value FF.
+                  8..15    SND_SEQ    Sequence number field in clear text,
+                  expressed in big-endian order.
+                  16..last SGN_CKSUM  Checksum of the &quot;to-be-signed&quot; data and
+                  octet 0..15, as described in section 4.2.4.
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  This class is the super class of WrapToken_v2 and MicToken_v2. The token&apos;s
+                  header (bytes[0..15]) and data (byte[16..]) are saved in tokenHeader and
+                  tokenData fields. Since there is no easy way to find out the exact length
+                  of a WrapToken_v2 token from any header info, in the case of reading from
+                  stream, we read all available() bytes into the token.
+                  &lt;p&gt;
+                  All read actions are performed in this super class. On the write part, the
+                  super class only write the tokenHeader, and the content writing is inside
+                  child classes.                
+                <author>
+                    Seema Malkani                    
+                </author>
+            </javadoc>
+            <declaration name="TOKEN_HEADER_SIZE" type="int" line="100"/>
+            <declaration name="TOKEN_ID_POS" type="int" line="101"/>
+            <declaration name="TOKEN_FLAG_POS" type="int" line="102"/>
+            <declaration name="TOKEN_EC_POS" type="int" line="103"/>
+            <declaration name="TOKEN_RRC_POS" type="int" line="104"/>
+            <declaration name="CONFOUNDER_SIZE" type="int" line="106"/>
+            <javadoc line="106">
+                The size of the random confounder used in a WrapToken.                
+            </javadoc>
+            <declaration name="KG_USAGE_ACCEPTOR_SEAL" type="int" line="112"/>
+            <declaration name="KG_USAGE_ACCEPTOR_SIGN" type="int" line="113"/>
+            <declaration name="KG_USAGE_INITIATOR_SEAL" type="int" line="114"/>
+            <declaration name="KG_USAGE_INITIATOR_SIGN" type="int" line="115"/>
+            <declaration name="FLAG_SENDER_IS_ACCEPTOR" type="int" line="118"/>
+            <declaration name="FLAG_WRAP_CONFIDENTIAL" type="int" line="119"/>
+            <declaration name="FLAG_ACCEPTOR_SUBKEY" type="int" line="120"/>
+            <declaration name="FILLER" type="int" line="121"/>
+            <declaration name="tokenHeader" type="MessageTokenHeader" line="123"/>
+            <declaration name="tokenId" type="int" line="126"/>
+            <declaration name="seqNumber" type="int" line="127"/>
+            <declaration name="tokenData" type="byte[]" line="128"/>
+            <declaration name="tokenDataLen" type="int" line="129"/>
+            <declaration name="key_usage" type="int" line="132"/>
+            <declaration name="ec" type="int" line="135"/>
+            <declaration name="rrc" type="int" line="136"/>
+            <declaration name="checksum" type="byte[]" line="139"/>
+            <declaration name="confState" type="boolean" line="142"/>
+            <declaration name="initiator" type="boolean" line="143"/>
+            <declaration name="cipherHelper" type="CipherHelper" line="146"/>
+            <javadoc line="148">
+                Constructs a MessageToken from a byte array.                
+                <param>
+                    tokenId the token id that should be contained in this token as
+                      it is read.                    
+                </param>
+                <param>
+                    context the Kerberos context associated with this token                    
+                </param>
+                <param>
+                    tokenBytes the byte array containing the token                    
+                </param>
+                <param>
+                    tokenOffset the offset where the token begins                    
+                </param>
+                <param>
+                    tokenLen the length of the token                    
+                </param>
+                <param>
+                    prop the MessageProp structure in which the properties of the
+                      token should be stored.                    
+                </param>
+                <throws>
+                    GSSException if there is a problem parsing the token                    
+                </throws>
+            </javadoc>
+            <method name="MessageToken_v2" type="constructor" line="163">
+                <params>
+                    <param name="tokenId" type="int"/>
+                    <param name="context" type="Krb5Context"/>
+                    <param name="tokenBytes" type="byte[]"/>
+                    <param name="tokenOffset" type="int"/>
+                    <param name="tokenLen" type="int"/>
+                    <param name="prop" type="MessageProp"/>
+                </params>
+            </method>
+            <javadoc line="169">
+                Constructs a MessageToken from an InputStream. Bytes will be read on
+                  demand and the thread might block if there are not enough bytes to
+                  complete the token. Please note there is no accurate way to find out
+                  the size of a token, but we try our best to make sure there is
+                  enough bytes to construct one.                
+                <param>
+                    tokenId the token id that should be contained in this token as
+                      it is read.                    
+                </param>
+                <param>
+                    context the Kerberos context associated with this token                    
+                </param>
+                <param>
+                    is the InputStream from which to read                    
+                </param>
+                <param>
+                    prop the MessageProp structure in which the properties of the
+                      token should be stored.                    
+                </param>
+                <throws>
+                    GSSException if there is a problem reading from the
+                      InputStream or parsing the token                    
+                </throws>
+            </javadoc>
+            <method name="MessageToken_v2" type="constructor" line="186">
+                <params>
+                    <param name="tokenId" type="int"/>
+                    <param name="context" type="Krb5Context"/>
+                    <param name="is" type="InputStream"/>
+                    <param name="prop" type="MessageProp"/>
+                </params>
+                <comment line="195">
+                    set key_usage                    
+                </comment>
+                <comment line="204">
+                    minimal size for token data                    
+                </comment>
+                <comment line="212">
+                    Read token data                    
+                </comment>
+                <comment line="214">
+                    The only case we can precisely predict the token data length                    
+                </comment>
+                <comment line="220">
+                    read in one shot                    
+                </comment>
+                <comment line="226">
+                    Hope while blocked in the read above, more data would                    
+                </comment>
+                <comment line="227">
+                    come and is.available() below contains the whole token.                    
+                </comment>
+                <comment line="236">
+                    Does non-confidential data needs a rotate?                    
+                </comment>
+                <comment line="242">
+                    Read checksum                    
+                </comment>
+                <comment line="248">
+                    validate EC for Wrap tokens without confidentiality                    
+                </comment>
+                <scope line="189">
+                    <scope line="190"/>
+                    <scope line="196"/>
+                    <scope line="199"/>
+                    <declaration name="minSize" type="int" line="204"/>
+                    <scope line="205"/>
+                    <scope line="208"/>
+                    <scope line="213"/>
+                    <scope line="218">
+                        <scope line="220"/>
+                        <scope line="223">
+                            <declaration name="tmp" type="byte[]" line="224"/>
+                            <declaration name="more" type="int" line="228"/>
+                        </scope>
+                    </scope>
+                    <scope line="235"/>
+                    <scope line="241">
+                        <declaration name="chkLen" type="int" line="243"/>
+                        <scope line="249">
+                            <scope line="250"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="256"/>
+            </method>
+            <javadoc line="262">
+                Used to obtain the token id that was contained in this token.                
+                <return>
+                    the token id in the token                    
+                </return>
+            </javadoc>
+            <method name="getTokenId" type="int" line="266"/>
+            <javadoc line="270">
+                Used to obtain the key_usage type for this token.                
+                <return>
+                    the key_usage for the token                    
+                </return>
+            </javadoc>
+            <method name="getKeyUsage" type="int" line="274"/>
+            <javadoc line="278">
+                Used to determine if this token contains any encrypted data.                
+                <return>
+                    true if it contains any encrypted data, false if there is only
+                      plaintext data or if there is no data.                    
+                </return>
+            </javadoc>
+            <method name="getConfState" type="boolean" line="283"/>
+            <javadoc line="287">
+                Generates the checksum field and the sequence number field.                
+                <param>
+                    prop the MessageProp structure                    
+                </param>
+                <param>
+                    data the application data to checksum                    
+                </param>
+                <param>
+                    offset the offset where the data starts                    
+                </param>
+                <param>
+                    len the length of the data                    
+                </param>
+                <throws>
+                    GSSException if an error occurs in the checksum calculation or
+                      sequence number calculation.                    
+                </throws>
+            </javadoc>
+            <method name="genSignAndSeqNumber" type="void" line="300">
+                <params>
+                    <param name="prop" type="MessageProp"/>
+                    <param name="data" type="byte[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="302">
+                    debug(&quot;Inside MessageToken.genSignAndSeqNumber:\n&quot;);                    
+                </comment>
+                <comment line="314">
+                    Create a new gss token header as defined in RFC 4121                    
+                </comment>
+                <comment line="317">
+                    debug(&quot;\n\t Message Header = &quot; +                    
+                </comment>
+                <comment line="318">
+                    getHexBytes(tokenHeader.getBytes(), tokenHeader.getBytes().length));                    
+                </comment>
+                <comment line="320">
+                    set key_usage                    
+                </comment>
+                <comment line="329">
+                    Calculate SGN_CKSUM                    
+                </comment>
+                <comment line="333">
+                    debug(&quot;\n\tCalc checksum=&quot; +                    
+                </comment>
+                <comment line="334">
+                    getHexBytes(checksum, checksum.length));                    
+                </comment>
+                <comment line="337">
+                    In Wrap tokens without confidentiality, the EC field SHALL be used                    
+                </comment>
+                <comment line="338">
+                    to encode the number of octets in the trailing checksum                    
+                </comment>
+                <declaration name="qop" type="int" line="304"/>
+                <scope line="305"/>
+                <scope line="310"/>
+                <scope line="321"/>
+                <scope line="324"/>
+                <scope line="331"/>
+                <scope line="339">
+                    <declaration name="tok_header" type="byte[]" line="340"/>
+                </scope>
+            </method>
+            <javadoc line="346">
+                Verifies the validity of checksum field                
+                <param>
+                    data the application data                    
+                </param>
+                <param>
+                    offset the offset where the data begins                    
+                </param>
+                <param>
+                    len the length of the application data                    
+                </param>
+                <throws>
+                    GSSException if an error occurs in the checksum calculation                    
+                </throws>
+            </javadoc>
+            <method name="verifySign" type="boolean" line="356">
+                <params>
+                    <param name="data" type="byte[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="358">
+                    debug(&quot;\t====In verifySign:====\n&quot;);                    
+                </comment>
+                <comment line="359">
+                    debug(&quot;\t\t checksum:   [&quot; + getHexBytes(checksum) + &quot;]\n&quot;);                    
+                </comment>
+                <comment line="360">
+                    debug(&quot;\t\t data = [&quot; + getHexBytes(data) + &quot;]\n&quot;);                    
+                </comment>
+                <comment line="363">
+                    debug(&quot;\t\t mychecksum: [&quot; + getHexBytes(myChecksum) +&quot;]\n&quot;);                    
+                </comment>
+                <comment line="366">
+                    debug(&quot;\t\t====Checksum PASS:====\n&quot;);                    
+                </comment>
+                <declaration name="myChecksum" type="byte[]" line="362"/>
+                <scope line="365"/>
+            </method>
+            <javadoc line="372">
+                Rotate bytes as per the &quot;RRC&quot; (Right Rotation Count) received.
+                  Our implementation does not do any rotates when sending, only
+                  when receiving, we rotate left as per the RRC count, to revert it.                
+            </javadoc>
+            <method name="rotate" type="void" line="377">
+                <scope line="378">
+                    <declaration name="newBytes" type="byte[]" line="380"/>
+                </scope>
+            </method>
+            <method name="getSequenceNumber" type="int" line="389"/>
+            <javadoc line="393">
+                Computes the checksum based on the algorithm stored in the
+                  tokenHeader.                
+                <param>
+                    data the application data                    
+                </param>
+                <param>
+                    offset the offset where the data begins                    
+                </param>
+                <param>
+                    len the length of the application data                    
+                </param>
+                <throws>
+                    GSSException if an error occurs in the checksum calculation.                    
+                </throws>
+            </javadoc>
+            <method name="getChecksum" type="byte[]" line="404">
+                <params>
+                    <param name="data" type="byte[]"/>
+                    <param name="offset" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="406">
+                    debug(&quot;Will do getChecksum:\n&quot;);                    
+                </comment>
+                <comment line="408">
+                    For checksum calculation the token header bytes i.e., the first 16
+                     bytes following the GSSHeader, are logically prepended to the
+                     application data to bind the data to this particular token.
+                    
+                     Note: There is no such requirement wrt adding padding to the
+                     application data for checksumming, although the cryptographic
+                     algorithm used might itself apply some padding.                    
+                </comment>
+                <comment line="420">
+                    check confidentiality                    
+                </comment>
+                <comment line="424">
+                    clear EC in token header for checksum calculation                    
+                </comment>
+                <declaration name="tokenHeaderBytes" type="byte[]" line="418"/>
+                <declaration name="conf_flag" type="int" line="421"/>
+                <scope line="425"/>
+            </method>
+            <javadoc line="434">
+                Constructs an empty MessageToken for the local context to send to
+                  the peer. It also increments the local sequence number in the
+                  Krb5Context instance it uses after obtaining the object lock for
+                  it.                
+                <param>
+                    tokenId the token id that should be contained in this token                    
+                </param>
+                <param>
+                    context the Kerberos context associated with this token                    
+                </param>
+            </javadoc>
+            <method name="MessageToken_v2" type="constructor" line="443">
+                <params>
+                    <param name="tokenId" type="int"/>
+                    <param name="context" type="Krb5Context"/>
+                </params>
+                <comment line="444">
+                    debug(&quot;\n============================&quot;);
+                    debug(&quot;\nMySessionKey=&quot; +
+                    getHexBytes(context.getMySessionKey().getBytes()));
+                    debug(&quot;\nPeerSessionKey=&quot; +
+                    getHexBytes(context.getPeerSessionKey().getBytes()));
+                    debug(&quot;\n============================\n&quot;);                    
+                </comment>
+            </method>
+            <method name="init" type="void" line="456">
+                <params>
+                    <param name="tokenId" type="int"/>
+                    <param name="context" type="Krb5Context"/>
+                </params>
+                <comment line="458">
+                    Just for consistency check in Wrap                    
+                </comment>
+                <comment line="464">
+                    debug(&quot;In MessageToken.Cons&quot;);                    
+                </comment>
+            </method>
+            <javadoc line="467">
+                Encodes a MessageTokenHeader onto an OutputStream.                
+                <param>
+                    os the OutputStream to which this should be written                    
+                </param>
+                <throws>
+                    IOException is an error occurs while writing to the OutputStream                    
+                </throws>
+            </javadoc>
+            <method name="encodeHeader" type="void" line="473">
+                <params>
+                    <param name="os" type="OutputStream"/>
+                </params>
+            </method>
+            <method name="encode" type="void" line="477"/>
+            <javadoc line="477">
+                Encodes a MessageToken_v2 onto an OutputStream.                
+                <param>
+                    os the OutputStream to which this should be written                    
+                </param>
+                <throws>
+                    IOException is an error occurs while encoding the token                    
+                </throws>
+            </javadoc>
+            <method name="getTokenHeader" type="byte[]" line="485"/>
+            <class name="MessageTokenHeader" line="493">
+                <comment line="503">
+                    Writes a new token header                    
+                </comment>
+                <javadoc line="493">
+                    This inner class represents the initial portion of the message token.
+                      It constitutes the first 16 bytes of the message token.                    
+                </javadoc>
+                <declaration name="tokenId" type="int" line="499"/>
+                <declaration name="bytes" type="byte[]" line="500"/>
+                <method name="MessageTokenHeader" type="constructor" line="504">
+                    <params>
+                        <param name="tokenId" type="int"/>
+                        <param name="conf" type="boolean"/>
+                        <param name="have_acceptor_subkey" type="boolean"/>
+                    </params>
+                    <comment line="511">
+                        Flags (Note: MIT impl requires subkey)                        
+                    </comment>
+                    <comment line="519">
+                        filler                        
+                    </comment>
+                    <comment line="523">
+                        EC field                        
+                    </comment>
+                    <comment line="526">
+                        RRC field                        
+                    </comment>
+                    <comment line="530">
+                        more filler for MicToken                        
+                    </comment>
+                    <comment line="536">
+                        Calculate SND_SEQ, only write 4 bytes from the 12th position                        
+                    </comment>
+                    <declaration name="flags" type="int" line="512"/>
+                    <scope line="522"/>
+                    <scope line="529">
+                        <scope line="531"/>
+                    </scope>
+                </method>
+                <javadoc line="540">
+                    Reads a MessageTokenHeader from an InputStream and sets the
+                      appropriate confidentiality and quality of protection
+                      values in a MessageProp structure.                    
+                    <param>
+                        is the InputStream to read from                        
+                    </param>
+                    <param>
+                        prop the MessageProp to populate                        
+                    </param>
+                    <throws>
+                        IOException is an error occurs while reading from the
+                          InputStream                        
+                    </throws>
+                </javadoc>
+                <method name="MessageTokenHeader" type="constructor" line="551">
+                    <params>
+                        <param name="is" type="InputStream"/>
+                        <param name="prop" type="MessageProp"/>
+                        <param name="tokId" type="int"/>
+                    </params>
+                    <comment line="556">
+                        validate Token ID                        
+                    </comment>
+                    <comment line="562">
+                        Validate new GSS TokenHeader                        
+                    </comment>
+                    <comment line="566">
+                        valid acceptor_flag                        
+                    </comment>
+                    <comment line="567">
+                        If I am initiator, the received token should have ACCEPTOR on                        
+                    </comment>
+                    <comment line="575">
+                        check for confidentiality                        
+                    </comment>
+                    <comment line="585">
+                        validate filler                        
+                    </comment>
+                    <comment line="591">
+                        read EC field                        
+                    </comment>
+                    <comment line="594">
+                        read RRC field                        
+                    </comment>
+                    <comment line="606">
+                        set default QOP                        
+                    </comment>
+                    <comment line="609">
+                        sequence number                        
+                    </comment>
+                    <scope line="557"/>
+                    <declaration name="acceptor_flag" type="int" line="568"/>
+                    <declaration name="flag" type="int" line="569"/>
+                    <scope line="570"/>
+                    <declaration name="conf_flag" type="int" line="576"/>
+                    <scope line="578"/>
+                    <scope line="580"/>
+                    <scope line="584">
+                        <scope line="586"/>
+                    </scope>
+                    <scope line="596">
+                        <scope line="597">
+                            <scope line="598"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="613">
+                    Encodes this MessageTokenHeader onto an OutputStream                    
+                    <param>
+                        os the OutputStream to write to                        
+                    </param>
+                    <throws>
+                        IOException is an error occurs while writing                        
+                    </throws>
+                </javadoc>
+                <method name="encode" type="void" line="618">
+                    <params>
+                        <param name="os" type="OutputStream"/>
+                    </params>
+                </method>
+                <javadoc line="623">
+                    Returns the token id for the message token.                    
+                    <return>
+                        the token id                        
+                    </return>
+                    <see>
+                        sun.security.jgss.krb5.Krb5Token#MIC_ID_v2                        
+                    </see>
+                    <see>
+                        sun.security.jgss.krb5.Krb5Token#WRAP_ID_v2                        
+                    </see>
+                </javadoc>
+                <method name="getTokenId" type="int" line="629"/>
+                <javadoc line="633">
+                    Returns the bytes of this header.                    
+                    <return>
+                        8 bytes that form this header                        
+                    </return>
+                </javadoc>
+                <method name="getBytes" type="byte[]" line="637"/>
+            </class>
+        </class>
+    </source>

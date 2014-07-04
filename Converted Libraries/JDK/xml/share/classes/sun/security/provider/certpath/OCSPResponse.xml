@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.provider.certpath">
+        <import package="java.io"/>
+        <import package="java.math.BigInteger"/>
+        <import package="java.security"/>
+        <import package="java.security.cert.CertificateException"/>
+        <import package="java.security.cert.CertificateParsingException"/>
+        <import package="java.security.cert.CertPathValidatorException"/>
+        <import package="java.security.cert.CRLReason"/>
+        <import package="java.security.cert.TrustAnchor"/>
+        <import package="java.security.cert.X509Certificate"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Date"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Map"/>
+        <import package="sun.misc.HexDumpEncoder"/>
+        <import package="sun.security.x509"/>
+        <import package="sun.security.util"/>
+        <class name="OCSPResponse" line="46">
+            <comment line="141">
+                ResponderID CHOICE tags                
+            </comment>
+            <comment line="145">
+                Object identifier for the OCSPSigning key purpose                
+            </comment>
+            <comment line="151">
+                Maximum clock skew in milliseconds (15 minutes) allowed when checking                
+            </comment>
+            <comment line="152">
+                validity of OCSP responses                
+            </comment>
+            <comment line="155">
+                an array of all of the CRLReasons (used in SingleResponse)                
+            </comment>
+            <comment line="158">
+                Create an OCSP response from its ASN.1 DER encoding.                
+            </comment>
+            <comment line="457">
+                Verify the signature of the OCSP response.
+                 The responder&apos;s cert is implicitly trusted.                
+            </comment>
+            <comment line="500">
+                A class representing a single OCSP response.                
+            </comment>
+            <javadoc line="46">
+                This class is used to process an OCSP response.
+                  The OCSP Response is defined
+                  in RFC 2560 and the ASN.1 encoding is as follows:
+                  &lt;pre&gt;
+                  OCSPResponse ::= SEQUENCE {
+                  responseStatus         OCSPResponseStatus,
+                  responseBytes          [0] EXPLICIT ResponseBytes OPTIONAL }
+                  OCSPResponseStatus ::= ENUMERATED {
+                  successful            (0),  --Response has valid confirmations
+                  malformedRequest      (1),  --Illegal confirmation request
+                  internalError         (2),  --Internal error in issuer
+                  tryLater              (3),  --Try again later
+                  --(4) is not used
+                  sigRequired           (5),  --Must sign the request
+                  unauthorized          (6)   --Request unauthorized
+                  }
+                  ResponseBytes ::=       SEQUENCE {
+                  responseType   OBJECT IDENTIFIER,
+                  response       OCTET STRING }
+                  BasicOCSPResponse       ::= SEQUENCE {
+                  tbsResponseData      ResponseData,
+                  signatureAlgorithm   AlgorithmIdentifier,
+                  signature            BIT STRING,
+                  certs                [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL }
+                  The value for signature SHALL be computed on the hash of the DER
+                  encoding ResponseData.
+                  ResponseData ::= SEQUENCE {
+                  version              [0] EXPLICIT Version DEFAULT v1,
+                  responderID              ResponderID,
+                  producedAt               GeneralizedTime,
+                  responses                SEQUENCE OF SingleResponse,
+                  responseExtensions   [1] EXPLICIT Extensions OPTIONAL }
+                  ResponderID ::= CHOICE {
+                  byName               [1] Name,
+                  byKey                [2] KeyHash }
+                  KeyHash ::= OCTET STRING -- SHA-1 hash of responder&apos;s public key
+                  (excluding the tag and length fields)
+                  SingleResponse ::= SEQUENCE {
+                  certID                       CertID,
+                  certStatus                   CertStatus,
+                  thisUpdate                   GeneralizedTime,
+                  nextUpdate         [0]       EXPLICIT GeneralizedTime OPTIONAL,
+                  singleExtensions   [1]       EXPLICIT Extensions OPTIONAL }
+                  CertStatus ::= CHOICE {
+                  good        [0]     IMPLICIT NULL,
+                  revoked     [1]     IMPLICIT RevokedInfo,
+                  unknown     [2]     IMPLICIT UnknownInfo }
+                  RevokedInfo ::= SEQUENCE {
+                  revocationTime              GeneralizedTime,
+                  revocationReason    [0]     EXPLICIT CRLReason OPTIONAL }
+                  UnknownInfo ::= NULL -- this can be replaced with an enumeration
+                  &lt;/pre&gt;                
+                <author>
+                    Ram Marti                    
+                </author>
+            </javadoc>
+            <declaration name="rsvalues" type="ResponseStatus[]" line="127"/>
+            <declaration name="DEBUG" type="Debug" line="129"/>
+            <declaration name="dump" type="boolean" line="130"/>
+            <declaration name="OCSP_BASIC_RESPONSE_OID" type="ObjectIdentifier" line="131"/>
+            <declaration name="OCSP_NONCE_EXTENSION_OID" type="ObjectIdentifier" line="133"/>
+            <declaration name="CERT_STATUS_GOOD" type="int" line="136"/>
+            <declaration name="CERT_STATUS_REVOKED" type="int" line="137"/>
+            <declaration name="CERT_STATUS_UNKNOWN" type="int" line="138"/>
+            <declaration name="NAME_TAG" type="int" line="141"/>
+            <declaration name="KEY_TAG" type="int" line="142"/>
+            <declaration name="KP_OCSP_SIGNING_OID" type="String" line="145"/>
+            <declaration name="responseStatus" type="ResponseStatus" line="147"/>
+            <declaration name="singleResponseMap" type="Map&lt;CertId,SingleResponse&gt;" line="148"/>
+            <declaration name="MAX_CLOCK_SKEW" type="long" line="152"/>
+            <declaration name="values" type="CRLReason[]" line="155"/>
+            <method name="OCSPResponse" type="constructor" line="162">
+                <params>
+                    <param name="bytes" type="byte[]"/>
+                    <param name="dateCheckedAgainst" type="Date"/>
+                    <param name="responderCert" type="X509Certificate"/>
+                </params>
+                <comment line="164">
+                    OCSPResponse                    
+                </comment>
+                <comment line="177">
+                    responseStatus                    
+                </comment>
+                <comment line="182">
+                    unspecified responseStatus                    
+                </comment>
+                <comment line="189">
+                    no need to continue, responseBytes are not set.                    
+                </comment>
+                <comment line="194">
+                    responseBytes                    
+                </comment>
+                <comment line="206">
+                    responseType                    
+                </comment>
+                <comment line="221">
+                    BasicOCSPResponse                    
+                </comment>
+                <comment line="232">
+                    Need the DER encoded ResponseData to verify the signature later                    
+                </comment>
+                <comment line="235">
+                    tbsResponseData                    
+                </comment>
+                <comment line="243">
+                    version                    
+                </comment>
+                <comment line="245">
+                    seq[0] is version                    
+                </comment>
+                <comment line="247">
+                    System.out.println (&quot;version is available&quot;);                    
+                </comment>
+                <comment line="258">
+                    responderID                    
+                </comment>
+                <comment line="266">
+                    Ignore, for now                    
+                </comment>
+                <comment line="272">
+                    producedAt                    
+                </comment>
+                <comment line="279">
+                    responses                    
+                </comment>
+                <comment line="293">
+                    responseExtensions                    
+                </comment>
+                <comment line="306">
+                    ocspNonce =
+                    responseExtension[i].getExtensionValue();                    
+                </comment>
+                <comment line="319">
+                    signatureAlgorithmId                    
+                </comment>
+                <comment line="322">
+                    signature                    
+                </comment>
+                <comment line="326">
+                    if seq[3] is available , then it is a sequence of certificates                    
+                </comment>
+                <comment line="328">
+                    certs are available                    
+                </comment>
+                <comment line="345">
+                    Check whether the cert returned by the responder is trusted                    
+                </comment>
+                <comment line="349">
+                    First check if the cert matches the responder cert which                    
+                </comment>
+                <comment line="350">
+                    was set locally.                    
+                </comment>
+                <comment line="352">
+                    cert is trusted, now verify the signed response                    
+                </comment>
+                <comment line="354">
+                    Next check if the cert was issued by the responder cert                    
+                </comment>
+                <comment line="355">
+                    which was set locally.                    
+                </comment>
+                <comment line="359">
+                    Check for the OCSPSigning key purpose                    
+                </comment>
+                <comment line="369">
+                    assume cert is not valid for signing                    
+                </comment>
+                <comment line="375">
+                    Check algorithm constraints specified in security property                    
+                </comment>
+                <comment line="376">
+                    &quot;jdk.certpath.disabledAlgorithms&quot;.                    
+                </comment>
+                <comment line="382">
+                    check the validity                    
+                </comment>
+                <comment line="395">
+                    check for revocation                    
+                </comment>
+                <comment line="396">
+                                        
+                </comment>
+                <comment line="397">
+                    A CA may specify that an OCSP client can trust a                    
+                </comment>
+                <comment line="398">
+                    responder for the lifetime of the responder&apos;s                    
+                </comment>
+                <comment line="399">
+                    certificate. The CA does so by including the                    
+                </comment>
+                <comment line="400">
+                    extension id-pkix-ocsp-nocheck.                    
+                </comment>
+                <comment line="401">
+                                        
+                </comment>
+                <comment line="410">
+                    we should do the revocation checking of the                    
+                </comment>
+                <comment line="411">
+                    authorized responder in a future update.                    
+                </comment>
+                <comment line="414">
+                    verify the signature                    
+                </comment>
+                <comment line="418">
+                    cert is trusted, now verify the signed response                    
+                </comment>
+                <comment line="430">
+                    Confirm that the signed response was generated using the public                    
+                </comment>
+                <comment line="431">
+                    key from the trusted responder cert                    
+                </comment>
+                <comment line="433">
+                    Check algorithm constraints specified in security property                    
+                </comment>
+                <comment line="434">
+                    &quot;jdk.certpath.disabledAlgorithms&quot;.                    
+                </comment>
+                <comment line="443">
+                    Need responder&apos;s cert in order to verify the signature                    
+                </comment>
+                <scope line="165">
+                    <declaration name="hexEnc" type="HexDumpEncoder" line="166"/>
+                </scope>
+                <declaration name="der" type="DerValue" line="170"/>
+                <scope line="171"/>
+                <declaration name="derIn" type="DerInputStream" line="175"/>
+                <declaration name="status" type="int" line="178"/>
+                <scope line="179"/>
+                <scope line="181"/>
+                <scope line="185"/>
+                <scope line="188"/>
+                <scope line="196"/>
+                <declaration name="tmp" type="DerValue" line="200"/>
+                <scope line="201"/>
+                <declaration name="responseType" type="ObjectIdentifier" line="208"/>
+                <scope line="209">
+                    <scope line="210"/>
+                </scope>
+                <scope line="213">
+                    <scope line="214"/>
+                </scope>
+                <declaration name="basicOCSPResponse" type="DerInputStream" line="222"/>
+                <declaration name="seqTmp" type="DerValue[]" line="225"/>
+                <scope line="226"/>
+                <declaration name="responseData" type="DerValue" line="230"/>
+                <declaration name="responseDataDer" type="byte[]" line="233"/>
+                <scope line="236"/>
+                <declaration name="seqDerIn" type="DerInputStream" line="240"/>
+                <declaration name="seq" type="DerValue" line="241"/>
+                <scope line="244">
+                    <scope line="246">
+                        <declaration name="version" type="int" line="249"/>
+                        <scope line="250"/>
+                    </scope>
+                </scope>
+                <declaration name="tag" type="short" line="259"/>
+                <scope line="260">
+                    <scope line="261">
+                        <declaration name="responderName" type="X500Name" line="262"/>
+                    </scope>
+                </scope>
+                <scope line="265"/>
+                <scope line="267"/>
+                <scope line="274">
+                    <declaration name="producedAtDate" type="Date" line="275"/>
+                </scope>
+                <declaration name="singleResponseDer" type="DerValue[]" line="280"/>
+                <scope line="283"/>
+                <scope line="287">
+                    <declaration name="singleResponse" type="SingleResponse" line="288"/>
+                </scope>
+                <scope line="294">
+                    <scope line="296">
+                        <declaration name="responseExtDer" type="DerValue[]" line="297"/>
+                        <scope line="298">
+                            <declaration name="responseExtension" type="Extension" line="299"/>
+                            <scope line="301"/>
+                            <scope line="305"/>
+                            <scope line="310"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <declaration name="sigAlgId" type="AlgorithmId" line="320"/>
+                <declaration name="signature" type="byte[]" line="323"/>
+                <declaration name="x509Certs" type="X509CertImpl[]" line="324"/>
+                <scope line="327">
+                    <declaration name="seqCert" type="DerValue" line="329"/>
+                    <scope line="330"/>
+                    <declaration name="certs" type="DerValue[]" line="334"/>
+                    <scope line="336">
+                        <scope line="337"/>
+                    </scope>
+                    <scope line="340"/>
+                </scope>
+                <scope line="346">
+                    <declaration name="cert" type="X509CertImpl" line="347"/>
+                    <scope line="351"/>
+                    <scope line="357">
+                        <scope line="360">
+                            <declaration name="keyPurposes" type="List&lt;String&gt;" line="361"/>
+                            <scope line="363"/>
+                        </scope>
+                        <scope line="368"/>
+                        <declaration name="algChecker" type="AlgorithmChecker" line="377"/>
+                        <scope line="383">
+                            <scope line="384"/>
+                            <scope line="386"/>
+                        </scope>
+                        <scope line="389"/>
+                        <declaration name="noCheck" type="Extension" line="402"/>
+                        <scope line="404">
+                            <scope line="405"/>
+                        </scope>
+                        <scope line="409"/>
+                        <scope line="415"/>
+                        <scope line="420"/>
+                    </scope>
+                    <scope line="423"/>
+                </scope>
+                <scope line="432">
+                    <scope line="438"/>
+                </scope>
+                <scope line="442"/>
+            </method>
+            <javadoc line="449">
+                Returns the OCSP ResponseStatus.                
+            </javadoc>
+            <method name="getResponseStatus" type="ResponseStatus" line="452"/>
+            <method name="verifyResponse" type="boolean" line="462">
+                <params>
+                    <param name="responseData" type="byte[]"/>
+                    <param name="cert" type="X509Certificate"/>
+                    <param name="sigAlgId" type="AlgorithmId"/>
+                    <param name="signBytes" type="byte[]"/>
+                </params>
+                <scope line="464">
+                    <declaration name="respSignature" type="Signature" line="465"/>
+                    <scope line="469">
+                        <scope line="470"/>
+                    </scope>
+                    <scope line="475">
+                        <scope line="476"/>
+                    </scope>
+                </scope>
+                <scope line="482"/>
+                <scope line="484"/>
+                <scope line="486"/>
+            </method>
+            <javadoc line="491">
+                Returns the SingleResponse of the specified CertId, or null if
+                  there is no response for that CertId.                
+            </javadoc>
+            <method name="getSingleResponse" type="SingleResponse" line="495">
+                <params>
+                    <param name="certId" type="CertId"/>
+                </params>
+            </method>
+            <class name="SingleResponse" line="502">
+                <comment line="120">
+                    Response has valid confirmations                    
+                </comment>
+                <comment line="121">
+                    Illegal confirmation request                    
+                </comment>
+                <comment line="122">
+                    Internal error in issuer                    
+                </comment>
+                <comment line="123">
+                    Try again later                    
+                </comment>
+                <comment line="124">
+                    is not used                    
+                </comment>
+                <comment line="125">
+                    Must sign the request                    
+                </comment>
+                <comment line="126">
+                    Request unauthorized                    
+                </comment>
+                <comment line="634">
+                    Return the certificate&apos;s revocation status code                    
+                </comment>
+                <implements interface="OCSP.RevocationStatus"/>
+                <declaration name="certId" type="CertId" line="503"/>
+                <declaration name="certStatus" type="CertStatus" line="504"/>
+                <declaration name="thisUpdate" type="Date" line="505"/>
+                <declaration name="nextUpdate" type="Date" line="506"/>
+                <declaration name="revocationTime" type="Date" line="507"/>
+                <declaration name="revocationReason" type="CRLReason" line="508"/>
+                <declaration name="singleExtensions" type="Map&lt;String,java.security.cert.Extension&gt;" line="509"/>
+                <method name="SingleResponse" type="constructor" line="511">
+                    <params>
+                        <param name="der" type="DerValue"/>
+                    </params>
+                    <comment line="528">
+                        if reason out-of-range just leave as UNSPECIFIED                        
+                    </comment>
+                    <comment line="540">
+                        RevokedInfo                        
+                    </comment>
+                    <comment line="560">
+                        we are done                        
+                    </comment>
+                    <comment line="566">
+                        next update                        
+                    </comment>
+                    <comment line="570">
+                        we are done                        
+                    </comment>
+                    <comment line="579">
+                        singleExtensions                        
+                    </comment>
+                    <comment line="592">
+                        We don&apos;t support any extensions yet. Therefore, if it                        
+                    </comment>
+                    <comment line="593">
+                        is critical we must throw an exception because we                        
+                    </comment>
+                    <comment line="594">
+                        don&apos;t know how to process it.                        
+                    </comment>
+                    <comment line="620">
+                        Check that the test date is within the validity interval                        
+                    </comment>
+                    <scope line="512"/>
+                    <declaration name="tmp" type="DerInputStream" line="515"/>
+                    <declaration name="derVal" type="DerValue" line="518"/>
+                    <declaration name="tag" type="short" line="519"/>
+                    <scope line="520">
+                        <scope line="523">
+                            <declaration name="dv" type="DerValue" line="524"/>
+                            <scope line="526">
+                                <declaration name="reason" type="int" line="527"/>
+                                <scope line="529"/>
+                                <scope line="531"/>
+                            </scope>
+                            <scope line="534"/>
+                        </scope>
+                        <scope line="537"/>
+                        <scope line="541"/>
+                    </scope>
+                    <scope line="545">
+                        <scope line="548"/>
+                        <scope line="550"/>
+                        <scope line="552"/>
+                    </scope>
+                    <scope line="559"/>
+                    <scope line="562">
+                        <scope line="565">
+                            <scope line="569"/>
+                            <scope line="571"/>
+                        </scope>
+                        <scope line="575"/>
+                    </scope>
+                    <scope line="580">
+                        <scope line="582">
+                            <declaration name="singleExtDer" type="DerValue[]" line="583"/>
+                            <scope line="587">
+                                <declaration name="ext" type="Extension" line="588"/>
+                                <scope line="589"/>
+                                <scope line="595"/>
+                            </scope>
+                        </scope>
+                        <scope line="602"/>
+                    </scope>
+                    <scope line="605"/>
+                    <declaration name="now" type="long" line="609"/>
+                    <declaration name="nowPlusSkew" type="Date" line="610"/>
+                    <declaration name="nowMinusSkew" type="Date" line="611"/>
+                    <scope line="612">
+                        <declaration name="until" type="String" line="613"/>
+                        <scope line="614"/>
+                    </scope>
+                    <scope line="622">
+                        <scope line="624"/>
+                    </scope>
+                </method>
+                <method name="getCertStatus" type="CertStatus" line="636"/>
+                <method name="getCertId" type="CertId" line="640"/>
+                <method name="getRevocationTime" type="Date" line="644"/>
+                <method name="getRevocationReason" type="CRLReason" line="648"/>
+                <method name="getSingleExtensions" type="Map<String,java.security.cert.Extension>" line="653"/>
+                <javadoc line="657">
+                    Construct a string representation of a single OCSP response.                    
+                </javadoc>
+                <method name="toString" type="String" line="660">
+                    <declaration name="sb" type="StringBuilder" line="661"/>
+                    <scope line="665"/>
+                    <scope line="670"/>
+                </method>
+            </class>
+        </class>
+    </source>

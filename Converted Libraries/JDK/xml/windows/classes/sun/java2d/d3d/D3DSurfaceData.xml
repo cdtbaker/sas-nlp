@@ -1,0 +1,844 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.java2d.d3d">
+        <import package="java.awt.AlphaComposite"/>
+        <import package="java.awt.BufferCapabilities"/>
+        <import package="java.awt.Component"/>
+        <import package="java.awt.GraphicsConfiguration"/>
+        <import package="java.awt.GraphicsDevice"/>
+        <import package="java.awt.GraphicsEnvironment"/>
+        <import package="java.awt.Image"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.Transparency"/>
+        <import package="java.awt.image.ColorModel"/>
+        <import package="java.awt.image.DataBuffer"/>
+        <import package="java.awt.image.DirectColorModel"/>
+        <import package="java.awt.image.Raster"/>
+        <import package="java.awt.image.SampleModel"/>
+        <import package="java.awt.image.SinglePixelPackedSampleModel"/>
+        <import package="sun.awt.SunHints"/>
+        <import package="sun.awt.image.DataBufferNative"/>
+        <import package="sun.awt.image.PixelConverter"/>
+        <import package="sun.awt.image.SurfaceManager"/>
+        <import package="sun.awt.image.WritableRasterNative"/>
+        <import package="sun.awt.windows.WComponentPeer"/>
+        <import package="sun.java2d.pipe.hw.AccelSurface"/>
+        <import package="sun.java2d.InvalidPipeException"/>
+        <import package="sun.java2d.SunGraphics2D"/>
+        <import package="sun.java2d.SurfaceData"/>
+        <import package="sun.java2d.loops.GraphicsPrimitive"/>
+        <import package="sun.java2d.loops.MaskFill"/>
+        <import package="sun.java2d.loops.SurfaceType"/>
+        <import package="sun.java2d.loops.CompositeType"/>
+        <import package="sun.java2d.pipe.ParallelogramPipe"/>
+        <import package="sun.java2d.pipe.PixelToParallelogramConverter"/>
+        <import package="sun.java2d.pipe.RenderBuffer"/>
+        <import package="sun.java2d.pipe.TextPipe"/>
+        <import package="sun.java2d.pipe.BufferedOpCodes"/>
+        <import package="sun.java2d.d3d.D3DContext.D3DContextCaps"/>
+        <import package="sun.java2d.pipe.hw.ExtendedBufferCapabilities.VSyncType"/>
+        <import package="sun.java2d.pipe.hw.ExtendedBufferCapabilities.VSyncType"/>
+        <import package="java.awt.BufferCapabilities.FlipContents"/>
+        <import package="java.awt.Window"/>
+        <import package="sun.awt.SunToolkit"/>
+        <import package="sun.awt.image.SunVolatileImage"/>
+        <import package="sun.java2d.ScreenUpdateManager"/>
+        <import package="sun.java2d.StateTracker"/>
+        <import package="sun.java2d.SurfaceDataProxy"/>
+        <import package="sun.java2d.pipe.hw.ExtendedBufferCapabilities"/>
+        <class name="D3DSurfaceData" line="74">
+            <extends class="SurfaceData"/>
+            <comment line="125">
+                Surface types.
+                 We use these surface types when copying from a sw surface
+                 to a surface or texture.                
+            </comment>
+            <comment line="147">
+                SurfaceTypes                
+            </comment>
+            <comment line="155">
+                REMIND: regarding ArgbPre??                
+            </comment>
+            <comment line="166">
+                these fields are set from the native code when the surface is                
+            </comment>
+            <comment line="167">
+                initialized                
+            </comment>
+            <implements interface="AccelSurface"/>
+            <javadoc line="74">
+                This class describes a D3D &quot;surface&quot;, that is, a region of pixels
+                  managed via D3D.  An D3DSurfaceData can be tagged with one of three
+                  different SurfaceType objects for the purpose of registering loops, etc.
+                  This diagram shows the hierarchy of D3D SurfaceTypes:
+                  Any
+                  /     \
+                  D3DSurface     D3DTexture
+                  |
+                  D3DSurfaceRTT
+                  D3DSurface
+                  This kind of surface can be rendered to using D3D APIs.  It is also
+                  possible to copy a D3DSurface to another D3DSurface (or to itself).
+                  D3DTexture
+                  This kind of surface cannot be rendered to using D3D (in the same sense
+                  as in D3DSurface).  However, it is possible to upload a region of pixels
+                  to a D3DTexture object via Lock/UnlockRect().  One can also copy a
+                  surface of type D3DTexture to a D3DSurface by binding the texture
+                  to a quad and then rendering it to the destination surface (this process
+                  is known as &quot;texture mapping&quot;).
+                  D3DSurfaceRTT
+                  This kind of surface can be thought of as a sort of hybrid between
+                  D3DSurface and D3DTexture, in that one can render to this kind of
+                  surface as if it were of type D3DSurface, but the process of copying
+                  this kind of surface to another is more like a D3DTexture.  (Note that
+                  &quot;RTT&quot; stands for &quot;render-to-texture&quot;.)
+                  In addition to these SurfaceType variants, we have also defined some
+                  constants that describe in more detail the type of underlying D3D
+                  surface.  This table helps explain the relationships between those
+                  &quot;type&quot; constants and their corresponding SurfaceType:
+                  D3D Type          Corresponding SurfaceType
+                  --------          -------------------------
+                  RT_PLAIN          D3DSurface
+                  TEXTURE           D3DTexture
+                  FLIP_BACKBUFFER   D3DSurface
+                  RT_TEXTURE        D3DSurfaceRTT                
+            </javadoc>
+            <declaration name="D3D_DEVICE_RESOURCE" type="int" line="119"/>
+            <javadoc line="119">
+                To be used with getNativeResource() only.                
+                <see>
+                    #getNativeResource()                    
+                </see>
+            </javadoc>
+            <declaration name="ST_INT_ARGB" type="int" line="129"/>
+            <declaration name="ST_INT_ARGB_PRE" type="int" line="130"/>
+            <declaration name="ST_INT_ARGB_BM" type="int" line="131"/>
+            <declaration name="ST_INT_RGB" type="int" line="132"/>
+            <declaration name="ST_INT_BGR" type="int" line="133"/>
+            <declaration name="ST_USHORT_565_RGB" type="int" line="134"/>
+            <declaration name="ST_USHORT_555_RGB" type="int" line="135"/>
+            <declaration name="ST_BYTE_INDEXED" type="int" line="136"/>
+            <declaration name="ST_BYTE_INDEXED_BM" type="int" line="137"/>
+            <declaration name="ST_3BYTE_BGR" type="int" line="138"/>
+            <declaration name="SWAP_DISCARD" type="int" line="140"/>
+            <javadoc line="140">
+                Equals to D3DSWAPEFFECT_DISCARD                
+            </javadoc>
+            <declaration name="SWAP_FLIP" type="int" line="142"/>
+            <javadoc line="142">
+                Equals to D3DSWAPEFFECT_FLIP                
+            </javadoc>
+            <declaration name="SWAP_COPY" type="int" line="144"/>
+            <javadoc line="144">
+                Equals to D3DSWAPEFFECT_COPY                
+            </javadoc>
+            <declaration name="DESC_D3D_SURFACE" type="String" line="149"/>
+            <declaration name="DESC_D3D_SURFACE_RTT" type="String" line="150"/>
+            <declaration name="DESC_D3D_TEXTURE" type="String" line="152"/>
+            <declaration name="D3DSurface" type="SurfaceType" line="155"/>
+            <declaration name="D3DSurfaceRTT" type="SurfaceType" line="158"/>
+            <declaration name="D3DTexture" type="SurfaceType" line="160"/>
+            <declaration name="type" type="int" line="163"/>
+            <declaration name="width" type="int" line="164"/>
+            <declaration name="nativeWidth" type="int" line="167"/>
+            <declaration name="peer" type="WComponentPeer" line="168"/>
+            <declaration name="offscreenImage" type="Image" line="169"/>
+            <declaration name="graphicsDevice" type="D3DGraphicsDevice" line="170"/>
+            <declaration name="swapEffect" type="int" line="172"/>
+            <declaration name="syncType" type="VSyncType" line="173"/>
+            <declaration name="backBuffersNum" type="int" line="174"/>
+            <declaration name="wrn" type="WritableRasterNative" line="176"/>
+            <declaration name="d3dRenderPipe" type="D3DRenderer" line="178"/>
+            <declaration name="d3dTxRenderPipe" type="PixelToParallelogramConverter" line="179"/>
+            <declaration name="d3dAAPgramPipe" type="ParallelogramPipe" line="180"/>
+            <declaration name="d3dTextPipe" type="D3DTextRenderer" line="181"/>
+            <declaration name="d3dImagePipe" type="D3DDrawImage" line="182"/>
+            <method name="initTexture" type="boolean" line="184"/>
+            <method name="initFlipBackbuffer" type="boolean" line="186"/>
+            <method name="initRTSurface" type="boolean" line="189"/>
+            <method name="initOps" type="void" line="190"/>
+            <scope line="192">
+                <declaration name="rq" type="D3DRenderQueue" line="193"/>
+                <scope line="197"/>
+            </scope>
+            <method name="D3DSurfaceData" type="constructor" line="218">
+                <params>
+                    <param name="peer" type="WComponentPeer"/>
+                    <param name="gc" type="D3DGraphicsConfig"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="image" type="Image"/>
+                    <param name="cm" type="ColorModel"/>
+                    <param name="numBackBuffers" type="int"/>
+                    <param name="swapEffect" type="int"/>
+                    <param name="vSyncType" type="VSyncType"/>
+                    <param name="type" type="int"/>
+                </params>
+                <comment line="232">
+                    we put the surface into the &quot;lost&quot;                    
+                </comment>
+                <comment line="233">
+                    state; it will be restored by the D3DScreenUpdateManager                    
+                </comment>
+                <comment line="234">
+                    prior to rendering to it for the first time. This is done                    
+                </comment>
+                <comment line="235">
+                    so that vram is not wasted for surfaces never rendered to                    
+                </comment>
+                <scope line="231"/>
+                <scope line="237"/>
+            </method>
+            <method name="makeProxyFor" type="SurfaceDataProxy" line="244">
+                <params>
+                    <param name="srcData" type="SurfaceData"/>
+                </params>
+            </method>
+            <javadoc line="250">
+                Creates a SurfaceData object representing the back buffer of a
+                  double-buffered on-screen Window.                
+            </javadoc>
+            <method name="createData" type="D3DSurfaceData" line="254">
+                <params>
+                    <param name="peer" type="WComponentPeer"/>
+                    <param name="image" type="Image"/>
+                </params>
+                <comment line="271">
+                    flip == FlipContents.UNDEFINED || .BACKGROUND                    
+                </comment>
+                <declaration name="gc" type="D3DGraphicsConfig" line="255"/>
+                <scope line="256"/>
+                <declaration name="caps" type="BufferCapabilities" line="259"/>
+                <declaration name="vSyncType" type="VSyncType" line="260"/>
+                <scope line="261"/>
+                <declaration name="r" type="Rectangle" line="264"/>
+                <declaration name="flip" type="BufferCapabilities.FlipContents" line="265"/>
+                <declaration name="swapEffect" type="int" line="266"/>
+                <scope line="267"/>
+                <scope line="269"/>
+                <scope line="271"/>
+            </method>
+            <javadoc line="280">
+                Returns a WINDOW type of surface - a
+                  swap chain which serves as an on-screen surface,
+                  handled by the D3DScreenUpdateManager.
+                  Note that the native surface is not initialized
+                  when the surface is created to avoid using excessive
+                  resources, and the surface is placed into the lost
+                  state. It will be restored prior to any rendering
+                  to it.                
+                <param>
+                    peer peer for which the onscreen surface is to be created                    
+                </param>
+                <return>
+                    a D3DWindowSurfaceData (flip chain) surface                    
+                </return>
+            </javadoc>
+            <method name="createData" type="D3DSurfaceData" line="294">
+                <params>
+                    <param name="peer" type="WComponentPeer"/>
+                </params>
+                <declaration name="gc" type="D3DGraphicsConfig" line="295"/>
+                <scope line="296"/>
+            </method>
+            <javadoc line="302">
+                Creates a SurfaceData object representing an off-screen buffer (either
+                  a plain surface or Texture).                
+            </javadoc>
+            <method name="createData" type="D3DSurfaceData" line="310">
+                <params>
+                    <param name="gc" type="D3DGraphicsConfig"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="cm" type="ColorModel"/>
+                    <param name="image" type="Image"/>
+                    <param name="type" type="int"/>
+                </params>
+                <comment line="324">
+                    try again - we might have ran out of vram, and rt textures                    
+                </comment>
+                <comment line="325">
+                    could take up more than a plain surface, so it might succeed                    
+                </comment>
+                <comment line="327">
+                    If a RT_TEXTURE was requested do not attempt to create a                    
+                </comment>
+                <comment line="328">
+                    plain surface. (note that RT_TEXTURE can only be requested                    
+                </comment>
+                <comment line="329">
+                    from a VI so the cast is safe)                    
+                </comment>
+                <scope line="311">
+                    <declaration name="isOpaque" type="boolean" line="312"/>
+                    <declaration name="cap" type="int" line="313"/>
+                    <scope line="314"/>
+                </scope>
+                <declaration name="ret" type="D3DSurfaceData" line="318"/>
+                <scope line="319"/>
+                <scope line="323">
+                    <scope line="326">
+                        <scope line="332"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="343">
+                Returns the appropriate SurfaceType corresponding to the given D3D
+                  surface type constant (e.g. TEXTURE -&gt; D3DTexture).                
+            </javadoc>
+            <method name="getCustomSurfaceType" type="SurfaceType" line="347">
+                <params>
+                    <param name="d3dType" type="int"/>
+                </params>
+            </method>
+            <method name="initSurfaceNow" type="boolean" line="358">
+                <comment line="364">
+                                        
+                </comment>
+                <comment line="366">
+                                        
+                </comment>
+                <comment line="367">
+                    REMIND: we may want to pass the exact type to the native                    
+                </comment>
+                <comment line="368">
+                    level here so that we could choose the right presentation                    
+                </comment>
+                <comment line="369">
+                    interval for the frontbuffer (immediate vs v-synced)                    
+                </comment>
+                <declaration name="isOpaque" type="boolean" line="359"/>
+            </method>
+            <javadoc line="380">
+                Initializes the appropriate D3D offscreen surface based on the value
+                  of the type parameter.  If the surface creation fails for any reason,
+                  an OutOfMemoryError will be thrown.                
+            </javadoc>
+            <method name="initSurface" type="void" line="385">
+                <comment line="386">
+                    any time we create or restore the surface, recreate the raster                    
+                </comment>
+                <comment line="390">
+                    REMIND: somewhere a puppy died                    
+                </comment>
+                <scope line="387"/>
+                <class name="Status" line="391">
+                    <declaration name="success" type="boolean" line="392"/>
+                </class>
+                <declaration name="status" type="Status" line="394"/>
+                <declaration name="rq" type="D3DRenderQueue" line="395"/>
+                <scope line="397">
+                    <anonymous_class line="398">
+                        <method name="run" type="void" line="399"/>
+                    </anonymous_class>
+                    <scope line="403"/>
+                </scope>
+                <scope line="406"/>
+            </method>
+            <javadoc line="411">
+                Returns the D3DContext for the GraphicsConfig associated with this
+                  surface.                
+            </javadoc>
+            <method name="getContext" type="D3DContext" line="415"/>
+            <javadoc line="419">
+                Returns one of the surface type constants defined above.                
+            </javadoc>
+            <method name="getType" type="int" line="422"/>
+            <method name="dbGetPixelNative" type="int" line="426"/>
+            <method name="dbSetPixelNative" type="void" line="427"/>
+            <class name="D3DDataBufferNative" line="429">
+                <extends class="DataBufferNative"/>
+                <declaration name="pixel" type="int" line="430"/>
+                <method name="D3DDataBufferNative" type="constructor" line="433">
+                    <params>
+                        <param name="sData" type="SurfaceData"/>
+                        <param name="type" type="int"/>
+                        <param name="w" type="int"/>
+                        <param name="h" type="int"/>
+                    </params>
+                </method>
+                <method name="getElem" type="int" line="439">
+                    <params>
+                        <param name="x" type="int"/>
+                        <param name="y" type="int"/>
+                        <param name="sData" type="SurfaceData"/>
+                    </params>
+                    <scope line="440"/>
+                    <declaration name="retPixel" type="int" line="444"/>
+                    <declaration name="rq" type="D3DRenderQueue" line="445"/>
+                    <scope line="447">
+                        <anonymous_class line="448">
+                            <method name="run" type="void" line="449"/>
+                        </anonymous_class>
+                    </scope>
+                    <scope line="453"/>
+                </method>
+                <method name="setElem" type="void" line="462">
+                    <params>
+                        <param name="x" type="int"/>
+                        <param name="y" type="int"/>
+                        <param name="pixel" type="int"/>
+                        <param name="sData" type="SurfaceData"/>
+                    </params>
+                    <scope line="463"/>
+                    <declaration name="rq" type="D3DRenderQueue" line="467"/>
+                    <scope line="469">
+                        <anonymous_class line="470">
+                            <method name="run" type="void" line="471"/>
+                        </anonymous_class>
+                    </scope>
+                    <scope line="476"/>
+                </method>
+            </class>
+            <method name="getRaster" type="Raster" line="482">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="492">
+                    15, 16                    
+                </comment>
+                <comment line="496">
+                    note that we have to use the surface width and height here,                    
+                </comment>
+                <comment line="497">
+                    not the passed w,h                    
+                </comment>
+                <scope line="483">
+                    <declaration name="dcm" type="DirectColorModel" line="484"/>
+                    <declaration name="smHw" type="SampleModel" line="485"/>
+                    <declaration name="dataType" type="int" line="486"/>
+                    <declaration name="scanStride" type="int" line="487"/>
+                    <scope line="489"/>
+                    <scope line="491"/>
+                    <declaration name="dbn" type="DataBuffer" line="500"/>
+                </scope>
+            </method>
+            <javadoc line="508">
+                For now, we can only render LCD text if:
+                  - the pixel shaders are available, and
+                  - blending is disabled, and
+                  - the source color is opaque
+                  - and the destination is opaque                
+            </javadoc>
+            <method name="canRenderLCDText" type="boolean" line="515">
+                <params>
+                    <param name="sg2d" type="SunGraphics2D"/>
+                </params>
+            </method>
+            <javadoc line="523">
+                If acceleration should no longer be used for this surface.
+                  This implementation flags to the manager that it should no
+                  longer attempt to re-create a D3DSurface.                
+            </javadoc>
+            <method name="disableAccelerationForSurface" type="void" line="528">
+                <scope line="529">
+                    <declaration name="sm" type="SurfaceManager" line="530"/>
+                    <scope line="531"/>
+                </scope>
+            </method>
+            <method name="validatePipe" type="void" line="538">
+                <params>
+                    <param name="sg2d" type="SunGraphics2D"/>
+                </params>
+                <comment line="542">
+                    REMIND: the D3D pipeline doesn&apos;t support XOR!, more                    
+                </comment>
+                <comment line="543">
+                    fixes will be needed below. For now we disable D3D rendering                    
+                </comment>
+                <comment line="544">
+                    for the surface which had any XOR rendering done to.                    
+                </comment>
+                <comment line="552">
+                    D3DTextRenderer handles both AA and non-AA text, but                    
+                </comment>
+                <comment line="553">
+                    only works with the following modes:                    
+                </comment>
+                <comment line="554">
+                    (Note: For LCD text we only enter this code path if                    
+                </comment>
+                <comment line="555">
+                    canRenderLCDText() has already validated that the mode is                    
+                </comment>
+                <comment line="556">
+                    CompositeType.SrcNoEa (opaque color), which will be subsumed                    
+                </comment>
+                <comment line="557">
+                    by the CompositeType.SrcNoEa (any color) test below.)                    
+                </comment>
+                <comment line="559">
+                                        
+                </comment>
+                <comment line="563">
+                                        
+                </comment>
+                <comment line="569">
+                                        
+                </comment>
+                <comment line="575">
+                    do this to initialize textpipe correctly; we will attempt                    
+                </comment>
+                <comment line="576">
+                    to override the non-text pipes below                    
+                </comment>
+                <comment line="596">
+                    custom paints handled by super.validatePipe() below                    
+                </comment>
+                <comment line="617">
+                    install the solid pipes when AA and XOR are both enabled                    
+                </comment>
+                <comment line="622">
+                    other cases handled by super.validatePipe() below                    
+                </comment>
+                <comment line="636">
+                    Note that we use the transforming pipe here because it                    
+                </comment>
+                <comment line="637">
+                    will examine the shape and possibly perform an optimized                    
+                </comment>
+                <comment line="638">
+                    operation if it can be simplified.  The simplifications                    
+                </comment>
+                <comment line="639">
+                    will be valid for all STROKE and TRANSFORM types.                    
+                </comment>
+                <comment line="647">
+                    install the text pipe based on our earlier decision                    
+                </comment>
+                <comment line="650">
+                    always override the image pipe with the specialized D3D pipe                    
+                </comment>
+                <declaration name="textpipe" type="TextPipe" line="539"/>
+                <declaration name="validated" type="boolean" line="540"/>
+                <scope line="545"/>
+                <scope line="572"/>
+                <scope line="574"/>
+                <declaration name="txPipe" type="PixelToParallelogramConverter" line="582"/>
+                <declaration name="nonTxPipe" type="D3DRenderer" line="583"/>
+                <scope line="585">
+                    <scope line="586">
+                        <scope line="587"/>
+                    </scope>
+                    <scope line="591">
+                        <scope line="592"/>
+                    </scope>
+                </scope>
+                <scope line="598">
+                    <scope line="599">
+                        <scope line="603">
+                            <scope line="604"/>
+                            <declaration name="aaConverter" type="PixelToParallelogramConverter" line="608"/>
+                        </scope>
+                        <scope line="616"/>
+                    </scope>
+                </scope>
+                <scope line="625">
+                    <scope line="626"/>
+                    <scope line="629"/>
+                    <scope line="632"/>
+                </scope>
+                <scope line="641">
+                    <scope line="642"/>
+                </scope>
+            </method>
+            <method name="getMaskFill" type="MaskFill" line="655">
+                <params>
+                    <param name="sg2d" type="SunGraphics2D"/>
+                </params>
+                <comment line="657">
+                    We can only accelerate non-Color MaskFill operations if
+                     all of the following conditions hold true:
+                       - there is an implementation for the given paintState
+                       - the current Paint can be accelerated for this destination
+                       - multitexturing is available (since we need to modulate
+                         the alpha mask texture with the paint texture)
+                    
+                     In all other cases, we return null, in which case the
+                     validation code will choose a more general software-based loop.                    
+                </comment>
+                <scope line="656">
+                    <scope line="670"/>
+                </scope>
+            </method>
+            <method name="copyArea" type="boolean" line="680">
+                <params>
+                    <param name="sg2d" type="SunGraphics2D"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                </params>
+                <scope line="683"/>
+            </method>
+            <method name="flush" type="void" line="695">
+                <comment line="704">
+                    this call is expected to complete synchronously, so flush now                    
+                </comment>
+                <declaration name="rq" type="D3DRenderQueue" line="696"/>
+                <scope line="698">
+                    <declaration name="buf" type="RenderBuffer" line="699"/>
+                </scope>
+                <scope line="706"/>
+            </method>
+            <javadoc line="711">
+                Disposes the native resources associated with the given D3DSurfaceData
+                  (referenced by the pData parameter).  This method is invoked from
+                  the native Dispose() method from the Disposer thread when the
+                  Java-level D3DSurfaceData object is about to go away.                
+            </javadoc>
+            <method name="dispose" type="void" line="717">
+                <params>
+                    <param name="pData" type="long"/>
+                </params>
+                <comment line="726">
+                    this call is expected to complete synchronously, so flush now                    
+                </comment>
+                <declaration name="rq" type="D3DRenderQueue" line="718"/>
+                <scope line="720">
+                    <declaration name="buf" type="RenderBuffer" line="721"/>
+                </scope>
+                <scope line="728"/>
+            </method>
+            <method name="swapBuffers" type="void" line="736">
+                <params>
+                    <param name="sd" type="D3DSurfaceData"/>
+                    <param name="x1" type="int"/>
+                    <param name="y1" type="int"/>
+                    <param name="x2" type="int"/>
+                    <param name="y2" type="int"/>
+                </params>
+                <comment line="739">
+                    swapBuffers can be called from the toolkit thread by swing, we                    
+                </comment>
+                <comment line="740">
+                    should detect this and prevent the deadlocks                    
+                </comment>
+                <comment line="743">
+                    if we could not obtain the lock, repaint the area                    
+                </comment>
+                <comment line="744">
+                    that was supposed to be swapped, and no-op this swap                    
+                </comment>
+                <declaration name="pData" type="long" line="737"/>
+                <declaration name="rq" type="D3DRenderQueue" line="738"/>
+                <scope line="741">
+                    <scope line="742">
+                        <declaration name="target" type="Component" line="745"/>
+                        <anonymous_class line="746">
+                            <method name="run" type="void" line="747"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+                <scope line="753"/>
+                <scope line="756">
+                    <declaration name="buf" type="RenderBuffer" line="757"/>
+                </scope>
+                <scope line="766"/>
+            </method>
+            <javadoc line="771">
+                Returns destination Image associated with this SurfaceData.                
+            </javadoc>
+            <method name="getDestination" type="Object" line="774"/>
+            <method name="getBounds" type="Rectangle" line="778">
+                <scope line="779">
+                    <declaration name="r" type="Rectangle" line="780"/>
+                </scope>
+                <scope line="783"/>
+            </method>
+            <method name="getNativeBounds" type="Rectangle" line="788">
+                <comment line="790">
+                    need to lock to make sure nativeWidth and Height are consistent                    
+                </comment>
+                <comment line="791">
+                    since they are set from the render thread from the native                    
+                </comment>
+                <comment line="792">
+                    level                    
+                </comment>
+                <comment line="795">
+                    REMIND: use xyoffsets?                    
+                </comment>
+                <declaration name="rq" type="D3DRenderQueue" line="789"/>
+                <scope line="794"/>
+                <scope line="797"/>
+            </method>
+            <method name="getDeviceConfiguration" type="GraphicsConfiguration" line="803"/>
+            <method name="getReplacement" type="SurfaceData" line="807"/>
+            <method name="getGC" type="D3DGraphicsConfig" line="811">
+                <params>
+                    <param name="peer" type="WComponentPeer"/>
+                </params>
+                <declaration name="gc" type="GraphicsConfiguration" line="812"/>
+                <scope line="813"/>
+                <scope line="815">
+                    <declaration name="env" type="GraphicsEnvironment" line="816"/>
+                    <declaration name="gd" type="GraphicsDevice" line="818"/>
+                </scope>
+            </method>
+            <javadoc line="824">
+                Attempts to restore the surface by initializing the native data                
+            </javadoc>
+            <method name="restoreSurface" type="void" line="827"/>
+            <method name="getPeer" type="WComponentPeer" line="831"/>
+            <javadoc line="835">
+                We need to let the surface manager know that the surface is lost so
+                  that for example BufferStrategy.contentsLost() returns correct result.
+                  Normally the status of contentsLost is set in validate(), but in some
+                  cases (like Swing&apos;s buffer per window) we intentionally don&apos;t call
+                  validate from the toolkit thread but only check for the BS status.                
+            </javadoc>
+            <method name="setSurfaceLost" type="void" line="843">
+                <params>
+                    <param name="lost" type="boolean"/>
+                </params>
+                <scope line="845">
+                    <declaration name="sm" type="SurfaceManager" line="846"/>
+                </scope>
+            </method>
+            <method name="getNativeResourceNative" type="long" line="851"/>
+            <javadoc line="852">
+                Returns a pointer to the native resource of specified {@code resType}associated with this surface.
+                  Specifically, for {@code D3DSurfaceData} this method returns pointers of
+                  the following:
+                  &lt;pre&gt;
+                  TEXTURE              - (IDirect3DTexture9)
+                  RT_TEXTURE, RT_PLAIN - (IDirect3DSurface9)
+                  FLIP_BACKBUFFER      - (IDirect3DSwapChain9)
+                  D3D_DEVICE_RESOURCE  - (IDirect3DDevice9)
+                  &lt;/pre&gt;
+                  Multiple resources may be available for some types (i.e. for render to
+                  texture one could retrieve both a destination surface by specifying
+                  RT_TEXTURE, and a texture by using TEXTURE).
+                  Note: the pointer returned by this method is only valid on the rendering
+                  thread.                
+                <return>
+                    pointer to the native resource of specified type or 0L if
+                      such resource doesn't exist or can not be retrieved.                    
+                </return>
+                <see>
+                    sun.java2d.pipe.hw.AccelSurface#getNativeResource                    
+                </see>
+            </javadoc>
+            <method name="getNativeResource" type="long" line="876">
+                <params>
+                    <param name="resType" type="int"/>
+                </params>
+            </method>
+            <class name="D3DWindowSurfaceData" line="880">
+                <extends class="D3DSurfaceData"/>
+                <javadoc line="880">
+                    Class representing an on-screen d3d surface. Since d3d can&apos;t
+                      render to the screen directly, it is implemented as a swap chain,
+                      controlled by D3DScreenUpdateManager.                    
+                    <see>
+                        D3DScreenUpdateManager                        
+                    </see>
+                </javadoc>
+                <declaration name="dirtyTracker" type="StateTracker" line="888"/>
+                <method name="D3DWindowSurfaceData" type="constructor" line="892">
+                    <params>
+                        <param name="peer" type="WComponentPeer"/>
+                        <param name="gc" type="D3DGraphicsConfig"/>
+                    </params>
+                </method>
+                <javadoc line="900">
+                    {@inheritDoc}Overridden to use ScreenUpdateManager to obtain the replacement
+                      surface.                    
+                    <see>
+                        sun.java2d.ScreenUpdateManager#getReplacementScreenSurface                        
+                    </see>
+                </javadoc>
+                <method name="getReplacement" type="SurfaceData" line="909">
+                    <declaration name="mgr" type="ScreenUpdateManager" line="910"/>
+                </method>
+                <javadoc line="914">
+                    Returns destination Component associated with this SurfaceData.                    
+                </javadoc>
+                <method name="getDestination" type="Object" line="918"/>
+                <method name="disableAccelerationForSurface" type="void" line="923">
+                    <comment line="924">
+                        for on-screen surfaces we need to make sure a backup GDI surface is                        
+                    </comment>
+                    <comment line="925">
+                        is used until a new one is set (which may happen during a resize). We                        
+                    </comment>
+                    <comment line="926">
+                        don&apos;t want the screen update maanger to replace the surface right way                        
+                    </comment>
+                    <comment line="927">
+                        because it causes repainting issues in Swing, so we invalidate it,                        
+                    </comment>
+                    <comment line="928">
+                        this will prevent SUM from issuing a replaceSurfaceData call.                        
+                    </comment>
+                </method>
+                <method name="restoreSurface" type="void" line="937">
+                    <comment line="948">
+                        if initialization was unsuccessful, an IPE will be thrown                        
+                    </comment>
+                    <comment line="949">
+                        and the surface will remain lost                        
+                    </comment>
+                    <comment line="952">
+                        This is to make sure the render target is reset after this                        
+                    </comment>
+                    <comment line="953">
+                        surface is restored. The reason for this is that sometimes this                        
+                    </comment>
+                    <comment line="954">
+                        surface can be restored from multiple threads (the screen update                        
+                    </comment>
+                    <comment line="955">
+                        manager&apos;s thread and app&apos;s rendering thread) at the same time,                        
+                    </comment>
+                    <comment line="956">
+                        and when that happens the second restoration will create the                        
+                    </comment>
+                    <comment line="957">
+                        native resource which will not be set as render target because                        
+                    </comment>
+                    <comment line="958">
+                        the BufferedContext&apos;s validate method will think that since the                        
+                    </comment>
+                    <comment line="959">
+                        surface data object didn&apos;t change then the current render target                        
+                    </comment>
+                    <comment line="960">
+                        is correct and no rendering will appear on the screen.                        
+                    </comment>
+                    <scope line="938"/>
+                    <declaration name="fsw" type="Window" line="942"/>
+                    <scope line="943"/>
+                    <declaration name="rq" type="D3DRenderQueue" line="961"/>
+                    <scope line="963"/>
+                    <scope line="965"/>
+                </method>
+                <method name="isDirty" type="boolean" line="970"/>
+                <method name="markClean" type="void" line="974"/>
+            </class>
+            <method name="updateWindowAccelImpl" type="boolean" line="979"/>
+            <javadoc line="979">
+                Updates the layered window with the contents of the surface.                
+                <param>
+                    pd3dsd pointer to the D3DSDOps structure                    
+                </param>
+                <param>
+                    pData pointer to the AwtWindow peer data                    
+                </param>
+                <param>
+                    w width of the window                    
+                </param>
+                <param>
+                    h height of the window                    
+                </param>
+                <see>
+                    sun.awt.windows.TranslucentWindowPainter                    
+                </see>
+            </javadoc>
+        </class>
+    </source>

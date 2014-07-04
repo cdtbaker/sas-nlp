@@ -1,0 +1,1295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent.locks">
+        <import package="java.util.concurrent"/>
+        <import package="java.util.concurrent.atomic"/>
+        <import package="java.util"/>
+        <class name="ReentrantReadWriteLock" line="41">
+            <comment line="1225">
+                Instrumentation and status                
+            </comment>
+            <implements interface="ReadWriteLock"/>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="41">
+                An implementation of {@link ReadWriteLock} supporting similar
+                  semantics to {@link ReentrantLock}.
+                  &lt;p&gt;This class has the following properties:
+                  &lt;ul&gt;
+                  &lt;li&gt;&lt;b&gt;Acquisition order&lt;/b&gt;
+                  &lt;p&gt; This class does not impose a reader or writer preference
+                  ordering for lock access.  However, it does support an optional
+                  &lt;em&gt;fairness&lt;/em&gt; policy.
+                  &lt;dl&gt;
+                  &lt;dt&gt;&lt;b&gt;&lt;i&gt;Non-fair mode (default)&lt;/i&gt;&lt;/b&gt;
+                  &lt;dd&gt;When constructed as non-fair (the default), the order of entry
+                  to the read and write lock is unspecified, subject to reentrancy
+                  constraints.  A nonfair lock that is continuously contended may
+                  indefinitely postpone one or more reader or writer threads, but
+                  will normally have higher throughput than a fair lock.
+                  &lt;p&gt;
+                  &lt;dt&gt;&lt;b&gt;&lt;i&gt;Fair mode&lt;/i&gt;&lt;/b&gt;
+                  &lt;dd&gt; When constructed as fair, threads contend for entry using an
+                  approximately arrival-order policy. When the currently held lock
+                  is released either the longest-waiting single writer thread will
+                  be assigned the write lock, or if there is a group of reader threads
+                  waiting longer than all waiting writer threads, that group will be
+                  assigned the read lock.
+                  &lt;p&gt;A thread that tries to acquire a fair read lock (non-reentrantly)
+                  will block if either the write lock is held, or there is a waiting
+                  writer thread. The thread will not acquire the read lock until
+                  after the oldest currently waiting writer thread has acquired and
+                  released the write lock. Of course, if a waiting writer abandons
+                  its wait, leaving one or more reader threads as the longest waiters
+                  in the queue with the write lock free, then those readers will be
+                  assigned the read lock.
+                  &lt;p&gt;A thread that tries to acquire a fair write lock (non-reentrantly)
+                  will block unless both the read lock and write lock are free (which
+                  implies there are no waiting threads).  (Note that the non-blocking{@link ReadLock#tryLock()} and {@link WriteLock#tryLock()} methods
+                  do not honor this fair setting and will acquire the lock if it is
+                  possible, regardless of waiting threads.)
+                  &lt;p&gt;
+                  &lt;/dl&gt;
+                  &lt;li&gt;&lt;b&gt;Reentrancy&lt;/b&gt;
+                  &lt;p&gt;This lock allows both readers and writers to reacquire read or
+                  write locks in the style of a {@link ReentrantLock}. Non-reentrant
+                  readers are not allowed until all write locks held by the writing
+                  thread have been released.
+                  &lt;p&gt;Additionally, a writer can acquire the read lock, but not
+                  vice-versa.  Among other applications, reentrancy can be useful
+                  when write locks are held during calls or callbacks to methods that
+                  perform reads under read locks.  If a reader tries to acquire the
+                  write lock it will never succeed.
+                  &lt;li&gt;&lt;b&gt;Lock downgrading&lt;/b&gt;
+                  &lt;p&gt;Reentrancy also allows downgrading from the write lock to a read lock,
+                  by acquiring the write lock, then the read lock and then releasing the
+                  write lock. However, upgrading from a read lock to the write lock is
+                  &lt;b&gt;not&lt;/b&gt; possible.
+                  &lt;li&gt;&lt;b&gt;Interruption of lock acquisition&lt;/b&gt;
+                  &lt;p&gt;The read lock and write lock both support interruption during lock
+                  acquisition.
+                  &lt;li&gt;&lt;b&gt;{@link Condition} support&lt;/b&gt;
+                  &lt;p&gt;The write lock provides a {@link Condition} implementation that
+                  behaves in the same way, with respect to the write lock, as the{@link Condition} implementation provided by{@link ReentrantLock#newCondition} does for {@link ReentrantLock}.
+                  This {@link Condition} can, of course, only be used with the write lock.
+                  &lt;p&gt;The read lock does not support a {@link Condition} and{@code readLock().newCondition()} throws{@code UnsupportedOperationException}.
+                  &lt;li&gt;&lt;b&gt;Instrumentation&lt;/b&gt;
+                  &lt;p&gt;This class supports methods to determine whether locks
+                  are held or contended. These methods are designed for monitoring
+                  system state, not for synchronization control.
+                  &lt;/ul&gt;
+                  &lt;p&gt;Serialization of this class behaves in the same way as built-in
+                  locks: a deserialized lock is in the unlocked state, regardless of
+                  its state when serialized.
+                  &lt;p&gt;&lt;b&gt;Sample usages&lt;/b&gt;. Here is a code sketch showing how to perform
+                  lock downgrading after updating a cache (exception handling is
+                  particularly tricky when handling multiple locks in a non-nested
+                  fashion):
+                  &lt;pre&gt; {@code}class CachedData 
+                  Object data;
+                  volatile boolean cacheValid;
+                  final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+                  void processCachedData() {
+                  rwl.readLock().lock();
+                  if (!cacheValid) {
+                  // Must release read lock before acquiring write lock
+                  rwl.readLock().unlock();
+                  rwl.writeLock().lock();
+                  try {
+                  // Recheck state because another thread might have
+                  // acquired write lock and changed state before we did.
+                  if (!cacheValid) {
+                  data = ...
+                  cacheValid = true;
+                  }
+                  // Downgrade by acquiring read lock before releasing write lock
+                  rwl.readLock().lock();
+                  } finally {
+                  rwl.writeLock().unlock(); // Unlock write, still hold read
+                  }
+                  }
+                  try {
+                  use(data);
+                  } finally {
+                  rwl.readLock().unlock();
+                  }
+                  }
+                  }}&lt;/pre&gt;
+                  ReentrantReadWriteLocks can be used to improve concurrency in some
+                  uses of some kinds of Collections. This is typically worthwhile
+                  only when the collections are expected to be large, accessed by
+                  more reader threads than writer threads, and entail operations with
+                  overhead that outweighs synchronization overhead. For example, here
+                  is a class using a TreeMap that is expected to be large and
+                  concurrently accessed.
+                  &lt;pre&gt;{@code}class RWDictionary 
+                  private final Map&lt;String, Data&gt; m = new TreeMap&lt;String, Data&gt;();
+                  private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+                  private final Lock r = rwl.readLock();
+                  private final Lock w = rwl.writeLock();
+                  public Data get(String key) {
+                  r.lock();
+                  try { return m.get(key); }
+                  finally { r.unlock(); }
+                  }
+                  public String[] allKeys() {
+                  r.lock();
+                  try { return m.keySet().toArray(); }
+                  finally { r.unlock(); }
+                  }
+                  public Data put(String key, Data value) {
+                  w.lock();
+                  try { return m.put(key, value); }
+                  finally { w.unlock(); }
+                  }
+                  public void clear() {
+                  w.lock();
+                  try { m.clear(); }
+                  finally { w.unlock(); }
+                  }
+                  }}&lt;/pre&gt;
+                  &lt;h3&gt;Implementation Notes&lt;/h3&gt;
+                  &lt;p&gt;This lock supports a maximum of 65535 recursive write locks
+                  and 65535 read locks. Attempts to exceed these limits result in{@link Error} throws from locking methods.                
+                <since>
+                    1.5                    
+                </since>
+                <author>
+                    Doug Lea                    
+                </author>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="220"/>
+            <declaration name="readerLock" type="ReentrantReadWriteLock.ReadLock" line="221"/>
+            <javadoc line="221">
+                Inner class providing readlock                
+            </javadoc>
+            <declaration name="writerLock" type="ReentrantReadWriteLock.WriteLock" line="223"/>
+            <javadoc line="223">
+                Inner class providing writelock                
+            </javadoc>
+            <declaration name="sync" type="Sync" line="225"/>
+            <javadoc line="225">
+                Performs all synchronization mechanics                
+            </javadoc>
+            <javadoc line="228">
+                Creates a new {@code ReentrantReadWriteLock} with
+                  default (nonfair) ordering properties.                
+            </javadoc>
+            <method name="ReentrantReadWriteLock" type="constructor" line="232"/>
+            <javadoc line="236">
+                Creates a new {@code ReentrantReadWriteLock} with
+                  the given fairness policy.                
+                <param>
+                    fair {@code true} if this lock should use a fair ordering policy                    
+                </param>
+            </javadoc>
+            <method name="ReentrantReadWriteLock" type="constructor" line="242">
+                <params>
+                    <param name="fair" type="boolean"/>
+                </params>
+            </method>
+            <method name="writeLock" type="ReentrantReadWriteLock.WriteLock" line="248"/>
+            <method name="readLock" type="ReentrantReadWriteLock.ReadLock" line="249"/>
+            <class name="Sync" line="251">
+                <extends class="AbstractQueuedSynchronizer"/>
+                <comment line="259">
+                    Read vs write count extraction constants and functions.
+                     Lock state is logically divided into two unsigned shorts:
+                     The lower one representing the exclusive (writer) lock hold count,
+                     and the upper the shared (reader) hold count.                    
+                </comment>
+                <comment line="346">
+                    Acquires and releases use the same code for fair and
+                     nonfair locks, but differ in whetherhow they allow barging
+                     when queues are non-empty.                    
+                </comment>
+                <comment line="366">
+                    Note that tryRelease and tryAcquire can be called by
+                     Conditions. So it is possible that their arguments contain
+                     both read and write holds that are all released during a
+                     condition wait and re-established in tryAcquire.                    
+                </comment>
+                <comment line="615">
+                    Methods relayed to outer class                    
+                </comment>
+                <javadoc line="251">
+                    Synchronization implementation for ReentrantReadWriteLock.
+                      Subclassed into fair and nonfair versions.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="256"/>
+                <declaration name="SHARED_SHIFT" type="int" line="265"/>
+                <declaration name="SHARED_UNIT" type="int" line="266"/>
+                <declaration name="MAX_COUNT" type="int" line="267"/>
+                <declaration name="EXCLUSIVE_MASK" type="int" line="268"/>
+                <javadoc line="270">
+                    Returns the number of shared holds represented in count                    
+                </javadoc>
+                <method name="sharedCount" type="int" line="271">
+                    <params>
+                        <param name="c" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="272">
+                    Returns the number of exclusive holds represented in count                    
+                </javadoc>
+                <method name="exclusiveCount" type="int" line="273">
+                    <params>
+                        <param name="c" type="int"/>
+                    </params>
+                </method>
+                <class name="HoldCounter" line="275">
+                    <comment line="282">
+                        Use id, not reference, to avoid garbage retention                        
+                    </comment>
+                    <javadoc line="275">
+                        A counter for per-thread read hold counts.
+                          Maintained as a ThreadLocal; cached in cachedHoldCounter                        
+                    </javadoc>
+                    <declaration name="count" type="int" line="280"/>
+                    <declaration name="tid" type="long" line="282"/>
+                </class>
+                <class name="ThreadLocalHoldCounter" line="285">
+                    <extends class="ThreadLocal">
+                        <type_params>
+                            <type_param name="HoldCounter"/>
+                        </type_params>
+                    </extends>
+                    <comment line="282">
+                        Use id, not reference, to avoid garbage retention                        
+                    </comment>
+                    <javadoc line="285">
+                        ThreadLocal subclass. Easiest to explicitly define for sake
+                          of deserialization mechanics.                        
+                    </javadoc>
+                    <method name="initialValue" type="HoldCounter" line="291"/>
+                </class>
+                <declaration name="readHolds" type="ThreadLocalHoldCounter" line="296"/>
+                <javadoc line="296">
+                    The number of reentrant read locks held by current thread.
+                      Initialized only in constructor and readObject.
+                      Removed whenever a thread&apos;s read hold count drops to 0.                    
+                </javadoc>
+                <declaration name="cachedHoldCounter" type="HoldCounter" line="303"/>
+                <javadoc line="303">
+                    The hold count of the last thread to successfully acquire
+                      readLock. This saves ThreadLocal lookup in the common case
+                      where the next thread to release is the last one to
+                      acquire. This is non-volatile since it is just used
+                      as a heuristic, and would be great for threads to cache.
+                      &lt;p&gt;Can outlive the Thread for which it is caching the read
+                      hold count, but avoids garbage retention by not retaining a
+                      reference to the Thread.
+                      &lt;p&gt;Accessed via a benign data race; relies on the memory
+                      model&apos;s final field and out-of-thin-air guarantees.                    
+                </javadoc>
+                <declaration name="firstReader" type="Thread" line="319"/>
+                <javadoc line="319">
+                    firstReader is the first thread to have acquired the read lock.
+                      firstReaderHoldCount is firstReader&apos;s hold count.
+                      &lt;p&gt;More precisely, firstReader is the unique thread that last
+                      changed the shared count from 0 to 1, and has not released the
+                      read lock since then; null if there is no such thread.
+                      &lt;p&gt;Cannot cause garbage retention unless the thread terminated
+                      without relinquishing its read locks, since tryReleaseShared
+                      sets it to null.
+                      &lt;p&gt;Accessed via a benign data race; relies on the memory
+                      model&apos;s out-of-thin-air guarantees for references.
+                      &lt;p&gt;This allows tracking of read holds for uncontended read
+                      locks to be very cheap.                    
+                </javadoc>
+                <declaration name="firstReaderHoldCount" type="int" line="338"/>
+                <method name="Sync" type="constructor" line="340">
+                    <comment line="342">
+                        ensures visibility of readHolds                        
+                    </comment>
+                </method>
+                <method name="readerShouldBlock" type="boolean" line="351"/>
+                <javadoc line="351">
+                    Returns true if the current thread, when trying to acquire
+                      the read lock, and otherwise eligible to do so, should block
+                      because of policy for overtaking other waiting threads.                    
+                </javadoc>
+                <method name="writerShouldBlock" type="boolean" line="358"/>
+                <javadoc line="358">
+                    Returns true if the current thread, when trying to acquire
+                      the write lock, and otherwise eligible to do so, should block
+                      because of policy for overtaking other waiting threads.                    
+                </javadoc>
+                <method name="tryRelease" type="boolean" line="372">
+                    <params>
+                        <param name="releases" type="int"/>
+                    </params>
+                    <declaration name="nextc" type="int" line="375"/>
+                    <declaration name="free" type="boolean" line="376"/>
+                </method>
+                <method name="tryAcquire" type="boolean" line="383">
+                    <params>
+                        <param name="acquires" type="int"/>
+                    </params>
+                    <comment line="384">
+                        Walkthrough:
+                         1. If read count nonzero or write count nonzero
+                            and owner is a different thread, fail.
+                         2. If count would saturate, fail. (This can only
+                            happen if count is already nonzero.)
+                         3. Otherwise, this thread is eligible for lock if
+                            it is either a reentrant acquire or
+                            queue policy allows it. If so, update state
+                            and set owner.                        
+                    </comment>
+                    <comment line="399">
+                        (Note: if c != 0 and w == 0 then shared count != 0)                        
+                    </comment>
+                    <comment line="404">
+                        Reentrant acquire                        
+                    </comment>
+                    <declaration name="current" type="Thread" line="395"/>
+                    <declaration name="c" type="int" line="396"/>
+                    <declaration name="w" type="int" line="397"/>
+                    <scope line="398"/>
+                </method>
+                <method name="tryReleaseShared" type="boolean" line="415">
+                    <params>
+                        <param name="unused" type="int"/>
+                    </params>
+                    <comment line="418">
+                        assert firstReaderHoldCount &gt; 0;                        
+                    </comment>
+                    <comment line="439">
+                        Releasing the read lock has no effect on readers,                        
+                    </comment>
+                    <comment line="440">
+                        but it may allow waiting writers to proceed if                        
+                    </comment>
+                    <comment line="441">
+                        both read and write locks are now free.                        
+                    </comment>
+                    <declaration name="current" type="Thread" line="416"/>
+                    <scope line="417"/>
+                    <scope line="423">
+                        <declaration name="rh" type="HoldCounter" line="424"/>
+                        <declaration name="count" type="int" line="427"/>
+                        <scope line="428"/>
+                    </scope>
+                    <scope line="435">
+                        <declaration name="c" type="int" line="436"/>
+                        <declaration name="nextc" type="int" line="437"/>
+                    </scope>
+                </method>
+                <method name="unmatchedUnlockException" type="IllegalMonitorStateException" line="446"/>
+                <method name="tryAcquireShared" type="int" line="451">
+                    <params>
+                        <param name="unused" type="int"/>
+                    </params>
+                    <comment line="452">
+                        Walkthrough:
+                         1. If write lock held by another thread, fail.
+                         2. Otherwise, this thread is eligible for
+                            lock wrt state, so ask if it should block
+                            because of queue policy. If not, try
+                            to grant by CASing state and updating count.
+                            Note that step does not check for reentrant
+                            acquires, which is postponed to full version
+                            to avoid having to check hold count in
+                            the more typical non-reentrant case.
+                         3. If step 2 fails either because thread
+                            apparently not eligible or CAS fails or count
+                            saturated, chain to version with full retry loop.                        
+                    </comment>
+                    <declaration name="current" type="Thread" line="467"/>
+                    <declaration name="c" type="int" line="468"/>
+                    <declaration name="r" type="int" line="472"/>
+                    <scope line="475">
+                        <scope line="476"/>
+                        <scope line="479"/>
+                        <scope line="481">
+                            <declaration name="rh" type="HoldCounter" line="482"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="494">
+                    Full version of acquire for reads, that handles CAS misses
+                      and reentrant reads not dealt with in tryAcquireShared.                    
+                </javadoc>
+                <method name="fullTryAcquireShared" type="int" line="498">
+                    <params>
+                        <param name="current" type="Thread"/>
+                    </params>
+                    <comment line="499">
+                        This code is in part redundant with that in
+                         tryAcquireShared but is simpler overall by not
+                         complicating tryAcquireShared with interactions between
+                         retries and lazily reading hold counts.                        
+                    </comment>
+                    <comment line="511">
+                        else we hold the exclusive lock; blocking here                        
+                    </comment>
+                    <comment line="512">
+                        would cause deadlock.                        
+                    </comment>
+                    <comment line="514">
+                        Make sure we&apos;re not acquiring read lock reentrantly                        
+                    </comment>
+                    <comment line="516">
+                        assert firstReaderHoldCount &gt; 0;                        
+                    </comment>
+                    <comment line="546">
+                        cache for release                        
+                    </comment>
+                    <declaration name="rh" type="HoldCounter" line="505"/>
+                    <scope line="506">
+                        <declaration name="c" type="int" line="507"/>
+                        <scope line="508"/>
+                        <scope line="513">
+                            <scope line="515"/>
+                            <scope line="517">
+                                <scope line="518">
+                                    <scope line="520"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="532">
+                            <scope line="533"/>
+                            <scope line="536"/>
+                            <scope line="538"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="553">
+                    Performs tryLock for write, enabling barging in both modes.
+                      This is identical in effect to tryAcquire except for lack
+                      of calls to writerShouldBlock.                    
+                </javadoc>
+                <method name="tryWriteLock" type="boolean" line="558">
+                    <declaration name="current" type="Thread" line="559"/>
+                    <declaration name="c" type="int" line="560"/>
+                    <scope line="561">
+                        <declaration name="w" type="int" line="562"/>
+                    </scope>
+                </method>
+                <javadoc line="574">
+                    Performs tryLock for read, enabling barging in both modes.
+                      This is identical in effect to tryAcquireShared except for
+                      lack of calls to readerShouldBlock.                    
+                </javadoc>
+                <method name="tryReadLock" type="boolean" line="579">
+                    <declaration name="current" type="Thread" line="580"/>
+                    <scope line="581">
+                        <declaration name="c" type="int" line="582"/>
+                        <declaration name="r" type="int" line="586"/>
+                        <scope line="589">
+                            <scope line="590"/>
+                            <scope line="593"/>
+                            <scope line="595">
+                                <declaration name="rh" type="HoldCounter" line="596"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="isHeldExclusively" type="boolean" line="608">
+                    <comment line="609">
+                        While we must in general read state before owner,                        
+                    </comment>
+                    <comment line="610">
+                        we don&apos;t need to do so to check if current thread is owner                        
+                    </comment>
+                </method>
+                <method name="newCondition" type="ConditionObject" line="616"/>
+                <method name="getOwner" type="Thread" line="620">
+                    <comment line="621">
+                        Must read state before owner to ensure memory consistency                        
+                    </comment>
+                </method>
+                <method name="getReadLockCount" type="int" line="627"/>
+                <method name="isWriteLocked" type="boolean" line="631"/>
+                <method name="getWriteHoldCount" type="int" line="635"/>
+                <method name="getReadHoldCount" type="int" line="639">
+                    <declaration name="current" type="Thread" line="643"/>
+                    <declaration name="rh" type="HoldCounter" line="647"/>
+                    <declaration name="count" type="int" line="651"/>
+                </method>
+                <javadoc line="656">
+                    Reconstitute this lock instance from a stream                    
+                    <param>
+                        s the stream                        
+                    </param>
+                </javadoc>
+                <method name="readObject" type="void" line="661">
+                    <params>
+                        <param name="s" type="java.io.ObjectInputStream"/>
+                    </params>
+                    <comment line="664">
+                        reset to unlocked state                        
+                    </comment>
+                </method>
+                <method name="getCount" type="int" line="667"/>
+            </class>
+            <class name="NonfairSync" line="670">
+                <extends class="Sync"/>
+                <comment line="259">
+                    Read vs write count extraction constants and functions.
+                     Lock state is logically divided into two unsigned shorts:
+                     The lower one representing the exclusive (writer) lock hold count,
+                     and the upper the shared (reader) hold count.                    
+                </comment>
+                <comment line="346">
+                    Acquires and releases use the same code for fair and
+                     nonfair locks, but differ in whetherhow they allow barging
+                     when queues are non-empty.                    
+                </comment>
+                <comment line="366">
+                    Note that tryRelease and tryAcquire can be called by
+                     Conditions. So it is possible that their arguments contain
+                     both read and write holds that are all released during a
+                     condition wait and re-established in tryAcquire.                    
+                </comment>
+                <comment line="615">
+                    Methods relayed to outer class                    
+                </comment>
+                <javadoc line="670">
+                    Nonfair version of Sync                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="674"/>
+                <method name="writerShouldBlock" type="boolean" line="675">
+                    <comment line="676">
+                        writers can always barge                        
+                    </comment>
+                </method>
+                <method name="readerShouldBlock" type="boolean" line="678">
+                    <comment line="679">
+                        As a heuristic to avoid indefinite writer starvation,
+                         block if the thread that momentarily appears to be head
+                         of queue, if one exists, is a waiting writer.  This is
+                         only a probabilistic effect since a new reader will not
+                         block if there is a waiting writer behind other enabled
+                         readers that have not yet drained from the queue.                        
+                    </comment>
+                </method>
+            </class>
+            <class name="FairSync" line="690">
+                <extends class="Sync"/>
+                <comment line="259">
+                    Read vs write count extraction constants and functions.
+                     Lock state is logically divided into two unsigned shorts:
+                     The lower one representing the exclusive (writer) lock hold count,
+                     and the upper the shared (reader) hold count.                    
+                </comment>
+                <comment line="346">
+                    Acquires and releases use the same code for fair and
+                     nonfair locks, but differ in whetherhow they allow barging
+                     when queues are non-empty.                    
+                </comment>
+                <comment line="366">
+                    Note that tryRelease and tryAcquire can be called by
+                     Conditions. So it is possible that their arguments contain
+                     both read and write holds that are all released during a
+                     condition wait and re-established in tryAcquire.                    
+                </comment>
+                <comment line="615">
+                    Methods relayed to outer class                    
+                </comment>
+                <javadoc line="690">
+                    Fair version of Sync                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="694"/>
+                <method name="writerShouldBlock" type="boolean" line="695"/>
+                <method name="readerShouldBlock" type="boolean" line="698"/>
+            </class>
+            <class name="ReadLock" line="703">
+                <comment line="259">
+                    Read vs write count extraction constants and functions.
+                     Lock state is logically divided into two unsigned shorts:
+                     The lower one representing the exclusive (writer) lock hold count,
+                     and the upper the shared (reader) hold count.                    
+                </comment>
+                <comment line="346">
+                    Acquires and releases use the same code for fair and
+                     nonfair locks, but differ in whetherhow they allow barging
+                     when queues are non-empty.                    
+                </comment>
+                <comment line="366">
+                    Note that tryRelease and tryAcquire can be called by
+                     Conditions. So it is possible that their arguments contain
+                     both read and write holds that are all released during a
+                     condition wait and re-established in tryAcquire.                    
+                </comment>
+                <comment line="615">
+                    Methods relayed to outer class                    
+                </comment>
+                <implements interface="Lock"/>
+                <implements interface="java.io.Serializable"/>
+                <javadoc line="703">
+                    The lock returned by method {@link ReentrantReadWriteLock#readLock}.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="707"/>
+                <declaration name="sync" type="Sync" line="708"/>
+                <javadoc line="710">
+                    Constructor for use by subclasses                    
+                    <param>
+                        lock the outer lock object                        
+                    </param>
+                    <throws>
+                        NullPointerException if the lock is null                        
+                    </throws>
+                </javadoc>
+                <method name="ReadLock" type="constructor" line="716">
+                    <params>
+                        <param name="lock" type="ReentrantReadWriteLock"/>
+                    </params>
+                </method>
+                <javadoc line="720">
+                    Acquires the read lock.
+                      &lt;p&gt;Acquires the read lock if the write lock is not held by
+                      another thread and returns immediately.
+                      &lt;p&gt;If the write lock is held by another thread then
+                      the current thread becomes disabled for thread scheduling
+                      purposes and lies dormant until the read lock has been acquired.                    
+                </javadoc>
+                <method name="lock" type="void" line="730"/>
+                <javadoc line="734">
+                    Acquires the read lock unless the current thread is{@linkplain Thread#interrupt interrupted}.
+                      &lt;p&gt;Acquires the read lock if the write lock is not held
+                      by another thread and returns immediately.
+                      &lt;p&gt;If the write lock is held by another thread then the
+                      current thread becomes disabled for thread scheduling
+                      purposes and lies dormant until one of two things happens:
+                      &lt;ul&gt;
+                      &lt;li&gt;The read lock is acquired by the current thread; or
+                      &lt;li&gt;Some other thread {@linkplain Thread#interrupt interrupts}the current thread.
+                      &lt;/ul&gt;
+                      &lt;p&gt;If the current thread:
+                      &lt;ul&gt;
+                      &lt;li&gt;has its interrupted status set on entry to this method; or
+                      &lt;li&gt;is {@linkplain Thread#interrupt interrupted} while
+                      acquiring the read lock,
+                      &lt;/ul&gt;
+                      then {@link InterruptedException} is thrown and the current
+                      thread&apos;s interrupted status is cleared.
+                      &lt;p&gt;In this implementation, as this method is an explicit
+                      interruption point, preference is given to responding to
+                      the interrupt over normal or reentrant acquisition of the
+                      lock.                    
+                    <throws>
+                        InterruptedException if the current thread is interrupted                        
+                    </throws>
+                </javadoc>
+                <method name="lockInterruptibly" type="void" line="775"/>
+                <javadoc line="779">
+                    Acquires the read lock only if the write lock is not held by
+                      another thread at the time of invocation.
+                      &lt;p&gt;Acquires the read lock if the write lock is not held by
+                      another thread and returns immediately with the value{@code true}. Even when this lock has been set to use a
+                      fair ordering policy, a call to {@code tryLock()}&lt;em&gt;will&lt;/em&gt; immediately acquire the read lock if it is
+                      available, whether or not other threads are currently
+                      waiting for the read lock.  This &amp;quot;barging&amp;quot; behavior
+                      can be useful in certain circumstances, even though it
+                      breaks fairness. If you want to honor the fairness setting
+                      for this lock, then use {@link #tryLock(long,TimeUnit)tryLock(0, TimeUnit.SECONDS) } which is almost equivalent
+                      (it also detects interruption).
+                      &lt;p&gt;If the write lock is held by another thread then
+                      this method will return immediately with the value{@code false}.                    
+                    <return>
+                        {@code true} if the read lock was acquired                        
+                    </return>
+                </javadoc>
+                <method name="tryLock" type="boolean" line="802"/>
+                <javadoc line="806">
+                    Acquires the read lock if the write lock is not held by
+                      another thread within the given waiting time and the
+                      current thread has not been {@linkplain Thread#interruptinterrupted}.
+                      &lt;p&gt;Acquires the read lock if the write lock is not held by
+                      another thread and returns immediately with the value{@code true}. If this lock has been set to use a fair
+                      ordering policy then an available lock &lt;em&gt;will not&lt;/em&gt; be
+                      acquired if any other threads are waiting for the
+                      lock. This is in contrast to the {@link #tryLock()}method. If you want a timed {@code tryLock} that does
+                      permit barging on a fair lock then combine the timed and
+                      un-timed forms together:
+                      &lt;pre&gt;if (lock.tryLock() || lock.tryLock(timeout, unit) ) { ... }
+                      &lt;/pre&gt;
+                      &lt;p&gt;If the write lock is held by another thread then the
+                      current thread becomes disabled for thread scheduling
+                      purposes and lies dormant until one of three things happens:
+                      &lt;ul&gt;
+                      &lt;li&gt;The read lock is acquired by the current thread; or
+                      &lt;li&gt;Some other thread {@linkplain Thread#interrupt interrupts}the current thread; or
+                      &lt;li&gt;The specified waiting time elapses.
+                      &lt;/ul&gt;
+                      &lt;p&gt;If the read lock is acquired then the value {@code true} is
+                      returned.
+                      &lt;p&gt;If the current thread:
+                      &lt;ul&gt;
+                      &lt;li&gt;has its interrupted status set on entry to this method; or
+                      &lt;li&gt;is {@linkplain Thread#interrupt interrupted} while
+                      acquiring the read lock,
+                      &lt;/ul&gt; then {@link InterruptedException} is thrown and the
+                      current thread&apos;s interrupted status is cleared.
+                      &lt;p&gt;If the specified waiting time elapses then the value{@code false} is returned.  If the time is less than or
+                      equal to zero, the method will not wait at all.
+                      &lt;p&gt;In this implementation, as this method is an explicit
+                      interruption point, preference is given to responding to
+                      the interrupt over normal or reentrant acquisition of the
+                      lock, and over reporting the elapse of the waiting time.                    
+                    <param>
+                        timeout the time to wait for the read lock                        
+                    </param>
+                    <param>
+                        unit the time unit of the timeout argument                        
+                    </param>
+                    <return>
+                        {@code true} if the read lock was acquired                        
+                    </return>
+                    <throws>
+                        InterruptedException if the current thread is interrupted                        
+                    </throws>
+                    <throws>
+                        NullPointerException if the time unit is null                        
+                    </throws>
+                </javadoc>
+                <method name="tryLock" type="boolean" line="872">
+                    <params>
+                        <param name="timeout" type="long"/>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                </method>
+                <javadoc line="876">
+                    Attempts to release this lock.
+                      &lt;p&gt; If the number of readers is now zero then the lock
+                      is made available for write lock attempts.                    
+                </javadoc>
+                <method name="unlock" type="void" line="882"/>
+                <javadoc line="886">
+                    Throws {@code UnsupportedOperationException} because{@code ReadLocks} do not support conditions.                    
+                    <throws>
+                        UnsupportedOperationException always                        
+                    </throws>
+                </javadoc>
+                <method name="newCondition" type="Condition" line="892"/>
+                <javadoc line="896">
+                    Returns a string identifying this lock, as well as its lock state.
+                      The state, in brackets, includes the String {@code &quot;Read locks =&quot;}followed by the number of held read locks.                    
+                    <return>
+                        a string identifying this lock, as well as its lock state                        
+                    </return>
+                </javadoc>
+                <method name="toString" type="String" line="903">
+                    <declaration name="r" type="int" line="904"/>
+                </method>
+            </class>
+            <class name="WriteLock" line="910">
+                <comment line="259">
+                    Read vs write count extraction constants and functions.
+                     Lock state is logically divided into two unsigned shorts:
+                     The lower one representing the exclusive (writer) lock hold count,
+                     and the upper the shared (reader) hold count.                    
+                </comment>
+                <comment line="346">
+                    Acquires and releases use the same code for fair and
+                     nonfair locks, but differ in whetherhow they allow barging
+                     when queues are non-empty.                    
+                </comment>
+                <comment line="366">
+                    Note that tryRelease and tryAcquire can be called by
+                     Conditions. So it is possible that their arguments contain
+                     both read and write holds that are all released during a
+                     condition wait and re-established in tryAcquire.                    
+                </comment>
+                <comment line="615">
+                    Methods relayed to outer class                    
+                </comment>
+                <implements interface="Lock"/>
+                <implements interface="java.io.Serializable"/>
+                <javadoc line="910">
+                    The lock returned by method {@link ReentrantReadWriteLock#writeLock}.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="914"/>
+                <declaration name="sync" type="Sync" line="915"/>
+                <javadoc line="917">
+                    Constructor for use by subclasses                    
+                    <param>
+                        lock the outer lock object                        
+                    </param>
+                    <throws>
+                        NullPointerException if the lock is null                        
+                    </throws>
+                </javadoc>
+                <method name="WriteLock" type="constructor" line="923">
+                    <params>
+                        <param name="lock" type="ReentrantReadWriteLock"/>
+                    </params>
+                </method>
+                <javadoc line="927">
+                    Acquires the write lock.
+                      &lt;p&gt;Acquires the write lock if neither the read nor write lock
+                      are held by another thread
+                      and returns immediately, setting the write lock hold count to
+                      one.
+                      &lt;p&gt;If the current thread already holds the write lock then the
+                      hold count is incremented by one and the method returns
+                      immediately.
+                      &lt;p&gt;If the lock is held by another thread then the current
+                      thread becomes disabled for thread scheduling purposes and
+                      lies dormant until the write lock has been acquired, at which
+                      time the write lock hold count is set to one.                    
+                </javadoc>
+                <method name="lock" type="void" line="944"/>
+                <javadoc line="948">
+                    Acquires the write lock unless the current thread is{@linkplain Thread#interrupt interrupted}.
+                      &lt;p&gt;Acquires the write lock if neither the read nor write lock
+                      are held by another thread
+                      and returns immediately, setting the write lock hold count to
+                      one.
+                      &lt;p&gt;If the current thread already holds this lock then the
+                      hold count is incremented by one and the method returns
+                      immediately.
+                      &lt;p&gt;If the lock is held by another thread then the current
+                      thread becomes disabled for thread scheduling purposes and
+                      lies dormant until one of two things happens:
+                      &lt;ul&gt;
+                      &lt;li&gt;The write lock is acquired by the current thread; or
+                      &lt;li&gt;Some other thread {@linkplain Thread#interrupt interrupts}the current thread.
+                      &lt;/ul&gt;
+                      &lt;p&gt;If the write lock is acquired by the current thread then the
+                      lock hold count is set to one.
+                      &lt;p&gt;If the current thread:
+                      &lt;ul&gt;
+                      &lt;li&gt;has its interrupted status set on entry to this method;
+                      or
+                      &lt;li&gt;is {@linkplain Thread#interrupt interrupted} while
+                      acquiring the write lock,
+                      &lt;/ul&gt;
+                      then {@link InterruptedException} is thrown and the current
+                      thread&apos;s interrupted status is cleared.
+                      &lt;p&gt;In this implementation, as this method is an explicit
+                      interruption point, preference is given to responding to
+                      the interrupt over normal or reentrant acquisition of the
+                      lock.                    
+                    <throws>
+                        InterruptedException if the current thread is interrupted                        
+                    </throws>
+                </javadoc>
+                <method name="lockInterruptibly" type="void" line="999"/>
+                <javadoc line="1003">
+                    Acquires the write lock only if it is not held by another thread
+                      at the time of invocation.
+                      &lt;p&gt;Acquires the write lock if neither the read nor write lock
+                      are held by another thread
+                      and returns immediately with the value {@code true},
+                      setting the write lock hold count to one. Even when this lock has
+                      been set to use a fair ordering policy, a call to{@code tryLock()} &lt;em&gt;will&lt;/em&gt; immediately acquire the
+                      lock if it is available, whether or not other threads are
+                      currently waiting for the write lock.  This &amp;quot;barging&amp;quot;
+                      behavior can be useful in certain circumstances, even
+                      though it breaks fairness. If you want to honor the
+                      fairness setting for this lock, then use {@link #tryLock(long,TimeUnit) tryLock(0, TimeUnit.SECONDS) }which is almost equivalent (it also detects interruption).
+                      &lt;p&gt; If the current thread already holds this lock then the
+                      hold count is incremented by one and the method returns{@code true}.
+                      &lt;p&gt;If the lock is held by another thread then this method
+                      will return immediately with the value {@code false}.                    
+                    <return>
+                        {@code true} if the lock was free and was acquired
+                          by the current thread, or the write lock was already held
+                          by the current thread; and {@code false} otherwise.                        
+                    </return>
+                </javadoc>
+                <method name="tryLock" type="boolean" line="1032"/>
+                <javadoc line="1036">
+                    Acquires the write lock if it is not held by another thread
+                      within the given waiting time and the current thread has
+                      not been {@linkplain Thread#interrupt interrupted}.
+                      &lt;p&gt;Acquires the write lock if neither the read nor write lock
+                      are held by another thread
+                      and returns immediately with the value {@code true},
+                      setting the write lock hold count to one. If this lock has been
+                      set to use a fair ordering policy then an available lock
+                      &lt;em&gt;will not&lt;/em&gt; be acquired if any other threads are
+                      waiting for the write lock. This is in contrast to the {@link #tryLock()} method. If you want a timed {@code tryLock}that does permit barging on a fair lock then combine the
+                      timed and un-timed forms together:
+                      &lt;pre&gt;if (lock.tryLock() || lock.tryLock(timeout, unit) ) { ... }
+                      &lt;/pre&gt;
+                      &lt;p&gt;If the current thread already holds this lock then the
+                      hold count is incremented by one and the method returns{@code true}.
+                      &lt;p&gt;If the lock is held by another thread then the current
+                      thread becomes disabled for thread scheduling purposes and
+                      lies dormant until one of three things happens:
+                      &lt;ul&gt;
+                      &lt;li&gt;The write lock is acquired by the current thread; or
+                      &lt;li&gt;Some other thread {@linkplain Thread#interrupt interrupts}the current thread; or
+                      &lt;li&gt;The specified waiting time elapses
+                      &lt;/ul&gt;
+                      &lt;p&gt;If the write lock is acquired then the value {@code true} is
+                      returned and the write lock hold count is set to one.
+                      &lt;p&gt;If the current thread:
+                      &lt;ul&gt;
+                      &lt;li&gt;has its interrupted status set on entry to this method;
+                      or
+                      &lt;li&gt;is {@linkplain Thread#interrupt interrupted} while
+                      acquiring the write lock,
+                      &lt;/ul&gt;
+                      then {@link InterruptedException} is thrown and the current
+                      thread&apos;s interrupted status is cleared.
+                      &lt;p&gt;If the specified waiting time elapses then the value{@code false} is returned.  If the time is less than or
+                      equal to zero, the method will not wait at all.
+                      &lt;p&gt;In this implementation, as this method is an explicit
+                      interruption point, preference is given to responding to
+                      the interrupt over normal or reentrant acquisition of the
+                      lock, and over reporting the elapse of the waiting time.                    
+                    <param>
+                        timeout the time to wait for the write lock                        
+                    </param>
+                    <param>
+                        unit the time unit of the timeout argument                        
+                    </param>
+                    <return>
+                        {@code true} if the lock was free and was acquired
+                          by the current thread, or the write lock was already held by the
+                          current thread; and {@code false} if the waiting time
+                          elapsed before the lock could be acquired.                        
+                    </return>
+                    <throws>
+                        InterruptedException if the current thread is interrupted                        
+                    </throws>
+                    <throws>
+                        NullPointerException if the time unit is null                        
+                    </throws>
+                </javadoc>
+                <method name="tryLock" type="boolean" line="1114">
+                    <params>
+                        <param name="timeout" type="long"/>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                </method>
+                <javadoc line="1118">
+                    Attempts to release this lock.
+                      &lt;p&gt;If the current thread is the holder of this lock then
+                      the hold count is decremented. If the hold count is now
+                      zero then the lock is released.  If the current thread is
+                      not the holder of this lock then {@link IllegalMonitorStateException} is thrown.                    
+                    <throws>
+                        IllegalMonitorStateException if the current thread does not
+                          hold this lock.                        
+                    </throws>
+                </javadoc>
+                <method name="unlock" type="void" line="1130"/>
+                <javadoc line="1134">
+                    Returns a {@link Condition} instance for use with this{@link Lock} instance.
+                      &lt;p&gt;The returned {@link Condition} instance supports the same
+                      usages as do the {@link Object} monitor methods ({@link Object#wait() wait}, {@link Object#notify notify}, and {@link Object#notifyAll notifyAll}) when used with the built-in
+                      monitor lock.
+                      &lt;ul&gt;
+                      &lt;li&gt;If this write lock is not held when any {@link Condition} method is called then an {@link IllegalMonitorStateException} is thrown.  (Read locks are
+                      held independently of write locks, so are not checked or
+                      affected. However it is essentially always an error to
+                      invoke a condition waiting method when the current thread
+                      has also acquired read locks, since other threads that
+                      could unblock it will not be able to acquire the write
+                      lock.)
+                      &lt;li&gt;When the condition {@linkplain Condition#await() waiting}methods are called the write lock is released and, before
+                      they return, the write lock is reacquired and the lock hold
+                      count restored to what it was when the method was called.
+                      &lt;li&gt;If a thread is {@linkplain Thread#interrupt interrupted} while
+                      waiting then the wait will terminate, an {@link InterruptedException} will be thrown, and the thread&apos;s
+                      interrupted status will be cleared.
+                      &lt;li&gt; Waiting threads are signalled in FIFO order.
+                      &lt;li&gt;The ordering of lock reacquisition for threads returning
+                      from waiting methods is the same as for threads initially
+                      acquiring the lock, which is in the default case not specified,
+                      but for &lt;em&gt;fair&lt;/em&gt; locks favors those threads that have been
+                      waiting the longest.
+                      &lt;/ul&gt;                    
+                    <return>
+                        the Condition object                        
+                    </return>
+                </javadoc>
+                <method name="newCondition" type="Condition" line="1177"/>
+                <javadoc line="1181">
+                    Returns a string identifying this lock, as well as its lock
+                      state.  The state, in brackets includes either the String{@code &quot;Unlocked&quot;} or the String {@code &quot;Locked by&quot;}followed by the {@linkplain Thread#getName name} of the owning thread.                    
+                    <return>
+                        a string identifying this lock, as well as its lock state                        
+                    </return>
+                </javadoc>
+                <method name="toString" type="String" line="1189">
+                    <declaration name="o" type="Thread" line="1190"/>
+                </method>
+                <javadoc line="1196">
+                    Queries if this write lock is held by the current thread.
+                      Identical in effect to {@link ReentrantReadWriteLock#isWriteLockedByCurrentThread}.                    
+                    <return>
+                        {@code true} if the current thread holds this lock and{@code false} otherwise                        
+                    </return>
+                    <since>
+                        1.6                        
+                    </since>
+                </javadoc>
+                <method name="isHeldByCurrentThread" type="boolean" line="1205"/>
+                <javadoc line="1209">
+                    Queries the number of holds on this write lock by the current
+                      thread.  A thread has a hold on a lock for each lock action
+                      that is not matched by an unlock action.  Identical in effect
+                      to {@link ReentrantReadWriteLock#getWriteHoldCount}.                    
+                    <return>
+                        the number of holds on this lock by the current thread,
+                          or zero if this lock is not held by the current thread                        
+                    </return>
+                    <since>
+                        1.6                        
+                    </since>
+                </javadoc>
+                <method name="getHoldCount" type="int" line="1219"/>
+            </class>
+            <javadoc line="1226">
+                Returns {@code true} if this lock has fairness set true.                
+                <return>
+                    {@code true} if this lock has fairness set true                    
+                </return>
+            </javadoc>
+            <method name="isFair" type="boolean" line="1231"/>
+            <javadoc line="1235">
+                Returns the thread that currently owns the write lock, or{@code null} if not owned. When this method is called by a
+                  thread that is not the owner, the return value reflects a
+                  best-effort approximation of current lock status. For example,
+                  the owner may be momentarily {@code null} even if there are
+                  threads trying to acquire the lock but have not yet done so.
+                  This method is designed to facilitate construction of
+                  subclasses that provide more extensive lock monitoring
+                  facilities.                
+                <return>
+                    the owner, or {@code null} if not owned                    
+                </return>
+            </javadoc>
+            <method name="getOwner" type="Thread" line="1248"/>
+            <javadoc line="1252">
+                Queries the number of read locks held for this lock. This
+                  method is designed for use in monitoring system state, not for
+                  synchronization control.                
+                <return>
+                    the number of read locks held.                    
+                </return>
+            </javadoc>
+            <method name="getReadLockCount" type="int" line="1258"/>
+            <javadoc line="1262">
+                Queries if the write lock is held by any thread. This method is
+                  designed for use in monitoring system state, not for
+                  synchronization control.                
+                <return>
+                    {@code true} if any thread holds the write lock and{@code false} otherwise                    
+                </return>
+            </javadoc>
+            <method name="isWriteLocked" type="boolean" line="1270"/>
+            <javadoc line="1274">
+                Queries if the write lock is held by the current thread.                
+                <return>
+                    {@code true} if the current thread holds the write lock and{@code false} otherwise                    
+                </return>
+            </javadoc>
+            <method name="isWriteLockedByCurrentThread" type="boolean" line="1280"/>
+            <javadoc line="1284">
+                Queries the number of reentrant write holds on this lock by the
+                  current thread.  A writer thread has a hold on a lock for
+                  each lock action that is not matched by an unlock action.                
+                <return>
+                    the number of holds on the write lock by the current thread,
+                      or zero if the write lock is not held by the current thread                    
+                </return>
+            </javadoc>
+            <method name="getWriteHoldCount" type="int" line="1292"/>
+            <javadoc line="1296">
+                Queries the number of reentrant read holds on this lock by the
+                  current thread.  A reader thread has a hold on a lock for
+                  each lock action that is not matched by an unlock action.                
+                <return>
+                    the number of holds on the read lock by the current thread,
+                      or zero if the read lock is not held by the current thread                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getReadHoldCount" type="int" line="1305"/>
+            <javadoc line="1309">
+                Returns a collection containing threads that may be waiting to
+                  acquire the write lock.  Because the actual set of threads may
+                  change dynamically while constructing this result, the returned
+                  collection is only a best-effort estimate.  The elements of the
+                  returned collection are in no particular order.  This method is
+                  designed to facilitate construction of subclasses that provide
+                  more extensive lock monitoring facilities.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getQueuedWriterThreads" type="Collection<Thread>" line="1320"/>
+            <javadoc line="1324">
+                Returns a collection containing threads that may be waiting to
+                  acquire the read lock.  Because the actual set of threads may
+                  change dynamically while constructing this result, the returned
+                  collection is only a best-effort estimate.  The elements of the
+                  returned collection are in no particular order.  This method is
+                  designed to facilitate construction of subclasses that provide
+                  more extensive lock monitoring facilities.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getQueuedReaderThreads" type="Collection<Thread>" line="1335"/>
+            <javadoc line="1339">
+                Queries whether any threads are waiting to acquire the read or
+                  write lock. Note that because cancellations may occur at any
+                  time, a {@code true} return does not guarantee that any other
+                  thread will ever acquire a lock.  This method is designed
+                  primarily for use in monitoring of the system state.                
+                <return>
+                    {@code true} if there may be other threads waiting to
+                      acquire the lock                    
+                </return>
+            </javadoc>
+            <method name="hasQueuedThreads" type="boolean" line="1349"/>
+            <javadoc line="1353">
+                Queries whether the given thread is waiting to acquire either
+                  the read or write lock. Note that because cancellations may
+                  occur at any time, a {@code true} return does not guarantee
+                  that this thread will ever acquire a lock.  This method is
+                  designed primarily for use in monitoring of the system state.                
+                <param>
+                    thread the thread                    
+                </param>
+                <return>
+                    {@code true} if the given thread is queued waiting for this lock                    
+                </return>
+                <throws>
+                    NullPointerException if the thread is null                    
+                </throws>
+            </javadoc>
+            <method name="hasQueuedThread" type="boolean" line="1364">
+                <params>
+                    <param name="thread" type="Thread"/>
+                </params>
+            </method>
+            <javadoc line="1368">
+                Returns an estimate of the number of threads waiting to acquire
+                  either the read or write lock.  The value is only an estimate
+                  because the number of threads may change dynamically while this
+                  method traverses internal data structures.  This method is
+                  designed for use in monitoring of the system state, not for
+                  synchronization control.                
+                <return>
+                    the estimated number of threads waiting for this lock                    
+                </return>
+            </javadoc>
+            <method name="getQueueLength" type="int" line="1378"/>
+            <javadoc line="1382">
+                Returns a collection containing threads that may be waiting to
+                  acquire either the read or write lock.  Because the actual set
+                  of threads may change dynamically while constructing this
+                  result, the returned collection is only a best-effort estimate.
+                  The elements of the returned collection are in no particular
+                  order.  This method is designed to facilitate construction of
+                  subclasses that provide more extensive monitoring facilities.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getQueuedThreads" type="Collection<Thread>" line="1393"/>
+            <javadoc line="1397">
+                Queries whether any threads are waiting on the given condition
+                  associated with the write lock. Note that because timeouts and
+                  interrupts may occur at any time, a {@code true} return does
+                  not guarantee that a future {@code signal} will awaken any
+                  threads.  This method is designed primarily for use in
+                  monitoring of the system state.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    {@code true} if there are any waiting threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if this lock is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this lock                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="hasWaiters" type="boolean" line="1412">
+                <params>
+                    <param name="condition" type="Condition"/>
+                </params>
+            </method>
+            <javadoc line="1420">
+                Returns an estimate of the number of threads waiting on the
+                  given condition associated with the write lock. Note that because
+                  timeouts and interrupts may occur at any time, the estimate
+                  serves only as an upper bound on the actual number of waiters.
+                  This method is designed for use in monitoring of the system
+                  state, not for synchronization control.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    the estimated number of waiting threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if this lock is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this lock                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="getWaitQueueLength" type="int" line="1435">
+                <params>
+                    <param name="condition" type="Condition"/>
+                </params>
+            </method>
+            <javadoc line="1443">
+                Returns a collection containing those threads that may be
+                  waiting on the given condition associated with the write lock.
+                  Because the actual set of threads may change dynamically while
+                  constructing this result, the returned collection is only a
+                  best-effort estimate. The elements of the returned collection
+                  are in no particular order.  This method is designed to
+                  facilitate construction of subclasses that provide more
+                  extensive condition monitoring facilities.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    the collection of threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if this lock is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this lock                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="getWaitingThreads" type="Collection<Thread>" line="1460">
+                <params>
+                    <param name="condition" type="Condition"/>
+                </params>
+            </method>
+            <javadoc line="1468">
+                Returns a string identifying this lock, as well as its lock state.
+                  The state, in brackets, includes the String {@code &quot;Write locks =&quot;}followed by the number of reentrantly held write locks, and the
+                  String {@code &quot;Read locks =&quot;} followed by the number of held
+                  read locks.                
+                <return>
+                    a string identifying this lock, as well as its lock state                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="1477">
+                <declaration name="c" type="int" line="1478"/>
+                <declaration name="w" type="int" line="1479"/>
+                <declaration name="r" type="int" line="1480"/>
+            </method>
+        </class>
+    </source>

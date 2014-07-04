@@ -1,0 +1,657 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.management.remote.rmi">
+        <import package="com.sun.jmx.remote.security.MBeanServerFileAccessController"/>
+        <import package="com.sun.jmx.remote.internal.IIOPHelper"/>
+        <import package="com.sun.jmx.remote.util.ClassLogger"/>
+        <import package="com.sun.jmx.remote.util.EnvHelp"/>
+        <import package="java.io.ByteArrayOutputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.ObjectOutputStream"/>
+        <import package="java.net.MalformedURLException"/>
+        <import package="java.rmi.server.RMIClientSocketFactory"/>
+        <import package="java.rmi.server.RMIServerSocketFactory"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Set"/>
+        <import package="javax.management.InstanceNotFoundException"/>
+        <import package="javax.management.MBeanServer"/>
+        <import package="javax.management.remote.JMXConnectionNotification"/>
+        <import package="javax.management.remote.JMXConnector"/>
+        <import package="javax.management.remote.JMXConnectorServer"/>
+        <import package="javax.management.remote.JMXServiceURL"/>
+        <import package="javax.management.remote.MBeanServerForwarder"/>
+        <import package="javax.naming.InitialContext"/>
+        <import package="javax.naming.NamingException"/>
+        <class name="RMIConnectorServer" line="59">
+            <extends class="JMXConnectorServer"/>
+            <comment line="603">
+                We repeat the definitions of connection{Opened,Closed,Failed}
+                here so that they are accessible to other classes in this package                
+            </comment>
+            <comment line="833">
+                Private variables                
+            </comment>
+            <comment line="834">
+                -----------------                
+            </comment>
+            <comment line="846">
+                state                
+            </comment>
+            <javadoc line="59">
+                &lt;p&gt;A JMX API connector server that creates RMI-based connections
+                  from remote clients.  Usually, such connector servers are made
+                  using {@link javax.management.remote.JMXConnectorServerFactoryJMXConnectorServerFactory}.  However, specialized applications can
+                  use this class directly, for example with an {@link RMIServerImpl}object.&lt;/p&gt;                
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <declaration name="JNDI_REBIND_ATTRIBUTE" type="String" line="70"/>
+            <javadoc line="70">
+                &lt;p&gt;Name of the attribute that specifies whether the {@link RMIServer} stub that represents an RMI connector server should
+                  override an existing stub at the same address.  The value
+                  associated with this attribute, if any, should be a string that
+                  is equal, ignoring case, to &lt;code&gt;&quot;true&quot;&lt;/code&gt; or
+                  &lt;code&gt;&quot;false&quot;&lt;/code&gt;.  The default value is false.&lt;/p&gt;                
+            </javadoc>
+            <declaration name="RMI_CLIENT_SOCKET_FACTORY_ATTRIBUTE" type="String" line="81"/>
+            <javadoc line="81">
+                &lt;p&gt;Name of the attribute that specifies the {@link RMIClientSocketFactory} for the RMI objects created in
+                  conjunction with this connector. The value associated with this
+                  attribute must be of type &lt;code&gt;RMIClientSocketFactory&lt;/code&gt; and can
+                  only be specified in the &lt;code&gt;Map&lt;/code&gt; argument supplied when
+                  creating a connector server.&lt;/p&gt;                
+            </javadoc>
+            <declaration name="RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE" type="String" line="92"/>
+            <javadoc line="92">
+                &lt;p&gt;Name of the attribute that specifies the {@link RMIServerSocketFactory} for the RMI objects created in
+                  conjunction with this connector. The value associated with this
+                  attribute must be of type &lt;code&gt;RMIServerSocketFactory&lt;/code&gt; and can
+                  only be specified in the &lt;code&gt;Map&lt;/code&gt; argument supplied when
+                  creating a connector server.&lt;/p&gt;                
+            </javadoc>
+            <javadoc line="103">
+                &lt;p&gt;Makes an &lt;code&gt;RMIConnectorServer&lt;/code&gt;.
+                  This is equivalent to calling {@link #RMIConnectorServer(JMXServiceURL,Map,RMIServerImpl,MBeanServer)RMIConnectorServer(directoryURL,environment,null,null)}&lt;/p&gt;                
+                <param>
+                    url the URL defining how to create the connector server.
+                      Cannot be null.                    
+                </param>
+                <param>
+                    environment attributes governing the creation and
+                      storing of the RMI object.  Can be null, which is equivalent to
+                      an empty Map.                    
+                </param>
+                <exception>
+                    IllegalArgumentException if <code>url</code> is null.                    
+                </exception>
+                <exception>
+                    MalformedURLException if <code>url</code> does not
+                      conform to the syntax for an RMI connector, or if its protocol
+                      is not recognized by this implementation. Only "rmi" and "iiop"
+                      are valid when this constructor is used.                    
+                </exception>
+                <exception>
+                    IOException if the connector server cannot be created
+                      for some reason or if it is inevitable that its {@link #start()start} method will fail.                    
+                </exception>
+            </javadoc>
+            <method name="RMIConnectorServer" type="constructor" line="128">
+                <params>
+                    <param name="url" type="JMXServiceURL"/>
+                    <param name="environment" type="Map<String,?>"/>
+                </params>
+            </method>
+            <javadoc line="132">
+                &lt;p&gt;Makes an &lt;code&gt;RMIConnectorServer&lt;/code&gt; for the given MBean
+                  server.
+                  This is equivalent to calling {@link #RMIConnectorServer(JMXServiceURL,Map,RMIServerImpl,MBeanServer)RMIConnectorServer(directoryURL,environment,null,mbeanServer)}&lt;/p&gt;                
+                <param>
+                    url the URL defining how to create the connector server.
+                      Cannot be null.                    
+                </param>
+                <param>
+                    environment attributes governing the creation and
+                      storing of the RMI object.  Can be null, which is equivalent to
+                      an empty Map.                    
+                </param>
+                <param>
+                    mbeanServer the MBean server to which the new connector
+                      server is attached, or null if it will be attached by being
+                      registered as an MBean in the MBean server.                    
+                </param>
+                <exception>
+                    IllegalArgumentException if <code>url</code> is null.                    
+                </exception>
+                <exception>
+                    MalformedURLException if <code>url</code> does not
+                      conform to the syntax for an RMI connector, or if its protocol
+                      is not recognized by this implementation. Only "rmi" and "iiop"
+                      are valid when this constructor is used.                    
+                </exception>
+                <exception>
+                    IOException if the connector server cannot be created
+                      for some reason or if it is inevitable that its {@link #start()start} method will fail.                    
+                </exception>
+            </javadoc>
+            <method name="RMIConnectorServer" type="constructor" line="163">
+                <params>
+                    <param name="url" type="JMXServiceURL"/>
+                    <param name="environment" type="Map<String,?>"/>
+                    <param name="mbeanServer" type="MBeanServer"/>
+                </params>
+            </method>
+            <javadoc line="167">
+                &lt;p&gt;Makes an &lt;code&gt;RMIConnectorServer&lt;/code&gt; for the given MBean
+                  server.&lt;/p&gt;                
+                <param>
+                    url the URL defining how to create the connector server.
+                      Cannot be null.                    
+                </param>
+                <param>
+                    environment attributes governing the creation and
+                      storing of the RMI object.  Can be null, which is equivalent to
+                      an empty Map.                    
+                </param>
+                <param>
+                    rmiServerImpl An implementation of the RMIServer interface,
+                      consistent with the protocol type specified in <var>url</var>.
+                      If this parameter is non null, the protocol type specified by
+                      <var>url</var> is not constrained, and is assumed to be valid.
+                      Otherwise, only "rmi" and "iiop" will be recognized.                    
+                </param>
+                <param>
+                    mbeanServer the MBean server to which the new connector
+                      server is attached, or null if it will be attached by being
+                      registered as an MBean in the MBean server.                    
+                </param>
+                <exception>
+                    IllegalArgumentException if <code>url</code> is null.                    
+                </exception>
+                <exception>
+                    MalformedURLException if <code>url</code> does not
+                      conform to the syntax for an RMI connector, or if its protocol
+                      is not recognized by this implementation. Only "rmi" and "iiop"
+                      are recognized when <var>rmiServerImpl</var> is null.                    
+                </exception>
+                <exception>
+                    IOException if the connector server cannot be created
+                      for some reason or if it is inevitable that its {@link #start()start} method will fail.                    
+                </exception>
+                <see>
+                    #start                    
+                </see>
+            </javadoc>
+            <method name="RMIConnectorServer" type="constructor" line="204">
+                <params>
+                    <param name="url" type="JMXServiceURL"/>
+                    <param name="environment" type="Map<String,?>"/>
+                    <param name="rmiServerImpl" type="RMIServerImpl"/>
+                    <param name="mbeanServer" type="MBeanServer"/>
+                </params>
+                <scope line="209">
+                    <declaration name="prt" type="String" line="210"/>
+                    <scope line="211">
+                        <declaration name="msg" type="String" line="212"/>
+                    </scope>
+                    <declaration name="urlPath" type="String" line="215"/>
+                    <scope line="218">
+                        <declaration name="msg" type="String" line="219"/>
+                    </scope>
+                </scope>
+                <scope line="227"/>
+            </method>
+            <javadoc line="236">
+                &lt;p&gt;Returns a client stub for this connector server.  A client
+                  stub is a serializable object whose {@link JMXConnector#connect(Map) connect} method can be used to make
+                  one new connection to this connector server.&lt;/p&gt;                
+                <param>
+                    env client connection parameters of the same sort that
+                      could be provided to {@link JMXConnector#connect(Map)JMXConnector.connect(Map)}.  Can be null, which is equivalent
+                      to an empty map.                    
+                </param>
+                <return>
+                    a client stub that can be used to make a new connection
+                      to this connector server.                    
+                </return>
+                <exception>
+                    UnsupportedOperationException if this connector
+                      server does not support the generation of client stubs.                    
+                </exception>
+                <exception>
+                    IllegalStateException if the JMXConnectorServer is
+                      not started (see {@link #isActive()}).                    
+                </exception>
+                <exception>
+                    IOException if a communications problem means that a
+                      stub cannot be created.                    
+                </exception>
+            </javadoc>
+            <method name="toJMXConnector" type="JMXConnector" line="259">
+                <params>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <comment line="260">
+                    The serialized for of rmiServerImpl is automatically                    
+                </comment>
+                <comment line="261">
+                    a RMI server stub.                    
+                </comment>
+                <comment line="265">
+                    Merge maps                    
+                </comment>
+                <declaration name="usemap" type="Map&lt;String,Object&gt;" line="266"/>
+                <scope line="270"/>
+                <declaration name="stub" type="RMIServer" line="277"/>
+            </method>
+            <javadoc line="282">
+                &lt;p&gt;Activates the connector server, that is starts listening for
+                  client connections.  Calling this method when the connector
+                  server is already active has no effect.  Calling this method
+                  when the connector server has been stopped will generate an
+                  &lt;code&gt;IOException&lt;/code&gt;.&lt;/p&gt;
+                  &lt;p&gt;The behavior of this method when called for the first time
+                  depends on the parameters that were supplied at construction,
+                  as described below.&lt;/p&gt;
+                  &lt;p&gt;First, an object of a subclass of {@link RMIServerImpl} is
+                  required, to export the connector server through RMI:&lt;/p&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;If an &lt;code&gt;RMIServerImpl&lt;/code&gt; was supplied to the
+                  constructor, it is used.
+                  &lt;li&gt;Otherwise, if the protocol part of the
+                  &lt;code&gt;JMXServiceURL&lt;/code&gt; supplied to the constructor was
+                  &lt;code&gt;iiop&lt;/code&gt;, an object of type {@link RMIIIOPServerImpl}is created.
+                  &lt;li&gt;Otherwise, if the &lt;code&gt;JMXServiceURL&lt;/code&gt;
+                  was null, or its protocol part was &lt;code&gt;rmi&lt;/code&gt;, an object
+                  of type {@link RMIJRMPServerImpl} is created.
+                  &lt;li&gt;Otherwise, the implementation can create an
+                  implementation-specific {@link RMIServerImpl} or it can throw{@link MalformedURLException}.
+                  &lt;/ul&gt;
+                  &lt;p&gt;If the given address includes a JNDI directory URL as
+                  specified in the package documentation for {@link javax.management.remote.rmi}, then this
+                  &lt;code&gt;RMIConnectorServer&lt;/code&gt; will bootstrap by binding the
+                  &lt;code&gt;RMIServerImpl&lt;/code&gt; to the given address.&lt;/p&gt;
+                  &lt;p&gt;If the URL path part of the &lt;code&gt;JMXServiceURL&lt;/code&gt; was
+                  empty or a single slash (&lt;code&gt;/&lt;/code&gt;), then the RMI object
+                  will not be bound to a directory.  Instead, a reference to it
+                  will be encoded in the URL path of the RMIConnectorServer
+                  address (returned by {@link #getAddress()}).  The encodings for
+                  &lt;code&gt;rmi&lt;/code&gt; and &lt;code&gt;iiop&lt;/code&gt; are described in the
+                  package documentation for {@link javax.management.remote.rmi}.&lt;/p&gt;
+                  &lt;p&gt;The behavior when the URL path is neither empty nor a JNDI
+                  directory URL, or when the protocol is neither &lt;code&gt;rmi&lt;/code&gt;
+                  nor &lt;code&gt;iiop&lt;/code&gt;, is implementation defined, and may
+                  include throwing {@link MalformedURLException} when the
+                  connector server is created or when it is started.&lt;/p&gt;                
+                <exception>
+                    IllegalStateException if the connector server has
+                      not been attached to an MBean server.                    
+                </exception>
+                <exception>
+                    IOException if the connector server cannot be
+                      started.                    
+                </exception>
+            </javadoc>
+            <method name="start" type="void" line="342">
+                <comment line="357">
+                    Check the internal access file property to see                    
+                </comment>
+                <comment line="358">
+                    if an MBeanServerForwarder is to be provided                    
+                </comment>
+                <comment line="359">
+                                        
+                </comment>
+                <comment line="361">
+                    Check if access file property is specified                    
+                </comment>
+                <comment line="362">
+                                        
+                </comment>
+                <comment line="366">
+                    Access file property specified, create an instance                    
+                </comment>
+                <comment line="367">
+                    of the MBeanServerFileAccessController class                    
+                </comment>
+                <comment line="368">
+                                        
+                </comment>
+                <comment line="376">
+                    Set the MBeanServerForwarder                    
+                </comment>
+                <comment line="377">
+                                        
+                </comment>
+                <comment line="431">
+                    fit e in the nested exception if we are on 1.4                    
+                </comment>
+                <comment line="436">
+                    if jndiURL is null, we must encode the stub into the URL.                    
+                </comment>
+                <comment line="447">
+                    OK: we are already throwing another exception                    
+                </comment>
+                <declaration name="tracing" type="boolean" line="343"/>
+                <scope line="345"/>
+                <scope line="348"/>
+                <scope line="360">
+                    <declaration name="accessFile" type="String" line="363"/>
+                    <scope line="365">
+                        <declaration name="mbsf" type="MBeanServerForwarder" line="369"/>
+                        <scope line="370"/>
+                        <scope line="372"/>
+                    </scope>
+                </scope>
+                <scope line="382"/>
+                <scope line="386">
+                    <declaration name="x" type="IllegalArgumentException" line="387"/>
+                </scope>
+                <declaration name="rmiServer" type="RMIServerImpl" line="393"/>
+                <scope line="405">
+                    <declaration name="objref" type="RMIServer" line="407"/>
+                    <scope line="409">
+                        <declaration name="jndiUrl" type="String" line="410"/>
+                        <declaration name="rebind" type="boolean" line="415"/>
+                        <scope line="422">
+                            <declaration name="usemap" type="Hashtable&lt;?,?&gt;" line="425"/>
+                        </scope>
+                        <scope line="430"/>
+                    </scope>
+                    <scope line="435"/>
+                </scope>
+                <scope line="443">
+                    <scope line="444"/>
+                    <scope line="446"/>
+                </scope>
+                <scope line="461"/>
+                <scope line="467"/>
+            </method>
+            <javadoc line="473">
+                &lt;p&gt;Deactivates the connector server, that is, stops listening for
+                  client connections.  Calling this method will also close all
+                  client connections that were made by this server.  After this
+                  method returns, whether normally or with an exception, the
+                  connector server will not create any new client
+                  connections.&lt;/p&gt;
+                  &lt;p&gt;Once a connector server has been stopped, it cannot be started
+                  again.&lt;/p&gt;
+                  &lt;p&gt;Calling this method when the connector server has already
+                  been stopped has no effect.  Calling this method when the
+                  connector server has not yet been started will disable the
+                  connector server object permanently.&lt;/p&gt;
+                  &lt;p&gt;If closing a client connection produces an exception, that
+                  exception is not thrown from this method.  A {@link JMXConnectionNotification} is emitted from this MBean with the
+                  connection ID of the connection that could not be closed.&lt;/p&gt;
+                  &lt;p&gt;Closing a connector server is a potentially slow operation.
+                  For example, if a client machine with an open connection has
+                  crashed, the close operation might have to wait for a network
+                  protocol timeout.  Callers that do not want to block in a close
+                  operation should do it in a separate thread.&lt;/p&gt;
+                  &lt;p&gt;This method calls the method {@link RMIServerImpl#close()close} on the connector server&apos;s &lt;code&gt;RMIServerImpl&lt;/code&gt;
+                  object.&lt;/p&gt;
+                  &lt;p&gt;If the &lt;code&gt;RMIServerImpl&lt;/code&gt; was bound to a JNDI
+                  directory by the {@link #start() start} method, it is unbound
+                  from the directory by this method.&lt;/p&gt;                
+                <exception>
+                    IOException if the server cannot be closed cleanly,
+                      or if the <code>RMIServerImpl</code> cannot be unbound from the
+                      directory.  When this exception is thrown, the server has
+                      already attempted to close all client connections, if
+                      appropriate; to call {@link RMIServerImpl#close()}; and to
+                      unbind the <code>RMIServerImpl</code> from its directory, if
+                      appropriate.  All client connections are closed except possibly
+                      those that generated exceptions when the server attempted to
+                      close them.                    
+                </exception>
+            </javadoc>
+            <method name="stop" type="void" line="518">
+                <comment line="539">
+                    rmiServerImpl can be null if stop() called without start()                    
+                </comment>
+                <comment line="568">
+                    fit e in as the nested exception if we are on 1.4                    
+                </comment>
+                <declaration name="tracing" type="boolean" line="519"/>
+                <scope line="521">
+                    <scope line="522"/>
+                    <scope line="525"/>
+                </scope>
+                <scope line="533"/>
+                <declaration name="exception" type="IOException" line="537"/>
+                <scope line="540">
+                    <scope line="541"/>
+                    <scope line="544"/>
+                </scope>
+                <scope line="551">
+                    <scope line="552">
+                        <declaration name="usemap" type="Hashtable&lt;?,?&gt;" line="557"/>
+                        <declaration name="ctx" type="InitialContext" line="559"/>
+                    </scope>
+                    <scope line="565"/>
+                </scope>
+            </method>
+            <method name="isActive" type="boolean" line="579"/>
+            <method name="getAddress" type="JMXServiceURL" line="583"/>
+            <method name="getAttributes" type="Map<String,?>" line="589">
+                <declaration name="map" type="Map&lt;String,?&gt;" line="590"/>
+            </method>
+            <method name="setMBeanServerForwarder" type="void" line="596">
+                <params>
+                    <param name="mbsf" type="MBeanServerForwarder"/>
+                </params>
+            </method>
+            <method name="connectionOpened" type="void" line="608">
+                <params>
+                    <param name="connectionId" type="String"/>
+                    <param name="message" type="String"/>
+                    <param name="userData" type="Object"/>
+                </params>
+            </method>
+            <method name="connectionClosed" type="void" line="614">
+                <params>
+                    <param name="connectionId" type="String"/>
+                    <param name="message" type="String"/>
+                    <param name="userData" type="Object"/>
+                </params>
+            </method>
+            <method name="connectionFailed" type="void" line="620">
+                <params>
+                    <param name="connectionId" type="String"/>
+                    <param name="message" type="String"/>
+                    <param name="userData" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="624">
+                Bind a stub to a registry.                
+                <param>
+                    jndiUrl URL of the stub in the registry, extracted
+                      from the <code>JMXServiceURL</code>.                    
+                </param>
+                <param>
+                    attributes A Hashtable containing environment parameters,
+                      built from the Map specified at this object creation.                    
+                </param>
+                <param>
+                    rmiServer The object to bind in the registry                    
+                </param>
+                <param>
+                    rebind true if the object must be rebound.                    
+                </param>
+            </javadoc>
+            <method name="bind" type="void" line="635">
+                <params>
+                    <param name="jndiUrl" type="String"/>
+                    <param name="attributes" type="Hashtable<?,?>"/>
+                    <param name="rmiServer" type="RMIServer"/>
+                    <param name="rebind" type="boolean"/>
+                </params>
+                <comment line="636">
+                    if jndiURL is not null, we nust bind the stub to a                    
+                </comment>
+                <comment line="637">
+                    directory.                    
+                </comment>
+                <declaration name="ctx" type="InitialContext" line="638"/>
+            </method>
+            <javadoc line="648">
+                Creates a new RMIServerImpl.                
+            </javadoc>
+            <method name="newServer" type="RMIServerImpl" line="651">
+                <declaration name="iiop" type="boolean" line="652"/>
+                <declaration name="port" type="int" line="653"/>
+            </method>
+            <javadoc line="664">
+                Encode a stub into the JMXServiceURL.                
+                <param>
+                    rmiServer The stub object to encode in the URL                    
+                </param>
+                <param>
+                    attributes A Map containing environment parameters,
+                      built from the Map specified at this object creation.                    
+                </param>
+            </javadoc>
+            <method name="encodeStubInAddress" type="void" line="672">
+                <params>
+                    <param name="rmiServer" type="RMIServer"/>
+                    <param name="attributes" type="Map<String,?>"/>
+                </params>
+                <comment line="682">
+                    will default to local host name                    
+                </comment>
+                <declaration name="protocol" type="String" line="674"/>
+                <declaration name="port" type="int" line="675"/>
+                <scope line="677"/>
+                <scope line="684"/>
+                <declaration name="urlPath" type="String" line="690"/>
+            </method>
+            <method name="isIiopURL" type="boolean" line="696">
+                <params>
+                    <param name="directoryURL" type="JMXServiceURL"/>
+                    <param name="strict" type="boolean"/>
+                </params>
+                <declaration name="protocol" type="String" line="697"/>
+                <scope line="702"/>
+            </method>
+            <javadoc line="711">
+                Returns the IOR of the given rmiServer.                
+            </javadoc>
+            <method name="encodeStub" type="String" line="715">
+                <params>
+                    <param name="rmiServer" type="RMIServer"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+            </method>
+            <method name="encodeJRMPStub" type="String" line="724">
+                <params>
+                    <param name="rmiServer" type="RMIServer"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <declaration name="bout" type="ByteArrayOutputStream" line="725"/>
+                <declaration name="oout" type="ObjectOutputStream" line="726"/>
+                <declaration name="bytes" type="byte[]" line="729"/>
+            </method>
+            <method name="encodeIIOPStub" type="String" line="735">
+                <params>
+                    <param name="rmiServer" type="RMIServer"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <scope line="736">
+                    <declaration name="orb" type="Object" line="737"/>
+                </scope>
+                <scope line="739"/>
+            </method>
+            <javadoc line="744">
+                Object that we will bind to the registry.
+                  This object is a stub connected to our RMIServerImpl.                
+            </javadoc>
+            <method name="objectToBind" type="RMIServer" line="750">
+                <params>
+                    <param name="rmiServer" type="RMIServerImpl"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+            </method>
+            <method name="newJRMPServer" type="RMIServerImpl" line="756">
+                <params>
+                    <param name="env" type="Map<String,?>"/>
+                    <param name="port" type="int"/>
+                </params>
+                <declaration name="csf" type="RMIClientSocketFactory" line="757"/>
+                <declaration name="ssf" type="RMIServerSocketFactory" line="759"/>
+            </method>
+            <method name="newIIOPServer" type="RMIServerImpl" line="765">
+                <params>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+            </method>
+            <method name="byteArrayToBase64" type="String" line="769">
+                <params>
+                    <param name="a" type="byte[]"/>
+                </params>
+                <comment line="776">
+                    Translate all full groups from byte array elements to Base64                    
+                </comment>
+                <comment line="788">
+                    Translate partial group if present                    
+                </comment>
+                <comment line="796">
+                    assert numBytesInPartialGroup == 2;                    
+                </comment>
+                <comment line="803">
+                    assert inCursor == a.length;                    
+                </comment>
+                <comment line="804">
+                    assert result.length() == resultLen;                    
+                </comment>
+                <declaration name="aLen" type="int" line="770"/>
+                <declaration name="numFullGroups" type="int" line="771"/>
+                <declaration name="numBytesInPartialGroup" type="int" line="772"/>
+                <declaration name="resultLen" type="int" line="773"/>
+                <declaration name="result" type="StringBuilder" line="774"/>
+                <declaration name="inCursor" type="int" line="777"/>
+                <scope line="778">
+                    <declaration name="byte0" type="int" line="779"/>
+                    <declaration name="byte1" type="int" line="780"/>
+                    <declaration name="byte2" type="int" line="781"/>
+                </scope>
+                <scope line="789">
+                    <declaration name="byte0" type="int" line="790"/>
+                    <scope line="792"/>
+                    <scope line="795">
+                        <declaration name="byte1" type="int" line="797"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="intToAlpha" type="char" line="808"/>
+            <javadoc line="808">
+                This array is a lookup table that translates 6-bit positive integer
+                  index values into their &quot;Base64 Alphabet&quot; equivalents as specified
+                  in Table 1 of RFC 2045.                
+            </javadoc>
+            <javadoc line="821">
+                Construct a new IOException with a nested exception.
+                  The nested exception is set only if JDK &gt;= 1.4                
+            </javadoc>
+            <method name="newIOException" type="IOException" line="826">
+                <params>
+                    <param name="message" type="String"/>
+                    <param name="cause" type="Throwable"/>
+                </params>
+                <declaration name="x" type="IOException" line="827"/>
+            </method>
+            <declaration name="logger" type="ClassLogger" line="835"/>
+            <declaration name="address" type="JMXServiceURL" line="838"/>
+            <declaration name="rmiServerImpl" type="RMIServerImpl" line="839"/>
+            <declaration name="attributes" type="Map&lt;String,?&gt;" line="840"/>
+            <declaration name="defaultClassLoader" type="ClassLoader" line="841"/>
+            <declaration name="boundJndiUrl" type="String" line="843"/>
+            <declaration name="CREATED" type="int" line="846"/>
+            <declaration name="STARTED" type="int" line="847"/>
+            <declaration name="STOPPED" type="int" line="848"/>
+            <declaration name="state" type="int" line="850"/>
+            <declaration name="openedServers" type="Set&lt;RMIConnectorServer&gt;" line="851"/>
+        </class>
+    </source>

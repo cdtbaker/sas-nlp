@@ -1,0 +1,34 @@
+package com.sun.jndi.url.ldap;
+import java.util.Hashtable;
+import javax.naming.*;
+import javax.naming.directory.DirContext;
+import javax.naming.spi.*;
+import com.sun.jndi.ldap.LdapCtx;
+import com.sun.jndi.ldap.LdapCtxFactory;
+import com.sun.jndi.ldap.LdapURL;
+/** 
+ * An LDAP URL context factory.
+ * @author Rosanna Lee
+ * @author Scott Seligman
+ * @author Vincent Ryan
+ */
+public class ldapURLContextFactory implements ObjectFactory {
+  public Object getObjectInstance(  Object urlInfo,  Name name,  Context nameCtx,  Hashtable<?,?> env) throws Exception {
+    if (urlInfo == null) {
+      return new ldapURLContext(env);
+    }
+ else {
+      return LdapCtxFactory.getLdapCtxInstance(urlInfo,env);
+    }
+  }
+  static ResolveResult getUsingURLIgnoreRootDN(  String url,  Hashtable env) throws NamingException {
+    LdapURL ldapUrl=new LdapURL(url);
+    DirContext ctx=new LdapCtx("",ldapUrl.getHost(),ldapUrl.getPort(),env,ldapUrl.useSsl());
+    String dn=(ldapUrl.getDN() != null ? ldapUrl.getDN() : "");
+    CompositeName remaining=new CompositeName();
+    if (!"".equals(dn)) {
+      remaining.add(dn);
+    }
+    return new ResolveResult(ctx,remaining);
+  }
+}

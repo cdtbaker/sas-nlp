@@ -1,0 +1,908 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.server">
+        <import package="java.io.File"/>
+        <import package="java.io.FilePermission"/>
+        <import package="java.io.IOException"/>
+        <import package="java.lang.ref.ReferenceQueue"/>
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.lang.reflect.Modifier"/>
+        <import package="java.lang.reflect.Proxy"/>
+        <import package="java.net.JarURLConnection"/>
+        <import package="java.net.MalformedURLException"/>
+        <import package="java.net.SocketPermission"/>
+        <import package="java.net.URL"/>
+        <import package="java.net.URLClassLoader"/>
+        <import package="java.net.URLConnection"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.CodeSource"/>
+        <import package="java.security.Permission"/>
+        <import package="java.security.Permissions"/>
+        <import package="java.security.PermissionCollection"/>
+        <import package="java.security.Policy"/>
+        <import package="java.security.ProtectionDomain"/>
+        <import package="java.rmi.server.LogStream"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Enumeration"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.IdentityHashMap"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.StringTokenizer"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="sun.rmi.runtime.Log"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <class name="LoaderHandler" line="61">
+            <comment line="77">
+                                
+            </comment>
+            <comment line="122">
+                Disallow anyone from creating one of these.                
+            </comment>
+            <comment line="707">
+                Load Class objects for the names in the interfaces array fron
+                 the given class loader.
+                
+                 We pass classObjs and nonpublic arrays to avoid needing a
+                 multi-element return value.  nonpublic is an array to enable
+                 the method to take a boolean argument by reference.
+                
+                 nonpublic array is needed to signal when the return value of
+                 this method should be used as the proxy class loader.  Because
+                 null represents a valid class loader, that value is
+                 insufficient to signal that the return value should not be used
+                 as the proxy class loader.                
+            </comment>
+            <javadoc line="61">
+                &lt;code&gt;LoaderHandler&lt;/code&gt; provides the implementation of the static
+                  methods of the &lt;code&gt;java.rmi.server.RMIClassLoader&lt;/code&gt; class.                
+                <author>
+                    Ann Wollrath                    
+                </author>
+                <author>
+                    Peter Jones                    
+                </author>
+                <author>
+                    Laird Dornin                    
+                </author>
+            </javadoc>
+            <declaration name="logLevel" type="int" line="71"/>
+            <javadoc line="71">
+                RMI class loader log level                
+            </javadoc>
+            <declaration name="loaderLog" type="Log" line="77"/>
+            <declaration name="codebaseProperty" type="String" line="80"/>
+            <javadoc line="80">
+                value of &quot;java.rmi.server.codebase&quot; property, as cached at class
+                  initialization time.  It may contain malformed URLs.                
+            </javadoc>
+            <scope line="85">
+                <declaration name="prop" type="String" line="86"/>
+                <scope line="88"/>
+            </scope>
+            <declaration name="codebaseURLs" type="URL[]" line="93"/>
+            <javadoc line="93">
+                list of URLs represented by the codebase property, if valid                
+            </javadoc>
+            <declaration name="codebaseLoaders" type="Map&lt;ClassLoader,Void&gt;" line="96"/>
+            <javadoc line="96">
+                table of class loaders that use codebase property for annotation                
+            </javadoc>
+            <scope line="99">
+                <scope line="103"/>
+            </scope>
+            <declaration name="loaderTable" type="HashMap&lt;LoaderKey,LoaderEntry&gt;" line="108"/>
+            <javadoc line="108">
+                table mapping codebase URL path and context class loader pairs
+                  to class loader instances.  Entries hold class loaders with weak
+                  references, so this table does not prevent loaders from being
+                  garbage collected.                
+            </javadoc>
+            <declaration name="refQueue" type="ReferenceQueue&lt;Loader&gt;" line="117"/>
+            <javadoc line="117">
+                reference queue for cleared class loader entries                
+            </javadoc>
+            <method name="LoaderHandler" type="constructor" line="124"/>
+            <javadoc line="126">
+                Returns an array of URLs initialized with the value of the
+                  java.rmi.server.codebase property as the URL path.                
+            </javadoc>
+            <method name="getDefaultCodebaseURLs" type="URL[]" line="132">
+                <comment line="133">
+                    If it hasn&apos;t already been done, convert the codebase property
+                     into an array of URLs; this may throw a MalformedURLException.                    
+                </comment>
+                <scope line="137">
+                    <scope line="138"/>
+                    <scope line="140"/>
+                </scope>
+            </method>
+            <javadoc line="147">
+                Load a class from a network location (one or more URLs),
+                  but first try to resolve the named class through the given
+                  &quot;default loader&quot;.                
+            </javadoc>
+            <method name="loadClass" type="Class" line="155">
+                <params>
+                    <param name="codebase" type="String"/>
+                    <param name="name" type="String"/>
+                    <param name="defaultLoader" type="ClassLoader"/>
+                </params>
+                <scope line="156"/>
+                <declaration name="urls" type="URL[]" line="164"/>
+                <scope line="165"/>
+                <scope line="167"/>
+                <scope line="171">
+                    <scope line="172">
+                        <declaration name="c" type="Class" line="173"/>
+                        <scope line="174"/>
+                    </scope>
+                    <scope line="180"/>
+                </scope>
+            </method>
+            <javadoc line="187">
+                Returns the class annotation (representing the location for
+                  a class) that RMI will use to annotate the call stream when
+                  marshalling objects of the given class.                
+            </javadoc>
+            <method name="getClassAnnotation" type="String" line="192">
+                <params>
+                    <param name="cl" type="Class"/>
+                </params>
+                <comment line="195">
+                    Class objects for arrays of primitive types never need an
+                     annotation, because they never need to be (or can be) downloaded.
+                    
+                     REMIND: should we (not) be annotating classes that are in
+                     &quot;java.&quot; packages?                    
+                </comment>
+                <comment line="204">
+                    skip past all &apos;[&apos; characters (see bugid 4211906)                    
+                </comment>
+                <comment line="214">
+                    Get the class&apos;s class loader.  If it is null, the system class
+                     loader, an ancestor of the base class loader (such as the loader
+                     for installed extensions), return the value of the
+                     &quot;java.rmi.server.codebase&quot; property.                    
+                </comment>
+                <comment line="225">
+                    Get the codebase URL path for the class loader, if it supports
+                     such a notion (i.e., if it is a URLClassLoader or subclass).                    
+                </comment>
+                <comment line="231">
+                    If the class loader is one of our RMI class loaders, we have
+                     already computed the class annotation string, and no
+                     permissions are required to know the URLs.                    
+                </comment>
+                <comment line="242">
+                    If the class loader is not one of our RMI class loaders,
+                     we must verify that the current access control context
+                     has permission to know all of these URLs.                    
+                </comment>
+                <comment line="265">
+                    If access was denied to the knowledge of the class
+                     loader&apos;s URLs, fall back to the default behavior.                    
+                </comment>
+                <comment line="270">
+                    This shouldn&apos;t happen, although it is declared to be
+                     thrown by openConnection() and getPermission().  If it
+                     does happen, forget about this class loader&apos;s URLs and
+                     fall back to the default behavior.                    
+                </comment>
+                <comment line="282">
+                    REMIND: does this make sense??                    
+                </comment>
+                <declaration name="name" type="String" line="193"/>
+                <declaration name="nameLength" type="int" line="202"/>
+                <scope line="203">
+                    <declaration name="i" type="int" line="205"/>
+                    <scope line="206"/>
+                    <scope line="209"/>
+                </scope>
+                <declaration name="loader" type="ClassLoader" line="220"/>
+                <scope line="221"/>
+                <declaration name="annotation" type="String" line="229"/>
+                <scope line="230"/>
+                <scope line="238">
+                    <scope line="239">
+                        <declaration name="urls" type="URL[]" line="240"/>
+                        <scope line="241">
+                            <declaration name="sm" type="SecurityManager" line="247"/>
+                            <scope line="248">
+                                <declaration name="perms" type="Permissions" line="249"/>
+                                <scope line="250">
+                                    <declaration name="p" type="Permission" line="251"/>
+                                    <scope line="253">
+                                        <scope line="254"/>
+                                    </scope>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="264"/>
+                    <scope line="269"/>
+                </scope>
+                <scope line="279"/>
+                <scope line="281"/>
+            </method>
+            <javadoc line="286">
+                Returns a classloader that loads classes from the given codebase URL
+                  path.  The parent classloader of the returned classloader is the
+                  context class loader.                
+            </javadoc>
+            <method name="getClassLoader" type="ClassLoader" line="293">
+                <params>
+                    <param name="codebase" type="String"/>
+                </params>
+                <comment line="303">
+                    If there is a security manager, the current access control
+                     context must have the &quot;getClassLoader&quot; RuntimePermission.                    
+                </comment>
+                <comment line="311">
+                    But if no security manager is set, disable access to
+                     RMI class loaders and simply return the parent loader.                    
+                </comment>
+                <comment line="320">
+                    Verify that the caller has permission to access this loader.                    
+                </comment>
+                <declaration name="parent" type="ClassLoader" line="294"/>
+                <declaration name="urls" type="URL[]" line="296"/>
+                <scope line="297"/>
+                <scope line="299"/>
+                <declaration name="sm" type="SecurityManager" line="307"/>
+                <scope line="308"/>
+                <scope line="310"/>
+                <declaration name="loader" type="Loader" line="318"/>
+                <scope line="323"/>
+            </method>
+            <javadoc line="330">
+                Return the security context of the given class loader.                
+            </javadoc>
+            <method name="getSecurityContext" type="Object" line="333">
+                <params>
+                    <param name="loader" type="ClassLoader"/>
+                </params>
+                <comment line="334">
+                    REMIND: This is a bogus JDK1.1-compatible implementation.
+                     This method should never be called by application code anyway
+                     (hence the deprecation), but should it do something different
+                     and perhaps more useful, like return a String or a URL[]?                    
+                </comment>
+                <scope line="340">
+                    <declaration name="urls" type="URL[]" line="341"/>
+                    <scope line="342"/>
+                </scope>
+            </method>
+            <javadoc line="349">
+                Register a class loader as one whose classes should always be
+                  annotated with the value of the &quot;java.rmi.server.codebase&quot; property.                
+            </javadoc>
+            <method name="registerCodebaseLoader" type="void" line="353">
+                <params>
+                    <param name="loader" type="ClassLoader"/>
+                </params>
+            </method>
+            <javadoc line="357">
+                Load a class from the RMI class loader corresponding to the given
+                  codebase URL path in the current execution context.                
+            </javadoc>
+            <method name="loadClass" type="Class" line="363">
+                <params>
+                    <param name="urls" type="URL[]"/>
+                    <param name="name" type="String"/>
+                </params>
+                <comment line="370">
+                    If no security manager is set, disable access to RMI class
+                     loaders and simply delegate request to the parent loader
+                     (see bugid 4140511).                    
+                </comment>
+                <comment line="400">
+                    Get or create the RMI class loader for this codebase URL path
+                     and parent class loader pair.                    
+                </comment>
+                <comment line="408">
+                    Verify that the caller has permission to access this loader.                    
+                </comment>
+                <comment line="414">
+                    If the current access control context does not have permission
+                     to access all of the URLs in the codebase path, wrap the
+                     resulting security exception in a ClassNotFoundException, so
+                     the caller can handle this outcome just like any other class
+                     loading failure (see bugid 4146529).                    
+                </comment>
+                <comment line="422">
+                    But first, check to see if the named class could have been
+                     resolved without the security-offending codebase anyway;
+                     if so, return successfully (see bugids 4191926 &amp; 4349670).                    
+                </comment>
+                <comment line="437">
+                    Presumably the security exception is the more important
+                     exception to report in this case.                    
+                </comment>
+                <declaration name="parent" type="ClassLoader" line="364"/>
+                <scope line="365"/>
+                <declaration name="sm" type="SecurityManager" line="375"/>
+                <scope line="376">
+                    <scope line="377">
+                        <declaration name="c" type="Class" line="378"/>
+                        <scope line="379"/>
+                    </scope>
+                    <scope line="387">
+                        <scope line="388"/>
+                    </scope>
+                </scope>
+                <declaration name="loader" type="Loader" line="404"/>
+                <scope line="406">
+                    <scope line="407"/>
+                </scope>
+                <scope line="413">
+                    <scope line="421">
+                        <declaration name="c" type="Class" line="427"/>
+                        <scope line="428"/>
+                    </scope>
+                    <scope line="436">
+                        <scope line="441"/>
+                    </scope>
+                </scope>
+                <scope line="452">
+                    <declaration name="c" type="Class" line="453"/>
+                    <scope line="454"/>
+                </scope>
+                <scope line="460">
+                    <scope line="461"/>
+                </scope>
+            </method>
+            <javadoc line="469">
+                Define and return a dynamic proxy class in a class loader with
+                  URLs supplied in the given location.  The proxy class will
+                  implement interface classes named by the given array of
+                  interface names.                
+            </javadoc>
+            <method name="loadProxyClass" type="Class" line="478">
+                <params>
+                    <param name="codebase" type="String"/>
+                    <param name="interfaces" type="String[]"/>
+                    <param name="defaultLoader" type="ClassLoader"/>
+                </params>
+                <comment line="487">
+                    This method uses a fairly complex algorithm to load the
+                     proxy class and its interface classes in order to maximize
+                     the likelihood that the proxy&apos;s codebase annotation will be
+                     preserved.  The algorithm is (assuming that all of the
+                     proxy interface classes are public):
+                    
+                     If the default loader is not null, try to load the proxy
+                     interfaces through that loader. If the interfaces can be
+                     loaded in that loader, try to define the proxy class in an
+                     RMI class loader (child of the context class loader) before
+                     trying to define the proxy in the default loader.  If the
+                     attempt to define the proxy class succeeds, the codebase
+                     annotation is preserved.  If the attempt fails, try to
+                     define the proxy class in the default loader.
+                    
+                     If the interface classes can not be loaded from the default
+                     loader or the default loader is null, try to load them from
+                     the RMI class loader.  Then try to define the proxy class
+                     in the RMI class loader.
+                    
+                     Additionally, if any of the proxy interface classes are not
+                     public, all of the non-public interfaces must reside in the
+                     same class loader or it will be impossible to define the
+                     proxy class (an IllegalAccessError will be thrown).  An
+                     attempt to load the interfaces from the default loader is
+                     made.  If the attempt fails, a second attempt will be made
+                     to load the interfaces from the RMI loader. If all of the
+                     non-public interfaces classes do reside in the same class
+                     loader, then we attempt to define the proxy class in the
+                     class loader of the non-public interfaces.  No other
+                     attempt to define the proxy class will be made.                    
+                </comment>
+                <comment line="533">
+                    If no security manager is set, disable access to RMI class
+                     loaders and use the would-de parent instead.                    
+                </comment>
+                <comment line="560">
+                    Get or create the RMI class loader for this codebase URL path
+                     and parent class loader pair.                    
+                </comment>
+                <comment line="568">
+                    Verify that the caller has permission to access this loader.                    
+                </comment>
+                <comment line="574">
+                    If the current access control context does not have permission
+                     to access all of the URLs in the codebase path, wrap the
+                     resulting security exception in a ClassNotFoundException, so
+                     the caller can handle this outcome just like any other class
+                     loading failure (see bugid 4146529).                    
+                </comment>
+                <comment line="582">
+                    But first, check to see if the proxy class could have been
+                     resolved without the security-offending codebase anyway;
+                     if so, return successfully (see bugids 4191926 &amp; 4349670).                    
+                </comment>
+                <comment line="596">
+                    Presumably the security exception is the more important
+                     exception to report in this case.                    
+                </comment>
+                <scope line="479"/>
+                <declaration name="parent" type="ClassLoader" line="520"/>
+                <scope line="521"/>
+                <declaration name="urls" type="URL[]" line="526"/>
+                <scope line="527"/>
+                <scope line="529"/>
+                <declaration name="sm" type="SecurityManager" line="537"/>
+                <scope line="538">
+                    <scope line="539">
+                        <declaration name="c" type="Class" line="540"/>
+                        <scope line="542"/>
+                    </scope>
+                    <scope line="548">
+                        <scope line="549"/>
+                    </scope>
+                </scope>
+                <declaration name="loader" type="Loader" line="564"/>
+                <scope line="566">
+                    <scope line="567"/>
+                </scope>
+                <scope line="573">
+                    <scope line="581">
+                        <declaration name="c" type="Class" line="587"/>
+                        <scope line="589"/>
+                    </scope>
+                    <scope line="595">
+                        <scope line="600"/>
+                    </scope>
+                </scope>
+                <scope line="610">
+                    <declaration name="c" type="Class" line="611"/>
+                    <scope line="612"/>
+                </scope>
+                <scope line="617">
+                    <scope line="618"/>
+                </scope>
+            </method>
+            <javadoc line="626">
+                Define a proxy class in the default loader if appropriate.
+                  Define the class in an RMI class loader otherwise.  The proxy
+                  class will implement classes which are named in the supplied
+                  interfaceNames.                
+            </javadoc>
+            <method name="loadProxyClass" type="Class" line="637">
+                <params>
+                    <param name="interfaceNames" type="String[]"/>
+                    <param name="defaultLoader" type="ClassLoader"/>
+                    <param name="codebaseLoader" type="ClassLoader"/>
+                    <param name="preferCodebase" type="boolean"/>
+                </params>
+                <declaration name="proxyLoader" type="ClassLoader" line="638"/>
+                <declaration name="classObjs" type="Class[]" line="639"/>
+                <declaration name="nonpublic" type="boolean[]" line="640"/>
+                <scope line="643">
+                    <scope line="644">
+                        <scope line="648">
+                            <declaration name="definingLoaders" type="ClassLoader[]" line="649"/>
+                            <scope line="651"/>
+                        </scope>
+                    </scope>
+                    <scope line="658"/>
+                    <scope line="661">
+                        <scope line="662">
+                            <scope line="663"/>
+                            <scope line="665"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="676">
+                    <declaration name="definingLoaders" type="ClassLoader[]" line="677"/>
+                    <scope line="678"/>
+                </scope>
+                <scope line="685"/>
+            </method>
+            <javadoc line="691">
+                Define a proxy class in the given class loader.  The proxy
+                  class will implement the given interfaces Classes.                
+            </javadoc>
+            <method name="loadProxyClass" type="Class" line="697">
+                <params>
+                    <param name="loader" type="ClassLoader"/>
+                    <param name="interfaces" type="Class[]"/>
+                </params>
+                <scope line="698"/>
+                <scope line="700"/>
+            </method>
+            <method name="loadProxyInterfaces" type="ClassLoader" line="725">
+                <params>
+                    <param name="interfaces" type="String[]"/>
+                    <param name="loader" type="ClassLoader"/>
+                    <param name="classObjs" type="Class[]"/>
+                    <param name="nonpublic" type="boolean[]"/>
+                </params>
+                <comment line="726">
+                                        
+                </comment>
+                <declaration name="nonpublicLoader" type="ClassLoader" line="727"/>
+                <scope line="729">
+                    <declaration name="cl" type="Class" line="730"/>
+                    <scope line="733">
+                        <declaration name="current" type="ClassLoader" line="734"/>
+                        <scope line="735"/>
+                        <scope line="740"/>
+                        <scope line="743"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="753">
+                Convert a string containing a space-separated list of URLs into a
+                  corresponding array of URL objects, throwing a MalformedURLException
+                  if any of the URLs are invalid.                
+            </javadoc>
+            <method name="pathToURLs" type="URL[]" line="760">
+                <params>
+                    <param name="path" type="String"/>
+                </params>
+                <comment line="767">
+                    divide by spaces                    
+                </comment>
+                <scope line="761">
+                    <declaration name="v" type="Object[]" line="762"/>
+                    <scope line="763"/>
+                </scope>
+                <declaration name="st" type="StringTokenizer" line="767"/>
+                <declaration name="urls" type="URL[]" line="768"/>
+                <scope line="769"/>
+                <scope line="772"/>
+            </method>
+            <declaration name="pathToURLsCache" type="Map&lt;String,Object[]&gt;" line="779"/>
+            <javadoc line="779">
+                map from weak(key=string) to [URL[], soft(key)]                
+            </javadoc>
+            <javadoc line="783">
+                Convert an array of URL objects into a corresponding string
+                  containing a space-separated list of URLs.
+                  Note that if the array has zero elements, the return value is
+                  null, not the empty string.                
+            </javadoc>
+            <method name="urlsToPath" type="String" line="790">
+                <params>
+                    <param name="urls" type="URL[]"/>
+                </params>
+                <scope line="791"/>
+                <scope line="793"/>
+                <scope line="795">
+                    <declaration name="path" type="StringBuffer" line="796"/>
+                    <scope line="797"/>
+                </scope>
+            </method>
+            <javadoc line="805">
+                Return the class loader to be used as the parent for an RMI class
+                  loader used in the current execution context.                
+            </javadoc>
+            <method name="getRMIContextClassLoader" type="ClassLoader" line="809">
+                <comment line="810">
+                    The current implementation simply uses the current thread&apos;s
+                     context class loader.                    
+                </comment>
+            </method>
+            <javadoc line="817">
+                Look up the RMI class loader for the given codebase URL path
+                  and the given parent class loader.  A new class loader instance
+                  will be created and returned if no match is found.                
+            </javadoc>
+            <method name="lookupLoader" type="Loader" line="824">
+                <params>
+                    <param name="urls" type="URL[]"/>
+                    <param name="parent" type="ClassLoader"/>
+                </params>
+                <comment line="825">
+                    If the requested codebase URL path is empty, the supplied
+                     parent class loader will be sufficient.
+                    
+                     REMIND: To be conservative, this optimization is commented out
+                     for now so that it does not open a security hole in the future
+                     by providing untrusted code with direct access to the public
+                     loadClass() method of a class loader instance that it cannot
+                     get a reference to.  (It&apos;s an unlikely optimization anyway.)
+                    
+                     if (urls.length == 0) {
+                         return parent;
+                     }                    
+                </comment>
+                <comment line="844">
+                    Take this opportunity to remove from the table entries
+                     whose weak references have been cleared.                    
+                </comment>
+                <comment line="849">
+                    ignore entries removed below                    
+                </comment>
+                <comment line="854">
+                    Look up the codebase URL path and parent class loader pair
+                     in the table of RMI class loaders.                    
+                </comment>
+                <comment line="862">
+                    If entry was in table but it&apos;s weak reference was cleared,
+                     remove it from the table and mark it as explicitly cleared,
+                     so that new matching entry that we put in the table will
+                     not be erroneously removed when this entry is processed
+                     from the weak reference queue.                    
+                </comment>
+                <comment line="874">
+                    A matching loader was not found, so create a new class
+                     loader instance for the requested codebase URL path and
+                     parent class loader.  The instance is created within an
+                     access control context retricted to the permissions
+                     necessary to load classes from its codebase URL path.                    
+                </comment>
+                <comment line="889">
+                    Finally, create an entry to hold the new loader with a
+                     weak reference and store it in the table with the key.                    
+                </comment>
+                <declaration name="entry" type="LoaderEntry" line="840"/>
+                <declaration name="loader" type="Loader" line="841"/>
+                <scope line="843">
+                    <scope line="848">
+                        <scope line="849"/>
+                    </scope>
+                    <declaration name="key" type="LoaderKey" line="858"/>
+                    <scope line="861">
+                        <scope line="869"/>
+                        <declaration name="acc" type="AccessControlContext" line="881"/>
+                        <anonymous_class line="883">
+                            <method name="run" type="Loader" line="884"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+            </method>
+            <class name="LoaderKey" line="901">
+                <javadoc line="901">
+                    LoaderKey holds a codebase URL path and parent class loader pair
+                      used to look up RMI class loader instances in its class loader cache.                    
+                </javadoc>
+                <declaration name="urls" type="URL[]" line="907"/>
+                <declaration name="parent" type="ClassLoader" line="909"/>
+                <declaration name="hashValue" type="int" line="911"/>
+                <method name="LoaderKey" type="constructor" line="913">
+                    <params>
+                        <param name="urls" type="URL[]"/>
+                        <param name="parent" type="ClassLoader"/>
+                    </params>
+                    <scope line="917"/>
+                    <scope line="920"/>
+                </method>
+                <method name="hashCode" type="int" line="925"/>
+                <method name="equals" type="boolean" line="929">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                    <scope line="930">
+                        <declaration name="other" type="LoaderKey" line="931"/>
+                        <scope line="932"/>
+                        <scope line="935"/>
+                        <scope line="938"/>
+                        <scope line="941">
+                            <scope line="942"/>
+                        </scope>
+                    </scope>
+                    <scope line="947"/>
+                </method>
+            </class>
+            <class name="LoaderEntry" line="953">
+                <extends class="WeakReference">
+                    <type_params>
+                        <type_param name="Loader"/>
+                    </type_params>
+                </extends>
+                <javadoc line="953">
+                    LoaderEntry contains a weak reference to an RMIClassLoader.  The
+                      weak reference is registered with the private static &quot;refQueue&quot;
+                      queue.  The entry contains the codebase URL path and parent class
+                      loader key for the loader so that the mapping can be removed from
+                      the table efficiently when the weak reference is cleared.                    
+                </javadoc>
+                <declaration name="key" type="LoaderKey" line="962"/>
+                <declaration name="removed" type="boolean" line="964"/>
+                <javadoc line="964">
+                    set to true if the entry has been removed from the table
+                      because it has been replaced, so it should not be attempted
+                      to be removed again                    
+                </javadoc>
+                <method name="LoaderEntry" type="constructor" line="971">
+                    <params>
+                        <param name="key" type="LoaderKey"/>
+                        <param name="loader" type="Loader"/>
+                    </params>
+                </method>
+            </class>
+            <javadoc line="977">
+                Return the access control context that a loader for the given
+                  codebase URL path should execute with.                
+            </javadoc>
+            <method name="getLoaderAccessControlContext" type="AccessControlContext" line="983">
+                <params>
+                    <param name="urls" type="URL[]"/>
+                </params>
+                <comment line="984">
+                    The approach used here is taken from the similar method
+                     getAccessControlContext() in the sun.applet.AppletPanel class.                    
+                </comment>
+                <comment line="988">
+                    begin with permissions granted to all code in current policy                    
+                </comment>
+                <comment line="1004">
+                    createClassLoader permission needed to create loader in context                    
+                </comment>
+                <comment line="1007">
+                    add permissions to read any &quot;java.*&quot; property                    
+                </comment>
+                <comment line="1010">
+                    add permissions reuiqred to load from codebase URL path                    
+                </comment>
+                <comment line="1013">
+                    Create an AccessControlContext that consists of a single
+                     protection domain with only the permissions calculated above.                    
+                </comment>
+                <anonymous_class line="991">
+                    <method name="run" type="PermissionCollection" line="992">
+                        <declaration name="codesource" type="CodeSource" line="993"/>
+                        <declaration name="p" type="Policy" line="995"/>
+                        <scope line="996"/>
+                        <scope line="998"/>
+                    </method>
+                </anonymous_class>
+                <declaration name="perms" type="PermissionCollection" line="989"/>
+                <declaration name="pd" type="ProtectionDomain" line="1017"/>
+            </method>
+            <javadoc line="1024">
+                Adds to the specified permission collection the permissions
+                  necessary to load classes from a loader with the specified URL
+                  path; if &quot;forLoader&quot; is true, also adds URL-specific
+                  permissions necessary for the security context that such a
+                  loader operates within, such as permissions necessary for
+                  granting automatic permissions to classes defined by the
+                  loader.  A given permission is only added to the collection if
+                  it is not already implied by the collection.                
+            </javadoc>
+            <method name="addPermissionsForURLs" type="void" line="1037">
+                <params>
+                    <param name="urls" type="URL[]"/>
+                    <param name="perms" type="PermissionCollection"/>
+                    <param name="forLoader" type="boolean"/>
+                </params>
+                <comment line="1045">
+                    If the codebase is a file, the permission required
+                     to actually read classes from the codebase URL is
+                     the permission to read all files beneath the last
+                     directory in the file path, either because JAR
+                     files can refer to other JAR files in the same
+                     directory, or because permission to read a
+                     directory is not implied by permission to read the
+                     contents of a directory, which all that might be
+                     granted.                    
+                </comment>
+                <comment line="1069">
+                    No directory separator: use permission to
+                     read the file.                    
+                </comment>
+                <comment line="1082">
+                    If the purpose of these permissions is to grant
+                     them to an instance of a URLClassLoader subclass,
+                     we must add permission to connect to and accept
+                     from the host of non-&quot;file:&quot; URLs, otherwise the
+                     getPermissions() method of URLClassLoader will
+                     throw a security exception.                    
+                </comment>
+                <comment line="1091">
+                    get URL with meaningful host component                    
+                </comment>
+                <comment line="1116">
+                    This shouldn&apos;t happen, although it is declared to be
+                     thrown by openConnection() and getPermission().  If it
+                     does, don&apos;t bother granting or requiring any permissions
+                     for this URL.                    
+                </comment>
+                <scope line="1038">
+                    <declaration name="url" type="URL" line="1039"/>
+                    <scope line="1040">
+                        <declaration name="urlConnection" type="URLConnection" line="1041"/>
+                        <declaration name="p" type="Permission" line="1042"/>
+                        <scope line="1043">
+                            <scope line="1044">
+                                <declaration name="path" type="String" line="1056"/>
+                                <declaration name="endIndex" type="int" line="1057"/>
+                                <scope line="1058">
+                                    <scope line="1060"/>
+                                    <declaration name="p2" type="Permission" line="1063"/>
+                                    <scope line="1064"/>
+                                </scope>
+                                <scope line="1068">
+                                    <scope line="1073"/>
+                                </scope>
+                            </scope>
+                            <scope line="1077">
+                                <scope line="1078"/>
+                                <scope line="1090">
+                                    <declaration name="hostURL" type="URL" line="1092"/>
+                                    <scope line="1095"/>
+                                    <declaration name="host" type="String" line="1100"/>
+                                    <scope line="1104">
+                                        <declaration name="p2" type="Permission" line="1105"/>
+                                        <scope line="1108"/>
+                                    </scope>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1115"/>
+                </scope>
+            </method>
+            <class name="Loader" line="1126">
+                <extends class="URLClassLoader"/>
+                <javadoc line="1126">
+                    Loader is the actual class of the RMI class loaders created
+                      by the RMIClassLoader static methods.                    
+                </javadoc>
+                <declaration name="parent" type="ClassLoader" line="1132"/>
+                <javadoc line="1132">
+                    parent class loader, kept here as an optimization                    
+                </javadoc>
+                <declaration name="annotation" type="String" line="1135"/>
+                <javadoc line="1135">
+                    string form of loader&apos;s codebase URL path, also an optimization                    
+                </javadoc>
+                <declaration name="permissions" type="Permissions" line="1138"/>
+                <javadoc line="1138">
+                    permissions required to access loader through public API                    
+                </javadoc>
+                <method name="Loader" type="constructor" line="1141">
+                    <params>
+                        <param name="urls" type="URL[]"/>
+                        <param name="parent" type="ClassLoader"/>
+                    </params>
+                    <comment line="1145">
+                        Precompute the permissions required to access the loader.                        
+                    </comment>
+                    <comment line="1151">
+                        Caching the value of class annotation string here assumes
+                         that the protected method addURL() is never called on this
+                         class loader.                        
+                    </comment>
+                </method>
+                <javadoc line="1159">
+                    Return the string to be annotated with all classes loaded from
+                      this class loader.                    
+                </javadoc>
+                <method name="getClassAnnotation" type="String" line="1163"/>
+                <javadoc line="1167">
+                    Check that the current access control context has all of the
+                      permissions necessary to load classes from this loader.                    
+                </javadoc>
+                <method name="checkPermissions" type="void" line="1171">
+                    <comment line="1173">
+                        should never be null?                        
+                    </comment>
+                    <declaration name="sm" type="SecurityManager" line="1172"/>
+                    <scope line="1173">
+                        <declaration name="enum_" type="Enumeration" line="1174"/>
+                        <scope line="1175"/>
+                    </scope>
+                </method>
+                <javadoc line="1181">
+                    Return the permissions to be granted to code loaded from the
+                      given code source.                    
+                </javadoc>
+                <method name="getPermissions" type="PermissionCollection" line="1185">
+                    <params>
+                        <param name="codesource" type="CodeSource"/>
+                    </params>
+                    <comment line="1187">
+                        Grant the same permissions that URLClassLoader would grant.                        
+                    </comment>
+                    <declaration name="perms" type="PermissionCollection" line="1186"/>
+                </method>
+                <javadoc line="1193">
+                    Return a string representation of this loader (useful for
+                      debugging).                    
+                </javadoc>
+                <method name="toString" type="String" line="1197"/>
+            </class>
+        </class>
+    </source>

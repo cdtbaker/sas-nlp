@@ -1,0 +1,2637 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.io">
+        <import package="java.io.ObjectStreamClass.WeakClassKey"/>
+        <import package="java.lang.ref.ReferenceQueue"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.List"/>
+        <import package="java.util.concurrent.ConcurrentHashMap"/>
+        <import package="java.util.concurrent.ConcurrentMap"/>
+        <import package="java.io.ObjectStreamClass.processQueue"/>
+        <import package="java.io.SerialCallbackContext"/>
+        <class name="ObjectOutputStream" line="40">
+            <extends class="OutputStream"/>
+            <comment line="195">
+                values below valid only during upcalls to writeObject()/writeExternal()                
+            </comment>
+            <implements interface="ObjectOutput"/>
+            <implements interface="ObjectStreamConstants"/>
+            <javadoc line="40">
+                An ObjectOutputStream writes primitive data types and graphs of Java objects
+                  to an OutputStream.  The objects can be read (reconstituted) using an
+                  ObjectInputStream.  Persistent storage of objects can be accomplished by
+                  using a file for the stream.  If the stream is a network socket stream, the
+                  objects can be reconstituted on another host or in another process.
+                  &lt;p&gt;Only objects that support the java.io.Serializable interface can be
+                  written to streams.  The class of each serializable object is encoded
+                  including the class name and signature of the class, the values of the
+                  object&apos;s fields and arrays, and the closure of any other objects referenced
+                  from the initial objects.
+                  &lt;p&gt;The method writeObject is used to write an object to the stream.  Any
+                  object, including Strings and arrays, is written with writeObject. Multiple
+                  objects or primitives can be written to the stream.  The objects must be
+                  read back from the corresponding ObjectInputstream with the same types and
+                  in the same order as they were written.
+                  &lt;p&gt;Primitive data types can also be written to the stream using the
+                  appropriate methods from DataOutput. Strings can also be written using the
+                  writeUTF method.
+                  &lt;p&gt;The default serialization mechanism for an object writes the class of the
+                  object, the class signature, and the values of all non-transient and
+                  non-static fields.  References to other objects (except in transient or
+                  static fields) cause those objects to be written also. Multiple references
+                  to a single object are encoded using a reference sharing mechanism so that
+                  graphs of objects can be restored to the same shape as when the original was
+                  written.
+                  &lt;p&gt;For example to write an object that can be read by the example in
+                  ObjectInputStream:
+                  &lt;br&gt;
+                  &lt;pre&gt;
+                  FileOutputStream fos = new FileOutputStream(&quot;t.tmp&quot;);
+                  ObjectOutputStream oos = new ObjectOutputStream(fos);
+                  oos.writeInt(12345);
+                  oos.writeObject(&quot;Today&quot;);
+                  oos.writeObject(new Date());
+                  oos.close();
+                  &lt;/pre&gt;
+                  &lt;p&gt;Classes that require special handling during the serialization and
+                  deserialization process must implement special methods with these exact
+                  signatures:
+                  &lt;br&gt;
+                  &lt;pre&gt;
+                  private void readObject(java.io.ObjectInputStream stream)
+                  throws IOException, ClassNotFoundException;
+                  private void writeObject(java.io.ObjectOutputStream stream)
+                  throws IOException
+                  private void readObjectNoData()
+                  throws ObjectStreamException;
+                  &lt;/pre&gt;
+                  &lt;p&gt;The writeObject method is responsible for writing the state of the object
+                  for its particular class so that the corresponding readObject method can
+                  restore it.  The method does not need to concern itself with the state
+                  belonging to the object&apos;s superclasses or subclasses.  State is saved by
+                  writing the individual fields to the ObjectOutputStream using the
+                  writeObject method or by using the methods for primitive data types
+                  supported by DataOutput.
+                  &lt;p&gt;Serialization does not write out the fields of any object that does not
+                  implement the java.io.Serializable interface.  Subclasses of Objects that
+                  are not serializable can be serializable. In this case the non-serializable
+                  class must have a no-arg constructor to allow its fields to be initialized.
+                  In this case it is the responsibility of the subclass to save and restore
+                  the state of the non-serializable class. It is frequently the case that the
+                  fields of that class are accessible (public, package, or protected) or that
+                  there are get and set methods that can be used to restore the state.
+                  &lt;p&gt;Serialization of an object can be prevented by implementing writeObject
+                  and readObject methods that throw the NotSerializableException.  The
+                  exception will be caught by the ObjectOutputStream and abort the
+                  serialization process.
+                  &lt;p&gt;Implementing the Externalizable interface allows the object to assume
+                  complete control over the contents and format of the object&apos;s serialized
+                  form.  The methods of the Externalizable interface, writeExternal and
+                  readExternal, are called to save and restore the objects state.  When
+                  implemented by a class they can write and read their own state using all of
+                  the methods of ObjectOutput and ObjectInput.  It is the responsibility of
+                  the objects to handle any versioning that occurs.
+                  &lt;p&gt;Enum constants are serialized differently than ordinary serializable or
+                  externalizable objects.  The serialized form of an enum constant consists
+                  solely of its name; field values of the constant are not transmitted.  To
+                  serialize an enum constant, ObjectOutputStream writes the string returned by
+                  the constant&apos;s name method.  Like other serializable or externalizable
+                  objects, enum constants can function as the targets of back references
+                  appearing subsequently in the serialization stream.  The process by which
+                  enum constants are serialized cannot be customized; any class-specific
+                  writeObject and writeReplace methods defined by enum types are ignored
+                  during serialization.  Similarly, any serialPersistentFields or
+                  serialVersionUID field declarations are also ignored--all enum types have a
+                  fixed serialVersionUID of 0L.
+                  &lt;p&gt;Primitive data, excluding serializable fields and externalizable data, is
+                  written to the ObjectOutputStream in block-data records. A block data record
+                  is composed of a header and data. The block data header consists of a marker
+                  and the number of bytes to follow the header.  Consecutive primitive data
+                  writes are merged into one block-data record.  The blocking factor used for
+                  a block-data record will be 1024 bytes.  Each block-data record will be
+                  filled up to 1024 bytes, or be written whenever there is a termination of
+                  block-data mode.  Calls to the ObjectOutputStream methods writeObject,
+                  defaultWriteObject and writeFields initially terminate any existing
+                  block-data record.                
+                <author>
+                    Mike Warres                    
+                </author>
+                <author>
+                    Roger Riggs                    
+                </author>
+                <see>
+                    java.io.DataOutput                    
+                </see>
+                <see>
+                    java.io.ObjectInputStream                    
+                </see>
+                <see>
+                    java.io.Serializable                    
+                </see>
+                <see>
+                    java.io.Externalizable                    
+                </see>
+                <see>
+                    <a href="../../../platform/serialization/spec/output.html">Object Serialization Specification, Section 2, Object Output Classes</a>                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <class name="Caches" line="165">
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <declaration name="subclassAudits" type="ConcurrentMap&lt;WeakClassKey,Boolean&gt;" line="166"/>
+                <javadoc line="166">
+                    cache of subclass security audit results                    
+                </javadoc>
+                <declaration name="subclassAuditsQueue" type="ReferenceQueue&lt;Class&lt;?&gt;&gt;" line="170"/>
+                <javadoc line="170">
+                    queue for WeakReferences to audited subclasses                    
+                </javadoc>
+            </class>
+            <declaration name="bout" type="BlockDataOutputStream" line="175"/>
+            <javadoc line="175">
+                filter stream for handling block data conversion                
+            </javadoc>
+            <declaration name="handles" type="HandleTable" line="177"/>
+            <javadoc line="177">
+                obj -&gt; wire handle map                
+            </javadoc>
+            <declaration name="subs" type="ReplaceTable" line="179"/>
+            <javadoc line="179">
+                obj -&gt; replacement obj map                
+            </javadoc>
+            <declaration name="protocol" type="int" line="181"/>
+            <javadoc line="181">
+                stream protocol version                
+            </javadoc>
+            <declaration name="depth" type="int" line="183"/>
+            <javadoc line="183">
+                recursion depth                
+            </javadoc>
+            <declaration name="primVals" type="byte[]" line="186"/>
+            <javadoc line="186">
+                buffer for writing primitive field values                
+            </javadoc>
+            <declaration name="enableOverride" type="boolean" line="189"/>
+            <javadoc line="189">
+                if true, invoke writeObjectOverride() instead of writeObject()                
+            </javadoc>
+            <declaration name="enableReplace" type="boolean" line="191"/>
+            <javadoc line="191">
+                if true, invoke replaceObject()                
+            </javadoc>
+            <declaration name="curContext" type="SerialCallbackContext" line="195"/>
+            <javadoc line="195">
+                Context during upcalls to class-defined writeObject methods; holds
+                  object currently being serialized and descriptor for current class.
+                  Null when not during writeObject upcall.                
+            </javadoc>
+            <declaration name="curPut" type="PutFieldImpl" line="201"/>
+            <javadoc line="201">
+                current PutField object                
+            </javadoc>
+            <declaration name="debugInfoStack" type="DebugTraceInfoStack" line="204"/>
+            <javadoc line="204">
+                custom storage for debug trace info                
+            </javadoc>
+            <declaration name="extendedDebugInfo" type="boolean" line="207"/>
+            <javadoc line="207">
+                value of &quot;sun.io.serialization.extendedDebugInfo&quot; property,
+                  as true or false for extended information about exception&apos;s place                
+            </javadoc>
+            <javadoc line="216">
+                Creates an ObjectOutputStream that writes to the specified OutputStream.
+                  This constructor writes the serialization stream header to the
+                  underlying stream; callers may wish to flush the stream immediately to
+                  ensure that constructors for receiving ObjectInputStreams will not block
+                  when reading the header.
+                  &lt;p&gt;If a security manager is installed, this constructor will check for
+                  the &quot;enableSubclassImplementation&quot; SerializablePermission when invoked
+                  directly or indirectly by the constructor of a subclass which overrides
+                  the ObjectOutputStream.putFields or ObjectOutputStream.writeUnshared
+                  methods.                
+                <param>
+                    out output stream to write to                    
+                </param>
+                <throws>
+                    IOException if an I/O error occurs while writing stream header                    
+                </throws>
+                <throws>
+                    SecurityException if untrusted subclass illegally overrides
+                      security-sensitive methods                    
+                </throws>
+                <throws>
+                    NullPointerException if <code>out</code> is <code>null</code>                    
+                </throws>
+                <since>
+                    1.4                    
+                </since>
+                <see>
+                    ObjectOutputStream#ObjectOutputStream()                    
+                </see>
+                <see>
+                    ObjectOutputStream#putFields()                    
+                </see>
+                <see>
+                    ObjectInputStream#ObjectInputStream(InputStream)                    
+                </see>
+            </javadoc>
+            <method name="ObjectOutputStream" type="constructor" line="239">
+                <params>
+                    <param name="out" type="OutputStream"/>
+                </params>
+                <scope line="247"/>
+                <scope line="249"/>
+            </method>
+            <javadoc line="254">
+                Provide a way for subclasses that are completely reimplementing
+                  ObjectOutputStream to not have to allocate private data just used by
+                  this implementation of ObjectOutputStream.
+                  &lt;p&gt;If there is a security manager installed, this method first calls the
+                  security manager&apos;s &lt;code&gt;checkPermission&lt;/code&gt; method with a
+                  &lt;code&gt;SerializablePermission(&quot;enableSubclassImplementation&quot;)&lt;/code&gt;
+                  permission to ensure it&apos;s ok to enable subclassing.                
+                <throws>
+                    SecurityException if a security manager exists and its
+                      <code>checkPermission</code> method denies enabling
+                      subclassing.                    
+                </throws>
+                <see>
+                    SecurityManager#checkPermission                    
+                </see>
+                <see>
+                    java.io.SerializablePermission                    
+                </see>
+            </javadoc>
+            <method name="ObjectOutputStream" type="constructor" line="270">
+                <declaration name="sm" type="SecurityManager" line="271"/>
+                <scope line="272"/>
+            </method>
+            <javadoc line="282">
+                Specify stream protocol version to use when writing the stream.
+                  &lt;p&gt;This routine provides a hook to enable the current version of
+                  Serialization to write in a format that is backwards compatible to a
+                  previous version of the stream format.
+                  &lt;p&gt;Every effort will be made to avoid introducing additional
+                  backwards incompatibilities; however, sometimes there is no
+                  other alternative.                
+                <param>
+                    version use ProtocolVersion from java.io.ObjectStreamConstants.                    
+                </param>
+                <throws>
+                    IllegalStateException if called after any objects
+                      have been serialized.                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if invalid version is passed in.                    
+                </throws>
+                <throws>
+                    IOException if I/O errors occur                    
+                </throws>
+                <see>
+                    java.io.ObjectStreamConstants#PROTOCOL_VERSION_1                    
+                </see>
+                <see>
+                    java.io.ObjectStreamConstants#PROTOCOL_VERSION_2                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="useProtocolVersion" type="void" line="302">
+                <params>
+                    <param name="version" type="int"/>
+                </params>
+                <comment line="304">
+                    REMIND: implement better check for pristine stream?                    
+                </comment>
+                <scope line="303"/>
+            </method>
+            <javadoc line="319">
+                Write the specified object to the ObjectOutputStream.  The class of the
+                  object, the signature of the class, and the values of the non-transient
+                  and non-static fields of the class and all of its supertypes are
+                  written.  Default serialization for a class can be overridden using the
+                  writeObject and the readObject methods.  Objects referenced by this
+                  object are written transitively so that a complete equivalent graph of
+                  objects can be reconstructed by an ObjectInputStream.
+                  &lt;p&gt;Exceptions are thrown for problems with the OutputStream and for
+                  classes that should not be serialized.  All exceptions are fatal to the
+                  OutputStream, which is left in an indeterminate state, and it is up to
+                  the caller to ignore or recover the stream state.                
+                <throws>
+                    InvalidClassException Something is wrong with a class used by
+                      serialization.                    
+                </throws>
+                <throws>
+                    NotSerializableException Some object to be serialized does not
+                      implement the java.io.Serializable interface.                    
+                </throws>
+                <throws>
+                    IOException Any exception thrown by the underlying
+                      OutputStream.                    
+                </throws>
+            </javadoc>
+            <method name="writeObject" type="void" line="340">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+                <scope line="341"/>
+                <scope line="345"/>
+                <scope line="347">
+                    <scope line="348"/>
+                </scope>
+            </method>
+            <javadoc line="355">
+                Method used by subclasses to override the default writeObject method.
+                  This method is called by trusted subclasses of ObjectInputStream that
+                  constructed ObjectInputStream using the protected no-arg constructor.
+                  The subclass is expected to provide an override method with the modifier
+                  &quot;final&quot;.                
+                <param>
+                    obj object to be written to the underlying stream                    
+                </param>
+                <throws>
+                    IOException if there are I/O errors while writing to the
+                      underlying stream                    
+                </throws>
+                <see>
+                    #ObjectOutputStream()                    
+                </see>
+                <see>
+                    #writeObject(Object)                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="writeObjectOverride" type="void" line="369">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="372">
+                Writes an &quot;unshared&quot; object to the ObjectOutputStream.  This method is
+                  identical to writeObject, except that it always writes the given object
+                  as a new, unique object in the stream (as opposed to a back-reference
+                  pointing to a previously serialized instance).  Specifically:
+                  &lt;ul&gt;
+                  &lt;li&gt;An object written via writeUnshared is always serialized in the
+                  same manner as a newly appearing object (an object that has not
+                  been written to the stream yet), regardless of whether or not the
+                  object has been written previously.
+                  &lt;li&gt;If writeObject is used to write an object that has been previously
+                  written with writeUnshared, the previous writeUnshared operation
+                  is treated as if it were a write of a separate object.  In other
+                  words, ObjectOutputStream will never generate back-references to
+                  object data written by calls to writeUnshared.
+                  &lt;/ul&gt;
+                  While writing an object via writeUnshared does not in itself guarantee a
+                  unique reference to the object when it is deserialized, it allows a
+                  single object to be defined multiple times in a stream, so that multiple
+                  calls to readUnshared by the receiver will not conflict.  Note that the
+                  rules described above only apply to the base-level object written with
+                  writeUnshared, and not to any transitively referenced sub-objects in the
+                  object graph to be serialized.
+                  &lt;p&gt;ObjectOutputStream subclasses which override this method can only be
+                  constructed in security contexts possessing the
+                  &quot;enableSubclassImplementation&quot; SerializablePermission; any attempt to
+                  instantiate such a subclass without this permission will cause a
+                  SecurityException to be thrown.                
+                <param>
+                    obj object to write to stream                    
+                </param>
+                <throws>
+                    NotSerializableException if an object in the graph to be
+                      serialized does not implement the Serializable interface                    
+                </throws>
+                <throws>
+                    InvalidClassException if a problem exists with the class of an
+                      object to be serialized                    
+                </throws>
+                <throws>
+                    IOException if an I/O error occurs during serialization                    
+                </throws>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="writeUnshared" type="void" line="411">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+                <scope line="412"/>
+                <scope line="414">
+                    <scope line="415"/>
+                </scope>
+            </method>
+            <javadoc line="422">
+                Write the non-static and non-transient fields of the current class to
+                  this stream.  This may only be called from the writeObject method of the
+                  class being serialized. It will throw the NotActiveException if it is
+                  called otherwise.                
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      <code>OutputStream</code>                    
+                </throws>
+            </javadoc>
+            <method name="defaultWriteObject" type="void" line="431">
+                <scope line="432"/>
+                <declaration name="curObj" type="Object" line="435"/>
+                <declaration name="curDesc" type="ObjectStreamClass" line="436"/>
+            </method>
+            <javadoc line="442">
+                Retrieve the object used to buffer persistent fields to be written to
+                  the stream.  The fields will be written to the stream when writeFields
+                  method is called.                
+                <return>
+                    an instance of the class Putfield that holds the serializable
+                      fields                    
+                </return>
+                <throws>
+                    IOException if I/O errors occur                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="putFields" type="ObjectOutputStream.PutField" line="452">
+                <scope line="453">
+                    <scope line="454"/>
+                    <declaration name="curObj" type="Object" line="457"/>
+                    <declaration name="curDesc" type="ObjectStreamClass" line="458"/>
+                </scope>
+            </method>
+            <javadoc line="464">
+                Write the buffered fields to the stream.                
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+                <throws>
+                    NotActiveException Called when a classes writeObject method was
+                      not called to write the state of the object.                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="writeFields" type="void" line="473">
+                <scope line="474"/>
+            </method>
+            <javadoc line="482">
+                Reset will disregard the state of any objects already written to the
+                  stream.  The state is reset to be the same as a new ObjectOutputStream.
+                  The current point in the stream is marked as reset so the corresponding
+                  ObjectInputStream will be reset at the same point.  Objects previously
+                  written to the stream will not be refered to as already being in the
+                  stream.  They will be written to the stream again.                
+                <throws>
+                    IOException if reset() is invoked while serializing an object.                    
+                </throws>
+            </javadoc>
+            <method name="reset" type="void" line="492">
+                <scope line="493"/>
+            </method>
+            <javadoc line="502">
+                Subclasses may implement this method to allow class data to be stored in
+                  the stream. By default this method does nothing.  The corresponding
+                  method in ObjectInputStream is resolveClass.  This method is called
+                  exactly once for each unique class in the stream.  The class name and
+                  signature will have already been written to the stream.  This method may
+                  make free use of the ObjectOutputStream to save any representation of
+                  the class it deems suitable (for example, the bytes of the class file).
+                  The resolveClass method in the corresponding subclass of
+                  ObjectInputStream must read and use any data or objects written by
+                  annotateClass.                
+                <param>
+                    cl the class to annotate custom data for                    
+                </param>
+                <throws>
+                    IOException Any exception thrown by the underlying
+                      OutputStream.                    
+                </throws>
+            </javadoc>
+            <method name="annotateClass" type="void" line="518">
+                <params>
+                    <param name="cl" type="Class<?>"/>
+                </params>
+            </method>
+            <javadoc line="521">
+                Subclasses may implement this method to store custom data in the stream
+                  along with descriptors for dynamic proxy classes.
+                  &lt;p&gt;This method is called exactly once for each unique proxy class
+                  descriptor in the stream.  The default implementation of this method in
+                  &lt;code&gt;ObjectOutputStream&lt;/code&gt; does nothing.
+                  &lt;p&gt;The corresponding method in &lt;code&gt;ObjectInputStream&lt;/code&gt; is
+                  &lt;code&gt;resolveProxyClass&lt;/code&gt;.  For a given subclass of
+                  &lt;code&gt;ObjectOutputStream&lt;/code&gt; that overrides this method, the
+                  &lt;code&gt;resolveProxyClass&lt;/code&gt; method in the corresponding subclass of
+                  &lt;code&gt;ObjectInputStream&lt;/code&gt; must read any data or objects written by
+                  &lt;code&gt;annotateProxyClass&lt;/code&gt;.                
+                <param>
+                    cl the proxy class to annotate custom data for                    
+                </param>
+                <throws>
+                    IOException any exception thrown by the underlying
+                      <code>OutputStream</code>                    
+                </throws>
+                <see>
+                    ObjectInputStream#resolveProxyClass(String[])                    
+                </see>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="annotateProxyClass" type="void" line="542">
+                <params>
+                    <param name="cl" type="Class<?>"/>
+                </params>
+            </method>
+            <javadoc line="545">
+                This method will allow trusted subclasses of ObjectOutputStream to
+                  substitute one object for another during serialization. Replacing
+                  objects is disabled until enableReplaceObject is called. The
+                  enableReplaceObject method checks that the stream requesting to do
+                  replacement can be trusted.  The first occurrence of each object written
+                  into the serialization stream is passed to replaceObject.  Subsequent
+                  references to the object are replaced by the object returned by the
+                  original call to replaceObject.  To ensure that the private state of
+                  objects is not unintentionally exposed, only trusted streams may use
+                  replaceObject.
+                  &lt;p&gt;The ObjectOutputStream.writeObject method takes a parameter of type
+                  Object (as opposed to type Serializable) to allow for cases where
+                  non-serializable objects are replaced by serializable ones.
+                  &lt;p&gt;When a subclass is replacing objects it must insure that either a
+                  complementary substitution must be made during deserialization or that
+                  the substituted object is compatible with every field where the
+                  reference will be stored.  Objects whose type is not a subclass of the
+                  type of the field or array element abort the serialization by raising an
+                  exception and the object is not be stored.
+                  &lt;p&gt;This method is called only once when each object is first
+                  encountered.  All subsequent references to the object will be redirected
+                  to the new object. This method should return the object to be
+                  substituted or the original object.
+                  &lt;p&gt;Null can be returned as the object to be substituted, but may cause
+                  NullReferenceException in classes that contain references to the
+                  original object since they may be expecting an object instead of
+                  null.                
+                <param>
+                    obj the object to be replaced                    
+                </param>
+                <return>
+                    the alternate object that replaced the specified one                    
+                </return>
+                <throws>
+                    IOException Any exception thrown by the underlying
+                      OutputStream.                    
+                </throws>
+            </javadoc>
+            <method name="replaceObject" type="Object" line="583">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="587">
+                Enable the stream to do replacement of objects in the stream.  When
+                  enabled, the replaceObject method is called for every object being
+                  serialized.
+                  &lt;p&gt;If &lt;code&gt;enable&lt;/code&gt; is true, and there is a security manager
+                  installed, this method first calls the security manager&apos;s
+                  &lt;code&gt;checkPermission&lt;/code&gt; method with a
+                  &lt;code&gt;SerializablePermission(&quot;enableSubstitution&quot;)&lt;/code&gt; permission to
+                  ensure it&apos;s ok to enable the stream to do replacement of objects in the
+                  stream.                
+                <param>
+                    enable boolean parameter to enable replacement of objects                    
+                </param>
+                <return>
+                    the previous setting before this method was invoked                    
+                </return>
+                <throws>
+                    SecurityException if a security manager exists and its
+                      <code>checkPermission</code> method denies enabling the stream
+                      to do replacement of objects in the stream.                    
+                </throws>
+                <see>
+                    SecurityManager#checkPermission                    
+                </see>
+                <see>
+                    java.io.SerializablePermission                    
+                </see>
+            </javadoc>
+            <method name="enableReplaceObject" type="boolean" line="609">
+                <params>
+                    <param name="enable" type="boolean"/>
+                </params>
+                <scope line="610"/>
+                <scope line="613">
+                    <declaration name="sm" type="SecurityManager" line="614"/>
+                    <scope line="615"/>
+                </scope>
+            </method>
+            <javadoc line="623">
+                The writeStreamHeader method is provided so subclasses can append or
+                  prepend their own header to the stream.  It writes the magic number and
+                  version to the stream.                
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeStreamHeader" type="void" line="631"/>
+            <javadoc line="636">
+                Write the specified class descriptor to the ObjectOutputStream.  Class
+                  descriptors are used to identify the classes of objects written to the
+                  stream.  Subclasses of ObjectOutputStream may override this method to
+                  customize the way in which class descriptors are written to the
+                  serialization stream.  The corresponding method in ObjectInputStream,
+                  &lt;code&gt;readClassDescriptor&lt;/code&gt;, should then be overridden to
+                  reconstitute the class descriptor from its custom stream representation.
+                  By default, this method writes class descriptors according to the format
+                  defined in the Object Serialization specification.
+                  &lt;p&gt;Note that this method will only be called if the ObjectOutputStream
+                  is not using the old serialization stream format (set by calling
+                  ObjectOutputStream&apos;s &lt;code&gt;useProtocolVersion&lt;/code&gt; method).  If this
+                  serialization stream is using the old format
+                  (&lt;code&gt;PROTOCOL_VERSION_1&lt;/code&gt;), the class descriptor will be written
+                  internally in a manner that cannot be overridden or customized.                
+                <param>
+                    desc class descriptor to write to the stream                    
+                </param>
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+                <see>
+                    java.io.ObjectInputStream#readClassDescriptor()                    
+                </see>
+                <see>
+                    #useProtocolVersion(int)                    
+                </see>
+                <see>
+                    java.io.ObjectStreamConstants#PROTOCOL_VERSION_1                    
+                </see>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="writeClassDescriptor" type="void" line="663">
+                <params>
+                    <param name="desc" type="ObjectStreamClass"/>
+                </params>
+            </method>
+            <javadoc line="667">
+                Writes a byte. This method will block until the byte is actually
+                  written.                
+                <param>
+                    val the byte to be written to the stream                    
+                </param>
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+            </javadoc>
+            <method name="write" type="void" line="674">
+                <params>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="678">
+                Writes an array of bytes. This method will block until the bytes are
+                  actually written.                
+                <param>
+                    buf the data to be written                    
+                </param>
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+            </javadoc>
+            <method name="write" type="void" line="685">
+                <params>
+                    <param name="buf" type="byte[]"/>
+                </params>
+            </method>
+            <javadoc line="689">
+                Writes a sub array of bytes.                
+                <param>
+                    buf the data to be written                    
+                </param>
+                <param>
+                    off the start offset in the data                    
+                </param>
+                <param>
+                    len the number of bytes that are written                    
+                </param>
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+            </javadoc>
+            <method name="write" type="void" line="697">
+                <params>
+                    <param name="buf" type="byte[]"/>
+                    <param name="off" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="698"/>
+                <declaration name="endoff" type="int" line="701"/>
+                <scope line="702"/>
+            </method>
+            <javadoc line="708">
+                Flushes the stream. This will write any buffered output bytes and flush
+                  through to the underlying stream.                
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+            </javadoc>
+            <method name="flush" type="void" line="714"/>
+            <javadoc line="718">
+                Drain any buffered data in ObjectOutputStream.  Similar to flush but
+                  does not propagate the flush to the underlying stream.                
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="drain" type="void" line="725"/>
+            <javadoc line="729">
+                Closes the stream. This method must be called to release any resources
+                  associated with the stream.                
+                <throws>
+                    IOException If an I/O error has occurred.                    
+                </throws>
+            </javadoc>
+            <method name="close" type="void" line="735"/>
+            <javadoc line="741">
+                Writes a boolean.                
+                <param>
+                    val the boolean to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeBoolean" type="void" line="748">
+                <params>
+                    <param name="val" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="752">
+                Writes an 8 bit byte.                
+                <param>
+                    val the byte value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeByte" type="void" line="759">
+                <params>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="763">
+                Writes a 16 bit short.                
+                <param>
+                    val the short value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeShort" type="void" line="770">
+                <params>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="774">
+                Writes a 16 bit char.                
+                <param>
+                    val the char value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeChar" type="void" line="781">
+                <params>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="785">
+                Writes a 32 bit int.                
+                <param>
+                    val the integer value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeInt" type="void" line="792">
+                <params>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="796">
+                Writes a 64 bit long.                
+                <param>
+                    val the long value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeLong" type="void" line="803">
+                <params>
+                    <param name="val" type="long"/>
+                </params>
+            </method>
+            <javadoc line="807">
+                Writes a 32 bit float.                
+                <param>
+                    val the float value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeFloat" type="void" line="814">
+                <params>
+                    <param name="val" type="float"/>
+                </params>
+            </method>
+            <javadoc line="818">
+                Writes a 64 bit double.                
+                <param>
+                    val the double value to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeDouble" type="void" line="825">
+                <params>
+                    <param name="val" type="double"/>
+                </params>
+            </method>
+            <javadoc line="829">
+                Writes a String as a sequence of bytes.                
+                <param>
+                    str the String of bytes to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeBytes" type="void" line="836">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <javadoc line="840">
+                Writes a String as a sequence of chars.                
+                <param>
+                    str the String of chars to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeChars" type="void" line="847">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <javadoc line="851">
+                Primitive data write of this String in
+                  &lt;a href=&quot;DataInput.html#modified-utf-8&quot;&gt;modified UTF-8&lt;/a&gt;
+                  format.  Note that there is a
+                  significant difference between writing a String into the stream as
+                  primitive data or as an Object. A String instance written by writeObject
+                  is written into the stream as a String initially. Future writeObject()
+                  calls write references to the string into the stream.                
+                <param>
+                    str the String to be written                    
+                </param>
+                <throws>
+                    IOException if I/O errors occur while writing to the underlying
+                      stream                    
+                </throws>
+            </javadoc>
+            <method name="writeUTF" type="void" line="864">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <class name="PutField" line="868">
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <javadoc line="868">
+                    Provide programmatic access to the persistent fields to be written
+                      to ObjectOutput.                    
+                    <since>
+                        1.2                        
+                    </since>
+                </javadoc>
+                <method name="put" type="void" line="876"/>
+                <javadoc line="876">
+                    Put the value of the named boolean field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>boolean</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="888"/>
+                <javadoc line="888">
+                    Put the value of the named byte field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>byte</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="900"/>
+                <javadoc line="900">
+                    Put the value of the named char field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>char</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="912"/>
+                <javadoc line="912">
+                    Put the value of the named short field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>short</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="924"/>
+                <javadoc line="924">
+                    Put the value of the named int field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>int</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="936"/>
+                <javadoc line="936">
+                    Put the value of the named long field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>long</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="948"/>
+                <javadoc line="948">
+                    Put the value of the named float field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>float</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="960"/>
+                <javadoc line="960">
+                    Put the value of the named double field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not
+                          <code>double</code>                        
+                    </throws>
+                </javadoc>
+                <method name="put" type="void" line="972"/>
+                <javadoc line="972">
+                    Put the value of the named Object field into the persistent field.                    
+                    <param>
+                        name the name of the serializable field                        
+                    </param>
+                    <param>
+                        val the value to assign to the field
+                          (which may be <code>null</code>)                        
+                    </param>
+                    <throws>
+                        IllegalArgumentException if <code>name</code> does not
+                          match the name of a serializable field for the class whose fields
+                          are being written, or if the type of the named field is not a
+                          reference type                        
+                    </throws>
+                </javadoc>
+                <method name="write" type="void" line="985"/>
+                <javadoc line="985">
+                    Write the data and fields to the specified ObjectOutput stream,
+                      which must be the same stream that produced this
+                      &lt;code&gt;PutField&lt;/code&gt; object.                    
+                    <param>
+                        out the stream to write the data and fields to                        
+                    </param>
+                    <throws>
+                        IOException if I/O errors occur while writing to the
+                          underlying stream                        
+                    </throws>
+                    <throws>
+                        IllegalArgumentException if the specified stream is not
+                          the same stream that produced this <code>PutField</code>
+                          object                        
+                    </throws>
+                    <deprecated>
+                        This method does not write the values contained by this
+                          <code>PutField</code> object in a proper format, and may
+                          result in corruption of the serialization stream.  The
+                          correct way to write <code>PutField</code> data is by
+                          calling the {@link java.io.ObjectOutputStream#writeFields()}method.                        
+                    </deprecated>
+                </javadoc>
+            </class>
+            <javadoc line="1008">
+                Returns protocol version in use.                
+            </javadoc>
+            <method name="getProtocolVersion" type="int" line="1011"/>
+            <javadoc line="1015">
+                Writes string without allowing it to be replaced in stream.  Used by
+                  ObjectStreamClass to write class descriptor type strings.                
+            </javadoc>
+            <method name="writeTypeString" type="void" line="1019">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <declaration name="handle" type="int" line="1020"/>
+                <scope line="1021"/>
+                <scope line="1023"/>
+                <scope line="1025"/>
+            </method>
+            <javadoc line="1030">
+                Verifies that this (possibly subclass) instance can be constructed
+                  without violating security constraints: the subclass must not override
+                  security-sensitive non-final methods, or else the
+                  &quot;enableSubclassImplementation&quot; SerializablePermission is checked.                
+            </javadoc>
+            <method name="verifySubclass" type="void" line="1036">
+                <declaration name="cl" type="Class" line="1037"/>
+                <scope line="1038"/>
+                <declaration name="sm" type="SecurityManager" line="1041"/>
+                <scope line="1042"/>
+                <declaration name="key" type="WeakClassKey" line="1046"/>
+                <declaration name="result" type="Boolean" line="1047"/>
+                <scope line="1048"/>
+                <scope line="1052"/>
+            </method>
+            <javadoc line="1058">
+                Performs reflective checks on given subclass to verify that it doesn&apos;t
+                  override security-sensitive non-final methods.  Returns true if subclass
+                  is &quot;safe&quot;, false otherwise.                
+            </javadoc>
+            <method name="auditSubclass" type="boolean" line="1063">
+                <params>
+                    <param name="subcl" type="Class"/>
+                </params>
+                <anonymous_class line="1065">
+                    <method name="run" type="Boolean" line="1066">
+                        <scope line="1070">
+                            <scope line="1071"/>
+                            <scope line="1075"/>
+                            <scope line="1077"/>
+                            <scope line="1080"/>
+                        </scope>
+                    </method>
+                </anonymous_class>
+                <declaration name="result" type="Boolean" line="1064"/>
+            </method>
+            <javadoc line="1090">
+                Clears internal data structures.                
+            </javadoc>
+            <method name="clear" type="void" line="1093"/>
+            <javadoc line="1098">
+                Underlying writeObject/writeUnshared implementation.                
+            </javadoc>
+            <method name="writeObject0" type="void" line="1103">
+                <params>
+                    <param name="obj" type="Object"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <comment line="1107">
+                    handle previously written and non-replaceable objects                    
+                </comment>
+                <comment line="1123">
+                    check for replacement object                    
+                </comment>
+                <comment line="1128">
+                    REMIND: skip this check for strings/arrays?                    
+                </comment>
+                <comment line="1148">
+                    if object replaced, run through original checks a second time                    
+                </comment>
+                <comment line="1166">
+                    remaining cases                    
+                </comment>
+                <declaration name="oldMode" type="boolean" line="1104"/>
+                <scope line="1106">
+                    <declaration name="h" type="int" line="1108"/>
+                    <scope line="1109"/>
+                    <scope line="1112"/>
+                    <scope line="1115"/>
+                    <scope line="1118"/>
+                    <declaration name="orig" type="Object" line="1124"/>
+                    <declaration name="cl" type="Class" line="1125"/>
+                    <declaration name="desc" type="ObjectStreamClass" line="1126"/>
+                    <scope line="1127">
+                        <declaration name="repCl" type="Class" line="1129"/>
+                        <scope line="1134"/>
+                    </scope>
+                    <scope line="1139">
+                        <declaration name="rep" type="Object" line="1140"/>
+                        <scope line="1141"/>
+                    </scope>
+                    <scope line="1149">
+                        <scope line="1151"/>
+                        <scope line="1154"/>
+                        <scope line="1157"/>
+                        <scope line="1160"/>
+                    </scope>
+                    <scope line="1167"/>
+                    <scope line="1169"/>
+                    <scope line="1171"/>
+                    <scope line="1173"/>
+                    <scope line="1175">
+                        <scope line="1176"/>
+                        <scope line="1179"/>
+                    </scope>
+                </scope>
+                <scope line="1183"/>
+            </method>
+            <javadoc line="1189">
+                Writes null code to stream.                
+            </javadoc>
+            <method name="writeNull" type="void" line="1192"/>
+            <javadoc line="1196">
+                Writes given object handle to stream.                
+            </javadoc>
+            <method name="writeHandle" type="void" line="1199">
+                <params>
+                    <param name="handle" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1204">
+                Writes representation of given class to stream.                
+            </javadoc>
+            <method name="writeClass" type="void" line="1207">
+                <params>
+                    <param name="cl" type="Class"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="1213">
+                Writes representation of given class descriptor to stream.                
+            </javadoc>
+            <method name="writeClassDesc" type="void" line="1218">
+                <params>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <declaration name="handle" type="int" line="1219"/>
+                <scope line="1220"/>
+                <scope line="1222"/>
+                <scope line="1224"/>
+                <scope line="1226"/>
+            </method>
+            <javadoc line="1231">
+                Writes class descriptor representing a dynamic proxy class to stream.                
+            </javadoc>
+            <method name="writeProxyDesc" type="void" line="1236">
+                <params>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <declaration name="cl" type="Class" line="1240"/>
+                <declaration name="ifaces" type="Class[]" line="1241"/>
+                <scope line="1243"/>
+            </method>
+            <javadoc line="1255">
+                Writes class descriptor representing a standard (i.e., not a dynamic
+                  proxy) class to stream.                
+            </javadoc>
+            <method name="writeNonProxyDesc" type="void" line="1261">
+                <params>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <comment line="1266">
+                    do not invoke class descriptor write hook with old protocol                    
+                </comment>
+                <scope line="1265"/>
+                <scope line="1268"/>
+                <declaration name="cl" type="Class" line="1272"/>
+            </method>
+            <javadoc line="1281">
+                Writes given string to stream, using standard or long UTF format
+                  depending on string length.                
+            </javadoc>
+            <method name="writeString" type="void" line="1285">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <declaration name="utflen" type="long" line="1287"/>
+                <scope line="1288"/>
+                <scope line="1291"/>
+            </method>
+            <javadoc line="1297">
+                Writes given array object to stream.                
+            </javadoc>
+            <method name="writeArray" type="void" line="1304">
+                <params>
+                    <param name="array" type="Object"/>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <declaration name="ccl" type="Class" line="1309"/>
+                <scope line="1310">
+                    <scope line="1311">
+                        <declaration name="ia" type="int[]" line="1312"/>
+                    </scope>
+                    <scope line="1315">
+                        <declaration name="ba" type="byte[]" line="1316"/>
+                    </scope>
+                    <scope line="1319">
+                        <declaration name="ja" type="long[]" line="1320"/>
+                    </scope>
+                    <scope line="1323">
+                        <declaration name="fa" type="float[]" line="1324"/>
+                    </scope>
+                    <scope line="1327">
+                        <declaration name="da" type="double[]" line="1328"/>
+                    </scope>
+                    <scope line="1331">
+                        <declaration name="sa" type="short[]" line="1332"/>
+                    </scope>
+                    <scope line="1335">
+                        <declaration name="ca" type="char[]" line="1336"/>
+                    </scope>
+                    <scope line="1339">
+                        <declaration name="za" type="boolean[]" line="1340"/>
+                    </scope>
+                    <scope line="1343"/>
+                </scope>
+                <scope line="1346">
+                    <declaration name="objs" type="Object[]" line="1347"/>
+                    <declaration name="len" type="int" line="1348"/>
+                    <scope line="1350"/>
+                    <scope line="1355">
+                        <scope line="1356">
+                            <scope line="1357"/>
+                            <scope line="1361"/>
+                            <scope line="1363">
+                                <scope line="1364"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1369">
+                        <scope line="1370"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1377">
+                Writes given enum constant to stream.                
+            </javadoc>
+            <method name="writeEnum" type="void" line="1384">
+                <params>
+                    <param name="en" type="Enum"/>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <declaration name="sdesc" type="ObjectStreamClass" line="1386"/>
+            </method>
+            <javadoc line="1392">
+                Writes representation of a &quot;ordinary&quot; (i.e., not a String, Class,
+                  ObjectStreamClass, array, or enum constant) serializable object to the
+                  stream.                
+            </javadoc>
+            <method name="writeOrdinaryObject" type="void" line="1401">
+                <params>
+                    <param name="obj" type="Object"/>
+                    <param name="desc" type="ObjectStreamClass"/>
+                    <param name="unshared" type="boolean"/>
+                </params>
+                <scope line="1402"/>
+                <scope line="1407">
+                    <scope line="1413"/>
+                    <scope line="1415"/>
+                </scope>
+                <scope line="1418">
+                    <scope line="1419"/>
+                </scope>
+            </method>
+            <javadoc line="1425">
+                Writes externalizable data of given object by invoking its
+                  writeExternal() method.                
+            </javadoc>
+            <method name="writeExternalData" type="void" line="1429">
+                <params>
+                    <param name="obj" type="Externalizable"/>
+                </params>
+                <declaration name="oldPut" type="PutFieldImpl" line="1430"/>
+                <scope line="1433"/>
+                <declaration name="oldContext" type="SerialCallbackContext" line="1436"/>
+                <scope line="1437">
+                    <scope line="1439"/>
+                    <scope line="1441"/>
+                </scope>
+                <scope line="1447">
+                    <scope line="1449"/>
+                </scope>
+            </method>
+            <javadoc line="1457">
+                Writes instance data for each serializable class of given object, from
+                  superclass to subclass.                
+            </javadoc>
+            <method name="writeSerialData" type="void" line="1463">
+                <params>
+                    <param name="obj" type="Object"/>
+                    <param name="desc" type="ObjectStreamClass"/>
+                </params>
+                <declaration name="slots" type="ObjectStreamClass.ClassDataSlot[]" line="1464"/>
+                <scope line="1465">
+                    <declaration name="slotDesc" type="ObjectStreamClass" line="1466"/>
+                    <scope line="1467">
+                        <declaration name="oldPut" type="PutFieldImpl" line="1468"/>
+                        <declaration name="oldContext" type="SerialCallbackContext" line="1470"/>
+                        <scope line="1472"/>
+                        <scope line="1477"/>
+                        <scope line="1483">
+                            <scope line="1486"/>
+                        </scope>
+                    </scope>
+                    <scope line="1492"/>
+                </scope>
+            </method>
+            <javadoc line="1498">
+                Fetches and writes values of serializable fields of given object to
+                  stream.  The given class descriptor specifies which field values to
+                  write, and in which order they should be written.                
+            </javadoc>
+            <method name="defaultWriteFields" type="void" line="1505">
+                <params>
+                    <param name="obj" type="Object"/>
+                    <param name="desc" type="ObjectStreamClass"/>
+                </params>
+                <comment line="1506">
+                    REMIND: perform conservative isInstance check here?                    
+                </comment>
+                <declaration name="primDataSize" type="int" line="1509"/>
+                <scope line="1510"/>
+                <declaration name="fields" type="ObjectStreamField[]" line="1516"/>
+                <declaration name="objVals" type="Object[]" line="1517"/>
+                <declaration name="numPrimFields" type="int" line="1518"/>
+                <scope line="1520">
+                    <scope line="1521"/>
+                    <scope line="1527"/>
+                    <scope line="1530">
+                        <scope line="1531"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1538">
+                Attempts to write to stream fatal IOException that has caused
+                  serialization to abort.                
+            </javadoc>
+            <method name="writeFatalException" type="void" line="1542">
+                <params>
+                    <param name="ex" type="IOException"/>
+                </params>
+                <comment line="1543">
+                    Note: the serialization specification states that if a second
+                     IOException occurs while attempting to serialize the original fatal
+                     exception to the stream, then a StreamCorruptedException should be
+                     thrown (section 2.1).  However, due to a bug in previous
+                     implementations of serialization, StreamCorruptedExceptions were
+                     rarely (if ever) actually thrown--the &quot;root&quot; exceptions from
+                     underlying streams were thrown instead.  This historical behavior is
+                     followed here for consistency.                    
+                </comment>
+                <declaration name="oldMode" type="boolean" line="1554"/>
+                <scope line="1555"/>
+                <scope line="1559"/>
+            </method>
+            <method name="floatsToBytes" type="void" line="1564"/>
+            <javadoc line="1564">
+                Converts specified span of float values into byte values.                
+            </javadoc>
+            <method name="doublesToBytes" type="void" line="1572"/>
+            <javadoc line="1572">
+                Converts specified span of double values into byte values.                
+            </javadoc>
+            <class name="PutFieldImpl" line="1580">
+                <extends class="PutField"/>
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <javadoc line="1580">
+                    Default PutField implementation.                    
+                </javadoc>
+                <declaration name="desc" type="ObjectStreamClass" line="1585"/>
+                <javadoc line="1585">
+                    class descriptor describing serializable fields                    
+                </javadoc>
+                <declaration name="primVals" type="byte[]" line="1587"/>
+                <javadoc line="1587">
+                    primitive field values                    
+                </javadoc>
+                <declaration name="objVals" type="Object[]" line="1589"/>
+                <javadoc line="1589">
+                    object field values                    
+                </javadoc>
+                <javadoc line="1592">
+                    Creates PutFieldImpl object for writing fields defined in given
+                      class descriptor.                    
+                </javadoc>
+                <method name="PutFieldImpl" type="constructor" line="1596">
+                    <params>
+                        <param name="desc" type="ObjectStreamClass"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1602">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="boolean"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1606">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="byte"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1610">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="char"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1614">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="short"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1618">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="int"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1622">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="float"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1626">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="long"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1630">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="double"/>
+                    </params>
+                </method>
+                <method name="put" type="void" line="1634">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="val" type="Object"/>
+                    </params>
+                </method>
+                <method name="write" type="void" line="1639">
+                    <params>
+                        <param name="out" type="ObjectOutput"/>
+                    </params>
+                    <comment line="1640">
+                        Applications should not use this method to write PutField
+                         data, as it will lead to stream corruption if the PutField
+                         object writes any primitive data (since block data mode is not
+                         unsetset properly, as is done in OOS.writeFields()).  This
+                         broken implementation is being retained solely for behavioral
+                         compatibility, in order to support applications which use
+                         OOS.PutField.write() for writing only non-primitive data.
+                        
+                         Serialization of unshared objects is not implemented here since
+                         it is not necessary for backwards compatibility; also, unshared
+                         semantics may not be supported by the given ObjectOutput
+                         instance.  Applications which write unshared objects using the
+                         PutField API must use OOS.writeFields().                        
+                    </comment>
+                    <comment line="1662">
+                        REMIND: warn if numPrimFields &gt; 0?                        
+                    </comment>
+                    <scope line="1655"/>
+                    <declaration name="fields" type="ObjectStreamField[]" line="1660"/>
+                    <declaration name="numPrimFields" type="int" line="1661"/>
+                    <scope line="1663">
+                        <scope line="1664"/>
+                    </scope>
+                </method>
+                <javadoc line="1671">
+                    Writes buffered primitive data and object fields to stream.                    
+                </javadoc>
+                <method name="writeFields" type="void" line="1674">
+                    <declaration name="fields" type="ObjectStreamField[]" line="1677"/>
+                    <declaration name="numPrimFields" type="int" line="1678"/>
+                    <scope line="1679">
+                        <scope line="1680"/>
+                        <scope line="1686"/>
+                        <scope line="1689">
+                            <scope line="1690"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="1697">
+                    Returns offset of field with given name and type.  A specified type
+                      of null matches all types, Object.class matches all non-primitive
+                      types, and any other non-null type matches assignable types only.
+                      Throws IllegalArgumentException if no matching field found.                    
+                </javadoc>
+                <method name="getFieldOffset" type="int" line="1703">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="type" type="Class"/>
+                    </params>
+                    <declaration name="field" type="ObjectStreamField" line="1704"/>
+                    <scope line="1705"/>
+                </method>
+            </class>
+            <class name="BlockDataOutputStream" line="1713">
+                <extends class="OutputStream"/>
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <implements interface="DataOutput"/>
+                <javadoc line="1713">
+                    Buffered output stream with two modes: in default mode, outputs data in
+                      same format as DataOutputStream; in &quot;block data&quot; mode, outputs data
+                      bracketed by block data markers (see object serialization specification
+                      for details).                    
+                </javadoc>
+                <declaration name="MAX_BLOCK_SIZE" type="int" line="1722"/>
+                <javadoc line="1722">
+                    maximum data block length                    
+                </javadoc>
+                <declaration name="MAX_HEADER_SIZE" type="int" line="1724"/>
+                <javadoc line="1724">
+                    maximum data block header length                    
+                </javadoc>
+                <declaration name="CHAR_BUF_SIZE" type="int" line="1726"/>
+                <javadoc line="1726">
+                    (tunable) length of char buffer (for writing strings)                    
+                </javadoc>
+                <declaration name="buf" type="byte[]" line="1729"/>
+                <javadoc line="1729">
+                    buffer for writing general/block data                    
+                </javadoc>
+                <declaration name="hbuf" type="byte[]" line="1731"/>
+                <javadoc line="1731">
+                    buffer for writing block data headers                    
+                </javadoc>
+                <declaration name="cbuf" type="char[]" line="1733"/>
+                <javadoc line="1733">
+                    char buffer for fast string writes                    
+                </javadoc>
+                <declaration name="blkmode" type="boolean" line="1736"/>
+                <javadoc line="1736">
+                    block data mode                    
+                </javadoc>
+                <declaration name="pos" type="int" line="1738"/>
+                <javadoc line="1738">
+                    current offset into buf                    
+                </javadoc>
+                <declaration name="out" type="OutputStream" line="1741"/>
+                <javadoc line="1741">
+                    underlying output stream                    
+                </javadoc>
+                <declaration name="dout" type="DataOutputStream" line="1743"/>
+                <javadoc line="1743">
+                    loopback stream (for data writes that span data blocks)                    
+                </javadoc>
+                <javadoc line="1746">
+                    Creates new BlockDataOutputStream on top of given underlying stream.
+                      Block data mode is turned off by default.                    
+                </javadoc>
+                <method name="BlockDataOutputStream" type="constructor" line="1750">
+                    <params>
+                        <param name="out" type="OutputStream"/>
+                    </params>
+                </method>
+                <javadoc line="1755">
+                    Sets block data mode to the given mode (true == on, false == off)
+                      and returns the previous mode value.  If the new mode is the same as
+                      the old mode, no action is taken.  If the new mode differs from the
+                      old mode, any buffered data is flushed before switching to the new
+                      mode.                    
+                </javadoc>
+                <method name="setBlockDataMode" type="boolean" line="1762">
+                    <params>
+                        <param name="mode" type="boolean"/>
+                    </params>
+                    <scope line="1763"/>
+                </method>
+                <javadoc line="1771">
+                    Returns true if the stream is currently in block data mode, false
+                      otherwise.                    
+                </javadoc>
+                <method name="getBlockDataMode" type="boolean" line="1775"/>
+                <method name="write" type="void" line="1786">
+                    <params>
+                        <param name="b" type="int"/>
+                    </params>
+                    <scope line="1787"/>
+                </method>
+                <method name="write" type="void" line="1793">
+                    <params>
+                        <param name="b" type="byte[]"/>
+                    </params>
+                </method>
+                <method name="write" type="void" line="1797">
+                    <params>
+                        <param name="b" type="byte[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                </method>
+                <method name="flush" type="void" line="1801"/>
+                <method name="close" type="void" line="1806"/>
+                <javadoc line="1811">
+                    Writes specified span of byte values from given array.  If copy is
+                      true, copies the values to an intermediate buffer before writing
+                      them to underlying stream (to avoid exposing a reference to the
+                      original byte array).                    
+                </javadoc>
+                <method name="write" type="void" line="1819">
+                    <params>
+                        <param name="b" type="byte[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                        <param name="copy" type="boolean"/>
+                    </params>
+                    <comment line="1820">
+                        write directly                        
+                    </comment>
+                    <comment line="1831">
+                        avoid unnecessary copy                        
+                    </comment>
+                    <scope line="1820"/>
+                    <scope line="1826">
+                        <scope line="1827"/>
+                        <scope line="1830"/>
+                        <scope line="1836">
+                            <declaration name="wlen" type="int" line="1837"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="1846">
+                    Writes all buffered data from this stream to the underlying stream,
+                      but does not flush underlying stream.                    
+                </javadoc>
+                <method name="drain" type="void" line="1850">
+                    <scope line="1851"/>
+                    <scope line="1854"/>
+                </method>
+                <javadoc line="1861">
+                    Writes block data header.  Data blocks shorter than 256 bytes are
+                      prefixed with a 2-byte header; all others start with a 5-byte
+                      header.                    
+                </javadoc>
+                <method name="writeBlockHeader" type="void" line="1866">
+                    <params>
+                        <param name="len" type="int"/>
+                    </params>
+                    <scope line="1867"/>
+                    <scope line="1871"/>
+                </method>
+                <method name="writeBoolean" type="void" line="1886">
+                    <params>
+                        <param name="v" type="boolean"/>
+                    </params>
+                    <scope line="1887"/>
+                </method>
+                <method name="writeByte" type="void" line="1893">
+                    <params>
+                        <param name="v" type="int"/>
+                    </params>
+                    <scope line="1894"/>
+                </method>
+                <method name="writeChar" type="void" line="1900">
+                    <params>
+                        <param name="v" type="int"/>
+                    </params>
+                    <scope line="1901"/>
+                    <scope line="1904"/>
+                </method>
+                <method name="writeShort" type="void" line="1909">
+                    <params>
+                        <param name="v" type="int"/>
+                    </params>
+                    <scope line="1910"/>
+                    <scope line="1913"/>
+                </method>
+                <method name="writeInt" type="void" line="1918">
+                    <params>
+                        <param name="v" type="int"/>
+                    </params>
+                    <scope line="1919"/>
+                    <scope line="1922"/>
+                </method>
+                <method name="writeFloat" type="void" line="1927">
+                    <params>
+                        <param name="v" type="float"/>
+                    </params>
+                    <scope line="1928"/>
+                    <scope line="1931"/>
+                </method>
+                <method name="writeLong" type="void" line="1936">
+                    <params>
+                        <param name="v" type="long"/>
+                    </params>
+                    <scope line="1937"/>
+                    <scope line="1940"/>
+                </method>
+                <method name="writeDouble" type="void" line="1945">
+                    <params>
+                        <param name="v" type="double"/>
+                    </params>
+                    <scope line="1946"/>
+                    <scope line="1949"/>
+                </method>
+                <method name="writeBytes" type="void" line="1954">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                    <declaration name="endoff" type="int" line="1955"/>
+                    <declaration name="cpos" type="int" line="1956"/>
+                    <declaration name="csize" type="int" line="1957"/>
+                    <scope line="1958">
+                        <scope line="1959"/>
+                        <scope line="1964"/>
+                        <declaration name="n" type="int" line="1967"/>
+                        <declaration name="stop" type="int" line="1968"/>
+                        <scope line="1969"/>
+                    </scope>
+                </method>
+                <method name="writeChars" type="void" line="1976">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                    <declaration name="endoff" type="int" line="1977"/>
+                    <scope line="1978">
+                        <declaration name="csize" type="int" line="1979"/>
+                    </scope>
+                </method>
+                <method name="writeUTF" type="void" line="1986">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                </method>
+                <method name="writeBooleans" type="void" line="1999">
+                    <params>
+                        <param name="v" type="boolean[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="endoff" type="int" line="2000"/>
+                    <scope line="2001">
+                        <scope line="2002"/>
+                        <declaration name="stop" type="int" line="2005"/>
+                        <scope line="2006"/>
+                    </scope>
+                </method>
+                <method name="writeChars" type="void" line="2012">
+                    <params>
+                        <param name="v" type="char[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2013"/>
+                    <declaration name="endoff" type="int" line="2014"/>
+                    <scope line="2015">
+                        <scope line="2016">
+                            <declaration name="avail" type="int" line="2017"/>
+                            <declaration name="stop" type="int" line="2018"/>
+                            <scope line="2019"/>
+                        </scope>
+                        <scope line="2023"/>
+                    </scope>
+                </method>
+                <method name="writeShorts" type="void" line="2029">
+                    <params>
+                        <param name="v" type="short[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2030"/>
+                    <declaration name="endoff" type="int" line="2031"/>
+                    <scope line="2032">
+                        <scope line="2033">
+                            <declaration name="avail" type="int" line="2034"/>
+                            <declaration name="stop" type="int" line="2035"/>
+                            <scope line="2036"/>
+                        </scope>
+                        <scope line="2040"/>
+                    </scope>
+                </method>
+                <method name="writeInts" type="void" line="2046">
+                    <params>
+                        <param name="v" type="int[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2047"/>
+                    <declaration name="endoff" type="int" line="2048"/>
+                    <scope line="2049">
+                        <scope line="2050">
+                            <declaration name="avail" type="int" line="2051"/>
+                            <declaration name="stop" type="int" line="2052"/>
+                            <scope line="2053"/>
+                        </scope>
+                        <scope line="2057"/>
+                    </scope>
+                </method>
+                <method name="writeFloats" type="void" line="2063">
+                    <params>
+                        <param name="v" type="float[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2064"/>
+                    <declaration name="endoff" type="int" line="2065"/>
+                    <scope line="2066">
+                        <scope line="2067">
+                            <declaration name="avail" type="int" line="2068"/>
+                            <declaration name="chunklen" type="int" line="2069"/>
+                        </scope>
+                        <scope line="2073"/>
+                    </scope>
+                </method>
+                <method name="writeLongs" type="void" line="2079">
+                    <params>
+                        <param name="v" type="long[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2080"/>
+                    <declaration name="endoff" type="int" line="2081"/>
+                    <scope line="2082">
+                        <scope line="2083">
+                            <declaration name="avail" type="int" line="2084"/>
+                            <declaration name="stop" type="int" line="2085"/>
+                            <scope line="2086"/>
+                        </scope>
+                        <scope line="2090"/>
+                    </scope>
+                </method>
+                <method name="writeDoubles" type="void" line="2096">
+                    <params>
+                        <param name="v" type="double[]"/>
+                        <param name="off" type="int"/>
+                        <param name="len" type="int"/>
+                    </params>
+                    <declaration name="limit" type="int" line="2097"/>
+                    <declaration name="endoff" type="int" line="2098"/>
+                    <scope line="2099">
+                        <scope line="2100">
+                            <declaration name="avail" type="int" line="2101"/>
+                            <declaration name="chunklen" type="int" line="2102"/>
+                        </scope>
+                        <scope line="2106"/>
+                    </scope>
+                </method>
+                <javadoc line="2112">
+                    Returns the length in bytes of the UTF encoding of the given string.                    
+                </javadoc>
+                <method name="getUTFLength" type="long" line="2115">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                    <declaration name="len" type="int" line="2116"/>
+                    <declaration name="utflen" type="long" line="2117"/>
+                    <scope line="2118">
+                        <declaration name="csize" type="int" line="2119"/>
+                        <scope line="2121">
+                            <declaration name="c" type="char" line="2122"/>
+                            <scope line="2123"/>
+                            <scope line="2125"/>
+                            <scope line="2127"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="2136">
+                    Writes the given string in UTF format.  This method is used in
+                      situations where the UTF encoding length of the string is already
+                      known; specifying it explicitly avoids a prescan of the string to
+                      determine its UTF length.                    
+                </javadoc>
+                <method name="writeUTF" type="void" line="2142">
+                    <params>
+                        <param name="s" type="String"/>
+                        <param name="utflen" type="long"/>
+                    </params>
+                    <scope line="2143"/>
+                    <scope line="2147"/>
+                    <scope line="2149"/>
+                </method>
+                <javadoc line="2154">
+                    Writes given string in &quot;long&quot; UTF format.  &quot;Long&quot; UTF format is
+                      identical to standard UTF, except that it uses an 8 byte header
+                      (instead of the standard 2 bytes) to convey the UTF encoding length.                    
+                </javadoc>
+                <method name="writeLongUTF" type="void" line="2159">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                </method>
+                <javadoc line="2163">
+                    Writes given string in &quot;long&quot; UTF format, where the UTF encoding
+                      length of the string is already known.                    
+                </javadoc>
+                <method name="writeLongUTF" type="void" line="2167">
+                    <params>
+                        <param name="s" type="String"/>
+                        <param name="utflen" type="long"/>
+                    </params>
+                    <scope line="2169"/>
+                    <scope line="2171"/>
+                </method>
+                <javadoc line="2176">
+                    Writes the &quot;body&quot; (i.e., the UTF representation minus the 2-byte or
+                      8-byte length header) of the UTF encoding for the given string.                    
+                </javadoc>
+                <method name="writeUTFBody" type="void" line="2180">
+                    <params>
+                        <param name="s" type="String"/>
+                    </params>
+                    <comment line="2201">
+                        write one byte at a time to normalize block                        
+                    </comment>
+                    <declaration name="limit" type="int" line="2181"/>
+                    <declaration name="len" type="int" line="2182"/>
+                    <scope line="2183">
+                        <declaration name="csize" type="int" line="2184"/>
+                        <scope line="2186">
+                            <declaration name="c" type="char" line="2187"/>
+                            <scope line="2188">
+                                <scope line="2189"/>
+                                <scope line="2191"/>
+                                <scope line="2196"/>
+                            </scope>
+                            <scope line="2201">
+                                <scope line="2202"/>
+                                <scope line="2204"/>
+                                <scope line="2208"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <class name="HandleTable" line="2219">
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <javadoc line="2219">
+                    Lightweight identity hash table which maps objects to integer handles,
+                      assigned in ascending order.                    
+                </javadoc>
+                <declaration name="size" type="int" line="2226"/>
+                <declaration name="threshold" type="int" line="2228"/>
+                <declaration name="loadFactor" type="float" line="2230"/>
+                <declaration name="spine" type="int[]" line="2232"/>
+                <declaration name="next" type="int[]" line="2234"/>
+                <declaration name="objs" type="Object[]" line="2236"/>
+                <javadoc line="2238">
+                    Creates new HandleTable with given capacity and load factor.                    
+                </javadoc>
+                <method name="HandleTable" type="constructor" line="2241">
+                    <params>
+                        <param name="initialCapacity" type="int"/>
+                        <param name="loadFactor" type="float"/>
+                    </params>
+                </method>
+                <javadoc line="2250">
+                    Assigns next available handle to given object, and returns handle
+                      value.  Handles are assigned in ascending order starting at 0.                    
+                </javadoc>
+                <method name="assign" type="int" line="2254">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                    <scope line="2255"/>
+                    <scope line="2258"/>
+                </method>
+                <javadoc line="2265">
+                    Looks up and returns handle associated with given object, or -1 if
+                      no mapping found.                    
+                </javadoc>
+                <method name="lookup" type="int" line="2269">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                    <scope line="2270"/>
+                    <declaration name="index" type="int" line="2273"/>
+                    <scope line="2274">
+                        <scope line="2275"/>
+                    </scope>
+                </method>
+                <javadoc line="2282">
+                    Resets table to its initial (empty) state.                    
+                </javadoc>
+                <method name="clear" type="void" line="2285"/>
+                <javadoc line="2291">
+                    Returns the number of mappings currently in table.                    
+                </javadoc>
+                <method name="size" type="int" line="2294"/>
+                <javadoc line="2298">
+                    Inserts mapping object -&gt; handle mapping into table.  Assumes table
+                      is large enough to accommodate new mapping.                    
+                </javadoc>
+                <method name="insert" type="void" line="2302">
+                    <params>
+                        <param name="obj" type="Object"/>
+                        <param name="handle" type="int"/>
+                    </params>
+                    <declaration name="index" type="int" line="2303"/>
+                </method>
+                <javadoc line="2309">
+                    Expands the hash &quot;spine&quot; -- equivalent to increasing the number of
+                      buckets in a conventional hash table.                    
+                </javadoc>
+                <method name="growSpine" type="void" line="2313">
+                    <scope line="2317"/>
+                </method>
+                <javadoc line="2322">
+                    Increases hash table capacity by lengthening entry arrays.                    
+                </javadoc>
+                <method name="growEntries" type="void" line="2325">
+                    <declaration name="newLength" type="int" line="2326"/>
+                    <declaration name="newNext" type="int[]" line="2327"/>
+                    <declaration name="newObjs" type="Object[]" line="2331"/>
+                </method>
+                <javadoc line="2336">
+                    Returns hash value for given object.                    
+                </javadoc>
+                <method name="hash" type="int" line="2339">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                </method>
+            </class>
+            <class name="ReplaceTable" line="2344">
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <javadoc line="2344">
+                    Lightweight identity hash table which maps objects to replacement
+                      objects.                    
+                </javadoc>
+                <declaration name="htab" type="HandleTable" line="2351"/>
+                <declaration name="reps" type="Object[]" line="2353"/>
+                <javadoc line="2355">
+                    Creates new ReplaceTable with given capacity and load factor.                    
+                </javadoc>
+                <method name="ReplaceTable" type="constructor" line="2358">
+                    <params>
+                        <param name="initialCapacity" type="int"/>
+                        <param name="loadFactor" type="float"/>
+                    </params>
+                </method>
+                <javadoc line="2363">
+                    Enters mapping from object to replacement object.                    
+                </javadoc>
+                <method name="assign" type="void" line="2366">
+                    <params>
+                        <param name="obj" type="Object"/>
+                        <param name="rep" type="Object"/>
+                    </params>
+                    <declaration name="index" type="int" line="2367"/>
+                    <scope line="2368"/>
+                </method>
+                <javadoc line="2374">
+                    Looks up and returns replacement for given object.  If no
+                      replacement is found, returns the lookup object itself.                    
+                </javadoc>
+                <method name="lookup" type="Object" line="2378">
+                    <params>
+                        <param name="obj" type="Object"/>
+                    </params>
+                    <declaration name="index" type="int" line="2379"/>
+                </method>
+                <javadoc line="2383">
+                    Resets table to its initial (empty) state.                    
+                </javadoc>
+                <method name="clear" type="void" line="2386"/>
+                <javadoc line="2391">
+                    Returns the number of mappings currently in table.                    
+                </javadoc>
+                <method name="size" type="int" line="2394"/>
+                <javadoc line="2398">
+                    Increases table capacity.                    
+                </javadoc>
+                <method name="grow" type="void" line="2401">
+                    <declaration name="newReps" type="Object[]" line="2402"/>
+                </method>
+            </class>
+            <class name="DebugTraceInfoStack" line="2408">
+                <comment line="1568">
+                    REMIND: remove once hotspot inlines Float.floatToIntBits                    
+                </comment>
+                <comment line="1576">
+                    REMIND: remove once hotspot inlines Double.doubleToLongBits                    
+                </comment>
+                <comment line="1639">
+                    deprecated in ObjectOutputStream.PutField                    
+                </comment>
+                <comment line="1780">
+                                        
+                </comment>
+                <comment line="1781">
+                    The following methods are equivalent to their counterparts in
+                     OutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1880">
+                                        
+                </comment>
+                <comment line="1881">
+                    The following methods are equivalent to their counterparts in
+                     DataOutputStream, except that they partition written data into data
+                     blocks when in block data mode.                    
+                </comment>
+                <comment line="1992">
+                                        
+                </comment>
+                <comment line="1993">
+                    The following methods write out spans of primitive data values.
+                     Though equivalent to calling the corresponding primitive write
+                     methods repeatedly, these methods are optimized for writing groups
+                     of primitive data values more efficiently.                    
+                </comment>
+                <comment line="2226">
+                                        
+                </comment>
+                <comment line="2228">
+                                        
+                </comment>
+                <comment line="2230">
+                                        
+                </comment>
+                <comment line="2232">
+                                        
+                </comment>
+                <comment line="2234">
+                                        
+                </comment>
+                <comment line="2236">
+                                        
+                </comment>
+                <comment line="2351">
+                                        
+                </comment>
+                <comment line="2353">
+                                        
+                </comment>
+                <javadoc line="2408">
+                    Stack to keep debug information about the state of the
+                      serialization process, for embedding in exception messages.                    
+                </javadoc>
+                <declaration name="stack" type="List&lt;String&gt;" line="2413"/>
+                <method name="DebugTraceInfoStack" type="constructor" line="2415"/>
+                <javadoc line="2419">
+                    Removes all of the elements from enclosed list.                    
+                </javadoc>
+                <method name="clear" type="void" line="2422"/>
+                <javadoc line="2426">
+                    Removes the object at the top of enclosed list.                    
+                </javadoc>
+                <method name="pop" type="void" line="2429"/>
+                <javadoc line="2433">
+                    Pushes a String onto the top of enclosed list.                    
+                </javadoc>
+                <method name="push" type="void" line="2436">
+                    <params>
+                        <param name="entry" type="String"/>
+                    </params>
+                </method>
+                <javadoc line="2440">
+                    Returns a string representation of this object                    
+                </javadoc>
+                <method name="toString" type="String" line="2443">
+                    <declaration name="buffer" type="StringBuilder" line="2444"/>
+                    <scope line="2445">
+                        <scope line="2446"/>
+                    </scope>
+                </method>
+            </class>
+        </class>
+    </source>

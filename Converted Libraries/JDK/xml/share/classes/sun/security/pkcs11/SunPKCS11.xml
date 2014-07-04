@@ -1,0 +1,973 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.pkcs11">
+        <import package="java.io"/>
+        <import package="java.util"/>
+        <import package="java.security"/>
+        <import package="java.security.interfaces"/>
+        <import package="javax.crypto.interfaces"/>
+        <import package="javax.security.auth.Subject"/>
+        <import package="javax.security.auth.login.LoginException"/>
+        <import package="javax.security.auth.login.FailedLoginException"/>
+        <import package="javax.security.auth.callback.Callback"/>
+        <import package="javax.security.auth.callback.CallbackHandler"/>
+        <import package="javax.security.auth.callback.ConfirmationCallback"/>
+        <import package="javax.security.auth.callback.PasswordCallback"/>
+        <import package="javax.security.auth.callback.TextOutputCallback"/>
+        <import package="sun.security.util.Debug"/>
+        <import package="sun.security.util.ResourcesMgr"/>
+        <import package="sun.security.pkcs11.Secmod"/>
+        <import package="sun.security.pkcs11.wrapper"/>
+        <import package="sun.security.pkcs11.wrapper.PKCS11Constants"/>
+        <class name="SunPKCS11" line="53">
+            <extends class="AuthProvider"/>
+            <comment line="68">
+                the PKCS11 object through which we make the native calls                
+            </comment>
+            <comment line="71">
+                name of the configuration file                
+            </comment>
+            <comment line="74">
+                configuration information                
+            </comment>
+            <comment line="77">
+                id of the PKCS#11 slot we are using                
+            </comment>
+            <comment line="434">
+                Map from mechanism to List of Descriptors that should be                
+            </comment>
+            <comment line="435">
+                registered if the mechanism is supported                
+            </comment>
+            <comment line="697">
+                background thread that periodically checks for token insertion                
+            </comment>
+            <comment line="698">
+                if no token is present. We need to do that in a separate thread because                
+            </comment>
+            <comment line="699">
+                the insertion check may block for quite a long time on some tokens.                
+            </comment>
+            <comment line="730">
+                create the poller thread, if not already active                
+            </comment>
+            <comment line="743">
+                destroy the poller thread, if active                
+            </comment>
+            <comment line="763">
+                destroy the token. Called if we detect that it has been removed                
+            </comment>
+            <comment line="781">
+                test if a token is present and initialize this provider for it if so.                
+            </comment>
+            <comment line="782">
+                does nothing if no token is found                
+            </comment>
+            <comment line="783">
+                called from constructor and by poller                
+            </comment>
+            <javadoc line="53">
+                PKCS#11 provider main class.                
+                <author>
+                    Andreas Sterbenz                    
+                </author>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="61"/>
+            <declaration name="debug" type="Debug" line="63"/>
+            <declaration name="dummyConfigId" type="int" line="65"/>
+            <declaration name="p11" type="PKCS11" line="68"/>
+            <declaration name="configName" type="String" line="71"/>
+            <declaration name="config" type="Config" line="74"/>
+            <declaration name="slotID" type="long" line="77"/>
+            <declaration name="pHandler" type="CallbackHandler" line="79"/>
+            <declaration name="LOCK_HANDLER" type="Object" line="80"/>
+            <declaration name="removable" type="boolean" line="82"/>
+            <declaration name="nssModule" type="Module" line="84"/>
+            <declaration name="nssUseSecmodTrust" type="boolean" line="86"/>
+            <declaration name="token" type="Token" line="88"/>
+            <declaration name="poller" type="TokenPoller" line="90"/>
+            <method name="getToken" type="Token" line="92"/>
+            <method name="SunPKCS11" type="constructor" line="96"/>
+            <method name="SunPKCS11" type="constructor" line="102">
+                <params>
+                    <param name="configName" type="String"/>
+                </params>
+            </method>
+            <method name="SunPKCS11" type="constructor" line="106">
+                <params>
+                    <param name="configStream" type="InputStream"/>
+                </params>
+            </method>
+            <method name="checkNull" type="T" line="110">
+                <params>
+                    <param name="obj" type="T"/>
+                </params>
+                <scope line="111"/>
+            </method>
+            <method name="getDummyConfigName" type="String" line="117">
+                <declaration name="id" type="int" line="118"/>
+            </method>
+            <javadoc line="122">
+                @deprecated use new SunPKCS11(String) or new SunPKCS11(InputStream)
+                  instead                
+            </javadoc>
+            <method name="SunPKCS11" type="constructor" line="127">
+                <params>
+                    <param name="configName" type="String"/>
+                    <param name="configStream" type="InputStream"/>
+                </params>
+                <comment line="147">
+                                        
+                </comment>
+                <comment line="148">
+                    Initialization via Secmod. The way this works is as follows:                    
+                </comment>
+                <comment line="149">
+                    SunPKCS11 is either in normal mode or in NSS Secmod mode.                    
+                </comment>
+                <comment line="150">
+                    Secmod is activated by specifying one or more of the following                    
+                </comment>
+                <comment line="151">
+                    options in the config file:                    
+                </comment>
+                <comment line="152">
+                    nssUseSecmod, nssSecmodDirectory, nssLibrary, nssModule                    
+                </comment>
+                <comment line="153">
+                                        
+                </comment>
+                <comment line="154">
+                    XXX add more explanation here                    
+                </comment>
+                <comment line="155">
+                                        
+                </comment>
+                <comment line="156">
+                    If we are in Secmod mode and configured to use either the                    
+                </comment>
+                <comment line="157">
+                    nssKeyStore or the nssTrustAnchors module, we automatically                    
+                </comment>
+                <comment line="158">
+                    switch to using the NSS trust attributes for trusted certs                    
+                </comment>
+                <comment line="159">
+                    (KeyStore).                    
+                </comment>
+                <comment line="160">
+                                        
+                </comment>
+                <comment line="163">
+                    note: Config ensures library/slot/slotListIndex not specified                    
+                </comment>
+                <comment line="164">
+                    in secmod mode.                    
+                </comment>
+                <comment line="210">
+                    XXX which exception to throw                    
+                </comment>
+                <comment line="238">
+                    XXX should the option be called trustanchor or trustanchors??                    
+                </comment>
+                <comment line="284">
+                    if the filename is a simple filename without path                    
+                </comment>
+                <comment line="285">
+                    (e.g. &quot;libpkcs11.so&quot;), it may refer to a library somewhere on the                    
+                </comment>
+                <comment line="286">
+                    OS library search path. Omit the test for file existance as that                    
+                </comment>
+                <comment line="287">
+                    only looks in the current directory.                    
+                </comment>
+                <comment line="308">
+                    request multithreaded access first                    
+                </comment>
+                <comment line="322">
+                    fall back to single threaded access                    
+                </comment>
+                <comment line="324">
+                    if possible, use null initArgs for better compatibility                    
+                </comment>
+                <scope line="134"/>
+                <declaration name="library" type="String" line="138"/>
+                <declaration name="functionList" type="String" line="139"/>
+                <declaration name="slotID" type="long" line="140"/>
+                <declaration name="slotListIndex" type="int" line="141"/>
+                <declaration name="useSecmod" type="boolean" line="143"/>
+                <declaration name="nssUseSecmodTrust" type="boolean" line="144"/>
+                <declaration name="nssModule" type="Module" line="145"/>
+                <scope line="162">
+                    <declaration name="secmod" type="Secmod" line="165"/>
+                    <declaration name="nssDbMode" type="DbMode" line="166"/>
+                    <scope line="167">
+                        <declaration name="nssLibraryDirectory" type="String" line="168"/>
+                        <declaration name="nssSecmodDirectory" type="String" line="169"/>
+                        <scope line="171">
+                            <scope line="172">
+                                <declaration name="s" type="String" line="173"/>
+                                <scope line="175"/>
+                            </scope>
+                            <scope line="182">
+                                <declaration name="s" type="String" line="183"/>
+                                <scope line="185"/>
+                            </scope>
+                        </scope>
+                        <scope line="192">
+                            <scope line="193">
+                                <scope line="194"/>
+                            </scope>
+                            <scope line="199">
+                                <scope line="200"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="209"/>
+                    <declaration name="modules" type="List&lt;Module&gt;" line="213"/>
+                    <scope line="214"/>
+                    <declaration name="moduleName" type="String" line="218"/>
+                    <scope line="219">
+                        <scope line="221"/>
+                        <scope line="223"/>
+                    </scope>
+                    <scope line="228"/>
+                    <scope line="232"/>
+                    <scope line="235"/>
+                    <scope line="237"/>
+                    <scope line="241">
+                        <declaration name="moduleIndex" type="int" line="242"/>
+                        <scope line="243"/>
+                        <scope line="246"/>
+                        <scope line="249"/>
+                        <declaration name="k" type="int" line="253"/>
+                        <scope line="254">
+                            <scope line="255">
+                                <scope line="256"/>
+                            </scope>
+                        </scope>
+                        <scope line="262"/>
+                    </scope>
+                    <scope line="266"/>
+                    <scope line="270"/>
+                    <scope line="274"/>
+                </scope>
+                <declaration name="libraryFile" type="File" line="283"/>
+                <scope line="288">
+                    <scope line="289">
+                        <declaration name="msg" type="String" line="290"/>
+                        <scope line="291"/>
+                        <scope line="293"/>
+                    </scope>
+                </scope>
+                <scope line="299">
+                    <scope line="300"/>
+                    <declaration name="initArgs" type="CK_C_INITIALIZE_ARGS" line="303"/>
+                    <declaration name="nssArgs" type="String" line="304"/>
+                    <scope line="305"/>
+                    <declaration name="tmpPKCS11" type="PKCS11" line="310"/>
+                    <scope line="311"/>
+                    <scope line="315">
+                        <scope line="316"/>
+                        <scope line="319"/>
+                        <scope line="323"/>
+                        <scope line="326"/>
+                    </scope>
+                    <declaration name="p11Info" type="CK_INFO" line="334"/>
+                    <scope line="335"/>
+                    <declaration name="showInfo" type="boolean" line="339"/>
+                    <scope line="340"/>
+                    <scope line="345">
+                        <declaration name="slots" type="long[]" line="346"/>
+                        <scope line="347"/>
+                        <scope line="352">
+                            <scope line="354"/>
+                        </scope>
+                    </scope>
+                    <declaration name="slotInfo" type="CK_SLOT_INFO" line="363"/>
+                    <scope line="366"/>
+                </scope>
+                <scope line="369">
+                    <scope line="370"/>
+                    <scope line="373"/>
+                </scope>
+            </method>
+            <method name="toString" type="String" line="380">
+                <params>
+                    <param name="longs" type="long[]"/>
+                </params>
+                <scope line="381"/>
+                <declaration name="sb" type="StringBuilder" line="384"/>
+                <scope line="386"/>
+            </method>
+            <method name="equals" type="boolean" line="393">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+            </method>
+            <method name="hashCode" type="int" line="397"/>
+            <method name="s" type="String[]" line="401">
+                <params>
+                    <param name="s1" type="String"/>
+                </params>
+            </method>
+            <method name="s" type="String[]" line="405">
+                <params>
+                    <param name="s1" type="String"/>
+                    <param name="s2" type="String"/>
+                </params>
+            </method>
+            <class name="Descriptor" line="409">
+                <declaration name="type" type="String" line="410"/>
+                <declaration name="algorithm" type="String" line="411"/>
+                <declaration name="className" type="String" line="412"/>
+                <declaration name="aliases" type="String[]" line="413"/>
+                <declaration name="mechanisms" type="int[]" line="414"/>
+                <method name="Descriptor" type="constructor" line="417">
+                    <params>
+                        <param name="type" type="String"/>
+                        <param name="algorithm" type="String"/>
+                        <param name="className" type="String"/>
+                        <param name="aliases" type="String[]"/>
+                        <param name="mechanisms" type="int[]"/>
+                    </params>
+                </method>
+                <method name="service" type="P11Service" line="424">
+                    <params>
+                        <param name="token" type="Token"/>
+                        <param name="mechanism" type="int"/>
+                    </params>
+                </method>
+                <method name="toString" type="String" line="428"/>
+            </class>
+            <declaration name="descriptors" type="Map&lt;Integer,List&lt;Descriptor&gt;&gt;" line="435"/>
+            <method name="m" type="int[]" line="438">
+                <params>
+                    <param name="m1" type="long"/>
+                </params>
+            </method>
+            <method name="m" type="int[]" line="442">
+                <params>
+                    <param name="m1" type="long"/>
+                    <param name="m2" type="long"/>
+                </params>
+            </method>
+            <method name="m" type="int[]" line="446">
+                <params>
+                    <param name="m1" type="long"/>
+                    <param name="m2" type="long"/>
+                    <param name="m3" type="long"/>
+                </params>
+            </method>
+            <method name="m" type="int[]" line="450">
+                <params>
+                    <param name="m1" type="long"/>
+                    <param name="m2" type="long"/>
+                    <param name="m3" type="long"/>
+                    <param name="m4" type="long"/>
+                </params>
+            </method>
+            <method name="d" type="void" line="455">
+                <params>
+                    <param name="type" type="String"/>
+                    <param name="algorithm" type="String"/>
+                    <param name="className" type="String"/>
+                    <param name="m" type="int[]"/>
+                </params>
+            </method>
+            <method name="d" type="void" line="460">
+                <params>
+                    <param name="type" type="String"/>
+                    <param name="algorithm" type="String"/>
+                    <param name="className" type="String"/>
+                    <param name="aliases" type="String[]"/>
+                    <param name="m" type="int[]"/>
+                </params>
+            </method>
+            <method name="register" type="void" line="464">
+                <params>
+                    <param name="d" type="Descriptor"/>
+                </params>
+                <scope line="465">
+                    <declaration name="m" type="int" line="466"/>
+                    <declaration name="key" type="Integer" line="467"/>
+                    <declaration name="list" type="List&lt;Descriptor&gt;" line="468"/>
+                    <scope line="469"/>
+                </scope>
+            </method>
+            <declaration name="MD" type="String" line="477"/>
+            <declaration name="SIG" type="String" line="479"/>
+            <declaration name="KPG" type="String" line="481"/>
+            <declaration name="KG" type="String" line="483"/>
+            <declaration name="AGP" type="String" line="485"/>
+            <declaration name="KF" type="String" line="487"/>
+            <declaration name="SKF" type="String" line="489"/>
+            <declaration name="CIP" type="String" line="491"/>
+            <declaration name="MAC" type="String" line="493"/>
+            <declaration name="KA" type="String" line="495"/>
+            <declaration name="KS" type="String" line="497"/>
+            <declaration name="SR" type="String" line="499"/>
+            <scope line="501">
+                <declaration name="P11Digest" type="String" line="504"/>
+                <declaration name="P11MAC" type="String" line="505"/>
+                <declaration name="P11KeyPairGenerator" type="String" line="506"/>
+                <declaration name="P11KeyGenerator" type="String" line="507"/>
+                <declaration name="P11RSAKeyFactory" type="String" line="508"/>
+                <declaration name="P11DSAKeyFactory" type="String" line="509"/>
+                <declaration name="P11DHKeyFactory" type="String" line="510"/>
+                <declaration name="P11KeyAgreement" type="String" line="511"/>
+                <declaration name="P11SecretKeyFactory" type="String" line="512"/>
+                <declaration name="P11Cipher" type="String" line="513"/>
+                <declaration name="P11RSACipher" type="String" line="514"/>
+                <declaration name="P11Signature" type="String" line="515"/>
+            </scope>
+            <class name="TokenPoller" line="699">
+                <implements interface="Runnable"/>
+                <declaration name="provider" type="SunPKCS11" line="700"/>
+                <declaration name="enabled" type="boolean" line="701"/>
+                <method name="TokenPoller" type="constructor" line="702">
+                    <params>
+                        <param name="provider" type="SunPKCS11"/>
+                    </params>
+                </method>
+                <method name="run" type="void" line="706">
+                    <comment line="720">
+                        ignore                        
+                    </comment>
+                    <declaration name="interval" type="int" line="707"/>
+                    <scope line="708">
+                        <scope line="709"/>
+                        <scope line="711"/>
+                        <scope line="714"/>
+                        <scope line="717"/>
+                        <scope line="719"/>
+                    </scope>
+                </method>
+                <method name="disable" type="void" line="724"/>
+            </class>
+            <method name="createPoller" type="void" line="730">
+                <scope line="731"/>
+                <declaration name="poller" type="TokenPoller" line="734"/>
+                <declaration name="t" type="Thread" line="735"/>
+            </method>
+            <method name="destroyPoller" type="void" line="743">
+                <scope line="744"/>
+            </method>
+            <method name="hasValidToken" type="boolean" line="750">
+                <comment line="751">
+                    Commented out to work with Solaris softtoken impl which
+                    returns 0-value flags, e.g. both REMOVABLE_DEVICE and
+                    TOKEN_PRESENT are false, when it can&apos;t access the token.
+                    if (removable == false) {
+                    return true;
+                    }                    
+                </comment>
+                <declaration name="token" type="Token" line="758"/>
+            </method>
+            <method name="uninitToken" type="void" line="763">
+                <params>
+                    <param name="token" type="Token"/>
+                </params>
+                <comment line="765">
+                    mismatch, our token must already be destroyed                    
+                </comment>
+                <comment line="770">
+                    unregister all algorithms                    
+                </comment>
+                <scope line="764"/>
+                <anonymous_class line="771">
+                    <method name="run" type="Object" line="772"/>
+                </anonymous_class>
+            </method>
+            <method name="initToken" type="void" line="783">
+                <params>
+                    <param name="slotInfo" type="CK_SLOT_INFO"/>
+                </params>
+                <comment line="805">
+                    Create a map from the various Descriptors to the &quot;most                    
+                </comment>
+                <comment line="806">
+                    preferred&quot; mechanism that was defined during the                    
+                </comment>
+                <comment line="807">
+                    static initialization.  For example, DES/CBC/PKCS5Padding                    
+                </comment>
+                <comment line="808">
+                    could be mapped to CKM_DES_CBC_PAD or CKM_DES_CBC.  Prefer                    
+                </comment>
+                <comment line="809">
+                    the earliest entry.  When asked for &quot;DES/CBC/PKCS5Padding&quot;, we                    
+                </comment>
+                <comment line="810">
+                    return a CKM_DES_CBC_PAD.                    
+                </comment>
+                <comment line="829">
+                    we do not know of mechs with the upper 32 bits set                    
+                </comment>
+                <comment line="845">
+                    See if there is something &quot;more preferred&quot;                    
+                </comment>
+                <comment line="846">
+                    than what we currently have in the supportedAlgs                    
+                </comment>
+                <comment line="847">
+                    map.                    
+                </comment>
+                <comment line="862">
+                    register algorithms in provider                    
+                </comment>
+                <comment line="875">
+                    do not register SecureRandom if the token does                    
+                </comment>
+                <comment line="876">
+                    not support many sessions. if we did, we might                    
+                </comment>
+                <comment line="877">
+                    run out of sessions in the middle of a                    
+                </comment>
+                <comment line="878">
+                    nextBytes() call where we cannot fail over.                    
+                </comment>
+                <scope line="784"/>
+                <scope line="787"/>
+                <declaration name="showInfo" type="boolean" line="792"/>
+                <scope line="793"/>
+                <declaration name="token" type="Token" line="797"/>
+                <scope line="798"/>
+                <declaration name="supportedMechanisms" type="long[]" line="803"/>
+                <declaration name="supportedAlgs" type="Map&lt;Descriptor,Integer&gt;" line="811"/>
+                <scope line="813">
+                    <declaration name="longMech" type="long" line="814"/>
+                    <declaration name="isEnabled" type="boolean" line="815"/>
+                    <scope line="816">
+                        <declaration name="mechInfo" type="CK_MECHANISM_INFO" line="817"/>
+                        <scope line="821"/>
+                    </scope>
+                    <scope line="826"/>
+                    <scope line="830"/>
+                    <declaration name="mech" type="int" line="833"/>
+                    <declaration name="integerMech" type="Integer" line="834"/>
+                    <declaration name="ds" type="List&lt;Descriptor&gt;" line="835"/>
+                    <scope line="836"/>
+                    <scope line="839">
+                        <declaration name="oldMech" type="Integer" line="840"/>
+                        <scope line="841"/>
+                        <declaration name="intOldMech" type="int" line="848"/>
+                        <scope line="849">
+                            <declaration name="nextMech" type="int" line="850"/>
+                            <scope line="851"/>
+                            <scope line="854"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <anonymous_class line="863">
+                    <method name="run" type="Object" line="864">
+                        <comment line="875">
+                            do not register SecureRandom if the token does                            
+                        </comment>
+                        <comment line="876">
+                            not support many sessions. if we did, we might                            
+                        </comment>
+                        <comment line="877">
+                            run out of sessions in the middle of a                            
+                        </comment>
+                        <comment line="878">
+                            nextBytes() call where we cannot fail over.                            
+                        </comment>
+                        <scope line="866">
+                            <declaration name="d" type="Descriptor" line="867"/>
+                            <declaration name="mechanism" type="int" line="868"/>
+                            <declaration name="s" type="Service" line="869"/>
+                        </scope>
+                        <scope line="874"/>
+                        <scope line="883"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <class name="P11Service" line="896">
+                <extends class="Service"/>
+                <declaration name="token" type="Token" line="898"/>
+                <declaration name="mechanism" type="long" line="900"/>
+                <method name="P11Service" type="constructor" line="903">
+                    <params>
+                        <param name="token" type="Token"/>
+                        <param name="type" type="String"/>
+                        <param name="algorithm" type="String"/>
+                        <param name="className" type="String"/>
+                        <param name="al" type="String[]"/>
+                        <param name="mechanism" type="long"/>
+                    </params>
+                </method>
+                <method name="toList" type="List<String>" line="909">
+                    <params>
+                        <param name="aliases" type="String[]"/>
+                    </params>
+                </method>
+                <method name="newInstance" type="Object" line="914">
+                    <params>
+                        <param name="param" type="Object"/>
+                    </params>
+                    <scope line="915"/>
+                    <scope line="918"/>
+                    <scope line="920"/>
+                </method>
+                <method name="newInstance0" type="Object" line="926">
+                    <params>
+                        <param name="param" type="Object"/>
+                    </params>
+                    <comment line="954">
+                        reference equality                        
+                    </comment>
+                    <declaration name="algorithm" type="String" line="927"/>
+                    <declaration name="type" type="String" line="928"/>
+                    <scope line="929"/>
+                    <scope line="931">
+                        <scope line="932"/>
+                        <scope line="934"/>
+                    </scope>
+                    <scope line="937"/>
+                    <scope line="939"/>
+                    <scope line="941"/>
+                    <scope line="943">
+                        <scope line="944"/>
+                        <scope line="946"/>
+                    </scope>
+                    <scope line="949"/>
+                    <scope line="951"/>
+                    <scope line="953">
+                        <scope line="955"/>
+                        <scope line="958"/>
+                        <scope line="961"/>
+                        <scope line="964"/>
+                        <scope line="966"/>
+                    </scope>
+                    <scope line="969"/>
+                    <scope line="971"/>
+                    <scope line="973"/>
+                    <scope line="975"/>
+                </method>
+                <method name="supportsParameter" type="boolean" line="980">
+                    <params>
+                        <param name="param" type="Object"/>
+                    </params>
+                    <comment line="991">
+                        RSA signatures and cipher                        
+                    </comment>
+                    <comment line="1001">
+                        EC                        
+                    </comment>
+                    <comment line="1011">
+                        DSA signatures                        
+                    </comment>
+                    <comment line="1020">
+                        MACs and symmetric ciphers                        
+                    </comment>
+                    <comment line="1022">
+                        do not check algorithm name, mismatch is unlikely anyway                        
+                    </comment>
+                    <comment line="1025">
+                        DH key agreement                        
+                    </comment>
+                    <comment line="1034">
+                        should not reach here,                        
+                    </comment>
+                    <comment line="1035">
+                        unknown engine type or algorithm                        
+                    </comment>
+                    <scope line="981"/>
+                    <scope line="984"/>
+                    <declaration name="algorithm" type="String" line="987"/>
+                    <declaration name="type" type="String" line="988"/>
+                    <declaration name="key" type="Key" line="989"/>
+                    <declaration name="keyAlgorithm" type="String" line="990"/>
+                    <scope line="993">
+                        <scope line="994"/>
+                    </scope>
+                    <scope line="1003">
+                        <scope line="1004"/>
+                    </scope>
+                    <scope line="1012">
+                        <scope line="1013"/>
+                    </scope>
+                    <scope line="1021"/>
+                    <scope line="1026">
+                        <scope line="1027"/>
+                    </scope>
+                </method>
+                <method name="isLocalKey" type="boolean" line="1040">
+                    <params>
+                        <param name="key" type="Key"/>
+                    </params>
+                </method>
+                <method name="toString" type="String" line="1044"/>
+            </class>
+            <javadoc line="1051">
+                Log in to this provider.
+                  &lt;p&gt; If the token expects a PIN to be supplied by the caller,
+                  the &lt;code&gt;handler&lt;/code&gt; implementation must support
+                  a &lt;code&gt;PasswordCallback&lt;/code&gt;.
+                  &lt;p&gt; To determine if the token supports a protected authentication path,
+                  the CK_TOKEN_INFO flag, CKF_PROTECTED_AUTHENTICATION_PATH, is consulted.                
+                <param>
+                    subject this parameter is ignored                    
+                </param>
+                <param>
+                    handler the <code>CallbackHandler</code> used by
+                      this provider to communicate with the caller                    
+                </param>
+                <exception>
+                    LoginException if the login operation fails                    
+                </exception>
+                <exception>
+                    SecurityException if the does not pass a security check for
+                      <code>SecurityPermission("authProvider.<i>name</i>")</code>,
+                      where <i>name</i> is the value returned by
+                      this provider's <code>getName</code> method                    
+                </exception>
+            </javadoc>
+            <method name="login" type="void" line="1072">
+                <params>
+                    <param name="subject" type="Subject"/>
+                    <param name="handler" type="CallbackHandler"/>
+                </params>
+                <comment line="1074">
+                    security check                    
+                </comment>
+                <comment line="1089">
+                    see if a login is required                    
+                </comment>
+                <comment line="1099">
+                    see if user already logged in                    
+                </comment>
+                <comment line="1103">
+                    user already logged in                    
+                </comment>
+                <comment line="1110">
+                    ignore - fall thru and attempt login                    
+                </comment>
+                <comment line="1113">
+                    get the pin if necessary                    
+                </comment>
+                <comment line="1118">
+                    get password                    
+                </comment>
+                <comment line="1122">
+                    XXX PolicyTool is dependent on this message text                    
+                </comment>
+                <comment line="1154">
+                    perform token login                    
+                </comment>
+                <comment line="1160">
+                    pin is NULL if using CKF_PROTECTED_AUTHENTICATION_PATH                    
+                </comment>
+                <comment line="1167">
+                    let this one go                    
+                </comment>
+                <comment line="1188">
+                    we do not store the PIN in the subject for now                    
+                </comment>
+                <declaration name="sm" type="SecurityManager" line="1076"/>
+                <scope line="1077">
+                    <scope line="1078"/>
+                </scope>
+                <scope line="1085"/>
+                <scope line="1091">
+                    <scope line="1092"/>
+                </scope>
+                <scope line="1101">
+                    <scope line="1102">
+                        <scope line="1104"/>
+                    </scope>
+                </scope>
+                <scope line="1109"/>
+                <declaration name="pin" type="char[]" line="1115"/>
+                <scope line="1116">
+                    <declaration name="myHandler" type="CallbackHandler" line="1120"/>
+                    <scope line="1121"/>
+                    <declaration name="form" type="java.text.MessageFormat" line="1128"/>
+                    <declaration name="source" type="Object[]" line="1131"/>
+                    <declaration name="pcall" type="PasswordCallback" line="1133"/>
+                    <declaration name="callbacks" type="Callback[]" line="1135"/>
+                    <scope line="1136"/>
+                    <scope line="1138">
+                        <declaration name="le" type="LoginException" line="1139"/>
+                    </scope>
+                    <scope line="1147">
+                        <scope line="1148"/>
+                    </scope>
+                </scope>
+                <declaration name="session" type="Session" line="1156"/>
+                <scope line="1157">
+                    <scope line="1162"/>
+                </scope>
+                <scope line="1165">
+                    <scope line="1166">
+                        <scope line="1168"/>
+                    </scope>
+                    <scope line="1172">
+                        <declaration name="fle" type="FailedLoginException" line="1173"/>
+                    </scope>
+                    <scope line="1176">
+                        <declaration name="le" type="LoginException" line="1177"/>
+                    </scope>
+                </scope>
+                <scope line="1181">
+                    <scope line="1183"/>
+                </scope>
+            </method>
+            <javadoc line="1191">
+                Log out from this provider                
+                <exception>
+                    LoginException if the logout operation fails                    
+                </exception>
+                <exception>
+                    SecurityException if the does not pass a security check for
+                      <code>SecurityPermission("authProvider.<i>name</i>")</code>,
+                      where <i>name</i> is the value returned by
+                      this provider's <code>getName</code> method                    
+                </exception>
+            </javadoc>
+            <method name="logout" type="void" line="1200">
+                <comment line="1202">
+                    security check                    
+                </comment>
+                <comment line="1211">
+                    app may call logout for cleanup, allow                    
+                </comment>
+                <comment line="1231">
+                    ignore                    
+                </comment>
+                <comment line="1234">
+                    perform token logout                    
+                </comment>
+                <comment line="1245">
+                    let this one go                    
+                </comment>
+                <declaration name="sm" type="SecurityManager" line="1204"/>
+                <scope line="1205"/>
+                <scope line="1210"/>
+                <scope line="1215">
+                    <scope line="1216"/>
+                </scope>
+                <scope line="1223">
+                    <scope line="1224">
+                        <scope line="1225"/>
+                    </scope>
+                </scope>
+                <scope line="1230"/>
+                <declaration name="session" type="Session" line="1236"/>
+                <scope line="1237">
+                    <scope line="1240"/>
+                </scope>
+                <scope line="1243">
+                    <scope line="1244">
+                        <scope line="1246"/>
+                    </scope>
+                    <declaration name="le" type="LoginException" line="1251"/>
+                </scope>
+                <scope line="1254"/>
+            </method>
+            <javadoc line="1259">
+                Set a &lt;code&gt;CallbackHandler&lt;/code&gt;
+                  &lt;p&gt; The provider uses this handler if one is not passed to the
+                  &lt;code&gt;login&lt;/code&gt; method.  The provider also uses this handler
+                  if it invokes &lt;code&gt;login&lt;/code&gt; on behalf of callers.
+                  In either case if a handler is not set via this method,
+                  the provider queries the
+                  &lt;i&gt;auth.login.defaultCallbackHandler&lt;/i&gt; security property
+                  for the fully qualified class name of a default handler implementation.
+                  If the security property is not set,
+                  the provider is assumed to have alternative means
+                  for obtaining authentication information.                
+                <param>
+                    handler a <code>CallbackHandler</code> for obtaining
+                      authentication information, which may be <code>null</code>                    
+                </param>
+                <exception>
+                    SecurityException if the caller does not pass a
+                      security check for
+                      <code>SecurityPermission("authProvider.<i>name</i>")</code>,
+                      where <i>name</i> is the value returned by
+                      this provider's <code>getName</code> method                    
+                </exception>
+            </javadoc>
+            <method name="setCallbackHandler" type="void" line="1282">
+                <params>
+                    <param name="handler" type="CallbackHandler"/>
+                </params>
+                <comment line="1284">
+                    security check                    
+                </comment>
+                <declaration name="sm" type="SecurityManager" line="1286"/>
+                <scope line="1287"/>
+                <scope line="1292"/>
+            </method>
+            <method name="getCallbackHandler" type="CallbackHandler" line="1297">
+                <params>
+                    <param name="handler" type="CallbackHandler"/>
+                </params>
+                <comment line="1299">
+                    get default handler if necessary                    
+                </comment>
+                <comment line="1310">
+                    see if handler was set via setCallbackHandler                    
+                </comment>
+                <comment line="1331">
+                    ok                    
+                </comment>
+                <comment line="1346">
+                    save it                    
+                </comment>
+                <comment line="1351">
+                    ok                    
+                </comment>
+                <scope line="1301"/>
+                <scope line="1305"/>
+                <scope line="1309">
+                    <scope line="1311"/>
+                    <scope line="1315">
+                        <scope line="1316"/>
+                        <anonymous_class line="1321">
+                            <method name="run" type="CallbackHandler" line="1322">
+                                <comment line="1331">
+                                    ok                                    
+                                </comment>
+                                <declaration name="defaultHandler" type="String" line="1324"/>
+                                <scope line="1329">
+                                    <scope line="1332"/>
+                                </scope>
+                                <declaration name="c" type="Class" line="1338"/>
+                            </method>
+                        </anonymous_class>
+                        <declaration name="myHandler" type="CallbackHandler" line="1320"/>
+                    </scope>
+                    <scope line="1350">
+                        <scope line="1352"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="writeReplace" type="Object" line="1361"/>
+            <class name="SunPKCS11Rep" line="1365">
+                <implements interface="Serializable"/>
+                <javadoc line="1365">
+                    Serialized representation of the SunPKCS11 provider.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1370"/>
+                <declaration name="providerName" type="String" line="1372"/>
+                <declaration name="configName" type="String" line="1374"/>
+                <method name="SunPKCS11Rep" type="constructor" line="1376">
+                    <params>
+                        <param name="provider" type="SunPKCS11"/>
+                    </params>
+                    <scope line="1379"/>
+                </method>
+                <method name="readResolve" type="Object" line="1385">
+                    <declaration name="p" type="SunPKCS11" line="1386"/>
+                    <scope line="1387"/>
+                </method>
+            </class>
+        </class>
+    </source>

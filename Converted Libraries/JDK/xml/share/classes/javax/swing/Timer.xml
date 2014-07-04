@@ -1,0 +1,601 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.swing">
+        <import package="java.util"/>
+        <import package="java.util.concurrent.atomic.AtomicBoolean"/>
+        <import package="java.util.concurrent.locks"/>
+        <import package="java.awt"/>
+        <import package="java.awt.event"/>
+        <import package="java.io.Serializable"/>
+        <import package="java.io"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="javax.swing.event.EventListenerList"/>
+        <class name="Timer" line="46">
+            <comment line="152">
+                NOTE: all fields need to be handled in readResolve                
+            </comment>
+            <comment line="158">
+                The following field strives to maintain the following:                
+            </comment>
+            <comment line="159">
+                If coalesce is true, only allow one Runnable to be queued on the                
+            </comment>
+            <comment line="160">
+                EventQueue and be pending (ie in the process of notifying the                
+            </comment>
+            <comment line="161">
+                ActionListener). If we didn&apos;t do this it would allow for a                
+            </comment>
+            <comment line="162">
+                situation where the app is taking too long to process the                
+            </comment>
+            <comment line="163">
+                actionPerformed, and thus we&apos;ld end up queing a bunch of Runnables                
+            </comment>
+            <comment line="164">
+                and the app would never return: not good. This of course implies                
+            </comment>
+            <comment line="165">
+                you can get dropped events, but such is life.                
+            </comment>
+            <comment line="166">
+                notify is used to indicate if the ActionListener can be notified, when                
+            </comment>
+            <comment line="167">
+                the Runnable is processed if this is true it will notify the listeners.                
+            </comment>
+            <comment line="168">
+                notify is set to true when the Timer fires and the Runnable is queued.                
+            </comment>
+            <comment line="169">
+                It will be set to false after notifying the listeners (if coalesce is                
+            </comment>
+            <comment line="170">
+                true) or if the developer invokes stop.                
+            </comment>
+            <comment line="182">
+                This field is maintained by TimerQueue.                
+            </comment>
+            <comment line="183">
+                eventQueued can also be reset by the TimerQueue, but will only ever                
+            </comment>
+            <comment line="184">
+                happen in applet case when TimerQueues thread is destroyed.                
+            </comment>
+            <comment line="185">
+                access to this field is synchronized on getLock() lock.                
+            </comment>
+            <comment line="216">
+                The timer&apos;s AccessControlContext.                
+            </comment>
+            <comment line="632">
+                We have to use readResolve because we can not initialize final
+                 fields for deserialized object otherwise                
+            </comment>
+            <implements interface="Serializable"/>
+            <javadoc line="46">
+                Fires one or more {@code ActionEvent}s at specified
+                  intervals. An example use is an animation object that uses a
+                  &lt;code&gt;Timer&lt;/code&gt; as the trigger for drawing its frames.
+                  &lt;p&gt;
+                  Setting up a timer
+                  involves creating a &lt;code&gt;Timer&lt;/code&gt; object,
+                  registering one or more action listeners on it,
+                  and starting the timer using
+                  the &lt;code&gt;start&lt;/code&gt; method.
+                  For example,
+                  the following code creates and starts a timer
+                  that fires an action event once per second
+                  (as specified by the first argument to the &lt;code&gt;Timer&lt;/code&gt; constructor).
+                  The second argument to the &lt;code&gt;Timer&lt;/code&gt; constructor
+                  specifies a listener to receive the timer&apos;s action events.
+                  &lt;pre&gt;
+                  int delay = 1000; //milliseconds
+                  ActionListener taskPerformer = new ActionListener() {
+                  public void actionPerformed(ActionEvent evt) {
+                  &lt;em&gt;//...Perform a task...&lt;/em&gt;
+                  }
+                  };
+                  new Timer(delay, taskPerformer).start();&lt;/pre&gt;
+                  &lt;p&gt;{@code Timers} are constructed by specifying both a delay parameter
+                  and an {@code ActionListener}. The delay parameter is used
+                  to set both the initial delay and the delay between event
+                  firing, in milliseconds. Once the timer has been started,
+                  it waits for the initial delay before firing its
+                  first &lt;code&gt;ActionEvent&lt;/code&gt; to registered listeners.
+                  After this first event, it continues to fire events
+                  every time the between-event delay has elapsed, until it
+                  is stopped.
+                  &lt;p&gt;
+                  After construction, the initial delay and the between-event
+                  delay can be changed independently, and additional
+                  &lt;code&gt;ActionListeners&lt;/code&gt; may be added.
+                  &lt;p&gt;
+                  If you want the timer to fire only the first time and then stop,
+                  invoke &lt;code&gt;setRepeats(false)&lt;/code&gt; on the timer.
+                  &lt;p&gt;
+                  Although all &lt;code&gt;Timer&lt;/code&gt;s perform their waiting
+                  using a single, shared thread
+                  (created by the first &lt;code&gt;Timer&lt;/code&gt; object that executes),
+                  the action event handlers for &lt;code&gt;Timer&lt;/code&gt;s
+                  execute on another thread -- the event-dispatching thread.
+                  This means that the action handlers for &lt;code&gt;Timer&lt;/code&gt;s
+                  can safely perform operations on Swing components.
+                  However, it also means that the handlers must execute quickly
+                  to keep the GUI responsive.
+                  &lt;p&gt;
+                  In v 1.3, another &lt;code&gt;Timer&lt;/code&gt; class was added
+                  to the Java platform: &lt;code&gt;java.util.Timer&lt;/code&gt;.
+                  Both it and &lt;code&gt;javax.swing.Timer&lt;/code&gt;
+                  provide the same basic functionality,
+                  but &lt;code&gt;java.util.Timer&lt;/code&gt;
+                  is more general and has more features.
+                  The &lt;code&gt;javax.swing.Timer&lt;/code&gt; has two features
+                  that can make it a little easier to use with GUIs.
+                  First, its event handling metaphor is familiar to GUI programmers
+                  and can make dealing with the event-dispatching thread
+                  a bit simpler.
+                  Second, its
+                  automatic thread sharing means that you don&apos;t have to
+                  take special steps to avoid spawning
+                  too many threads.
+                  Instead, your timer uses the same thread
+                  used to make cursors blink,
+                  tool tips appear,
+                  and so on.
+                  &lt;p&gt;
+                  You can find further documentation
+                  and several examples of using timers by visiting
+                  &lt;a href=&quot;http://java.sun.com/docs/books/tutorial/uiswing/misc/timer.html&quot;
+                  target = &quot;_top&quot;&gt;How to Use Timers&lt;/a&gt;,
+                  a section in &lt;em&gt;The Java Tutorial.&lt;/em&gt;
+                  For more examples and help in choosing between
+                  this &lt;code&gt;Timer&lt;/code&gt; class and
+                  &lt;code&gt;java.util.Timer&lt;/code&gt;,
+                  see
+                  &lt;a href=&quot;http://java.sun.com/products/jfc/tsc/articles/timer/&quot;
+                  target=&quot;_top&quot;&gt;Using Timers in Swing Applications&lt;/a&gt;,
+                  an article in &lt;em&gt;The Swing Connection.&lt;/em&gt;
+                  &lt;p&gt;
+                  &lt;strong&gt;Warning:&lt;/strong&gt;
+                  Serialized objects of this class will not be compatible with
+                  future Swing releases. The current serialization support is
+                  appropriate for short term storage or RMI between applications running
+                  the same version of Swing.  As of 1.4, support for long term storage
+                  of all JavaBeans&lt;sup&gt;&lt;font size=&quot;-2&quot;&gt;TM&lt;/font&gt;&lt;/sup&gt;
+                  has been added to the &lt;code&gt;java.beans&lt;/code&gt; package.
+                  Please see {@link java.beans.XMLEncoder}.                
+                <see>
+                    java.util.Timer <code>java.util.Timer</code>                    
+                </see>
+                <author>
+                    Dave Moore                    
+                </author>
+            </javadoc>
+            <declaration name="listenerList" type="EventListenerList" line="155"/>
+            <declaration name="notify" type="AtomicBoolean" line="170"/>
+            <declaration name="initialDelay" type="int" line="172"/>
+            <declaration name="repeats" type="boolean" line="173"/>
+            <declaration name="doPostEvent" type="Runnable" line="175"/>
+            <declaration name="logTimers" type="boolean" line="177"/>
+            <declaration name="lock" type="Lock" line="179"/>
+            <declaration name="delayedTimer" type="TimerQueue.DelayedTimer" line="185"/>
+            <declaration name="actionCommand" type="String" line="187"/>
+            <javadoc line="189">
+                Creates a {@code Timer} and initializes both the initial delay and
+                  between-event delay to {@code delay} milliseconds. If {@code delay}is less than or equal to zero, the timer fires as soon as it
+                  is started. If &lt;code&gt;listener&lt;/code&gt; is not &lt;code&gt;null&lt;/code&gt;,
+                  it&apos;s registered as an action listener on the timer.                
+                <param>
+                    delay milliseconds for the initial and between-event delay                    
+                </param>
+                <param>
+                    listener  an initial listener; can be <code>null</code>                    
+                </param>
+                <see>
+                    #addActionListener                    
+                </see>
+                <see>
+                    #setInitialDelay                    
+                </see>
+                <see>
+                    #setRepeats                    
+                </see>
+            </javadoc>
+            <method name="Timer" type="constructor" line="203">
+                <params>
+                    <param name="delay" type="int"/>
+                    <param name="listener" type="ActionListener"/>
+                </params>
+                <scope line="210"/>
+            </method>
+            <declaration name="acc" type="AccessControlContext" line="218"/>
+            <javadoc line="221">
+                Returns the acc this timer was constructed with.                
+            </javadoc>
+            <method name="getAccessControlContext" type="AccessControlContext" line="224">
+                <scope line="225"/>
+            </method>
+            <class name="DoPostEvent" line="232">
+                <implements interface="Runnable"/>
+                <javadoc line="232">
+                    DoPostEvent is a runnable class that fires actionEvents to
+                      the listeners on the EventDispatchThread, via invokeLater.                    
+                    <see>
+                        Timer#post                        
+                    </see>
+                </javadoc>
+                <method name="run" type="void" line="239">
+                    <scope line="240"/>
+                    <scope line="243">
+                        <scope line="247"/>
+                    </scope>
+                </method>
+                <method name="getTimer" type="Timer" line="253"/>
+            </class>
+            <javadoc line="258">
+                Adds an action listener to the &lt;code&gt;Timer&lt;/code&gt;.                
+                <param>
+                    listener the listener to add                    
+                </param>
+                <see>
+                    #Timer                    
+                </see>
+            </javadoc>
+            <method name="addActionListener" type="void" line="265">
+                <params>
+                    <param name="listener" type="ActionListener"/>
+                </params>
+            </method>
+            <javadoc line="270">
+                Removes the specified action listener from the &lt;code&gt;Timer&lt;/code&gt;.                
+                <param>
+                    listener the listener to remove                    
+                </param>
+            </javadoc>
+            <method name="removeActionListener" type="void" line="275">
+                <params>
+                    <param name="listener" type="ActionListener"/>
+                </params>
+            </method>
+            <javadoc line="280">
+                Returns an array of all the action listeners registered
+                  on this timer.                
+                <return>
+                    all of the timer's <code>ActionListener</code>s or an empty
+                      array if no action listeners are currently registered                    
+                </return>
+                <see>
+                    #addActionListener                    
+                </see>
+                <see>
+                    #removeActionListener                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getActionListeners" type="ActionListener[]" line="292"/>
+            <javadoc line="297">
+                Notifies all listeners that have registered interest for
+                  notification on this event type.                
+                <param>
+                    e the action event to fire                    
+                </param>
+                <see>
+                    EventListenerList                    
+                </see>
+            </javadoc>
+            <method name="fireActionPerformed" type="void" line="304">
+                <params>
+                    <param name="e" type="ActionEvent"/>
+                </params>
+                <comment line="305">
+                    Guaranteed to return a non-null array                    
+                </comment>
+                <comment line="308">
+                    Process the listeners last to first, notifying                    
+                </comment>
+                <comment line="309">
+                    those that are interested in this event                    
+                </comment>
+                <declaration name="listeners" type="Object[]" line="306"/>
+                <scope line="310">
+                    <scope line="311"/>
+                </scope>
+            </method>
+            <javadoc line="317">
+                Returns an array of all the objects currently registered as
+                  &lt;code&gt;&lt;em&gt;Foo&lt;/em&gt;Listener&lt;/code&gt;s
+                  upon this &lt;code&gt;Timer&lt;/code&gt;.
+                  &lt;code&gt;&lt;em&gt;Foo&lt;/em&gt;Listener&lt;/code&gt;s
+                  are registered using the &lt;code&gt;add&lt;em&gt;Foo&lt;/em&gt;Listener&lt;/code&gt; method.
+                  &lt;p&gt;
+                  You can specify the &lt;code&gt;listenerType&lt;/code&gt; argument
+                  with a class literal, such as &lt;code&gt;&lt;em&gt;Foo&lt;/em&gt;Listener.class&lt;/code&gt;.
+                  For example, you can query a &lt;code&gt;Timer&lt;/code&gt;
+                  instance &lt;code&gt;t&lt;/code&gt;
+                  for its action listeners
+                  with the following code:
+                  &lt;pre&gt;ActionListener[] als = (ActionListener[])(t.getListeners(ActionListener.class));&lt;/pre&gt;
+                  If no such listeners exist,
+                  this method returns an empty array.                
+                <param>
+                    listenerType  the type of listeners requested;
+                      this parameter should specify an interface
+                      that descends from <code>java.util.EventListener</code>                    
+                </param>
+                <return>
+                    an array of all objects registered as
+                      <code><em>Foo</em>Listener</code>s
+                      on this timer,
+                      or an empty array if no such
+                      listeners have been added                    
+                </return>
+                <exception>
+                    ClassCastException if <code>listenerType</code> doesn't
+                      specify a class or interface that implements
+                      <code>java.util.EventListener</code>                    
+                </exception>
+                <see>
+                    #getActionListeners                    
+                </see>
+                <see>
+                    #addActionListener                    
+                </see>
+                <see>
+                    #removeActionListener                    
+                </see>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="getListeners" type="T[]" line="354">
+                <params>
+                    <param name="listenerType" type="Class<T>"/>
+                </params>
+            </method>
+            <javadoc line="358">
+                Returns the timer queue.                
+            </javadoc>
+            <method name="timerQueue" type="TimerQueue" line="361"/>
+            <javadoc line="366">
+                Enables or disables the timer log. When enabled, a message
+                  is posted to &lt;code&gt;System.out&lt;/code&gt; whenever the timer goes off.                
+                <param>
+                    flag  <code>true</code> to enable logging                    
+                </param>
+                <see>
+                    #getLogTimers                    
+                </see>
+            </javadoc>
+            <method name="setLogTimers" type="void" line="373">
+                <params>
+                    <param name="flag" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="378">
+                Returns &lt;code&gt;true&lt;/code&gt; if logging is enabled.                
+                <return>
+                    <code>true</code> if logging is enabled; otherwise, false                    
+                </return>
+                <see>
+                    #setLogTimers                    
+                </see>
+            </javadoc>
+            <method name="getLogTimers" type="boolean" line="384"/>
+            <javadoc line="389">
+                Sets the &lt;code&gt;Timer&lt;/code&gt;&apos;s between-event delay, the number of milliseconds
+                  between successive action events. This does not affect the initial delay
+                  property, which can be set by the {@code setInitialDelay} method.                
+                <param>
+                    delay the delay in milliseconds                    
+                </param>
+                <see>
+                    #setInitialDelay                    
+                </see>
+            </javadoc>
+            <method name="setDelay" type="void" line="397">
+                <params>
+                    <param name="delay" type="int"/>
+                </params>
+                <scope line="398"/>
+                <scope line="401"/>
+            </method>
+            <javadoc line="407">
+                Returns the delay, in milliseconds,
+                  between firings of action events.                
+                <see>
+                    #setDelay                    
+                </see>
+                <see>
+                    #getInitialDelay                    
+                </see>
+            </javadoc>
+            <method name="getDelay" type="int" line="414"/>
+            <javadoc line="419">
+                Sets the &lt;code&gt;Timer&lt;/code&gt;&apos;s initial delay, the time
+                  in milliseconds to wait after the timer is started
+                  before firing the first event. Upon construction, this
+                  is set to be the same as the between-event delay,
+                  but then its value is independent and remains unaffected
+                  by changes to the between-event delay.                
+                <param>
+                    initialDelay the initial delay, in milliseconds                    
+                </param>
+                <see>
+                    #setDelay                    
+                </see>
+            </javadoc>
+            <method name="setInitialDelay" type="void" line="430">
+                <params>
+                    <param name="initialDelay" type="int"/>
+                </params>
+                <scope line="431"/>
+                <scope line="435"/>
+            </method>
+            <javadoc line="441">
+                Returns the &lt;code&gt;Timer&lt;/code&gt;&apos;s initial delay.                
+                <see>
+                    #setInitialDelay                    
+                </see>
+                <see>
+                    #setDelay                    
+                </see>
+            </javadoc>
+            <method name="getInitialDelay" type="int" line="447"/>
+            <javadoc line="452">
+                If &lt;code&gt;flag&lt;/code&gt; is &lt;code&gt;false&lt;/code&gt;,
+                  instructs the &lt;code&gt;Timer&lt;/code&gt; to send only one
+                  action event to its listeners.                
+                <param>
+                    flag specify <code>false</code> to make the timer
+                      stop after sending its first action event                    
+                </param>
+            </javadoc>
+            <method name="setRepeats" type="void" line="460">
+                <params>
+                    <param name="flag" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="465">
+                Returns &lt;code&gt;true&lt;/code&gt; (the default)
+                  if the &lt;code&gt;Timer&lt;/code&gt; will send
+                  an action event
+                  to its listeners multiple times.                
+                <see>
+                    #setRepeats                    
+                </see>
+            </javadoc>
+            <method name="isRepeats" type="boolean" line="473"/>
+            <javadoc line="478">
+                Sets whether the &lt;code&gt;Timer&lt;/code&gt; coalesces multiple pending
+                  &lt;code&gt;ActionEvent&lt;/code&gt; firings.
+                  A busy application may not be able
+                  to keep up with a &lt;code&gt;Timer&lt;/code&gt;&apos;s event generation,
+                  causing multiple
+                  action events to be queued.  When processed,
+                  the application sends these events one after the other, causing the
+                  &lt;code&gt;Timer&lt;/code&gt;&apos;s listeners to receive a sequence of
+                  events with no delay between them. Coalescing avoids this situation
+                  by reducing multiple pending events to a single event.
+                  &lt;code&gt;Timer&lt;/code&gt;s
+                  coalesce events by default.                
+                <param>
+                    flag specify <code>false</code> to turn off coalescing                    
+                </param>
+            </javadoc>
+            <method name="setCoalesce" type="void" line="494">
+                <params>
+                    <param name="flag" type="boolean"/>
+                </params>
+                <comment line="498">
+                    We must do this as otherwise if the Timer once notified                    
+                </comment>
+                <comment line="499">
+                    in !coalese mode notify will be stuck to true and never                    
+                </comment>
+                <comment line="500">
+                    become false.                    
+                </comment>
+                <declaration name="old" type="boolean" line="495"/>
+                <scope line="497"/>
+            </method>
+            <javadoc line="506">
+                Returns &lt;code&gt;true&lt;/code&gt; if the &lt;code&gt;Timer&lt;/code&gt; coalesces
+                  multiple pending action events.                
+                <see>
+                    #setCoalesce                    
+                </see>
+            </javadoc>
+            <method name="isCoalesce" type="boolean" line="512"/>
+            <javadoc line="517">
+                Sets the string that will be delivered as the action command
+                  in &lt;code&gt;ActionEvent&lt;/code&gt;s fired by this timer.
+                  &lt;code&gt;null&lt;/code&gt; is an acceptable value.                
+                <param>
+                    command the action command                    
+                </param>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="setActionCommand" type="void" line="525">
+                <params>
+                    <param name="command" type="String"/>
+                </params>
+            </method>
+            <javadoc line="530">
+                Returns the string that will be delivered as the action command
+                  in &lt;code&gt;ActionEvent&lt;/code&gt;s fired by this timer. May be
+                  &lt;code&gt;null&lt;/code&gt;, which is also the default.                
+                <return>
+                    the action command used in firing events                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getActionCommand" type="String" line="538"/>
+            <javadoc line="543">
+                Starts the &lt;code&gt;Timer&lt;/code&gt;,
+                  causing it to start sending action events
+                  to its listeners.                
+                <see>
+                    #stop                    
+                </see>
+            </javadoc>
+            <method name="start" type="void" line="550"/>
+            <javadoc line="555">
+                Returns &lt;code&gt;true&lt;/code&gt; if the &lt;code&gt;Timer&lt;/code&gt; is running.                
+                <see>
+                    #start                    
+                </see>
+            </javadoc>
+            <method name="isRunning" type="boolean" line="560"/>
+            <javadoc line="565">
+                Stops the &lt;code&gt;Timer&lt;/code&gt;,
+                  causing it to stop sending action events
+                  to its listeners.                
+                <see>
+                    #start                    
+                </see>
+            </javadoc>
+            <method name="stop" type="void" line="572">
+                <scope line="574"/>
+                <scope line="577"/>
+            </method>
+            <javadoc line="583">
+                Restarts the &lt;code&gt;Timer&lt;/code&gt;,
+                  canceling any pending firings and causing
+                  it to fire with its initial delay.                
+            </javadoc>
+            <method name="restart" type="void" line="588">
+                <scope line="590"/>
+                <scope line="593"/>
+            </method>
+            <javadoc line="599">
+                Resets the internal state to indicate this Timer shouldn&apos;t notify
+                  any of its listeners. This does not stop a repeatable Timer from
+                  firing again, use &lt;code&gt;stop&lt;/code&gt; for that.                
+            </javadoc>
+            <method name="cancelEvent" type="void" line="604"/>
+            <method name="post" type="void" line="609">
+                <scope line="610">
+                    <anonymous_class line="611">
+                        <method name="run" type="Void" line="612"/>
+                    </anonymous_class>
+                </scope>
+            </method>
+            <method name="getLock" type="Lock" line="620"/>
+            <method name="readObject" type="void" line="626">
+                <params>
+                    <param name="in" type="ObjectInputStream"/>
+                </params>
+            </method>
+            <method name="readResolve" type="Object" line="635">
+                <declaration name="timer" type="Timer" line="636"/>
+            </method>
+        </class>
+    </source>
