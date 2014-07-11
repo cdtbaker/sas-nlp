@@ -5,6 +5,9 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 
+import main.analyses.NPEBranchChecker.BranchingNPEAnalysis;
+import main.analyses.NPEBranchChecker.NPEBranchingTransferFunction;
+import main.analyses.SimpleRangeAnalysis.PositiveNegitiveFlowAnalysis;
 import main.commentextraction.com.jml.builder.XMLFromSource;
 import main.commentextraction.com.jml.objects.framework.JMLElement;
 import main.commentextraction.com.jml.output.XMLOutputter;
@@ -24,6 +27,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 	@Override
 	public void beforeAllMethods(ITypeRoot rootNode,
 			CompilationUnit compilationUnit) {
+		/*
 		// to file
 String path = "";
 		try {
@@ -80,12 +84,16 @@ String path = "";
 		 * main.commentextraction.com.jml.output.XMLOutputter(r);
 		 * System.out.println(o.getString());
 		 */
+			
+			
+		PositiveNegitiveFlowAnalysis analysis = new PositiveNegitiveFlowAnalysis();
+		analysis.runAnalysis(getReporter(), getInput(),  rootNode,compilationUnit);
 
 	}
 
 	@Override
 	public void afterAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
-
+	
 	}
 
 	@Override
