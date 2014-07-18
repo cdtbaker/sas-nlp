@@ -27,26 +27,26 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 	@Override
 	public void beforeAllMethods(ITypeRoot rootNode,
 			CompilationUnit compilationUnit) {
-		/*
-		// to file
-String path = "";
+
+		// to file 
+		String path = "";
 		try {
 
 			JMLElement r = XMLFromSource.createXML(compilationUnit,
-					rootNode.getSource(), true);
+					rootNode.getSource(), true, true);
 			XMLOutputter o = new XMLOutputter(r);
 			path = rootNode.getPath().toString().replaceAll("/src", "");
-			path = path.substring(1,path.indexOf(".java"));
+			path = path.substring(1, path.indexOf(".java"));
 			path = path.replaceFirst("/", "/xml/");
-			path = "Converted Libraries/"+path;
+			path = "Converted Libraries/" + path;
 			File dir = new File(path.substring(0, path.lastIndexOf('/')));
 
 			if (!dir.exists()) {
 				dir.mkdirs();
 			}
-			try (BufferedWriter bw = new BufferedWriter(new FileWriter(path+".xml"))) {
-				bw.write(o.getString()); //
-				bw.close();
+			try (BufferedWriter bw = new BufferedWriter(new FileWriter(path
+					+ ".xml"))) {
+				bw.write(o.getString()); // bw.close();
 				System.out.println("Written to " + path);
 
 			} catch (IOException e) {
@@ -64,36 +64,35 @@ String path = "";
 			dir.mkdirs();
 		}
 		try {
-			BufferedWriter bw = new BufferedWriter(new FileWriter(path+".java"));
+			BufferedWriter bw = new BufferedWriter(new FileWriter(path
+					+ ".java"));
 			bw.write(compilationUnit.toString());
 			bw.close();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
+		} catch (IOException e) { // TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
-		
+
 		// to console
 
 		/*
 		 * JMLElement r = null; try { r =
-		 * main.commentextraction.com.jml.builder.
-		 * XMLFromSource.createXML(compilationUnit, rootNode.getSource(), true);
-		 * } catch (JavaModelException e) { e.printStackTrace(); }
+		 * main.commentextraction.com.jml.builder.XMLFromSource.createXML(
+		 * compilationUnit, rootNode.getSource(), true,true); } catch
+		 * (JavaModelException e) { e.printStackTrace(); }
 		 * main.commentextraction.com.jml.output.XMLOutputter o = new
-		 * main.commentextraction.com.jml.output.XMLOutputter(r);
+		 * main.commentextraction.com.jml.output.XMLOutputter( r);
 		 * System.out.println(o.getString());
+		 * 
+		 * /*PositiveNegitiveFlowAnalysis analysis = new
+		 * PositiveNegitiveFlowAnalysis(); analysis.runAnalysis(getReporter(),
+		 * getInput(), rootNode, compilationUnit);
 		 */
-			
-			
-		PositiveNegitiveFlowAnalysis analysis = new PositiveNegitiveFlowAnalysis();
-		analysis.runAnalysis(getReporter(), getInput(),  rootNode,compilationUnit);
 
 	}
 
 	@Override
 	public void afterAllMethods(ITypeRoot compUnit, CompilationUnit rootNode) {
-	
+
 	}
 
 	@Override

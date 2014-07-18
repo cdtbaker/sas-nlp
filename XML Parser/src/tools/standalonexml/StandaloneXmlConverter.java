@@ -14,7 +14,8 @@ public class StandaloneXmlConverter {
 	public static void main (String[] args){
 		String path = args[0];
 		for(File f : getJavaFiles(path)){
-			XMLOutputter output = new XMLOutputter(XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true));
+			XMLOutputter output = new XMLOutputter(XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,true));//change last boolean to false if comments do 
+																												 //not have to be in line to be a block
 			try {
 				output.toFile(path+"/"+f.getName().substring(0, f.getName().indexOf('.')));
 			} catch (IOException e) {

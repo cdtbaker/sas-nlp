@@ -34,6 +34,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Javadoc;
+import org.eclipse.jdt.core.dom.LineComment;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.ParameterizedType;
@@ -45,10 +46,9 @@ import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
-
 public class XMLFromSource {
 
-	public static JMLElement getXMLFromFile(String path, boolean lineNumbers) {
+	public static JMLElement getXMLFromFile(String path, boolean lineNumbers,boolean commentsInLine) {
 		CompilationUnit c = null;
 		String sourceCode = null;
 		try {
@@ -60,7 +60,7 @@ public class XMLFromSource {
 		c = getCompilationUnit(sourceCode);
 
 		JMLElement root = null;
-		root = createXML(c, sourceCode, lineNumbers);
+		root = createXML(c, sourceCode, lineNumbers,commentsInLine);
 
 		return root;
 	}
@@ -90,7 +90,7 @@ public class XMLFromSource {
 	}
 
 	public static JMLElement createXML(final CompilationUnit c, String sc,
-			final boolean lineNumbers) {
+			final boolean lineNumbers,final boolean commentsInLine) {
 
 		String s = "";
 		if (c.getPackage() != null) {
@@ -222,12 +222,17 @@ public class XMLFromSource {
 
 			private void checkForComments(ASTNode node) {
 				List<Comment> cList = new ArrayList<Comment>();
+				int linesDone = 0;
 				for (Object com : c.getCommentList()) {
 					if (((Comment) com).getParent() == null) {
 						cList.add((Comment) com);
 					}
 				}
 				for (Object com : cList) {
+					if (linesDone > 0) {
+						linesDone--;
+						continue;
+					}
 					ASTNode withoutSignature = NodeFinder.perform(
 							((Comment) com).getAlternateRoot(),
 							((Comment) com).getStartPosition(), 0);
@@ -236,48 +241,117 @@ public class XMLFromSource {
 						if (withoutSignature.getParent() != null
 								&& withoutSignature.getParent().toString()
 										.equals(node.getParent().toString())) {
-							commentsToAdd.add(new JMLComment(
-									getCommentText((ASTNode) com)));
-							commentsToAdd
-									.get(commentsToAdd.size() - 1)
-									.addAttribute(
-											"line",
-											String.valueOf(1 + c
-													.getLineNumber(((Comment) com)
-															.getStartPosition())));
+
+							linesDone = addComment(com);
+
 						}
 					} else {
 
 						int mStart = c.getLineNumber(node.getStartPosition());
-						int mEnd = c.getLineNumber(node.getStartPosition()+node.getLength());
+						int mEnd = c.getLineNumber(node.getStartPosition()
+								+ node.getLength());
 						int cStart = c.getLineNumber(((Comment) com)
 								.getStartPosition());
-						
 
 						if (withoutSignature.getParent() != null
-								&& cStart>mStart && cStart<mEnd) {
+								&& cStart > mStart && cStart < mEnd) {
 
-							commentsToAdd.add(new JMLComment(
-									getCommentText((ASTNode) com)));
-							commentsToAdd
-									.get(commentsToAdd.size() - 1)
-									.addAttribute(
-											"line",
-											String.valueOf(c
-													.getLineNumber(((Comment) com)
-															.getStartPosition())));
+							linesDone = addComment(com);
+
 						}
 
 					}
 				}
 			}
 
+			public int addComment(Object com) {
+				int linesDone = 0;
+				int lineNo = c.getLineNumber(((Comment) com).getStartPosition());
+				String nextComments = "";
+				if (com instanceof LineComment) {
+					linesDone = comentNoOfLines(lineNo);
+					nextComments = getNextLines(lineNo, linesDone);
+
+				}
+				commentsToAdd.add(new JMLComment(getCommentText((ASTNode) com)
+						+ nextComments));
+				commentsToAdd.get(commentsToAdd.size() - 1).addAttribute(
+						"line", String.valueOf(1 + lineNo));
+
+				return linesDone;
+
+			}
+			/*commentsInLine true means line comments must be in line to be seen as block
+			 * e.g
+			 * int c; //c is an 
+		     * \//integer
+			 * is not seen as a block if true
+			 * 
+			 * tab is classed as 4 characters(default) if tab is not 4 characters
+			 * will not detect comments as inline
+			 */
+			public int comentNoOfLines(int start) {
+
+				int line = start;
+				if (!commentsInLine) {
+
+					while (source[line].trim().startsWith("//")) {
+						line++;
+					}
+
+					return line - start;
+				} else {
+					int startChar = indexOfInclTab(source[line -1]);
+
+					if(startChar == -1){
+						return 0;
+					}
+					
+					while(indexOfInclTab(source[line]) == startChar && source[line].trim().startsWith("//")){
+						
+						
+						line++;
+						if(line == source.length-1){
+							break;
+						}
+					}
+					return line - start;
+				}
+			}
+			
+			public int indexOfInclTab(String line){
+				int commentPos = line.indexOf("//");
+				if(commentPos == -1){
+					return -1;
+				}
+				line= line.substring(0, commentPos);
+				int count = 0;
+				for(int i =0; i<line.toCharArray().length;i++){
+					if(line.toCharArray()[i] == '\t'){
+						count++;
+					}
+				}
+				return line.length()-count+(count*4);
+			}
+
+			public String getNextLines(int startPos, int noOfLines) {
+
+				String s = "";
+
+				int line = startPos;
+				for (int i = 0; i < noOfLines; i++) {
+					s = s + "\n";
+					s = s + source[line].trim().replaceAll("//", "");
+					line++;
+				}
+
+				return StringEscapeUtils.escapeXml(s);
+			}
+
 			public String getCommentText(ASTNode comment) {
 				int start = c.getLineNumber(comment.getStartPosition());
 				int end = c.getLineNumber(comment.getStartPosition()
 						+ comment.getLength() - 1);
-
-
 
 				StringBuilder sb = new StringBuilder();
 				if (comment instanceof BlockComment
@@ -379,8 +453,8 @@ public class XMLFromSource {
 					j = new JMLJavadoc("");
 				}
 				for (int i = 1; i < tags.size(); i++) {
-					j.addContent(new JavadocTag(tags.get(i).getTagName().substring(1), tags
-							.get(i).toString().trim()
+					j.addContent(new JavadocTag(tags.get(i).getTagName()
+							.substring(1), tags.get(i).toString().trim()
 							.substring(2 + tags.get(i).getTagName().length())
 							.replaceAll("\\*", "")));
 
