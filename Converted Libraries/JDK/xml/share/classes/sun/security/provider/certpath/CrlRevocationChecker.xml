@@ -1,0 +1,712 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.provider.certpath">
+        <import package="java.math.BigInteger"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Date"/>
+        <import package="java.util.List"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.security.InvalidAlgorithmParameterException"/>
+        <import package="java.security.NoSuchAlgorithmException"/>
+        <import package="java.security.PublicKey"/>
+        <import package="java.security.cert"/>
+        <import package="java.security.cert.CertPathValidatorException.BasicReason"/>
+        <import package="java.security.interfaces.DSAPublicKey"/>
+        <import package="javax.security.auth.x500.X500Principal"/>
+        <import package="sun.security.util.Debug"/>
+        <import package="sun.security.x509.AccessDescription"/>
+        <import package="sun.security.x509.AuthorityInfoAccessExtension"/>
+        <import package="sun.security.x509.CRLDistributionPointsExtension"/>
+        <import package="sun.security.x509.DistributionPoint"/>
+        <import package="sun.security.x509.GeneralName"/>
+        <import package="sun.security.x509.GeneralNames"/>
+        <import package="sun.security.x509.PKIXExtensions"/>
+        <import package="sun.security.x509.X500Name"/>
+        <import package="sun.security.x509.X509CertImpl"/>
+        <import package="sun.security.x509.X509CRLEntryImpl"/>
+        <class name="CrlRevocationChecker" line="57">
+            <extends class="PKIXCertPathChecker"/>
+            <comment line="86">
+                Maximum clock skew in milliseconds (15 minutes) allowed when checking                
+            </comment>
+            <comment line="87">
+                validity of CRLs                
+            </comment>
+            <comment line="666">
+                This inner class extends the X509CertSelector to add an additional
+                 check to make sure the subject public key isn&apos;t on a particular list.
+                 This class is used by buildToNewKey() to make sure the builder doesn&apos;t
+                 end up with a CertPath to a public key that has already been rejected.                
+            </comment>
+            <javadoc line="57">
+                CrlRevocationChecker is a &lt;code&gt;PKIXCertPathChecker&lt;/code&gt; that checks
+                  revocation status information on a PKIX certificate using CRLs obtained
+                  from one or more &lt;code&gt;CertStores&lt;/code&gt;. This is based on section 6.3
+                  of RFC 3280 (http://www.ietf.org/rfc/rfc3280.txt).                
+                <since>
+                    1.4                    
+                </since>
+                <author>
+                    Seth Proctor                    
+                </author>
+                <author>
+                    Steve Hanna                    
+                </author>
+            </javadoc>
+            <declaration name="debug" type="Debug" line="69"/>
+            <declaration name="mAnchor" type="TrustAnchor" line="70"/>
+            <declaration name="mStores" type="List&lt;CertStore&gt;" line="71"/>
+            <declaration name="mSigProvider" type="String" line="72"/>
+            <declaration name="mCurrentTime" type="Date" line="73"/>
+            <declaration name="mPrevPubKey" type="PublicKey" line="74"/>
+            <declaration name="mCRLSignFlag" type="boolean" line="75"/>
+            <declaration name="mPossibleCRLs" type="HashSet&lt;X509CRL&gt;" line="76"/>
+            <declaration name="mApprovedCRLs" type="HashSet&lt;X509CRL&gt;" line="77"/>
+            <declaration name="mParams" type="PKIXParameters" line="78"/>
+            <declaration name="mCrlSignUsage" type="boolean[]" line="79"/>
+            <declaration name="ALL_REASONS" type="boolean[]" line="81"/>
+            <declaration name="mOnlyEECert" type="boolean" line="83"/>
+            <declaration name="MAX_CLOCK_SKEW" type="long" line="87"/>
+            <javadoc line="89">
+                Creates a &lt;code&gt;CrlRevocationChecker&lt;/code&gt;.                
+                <param>
+                    anchor anchor selected to validate the target certificate                    
+                </param>
+                <param>
+                    params <code>PKIXParameters</code> to be used for
+                      finding certificates and CRLs, etc.                    
+                </param>
+            </javadoc>
+            <method name="CrlRevocationChecker" type="constructor" line="98">
+                <params>
+                    <param name="anchor" type="TrustAnchor"/>
+                    <param name="params" type="PKIXParameters"/>
+                </params>
+            </method>
+            <javadoc line="102">
+                Creates a &lt;code&gt;CrlRevocationChecker&lt;/code&gt;, allowing
+                  extra certificates to be supplied beyond those contained
+                  in the &lt;code&gt;PKIXParameters&lt;/code&gt;.                
+                <param>
+                    anchor anchor selected to validate the target certificate                    
+                </param>
+                <param>
+                    params <code>PKIXParameters</code> to be used for
+                      finding certificates and CRLs, etc.                    
+                </param>
+                <param>
+                    certs a <code>Collection</code> of certificates
+                      that may be useful, beyond those available
+                      through <code>params</code> (<code>null</code>
+                      if none)                    
+                </param>
+            </javadoc>
+            <method name="CrlRevocationChecker" type="constructor" line="117">
+                <params>
+                    <param name="anchor" type="TrustAnchor"/>
+                    <param name="params" type="PKIXParameters"/>
+                    <param name="certs" type="Collection<X509Certificate>"/>
+                </params>
+            </method>
+            <method name="CrlRevocationChecker" type="constructor" line="123">
+                <params>
+                    <param name="anchor" type="TrustAnchor"/>
+                    <param name="params" type="PKIXParameters"/>
+                    <param name="certs" type="Collection<X509Certificate>"/>
+                    <param name="onlyEECert" type="boolean"/>
+                </params>
+                <comment line="133">
+                    should never occur but not necessarily fatal, so log it,                    
+                </comment>
+                <comment line="134">
+                    ignore and continue                    
+                </comment>
+                <scope line="128">
+                    <scope line="129"/>
+                    <scope line="132">
+                        <scope line="135"/>
+                    </scope>
+                </scope>
+                <declaration name="testDate" type="Date" line="141"/>
+            </method>
+            <javadoc line="147">
+                Initializes the internal state of the checker from parameters
+                  specified in the constructor                
+            </javadoc>
+            <method name="init" type="void" line="152">
+                <params>
+                    <param name="forward" type="boolean"/>
+                </params>
+                <scope line="153">
+                    <scope line="154">
+                        <scope line="155"/>
+                        <scope line="157"/>
+                    </scope>
+                    <scope line="160"/>
+                </scope>
+                <scope line="164"/>
+            </method>
+            <method name="isForwardCheckingSupported" type="boolean" line="170"/>
+            <method name="getSupportedExtensions" type="Set<String>" line="174"/>
+            <javadoc line="178">
+                Performs the revocation status check on the certificate using
+                  its internal state.                
+                <param>
+                    cert the Certificate                    
+                </param>
+                <param>
+                    unresolvedCritExts a Collection of the unresolved critical
+                      extensions                    
+                </param>
+                <exception>
+                    CertPathValidatorException Exception thrown if
+                      certificate does not verify                    
+                </exception>
+            </javadoc>
+            <method name="check" type="void" line="190">
+                <params>
+                    <param name="cert" type="Certificate"/>
+                    <param name="unresolvedCritExts" type="Collection<String>"/>
+                </params>
+                <comment line="194">
+                    Make new public key if parameters are missing                    
+                </comment>
+                <comment line="198">
+                    cKey needs to inherit DSA parameters from prev key                    
+                </comment>
+                <declaration name="currCert" type="X509Certificate" line="191"/>
+                <declaration name="cKey" type="PublicKey" line="195"/>
+                <scope line="197"/>
+            </method>
+            <javadoc line="205">
+                Performs the revocation status check on the certificate using
+                  the provided state variables, as well as the constant internal
+                  data.                
+                <param>
+                    currCert the Certificate                    
+                </param>
+                <param>
+                    prevKey the previous PublicKey in the chain                    
+                </param>
+                <param>
+                    signFlag a boolean as returned from the last call, or true
+                      if this is the first cert in the chain                    
+                </param>
+                <return>
+                    a boolean specifying if the cert is allowed to vouch for the
+                      validity of a CRL for the next iteration                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if
+                      certificate does not verify.                    
+                </exception>
+            </javadoc>
+            <method name="check" type="boolean" line="221">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="signFlag" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="226">
+                Checks that a cert can be used to verify a CRL.                
+                <param>
+                    currCert an X509Certificate to check                    
+                </param>
+                <return>
+                    a boolean specifying if the cert is allowed to vouch for the
+                      validity of a CRL                    
+                </return>
+            </javadoc>
+            <method name="certCanSignCrl" type="boolean" line="233">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                </params>
+                <comment line="234">
+                    if the cert doesn&apos;t include the key usage ext, or                    
+                </comment>
+                <comment line="235">
+                    the key usage ext asserts cRLSigning, return true,                    
+                </comment>
+                <comment line="236">
+                    otherwise return false.                    
+                </comment>
+                <declaration name="kbools" type="boolean[]" line="237"/>
+                <scope line="238"/>
+            </method>
+            <javadoc line="244">
+                Internal method to start the verification of a cert                
+            </javadoc>
+            <method name="verifyRevocationStatus" type="void" line="250">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="signFlag" type="boolean"/>
+                    <param name="allowSeparateKey" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="255">
+                Internal method to start the verification of a cert                
+                <param>
+                    stackedCerts a <code>Set</code> of <code>X509Certificate</code>s>
+                      whose revocation status depends on the
+                      non-revoked status of this cert. To avoid
+                      circular dependencies, we assume they're
+                      revoked while checking the revocation
+                      status of this cert.                    
+                </param>
+                <param>
+                    trustAnchors a <code>Set</code> of <code>TrustAnchor</code>s                    
+                </param>
+            </javadoc>
+            <method name="verifyRevocationStatus" type="void" line="268">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="signFlag" type="boolean"/>
+                    <param name="allowSeparateKey" type="boolean"/>
+                    <param name="stackedCerts" type="Set<X509Certificate>"/>
+                    <param name="trustAnchors" type="Set<TrustAnchor>"/>
+                </params>
+                <comment line="283">
+                    reject circular dependencies - RFC 3280 is not explicit on how                    
+                </comment>
+                <comment line="284">
+                    to handle this, so we feel it is safest to reject them until                    
+                </comment>
+                <comment line="285">
+                    the issue is resolved in the PKIX WG.                    
+                </comment>
+                <comment line="296">
+                    init the state for this run                    
+                </comment>
+                <comment line="313">
+                    all CRLs returned by the DP Fetcher have also been verified                    
+                </comment>
+                <comment line="330">
+                    Now that we have a list of possible CRLs, see which ones can                    
+                </comment>
+                <comment line="331">
+                    be approved                    
+                </comment>
+                <comment line="340">
+                    make sure that we have at least one CRL that _could_ cover                    
+                </comment>
+                <comment line="341">
+                    the certificate in question and all reasons are covered                    
+                </comment>
+                <comment line="355">
+                    See if the cert is in the set of approved crls.                    
+                </comment>
+                <comment line="379">
+                    Abort CRL validation and throw exception if there are any
+                     unrecognized critical CRL entry extensions (see section
+                     5.3 of RFC 3280).                    
+                </comment>
+                <comment line="386">
+                                        
+                </comment>
+                <declaration name="msg" type="String" line="270"/>
+                <scope line="271"/>
+                <scope line="276">
+                    <scope line="277"/>
+                </scope>
+                <scope line="286">
+                    <scope line="287"/>
+                </scope>
+                <declaration name="reasonsMask" type="boolean[]" line="299"/>
+                <scope line="301">
+                    <declaration name="sel" type="X509CRLSelector" line="302"/>
+                    <scope line="306">
+                        <scope line="307"/>
+                    </scope>
+                    <declaration name="store" type="DistributionPointFetcher" line="311"/>
+                </scope>
+                <scope line="317">
+                    <scope line="318"/>
+                </scope>
+                <scope line="325"/>
+                <scope line="329"/>
+                <scope line="335"/>
+                <scope line="343">
+                    <scope line="344"/>
+                    <scope line="348"/>
+                </scope>
+                <scope line="356">
+                    <declaration name="sn" type="BigInteger" line="357"/>
+                </scope>
+                <declaration name="reasonCode" type="CRLReason" line="364"/>
+                <declaration name="entry" type="X509CRLEntryImpl" line="365"/>
+                <scope line="366">
+                    <declaration name="e" type="X509CRLEntry" line="367"/>
+                    <scope line="368">
+                        <scope line="369"/>
+                        <scope line="371"/>
+                        <scope line="374"/>
+                        <declaration name="unresCritExts" type="Set&lt;String&gt;" line="384"/>
+                        <scope line="385">
+                            <scope line="391">
+                                <scope line="392"/>
+                            </scope>
+                        </scope>
+                        <scope line="404"/>
+                        <declaration name="t" type="Throwable" line="407"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="416">
+                We have a cert whose revocation status couldn&apos;t be verified by
+                  a CRL issued by the cert that issued the CRL. See if we can
+                  find a valid CRL issued by a separate key that can verify the
+                  revocation status of this certificate.
+                  &lt;p&gt;
+                  Note that this does not provide support for indirect CRLs,
+                  only CRLs signed with a different key (but the same issuer
+                  name) as the certificate being checked.                
+                <param>
+                    currCert the <code>X509Certificate</code> to be checked                    
+                </param>
+                <param>
+                    prevKey the <code>PublicKey</code> that failed                    
+                </param>
+                <param>
+                    signFlag <code>true</code> if that key was trusted to sign CRLs                    
+                </param>
+                <param>
+                    stackedCerts a <code>Set</code> of <code>X509Certificate</code>s>
+                      whose revocation status depends on the
+                      non-revoked status of this cert. To avoid
+                      circular dependencies, we assume they're
+                      revoked while checking the revocation
+                      status of this cert.                    
+                </param>
+                <throws>
+                    CertPathValidatorException if the cert's revocation status
+                      cannot be verified successfully with another key                    
+                </throws>
+            </javadoc>
+            <method name="verifyWithSeparateSigningKey" type="void" line="440">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="signFlag" type="boolean"/>
+                    <param name="stackedCerts" type="Set<X509Certificate>"/>
+                </params>
+                <comment line="448">
+                    reject circular dependencies - RFC 3280 is not explicit on how                    
+                </comment>
+                <comment line="449">
+                    to handle this, so we feel it is safest to reject them until                    
+                </comment>
+                <comment line="450">
+                    the issue is resolved in the PKIX WG.                    
+                </comment>
+                <comment line="462">
+                    If prevKey wasn&apos;t trusted, maybe we just didn&apos;t have the right                    
+                </comment>
+                <comment line="463">
+                    path to it. Don&apos;t rule that key out.                    
+                </comment>
+                <comment line="468">
+                    Try to find another key that might be able to sign                    
+                </comment>
+                <comment line="469">
+                    CRLs vouching for this cert.                    
+                </comment>
+                <declaration name="msg" type="String" line="441"/>
+                <scope line="442"/>
+                <scope line="451">
+                    <scope line="452"/>
+                </scope>
+                <scope line="464"/>
+            </method>
+            <javadoc line="473">
+                Tries to find a CertPath that establishes a key that can be
+                  used to verify the revocation status of a given certificate.
+                  Ignores keys that have previously been tried. Throws a
+                  CertPathValidatorException if no such key could be found.                
+                <param>
+                    currCert the <code>X509Certificate</code> to be checked                    
+                </param>
+                <param>
+                    prevKey the <code>PublicKey</code> of the certificate whose key
+                      cannot be used to vouch for the CRL and should be ignored                    
+                </param>
+                <param>
+                    stackedCerts a <code>Set</code> of <code>X509Certificate</code>s>
+                      whose revocation status depends on the
+                      establishment of this path.                    
+                </param>
+                <throws>
+                    CertPathValidatorException on failure                    
+                </throws>
+            </javadoc>
+            <method name="buildToNewKey" type="void" line="489">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="stackedCerts" type="Set<X509Certificate>"/>
+                </params>
+                <comment line="511">
+                    Policy qualifiers must be rejected, since we don&apos;t have                    
+                </comment>
+                <comment line="512">
+                    any way to convey them back to the application.                    
+                </comment>
+                <comment line="517">
+                    should never occur                    
+                </comment>
+                <comment line="520">
+                    It&apos;s unfortunate that there&apos;s no easy way to make a                    
+                </comment>
+                <comment line="521">
+                    PKIXBuilderParameters object from a PKIXParameters                    
+                </comment>
+                <comment line="522">
+                    object. This might miss some things if parameters                    
+                </comment>
+                <comment line="523">
+                    are added in the future or the validatorParams object                    
+                </comment>
+                <comment line="524">
+                    is a custom class derived from PKIXValidatorParameters.                    
+                </comment>
+                <comment line="528">
+                    should never occur                    
+                </comment>
+                <comment line="537">
+                    Policy qualifiers must be rejected, since we don&apos;t have                    
+                </comment>
+                <comment line="538">
+                    any way to convey them back to the application.                    
+                </comment>
+                <comment line="539">
+                    That&apos;s the default, so no need to write code.                    
+                </comment>
+                <comment line="545">
+                    Skip revocation during this build to detect circular                    
+                </comment>
+                <comment line="546">
+                    references. But check revocation afterwards, using the                    
+                </comment>
+                <comment line="547">
+                    key (or any other that works).                    
+                </comment>
+                <comment line="550">
+                    check for AuthorityInformationAccess extension                    
+                </comment>
+                <comment line="556">
+                    ignore but log it                    
+                </comment>
+                <comment line="601">
+                    Now check revocation of all certs in path, assuming that                    
+                </comment>
+                <comment line="602">
+                    the stackedCerts are revoked.                    
+                </comment>
+                <comment line="629">
+                    ignore it and try to get another key                    
+                </comment>
+                <comment line="638">
+                    Now check revocation on the current cert using that key.                    
+                </comment>
+                <comment line="639">
+                    If it doesn&apos;t check out, try to find a different key.                    
+                </comment>
+                <comment line="640">
+                    And if we can&apos;t find a key, then return false.                    
+                </comment>
+                <comment line="644">
+                    If that passed, the cert is OK!                    
+                </comment>
+                <comment line="647">
+                    If it is revoked, rethrow exception                    
+                </comment>
+                <comment line="651">
+                    Otherwise, ignore the exception and                    
+                </comment>
+                <comment line="652">
+                    try to get another key.                    
+                </comment>
+                <scope line="491"/>
+                <declaration name="badKeys" type="Set&lt;PublicKey&gt;" line="495"/>
+                <scope line="496"/>
+                <declaration name="certSel" type="X509CertSelector" line="499"/>
+                <declaration name="newAnchors" type="Set&lt;TrustAnchor&gt;" line="503"/>
+                <declaration name="builderParams" type="PKIXBuilderParameters" line="507"/>
+                <scope line="508">
+                    <scope line="514"/>
+                    <scope line="516"/>
+                </scope>
+                <scope line="519">
+                    <scope line="525"/>
+                    <scope line="527"/>
+                </scope>
+                <scope line="551">
+                    <declaration name="currCertImpl" type="X509CertImpl" line="552"/>
+                    <scope line="553"/>
+                    <scope line="555">
+                        <scope line="557"/>
+                    </scope>
+                    <declaration name="aiaExt" type="AuthorityInfoAccessExtension" line="562"/>
+                    <scope line="563"/>
+                    <scope line="566">
+                        <declaration name="adList" type="List&lt;AccessDescription&gt;" line="567"/>
+                        <scope line="568">
+                            <scope line="569">
+                                <declaration name="cs" type="CertStore" line="570"/>
+                                <scope line="571">
+                                    <scope line="572"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <declaration name="builder" type="CertPathBuilder" line="582"/>
+                <scope line="583"/>
+                <scope line="585"/>
+                <scope line="588">
+                    <scope line="589">
+                        <scope line="590"/>
+                        <declaration name="cpbr" type="PKIXCertPathBuilderResult" line="594"/>
+                        <scope line="597"/>
+                        <scope line="603"/>
+                        <declaration name="ta" type="TrustAnchor" line="607"/>
+                        <declaration name="prevKey2" type="PublicKey" line="608"/>
+                        <scope line="609"/>
+                        <declaration name="signFlag" type="boolean" line="612"/>
+                        <declaration name="cpList" type="List&lt;? extends Certificate&gt;" line="613"/>
+                        <scope line="615">
+                            <scope line="616">
+                                <declaration name="cert" type="X509Certificate" line="617"/>
+                                <scope line="619"/>
+                            </scope>
+                        </scope>
+                        <scope line="628"/>
+                        <scope line="634"/>
+                        <declaration name="newKey" type="PublicKey" line="641"/>
+                        <scope line="642"/>
+                        <scope line="646">
+                            <scope line="648"/>
+                        </scope>
+                    </scope>
+                    <scope line="655"/>
+                    <scope line="657"/>
+                </scope>
+            </method>
+            <class name="RejectKeySelector" line="671">
+                <extends class="X509CertSelector"/>
+                <declaration name="badKeySet" type="Set&lt;PublicKey&gt;" line="672"/>
+                <javadoc line="674">
+                    Creates a new &lt;code&gt;RejectKeySelector&lt;/code&gt;.                    
+                    <param>
+                        badPublicKeys a <code>Set</code> of
+                          <code>PublicKey</code>s that
+                          should be rejected (or <code>null</code>
+                          if no such check should be done)                        
+                    </param>
+                </javadoc>
+                <method name="RejectKeySelector" type="constructor" line="682">
+                    <params>
+                        <param name="badPublicKeys" type="Set<PublicKey>"/>
+                    </params>
+                </method>
+                <javadoc line="686">
+                    Decides whether a &lt;code&gt;Certificate&lt;/code&gt; should be selected.                    
+                    <param>
+                        cert the <code>Certificate</code> to be checked                        
+                    </param>
+                    <return>
+                        <code>true</code> if the <code>Certificate</code> should be
+                          selected, <code>false</code> otherwise                        
+                    </return>
+                </javadoc>
+                <method name="match" type="boolean" line="693">
+                    <params>
+                        <param name="cert" type="Certificate"/>
+                    </params>
+                    <scope line="697"/>
+                </method>
+                <javadoc line="708">
+                    Return a printable representation of the &lt;code&gt;CertSelector&lt;/code&gt;.                    
+                    <return>
+                        a <code>String</code> describing the contents of the
+                          <code>CertSelector</code>                        
+                    </return>
+                </javadoc>
+                <method name="toString" type="String" line="714">
+                    <declaration name="sb" type="StringBuilder" line="715"/>
+                </method>
+            </class>
+            <javadoc line="724">
+                Internal method that verifies a set of possible_crls,
+                  and sees if each is approved, based on the cert.                
+                <param>
+                    crls a set of possible CRLs to test for acceptability                    
+                </param>
+                <param>
+                    cert the certificate whose revocation status is being checked                    
+                </param>
+                <param>
+                    signFlag <code>true</code> if prevKey was trusted to sign CRLs                    
+                </param>
+                <param>
+                    prevKey the public key of the issuer of cert                    
+                </param>
+                <param>
+                    reasonsMask the reason code mask                    
+                </param>
+                <param>
+                    trustAnchors a <code>Set</code> of <code>TrustAnchor</code>s>                    
+                </param>
+                <return>
+                    a collection of approved crls (or an empty collection)                    
+                </return>
+            </javadoc>
+            <method name="verifyPossibleCRLs" type="Collection<X509CRL>" line="739">
+                <params>
+                    <param name="crls" type="Set<X509CRL>"/>
+                    <param name="cert" type="X509Certificate"/>
+                    <param name="signFlag" type="boolean"/>
+                    <param name="prevKey" type="PublicKey"/>
+                    <param name="reasonsMask" type="boolean[]"/>
+                    <param name="trustAnchors" type="Set<TrustAnchor>"/>
+                </params>
+                <comment line="752">
+                    assume a DP with reasons and CRLIssuer fields omitted                    
+                </comment>
+                <comment line="753">
+                    and a DP name of the cert issuer.                    
+                </comment>
+                <comment line="754">
+                    TODO add issuerAltName too                    
+                </comment>
+                <scope line="741">
+                    <declaration name="certImpl" type="X509CertImpl" line="742"/>
+                    <scope line="743"/>
+                    <declaration name="ext" type="CRLDistributionPointsExtension" line="748"/>
+                    <declaration name="points" type="List&lt;DistributionPoint&gt;" line="750"/>
+                    <scope line="751">
+                        <declaration name="certIssuer" type="X500Name" line="755"/>
+                        <declaration name="point" type="DistributionPoint" line="756"/>
+                    </scope>
+                    <scope line="760"/>
+                    <declaration name="results" type="Set&lt;X509CRL&gt;" line="764"/>
+                    <declaration name="dpf" type="DistributionPointFetcher" line="765"/>
+                    <scope line="768">
+                        <declaration name="point" type="DistributionPoint" line="769"/>
+                        <scope line="770">
+                            <scope line="773"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="779">
+                    <scope line="780"/>
+                </scope>
+            </method>
+        </class>
+    </source>

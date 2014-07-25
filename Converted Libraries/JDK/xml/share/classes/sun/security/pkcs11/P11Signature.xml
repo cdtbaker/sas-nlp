@@ -1,0 +1,554 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.pkcs11">
+        <import package="java.io.IOException"/>
+        <import package="java.math.BigInteger"/>
+        <import package="java.nio.ByteBuffer"/>
+        <import package="java.security"/>
+        <import package="java.security.interfaces"/>
+        <import package="sun.nio.ch.DirectBuffer"/>
+        <import package="sun.security.util"/>
+        <import package="sun.security.x509.AlgorithmId"/>
+        <import package="sun.security.rsa.RSASignature"/>
+        <import package="sun.security.rsa.RSAPadding"/>
+        <import package="sun.security.pkcs11.wrapper"/>
+        <import package="sun.security.pkcs11.wrapper.PKCS11Constants"/>
+        <class name="P11Signature" line="45">
+            <extends class="SignatureSpi"/>
+            <comment line="79">
+                token instance                
+            </comment>
+            <comment line="82">
+                algorithm name                
+            </comment>
+            <comment line="85">
+                name of the key algorithm, currently either RSA or DSA                
+            </comment>
+            <comment line="88">
+                mechanism id                
+            </comment>
+            <comment line="91">
+                digest algorithm OID, if we encode RSA signature ourselves                
+            </comment>
+            <comment line="94">
+                type, one of T_* below                
+            </comment>
+            <comment line="97">
+                key instance used, if init*() was called                
+            </comment>
+            <comment line="100">
+                message digest, if we do the digesting ourselves                
+            </comment>
+            <comment line="103">
+                associated session, if any                
+            </comment>
+            <comment line="106">
+                mode, one of M_* below                
+            </comment>
+            <comment line="109">
+                flag indicating whether an operation is initialized                
+            </comment>
+            <comment line="112">
+                buffer, for update(byte) or DSA                
+            </comment>
+            <comment line="115">
+                total number of bytes processed in current operation                
+            </comment>
+            <comment line="118">
+                constant for signing mode                
+            </comment>
+            <comment line="120">
+                constant for verification mode                
+            </comment>
+            <comment line="123">
+                constant for type digesting, we do the hashing ourselves                
+            </comment>
+            <comment line="125">
+                constant for type update, token does everything                
+            </comment>
+            <comment line="127">
+                constant for type raw, used with RawDSA and NONEwithECDSA only                
+            </comment>
+            <comment line="130">
+                XXX PKCS#11 v2.20 says &quot;should not be longer than 1024 bits&quot;,                
+            </comment>
+            <comment line="131">
+                but this is a little arbitrary                
+            </comment>
+            <comment line="296">
+                assumes current state is initialized == false                
+            </comment>
+            <comment line="351">
+                see JCA spec                
+            </comment>
+            <comment line="373">
+                see JCA spec                
+            </comment>
+            <comment line="395">
+                see JCA spec                
+            </comment>
+            <comment line="419">
+                see JCA spec                
+            </comment>
+            <comment line="456">
+                see JCA spec                
+            </comment>
+            <comment line="503">
+                see JCA spec                
+            </comment>
+            <comment line="555">
+                see JCA spec                
+            </comment>
+            <comment line="640">
+                private static byte[] decodeSignature(byte[] signature) throws IOException {                
+            </comment>
+            <comment line="641">
+                return RSASignature.decodeSignature(digestOID, signature);                
+            </comment>
+            <comment line="642">
+                }                
+            </comment>
+            <comment line="644">
+                For DSA and ECDSA signatures, PKCS#11 represents them as a simple                
+            </comment>
+            <comment line="645">
+                byte array that contains the concatenation of r and s.                
+            </comment>
+            <comment line="646">
+                For DSA, r and s are always exactly 20 bytes long.                
+            </comment>
+            <comment line="647">
+                For ECDSA, r and s are of variable length, but we know that each                
+            </comment>
+            <comment line="648">
+                occupies half of the array.                
+            </comment>
+            <comment line="724">
+                see JCA spec                
+            </comment>
+            <comment line="730">
+                see JCA spec                
+            </comment>
+            <javadoc line="45">
+                Signature implementation class. This class currently supports the
+                  following algorithms:
+                  . DSA
+                  . NONEwithDSA (RawDSA)
+                  . SHA1withDSA
+                  . RSA:
+                  . MD2withRSA
+                  . MD5withRSA
+                  . SHA1withRSA
+                  . SHA256withRSA
+                  . SHA384withRSA
+                  . SHA512withRSA
+                  . ECDSA
+                  . NONEwithECDSA
+                  . SHA1withECDSA
+                  . SHA256withECDSA
+                  . SHA384withECDSA
+                  . SHA512withECDSA
+                  Note that the underlying PKCS#11 token may support complete signature
+                  algorithm (e.g. CKM_DSA_SHA1, CKM_MD5_RSA_PKCS), or it may just
+                  implement the signature algorithm without hashing (e.g. CKM_DSA, CKM_PKCS),
+                  or it may only implement the raw public key operation (CKM_RSA_X_509).
+                  This class uses what is available and adds whatever extra processing
+                  is needed.                
+                <author>
+                    Andreas Sterbenz                    
+                </author>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <declaration name="token" type="Token" line="79"/>
+            <declaration name="algorithm" type="String" line="82"/>
+            <declaration name="keyAlgorithm" type="String" line="85"/>
+            <declaration name="mechanism" type="long" line="88"/>
+            <declaration name="digestOID" type="ObjectIdentifier" line="91"/>
+            <declaration name="type" type="int" line="94"/>
+            <declaration name="p11Key" type="P11Key" line="97"/>
+            <declaration name="md" type="MessageDigest" line="100"/>
+            <declaration name="session" type="Session" line="103"/>
+            <declaration name="mode" type="int" line="106"/>
+            <declaration name="initialized" type="boolean" line="109"/>
+            <declaration name="buffer" type="byte[]" line="112"/>
+            <declaration name="bytesProcessed" type="int" line="115"/>
+            <declaration name="M_SIGN" type="int" line="118"/>
+            <declaration name="M_VERIFY" type="int" line="120"/>
+            <declaration name="T_DIGEST" type="int" line="123"/>
+            <declaration name="T_UPDATE" type="int" line="125"/>
+            <declaration name="T_RAW" type="int" line="127"/>
+            <declaration name="RAW_ECDSA_MAX" type="int" line="131"/>
+            <method name="P11Signature" type="constructor" line="134">
+                <params>
+                    <param name="token" type="Token"/>
+                    <param name="algorithm" type="String"/>
+                    <param name="mechanism" type="long"/>
+                </params>
+                <declaration name="buffer" type="byte[]" line="139"/>
+                <declaration name="digestOID" type="ObjectIdentifier" line="140"/>
+                <declaration name="md" type="MessageDigest" line="141"/>
+                <scope line="165"/>
+                <scope line="168"/>
+                <scope line="171"/>
+                <scope line="177"/>
+                <scope line="180">
+                    <declaration name="digestAlg" type="String" line="181"/>
+                    <scope line="182"/>
+                    <scope line="184"/>
+                    <scope line="186"/>
+                    <scope line="188"/>
+                    <scope line="190"/>
+                </scope>
+                <scope line="201"/>
+                <scope line="204"/>
+                <scope line="207"/>
+                <scope line="210"/>
+                <scope line="213"/>
+                <scope line="216"/>
+                <scope line="219"/>
+            </method>
+            <method name="ensureInitialized" type="void" line="231">
+                <scope line="233"/>
+            </method>
+            <method name="cancelOperation" type="void" line="238">
+                <comment line="251">
+                    &quot;cancel&quot; operation by finishing it                    
+                </comment>
+                <comment line="252">
+                    XXX make sure all this always works correctly                    
+                </comment>
+                <comment line="261">
+                    T_RAW                    
+                </comment>
+                <comment line="269">
+                    M_VERIFY                    
+                </comment>
+                <comment line="283">
+                    T_RAW                    
+                </comment>
+                <comment line="289">
+                    will fail since the signature is incorrect                    
+                </comment>
+                <comment line="290">
+                    XXX check error code                    
+                </comment>
+                <scope line="240"/>
+                <scope line="244"/>
+                <scope line="247"/>
+                <scope line="253">
+                    <scope line="254">
+                        <scope line="255"/>
+                        <scope line="257">
+                            <declaration name="digest" type="byte[]" line="258"/>
+                            <scope line="259"/>
+                            <scope line="261"/>
+                        </scope>
+                    </scope>
+                    <scope line="266"/>
+                </scope>
+                <scope line="269">
+                    <scope line="270">
+                        <declaration name="signature" type="byte[]" line="271"/>
+                        <scope line="272"/>
+                        <scope line="274"/>
+                        <scope line="277"/>
+                        <scope line="279">
+                            <declaration name="digest" type="byte[]" line="280"/>
+                            <scope line="281"/>
+                            <scope line="283"/>
+                        </scope>
+                    </scope>
+                    <scope line="288"/>
+                </scope>
+            </method>
+            <method name="initialize" type="void" line="296">
+                <scope line="297">
+                    <scope line="298"/>
+                    <scope line="301"/>
+                    <scope line="304"/>
+                </scope>
+                <scope line="309"/>
+                <scope line="312">
+                    <scope line="314"/>
+                </scope>
+            </method>
+            <method name="checkRSAKeyLength" type="void" line="320">
+                <params>
+                    <param name="len" type="int"/>
+                </params>
+                <declaration name="padding" type="RSAPadding" line="321"/>
+                <scope line="322"/>
+                <scope line="325"/>
+                <declaration name="maxDataSize" type="int" line="328"/>
+                <declaration name="encodedLength" type="int" line="329"/>
+                <scope line="331"/>
+                <scope line="333"/>
+                <scope line="335"/>
+                <scope line="337"/>
+                <scope line="339"/>
+                <scope line="341"/>
+                <scope line="344"/>
+            </method>
+            <method name="engineInitVerify" type="void" line="352">
+                <params>
+                    <param name="publicKey" type="PublicKey"/>
+                </params>
+                <comment line="356">
+                    Need to check RSA key length whenever a new key is set                    
+                </comment>
+                <scope line="353"/>
+                <scope line="357">
+                    <declaration name="keyLen" type="int" line="358"/>
+                    <scope line="359"/>
+                    <scope line="361"/>
+                </scope>
+            </method>
+            <method name="engineInitSign" type="void" line="374">
+                <params>
+                    <param name="privateKey" type="PrivateKey"/>
+                </params>
+                <comment line="378">
+                    Need to check RSA key length whenever a new key is set                    
+                </comment>
+                <scope line="375"/>
+                <scope line="379">
+                    <declaration name="keyLen" type="int" line="380"/>
+                    <scope line="381"/>
+                    <scope line="383"/>
+                </scope>
+            </method>
+            <method name="engineUpdate" type="void" line="395">
+                <params>
+                    <param name="b" type="byte"/>
+                </params>
+                <scope line="407"/>
+            </method>
+            <method name="engineUpdate" type="void" line="420">
+                <params>
+                    <param name="b" type="byte[]"/>
+                    <param name="ofs" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="422"/>
+                <scope line="427">
+                    <scope line="428"/>
+                    <scope line="430"/>
+                </scope>
+                <scope line="434"/>
+                <scope line="443"/>
+            </method>
+            <method name="engineUpdate" type="void" line="456">
+                <params>
+                    <param name="byteBuffer" type="ByteBuffer"/>
+                </params>
+                <comment line="465">
+                    cannot do better than default impl                    
+                </comment>
+                <declaration name="len" type="int" line="458"/>
+                <scope line="459"/>
+                <scope line="464"/>
+                <declaration name="addr" type="long" line="469"/>
+                <declaration name="ofs" type="int" line="470"/>
+                <scope line="471">
+                    <scope line="472"/>
+                    <scope line="475"/>
+                </scope>
+                <scope line="481"/>
+                <scope line="490"/>
+            </method>
+            <method name="engineSign" type="byte[]" line="503">
+                <comment line="514">
+                    T_RAW                    
+                </comment>
+                <comment line="521">
+                    CKM_ECDSA                    
+                </comment>
+                <comment line="531">
+                    DSA and ECDSA                    
+                </comment>
+                <comment line="533">
+                    RSA                    
+                </comment>
+                <scope line="505">
+                    <declaration name="signature" type="byte[]" line="506"/>
+                    <scope line="507">
+                        <declaration name="len" type="int" line="508"/>
+                    </scope>
+                    <scope line="510">
+                        <declaration name="digest" type="byte[]" line="511"/>
+                        <scope line="512"/>
+                        <scope line="514">
+                            <scope line="515">
+                                <scope line="516"/>
+                            </scope>
+                            <scope line="521">
+                                <scope line="522"/>
+                            </scope>
+                        </scope>
+                        <scope line="530"/>
+                        <scope line="533">
+                            <declaration name="data" type="byte[]" line="534"/>
+                            <scope line="535"/>
+                        </scope>
+                    </scope>
+                    <scope line="541"/>
+                    <scope line="543"/>
+                </scope>
+                <scope line="546"/>
+                <scope line="548"/>
+            </method>
+            <method name="engineVerify" type="boolean" line="555">
+                <params>
+                    <param name="signature" type="byte[]"/>
+                </params>
+                <comment line="569">
+                    T_RAW                    
+                </comment>
+                <comment line="586">
+                    DSA and ECDSA                    
+                </comment>
+                <comment line="588">
+                    RSA                    
+                </comment>
+                <comment line="603">
+                    return false rather than throwing an exception                    
+                </comment>
+                <comment line="606">
+                    ECF bug?                    
+                </comment>
+                <comment line="612">
+                    XXX we should not release the session if we abort above                    
+                </comment>
+                <comment line="613">
+                    before calling C_Verify                    
+                </comment>
+                <scope line="557">
+                    <scope line="558"/>
+                    <scope line="560"/>
+                    <scope line="563"/>
+                    <scope line="565">
+                        <declaration name="digest" type="byte[]" line="566"/>
+                        <scope line="567"/>
+                        <scope line="569">
+                            <scope line="570">
+                                <scope line="571"/>
+                            </scope>
+                            <scope line="576">
+                                <scope line="577"/>
+                            </scope>
+                        </scope>
+                        <scope line="585"/>
+                        <scope line="588">
+                            <declaration name="data" type="byte[]" line="589"/>
+                            <scope line="590"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="597">
+                    <declaration name="errorCode" type="long" line="598"/>
+                    <scope line="599"/>
+                    <scope line="602"/>
+                    <scope line="607"/>
+                </scope>
+                <scope line="611"/>
+            </method>
+            <method name="pkcs1Pad" type="byte[]" line="619">
+                <params>
+                    <param name="data" type="byte[]"/>
+                </params>
+                <scope line="620">
+                    <declaration name="len" type="int" line="621"/>
+                    <declaration name="padding" type="RSAPadding" line="622"/>
+                    <declaration name="padded" type="byte[]" line="624"/>
+                </scope>
+                <scope line="626"/>
+            </method>
+            <method name="encodeSignature" type="byte[]" line="631">
+                <params>
+                    <param name="digest" type="byte[]"/>
+                </params>
+                <scope line="632"/>
+                <scope line="634"/>
+            </method>
+            <method name="dsaToASN1" type="byte[]" line="648">
+                <params>
+                    <param name="signature" type="byte[]"/>
+                </params>
+                <declaration name="n" type="int" line="649"/>
+                <declaration name="r" type="BigInteger" line="650"/>
+                <declaration name="s" type="BigInteger" line="651"/>
+                <scope line="652">
+                    <declaration name="outseq" type="DerOutputStream" line="653"/>
+                    <declaration name="result" type="DerValue" line="656"/>
+                </scope>
+                <scope line="659"/>
+            </method>
+            <method name="asn1ToDSA" type="byte[]" line="664">
+                <params>
+                    <param name="signature" type="byte[]"/>
+                </params>
+                <scope line="665">
+                    <declaration name="in" type="DerInputStream" line="666"/>
+                    <declaration name="values" type="DerValue[]" line="667"/>
+                    <declaration name="r" type="BigInteger" line="668"/>
+                    <declaration name="s" type="BigInteger" line="669"/>
+                    <declaration name="br" type="byte[]" line="670"/>
+                    <declaration name="bs" type="byte[]" line="671"/>
+                    <scope line="672"/>
+                </scope>
+                <scope line="676"/>
+                <scope line="678"/>
+            </method>
+            <method name="asn1ToECDSA" type="byte[]" line="683">
+                <params>
+                    <param name="signature" type="byte[]"/>
+                </params>
+                <comment line="689">
+                    trim leading zeroes                    
+                </comment>
+                <comment line="693">
+                    r and s each occupy half the array                    
+                </comment>
+                <scope line="684">
+                    <declaration name="in" type="DerInputStream" line="685"/>
+                    <declaration name="values" type="DerValue[]" line="686"/>
+                    <declaration name="r" type="BigInteger" line="687"/>
+                    <declaration name="s" type="BigInteger" line="688"/>
+                    <declaration name="br" type="byte[]" line="690"/>
+                    <declaration name="bs" type="byte[]" line="691"/>
+                    <declaration name="k" type="int" line="692"/>
+                    <declaration name="res" type="byte[]" line="694"/>
+                </scope>
+                <scope line="698"/>
+            </method>
+            <method name="toByteArray" type="byte[]" line="703">
+                <params>
+                    <param name="bi" type="BigInteger"/>
+                    <param name="len" type="int"/>
+                </params>
+                <comment line="717">
+                    must be smaller                    
+                </comment>
+                <declaration name="b" type="byte[]" line="704"/>
+                <declaration name="n" type="int" line="705"/>
+                <scope line="706"/>
+                <scope line="709">
+                    <declaration name="t" type="byte[]" line="710"/>
+                </scope>
+                <scope line="714"/>
+                <declaration name="t" type="byte[]" line="718"/>
+            </method>
+            <method name="engineSetParameter" type="void" line="725">
+                <params>
+                    <param name="param" type="String"/>
+                    <param name="value" type="Object"/>
+                </params>
+            </method>
+            <method name="engineGetParameter" type="Object" line="731">
+                <params>
+                    <param name="param" type="String"/>
+                </params>
+            </method>
+        </class>
+    </source>

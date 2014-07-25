@@ -1,0 +1,19 @@
+package com.sun.tools.jdi;
+import com.sun.jdi.*;
+public interface VMModifiers {
+  int PUBLIC=0x00000001;
+  int PRIVATE=0x00000002;
+  int PROTECTED=0x00000004;
+  int STATIC=0x00000008;
+  int FINAL=0x00000010;
+  int SYNCHRONIZED=0x00000020;
+  int VOLATILE=0x00000040;
+  int BRIDGE=0x00000040;
+  int TRANSIENT=0x00000080;
+  int VARARGS=0x00000080;
+  int NATIVE=0x00000100;
+  int INTERFACE=0x00000200;
+  int ABSTRACT=0x00000400;
+  int ENUM_CONSTANT=0x00004000;
+  int SYNTHETIC=0xf0000000;
+}

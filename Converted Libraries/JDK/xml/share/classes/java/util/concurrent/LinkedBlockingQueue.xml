@@ -1,0 +1,764 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent">
+        <import package="java.util.concurrent.atomic.AtomicInteger"/>
+        <import package="java.util.concurrent.locks.Condition"/>
+        <import package="java.util.concurrent.locks.ReentrantLock"/>
+        <import package="java.util.AbstractQueue"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.NoSuchElementException"/>
+        <class name="LinkedBlockingQueue" line="46">
+            <type_params>
+                <type_param name="E"/>
+            </type_params>
+            <extends class="AbstractQueue">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+            </extends>
+            <comment line="83">
+                A variant of the &quot;two lock queue&quot; algorithm.  The putLock gates
+                 entry to put (and offer), and has an associated condition for
+                 waiting puts.  Similarly for the takeLock.  The &quot;count&quot; field
+                 that they both rely on is maintained as an atomic to avoid
+                 needing to get both locks in most cases. Also, to minimize need
+                 for puts to get takeLock and vice-versa, cascading notifies are
+                 used. When a put notices that it has enabled at least one take,
+                 it signals taker. That taker in turn signals others if more
+                 items have been entered since the signal. And symmetrically for
+                 takes signalling puts. Operations such as remove(Object) and
+                 iterators acquire both locks.
+                
+                 Visibility between writers and readers is provided as follows:
+                
+                 Whenever an element is enqueued, the putLock is acquired and
+                 count updated.  A subsequent reader guarantees visibility to the
+                 enqueued Node by either acquiring the putLock (via fullyLock)
+                 or by acquiring the takeLock, and then reading n = count.get();
+                 this gives visibility to the first n items.
+                
+                 To implement weakly consistent iterators, it appears we need to
+                 keep all Nodes GC-reachable from a predecessor dequeued Node.
+                 That would cause two problems:
+                 - allow a rogue Iterator to cause unbounded memory retention
+                 - cause cross-generational linking of old Nodes to new Nodes if
+                   a Node was tenured while live, which generational GCs have a
+                   hard time dealing with, causing repeated major collections.
+                 However, only non-deleted Nodes need to be reachable from
+                 dequeued Nodes, and reachability does not necessarily have to
+                 be of the kind understood by the GC.  We use the trick of
+                 linking a Node that has just been dequeued to itself.  Such a
+                 self-link implicitly means to advance to head.next.                
+            </comment>
+            <comment line="236">
+                /**                
+            </comment>
+            <comment line="237">
+                * Tells whether both locks are held by current thread.                
+            </comment>
+            <comment line="238">
+                */                
+            </comment>
+            <comment line="239">
+                boolean isFullyLocked() {                
+            </comment>
+            <comment line="240">
+                return (putLock.isHeldByCurrentThread() &amp;&amp;                
+            </comment>
+            <comment line="241">
+                takeLock.isHeldByCurrentThread());                
+            </comment>
+            <comment line="242">
+                }                
+            </comment>
+            <comment line="296">
+                this doc comment is overridden to remove the reference to collections                
+            </comment>
+            <comment line="297">
+                greater in size than Integer.MAX_VALUE                
+            </comment>
+            <comment line="307">
+                this doc comment is a modified copy of the inherited doc comment,                
+            </comment>
+            <comment line="308">
+                without the reference to unlimited queues.                
+            </comment>
+            <implements interface="BlockingQueue">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+            </implements>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="46">
+                An optionally-bounded {@linkplain BlockingQueue blocking queue} based on
+                  linked nodes.
+                  This queue orders elements FIFO (first-in-first-out).
+                  The &lt;em&gt;head&lt;/em&gt; of the queue is that element that has been on the
+                  queue the longest time.
+                  The &lt;em&gt;tail&lt;/em&gt; of the queue is that element that has been on the
+                  queue the shortest time. New elements
+                  are inserted at the tail of the queue, and the queue retrieval
+                  operations obtain elements at the head of the queue.
+                  Linked queues typically have higher throughput than array-based queues but
+                  less predictable performance in most concurrent applications.
+                  &lt;p&gt; The optional capacity bound constructor argument serves as a
+                  way to prevent excessive queue expansion. The capacity, if unspecified,
+                  is equal to {@link Integer#MAX_VALUE}.  Linked nodes are
+                  dynamically created upon each insertion unless this would bring the
+                  queue above capacity.
+                  &lt;p&gt;This class and its iterator implement all of the
+                  &lt;em&gt;optional&lt;/em&gt; methods of the {@link Collection} and {@link Iterator} interfaces.
+                  &lt;p&gt;This class is a member of the
+                  &lt;a href=&quot;{@docRoot}/../technotes/guides/collections/index.html&quot;&gt;
+                  Java Collections Framework&lt;/a&gt;.                
+                <since>
+                    1.5                    
+                </since>
+                <author>
+                    Doug Lea                    
+                </author>
+                <param>
+                    <E>
+                       the type of elements held in this collection                    
+                </param>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="80"/>
+            <class name="Node" line="117">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+                <comment line="783">
+                    Basic weakly-consistent iterator.  At all times hold the next
+                     item to hand out so that if hasNext() reports true, we will
+                     still have it to return even if lost race with a take etc.                    
+                </comment>
+                <javadoc line="117">
+                    Linked list node class                    
+                </javadoc>
+                <declaration name="item" type="E" line="121"/>
+                <declaration name="next" type="Node&lt;E&gt;" line="123"/>
+                <javadoc line="123">
+                    One of:
+                      - the real successor Node
+                      - this Node, meaning the successor is head.next
+                      - null, meaning there is no successor (this is the last node)                    
+                </javadoc>
+                <method name="Node" type="constructor" line="131">
+                    <params>
+                        <param name="x" type="E"/>
+                    </params>
+                </method>
+            </class>
+            <declaration name="capacity" type="int" line="134"/>
+            <javadoc line="134">
+                The capacity bound, or Integer.MAX_VALUE if none                
+            </javadoc>
+            <declaration name="count" type="AtomicInteger" line="137"/>
+            <javadoc line="137">
+                Current number of elements                
+            </javadoc>
+            <declaration name="head" type="Node&lt;E&gt;" line="140"/>
+            <javadoc line="140">
+                Head of linked list.
+                  Invariant: head.item == null                
+            </javadoc>
+            <declaration name="last" type="Node&lt;E&gt;" line="146"/>
+            <javadoc line="146">
+                Tail of linked list.
+                  Invariant: last.next == null                
+            </javadoc>
+            <declaration name="takeLock" type="ReentrantLock" line="152"/>
+            <javadoc line="152">
+                Lock held by take, poll, etc                
+            </javadoc>
+            <declaration name="notEmpty" type="Condition" line="155"/>
+            <javadoc line="155">
+                Wait queue for waiting takes                
+            </javadoc>
+            <declaration name="putLock" type="ReentrantLock" line="158"/>
+            <javadoc line="158">
+                Lock held by put, offer, etc                
+            </javadoc>
+            <declaration name="notFull" type="Condition" line="161"/>
+            <javadoc line="161">
+                Wait queue for waiting puts                
+            </javadoc>
+            <javadoc line="164">
+                Signals a waiting take. Called only from put/offer (which do not
+                  otherwise ordinarily lock takeLock.)                
+            </javadoc>
+            <method name="signalNotEmpty" type="void" line="168">
+                <declaration name="takeLock" type="ReentrantLock" line="169"/>
+                <scope line="171"/>
+                <scope line="173"/>
+            </method>
+            <javadoc line="178">
+                Signals a waiting put. Called only from take/poll.                
+            </javadoc>
+            <method name="signalNotFull" type="void" line="181">
+                <declaration name="putLock" type="ReentrantLock" line="182"/>
+                <scope line="184"/>
+                <scope line="186"/>
+            </method>
+            <javadoc line="191">
+                Links node at end of queue.                
+                <param>
+                    node the node                    
+                </param>
+            </javadoc>
+            <method name="enqueue" type="void" line="196">
+                <params>
+                    <param name="node" type="Node<E>"/>
+                </params>
+                <comment line="197">
+                    assert putLock.isHeldByCurrentThread();                    
+                </comment>
+                <comment line="198">
+                    assert last.next == null;                    
+                </comment>
+            </method>
+            <javadoc line="202">
+                Removes a node from head of queue.                
+                <return>
+                    the node                    
+                </return>
+            </javadoc>
+            <method name="dequeue" type="E" line="207">
+                <comment line="208">
+                    assert takeLock.isHeldByCurrentThread();                    
+                </comment>
+                <comment line="209">
+                    assert head.item == null;                    
+                </comment>
+                <comment line="212">
+                    help GC                    
+                </comment>
+                <declaration name="h" type="Node&lt;E&gt;" line="210"/>
+                <declaration name="first" type="Node&lt;E&gt;" line="211"/>
+                <declaration name="x" type="E" line="214"/>
+            </method>
+            <javadoc line="219">
+                Lock to prevent both puts and takes.                
+            </javadoc>
+            <method name="fullyLock" type="void" line="222"/>
+            <javadoc line="227">
+                Unlock to allow both puts and takes.                
+            </javadoc>
+            <method name="fullyUnlock" type="void" line="230"/>
+            <javadoc line="243">
+                Creates a {@code LinkedBlockingQueue} with a capacity of{@link Integer#MAX_VALUE}.                
+            </javadoc>
+            <method name="LinkedBlockingQueue" type="constructor" line="247"/>
+            <javadoc line="251">
+                Creates a {@code LinkedBlockingQueue} with the given (fixed) capacity.                
+                <param>
+                    capacity the capacity of this queue                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code capacity} is not greater
+                      than zero                    
+                </throws>
+            </javadoc>
+            <method name="LinkedBlockingQueue" type="constructor" line="258">
+                <params>
+                    <param name="capacity" type="int"/>
+                </params>
+            </method>
+            <javadoc line="264">
+                Creates a {@code LinkedBlockingQueue} with a capacity of{@link Integer#MAX_VALUE}, initially containing the elements of the
+                  given collection,
+                  added in traversal order of the collection&apos;s iterator.                
+                <param>
+                    c the collection of elements to initially contain                    
+                </param>
+                <throws>
+                    NullPointerException if the specified collection or any
+                      of its elements are null                    
+                </throws>
+            </javadoc>
+            <method name="LinkedBlockingQueue" type="constructor" line="274">
+                <params>
+                    <param name="c" type="Collection<? extends E>"/>
+                </params>
+                <comment line="277">
+                    Never contended, but necessary for visibility                    
+                </comment>
+                <declaration name="putLock" type="ReentrantLock" line="276"/>
+                <scope line="278">
+                    <declaration name="n" type="int" line="279"/>
+                    <scope line="280"/>
+                </scope>
+                <scope line="289"/>
+            </method>
+            <javadoc line="297">
+                Returns the number of elements in this queue.                
+                <return>
+                    the number of elements in this queue                    
+                </return>
+            </javadoc>
+            <method name="size" type="int" line="302"/>
+            <javadoc line="308">
+                Returns the number of additional elements that this queue can ideally
+                  (in the absence of memory or resource constraints) accept without
+                  blocking. This is always equal to the initial capacity of this queue
+                  less the current {@code size} of this queue.
+                  &lt;p&gt;Note that you &lt;em&gt;cannot&lt;/em&gt; always tell if an attempt to insert
+                  an element will succeed by inspecting {@code remainingCapacity}because it may be the case that another thread is about to
+                  insert or remove an element.                
+            </javadoc>
+            <method name="remainingCapacity" type="int" line="319"/>
+            <javadoc line="323">
+                Inserts the specified element at the tail of this queue, waiting if
+                  necessary for space to become available.                
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="put" type="void" line="330">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <comment line="332">
+                    Note: convention in all put/take/etc is to preset local var                    
+                </comment>
+                <comment line="333">
+                    holding count negative to indicate failure unless set.                    
+                </comment>
+                <comment line="340">
+                    Note that count is used in wait guard even though it is
+                     not protected by lock. This works because count can
+                     only decrease at this point (all other puts are shut
+                     out by lock), and we (or some other waiting put) are
+                     signalled if it ever changes from capacity. Similarly
+                     for all other uses of count in other wait guards.                    
+                </comment>
+                <declaration name="c" type="int" line="334"/>
+                <declaration name="node" type="Node&lt;E&gt;" line="335"/>
+                <declaration name="putLock" type="ReentrantLock" line="336"/>
+                <declaration name="count" type="AtomicInteger" line="337"/>
+                <scope line="339">
+                    <scope line="348"/>
+                </scope>
+                <scope line="355"/>
+            </method>
+            <javadoc line="362">
+                Inserts the specified element at the tail of this queue, waiting if
+                  necessary up to the specified wait time for space to become available.                
+                <return>
+                    {@code true} if successful, or {@code false} if
+                      the specified waiting time elapses before space is available.                    
+                </return>
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="offer" type="boolean" line="372">
+                <params>
+                    <param name="e" type="E"/>
+                    <param name="timeout" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="nanos" type="long" line="375"/>
+                <declaration name="c" type="int" line="376"/>
+                <declaration name="putLock" type="ReentrantLock" line="377"/>
+                <declaration name="count" type="AtomicInteger" line="378"/>
+                <scope line="380">
+                    <scope line="381"/>
+                </scope>
+                <scope line="390"/>
+            </method>
+            <javadoc line="398">
+                Inserts the specified element at the tail of this queue if it is
+                  possible to do so immediately without exceeding the queue&apos;s capacity,
+                  returning {@code true} upon success and {@code false} if this queue
+                  is full.
+                  When using a capacity-restricted queue, this method is generally
+                  preferable to method {@link BlockingQueue#add add}, which can fail to
+                  insert an element only by throwing an exception.                
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="offer" type="boolean" line="409">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <declaration name="count" type="AtomicInteger" line="411"/>
+                <declaration name="c" type="int" line="414"/>
+                <declaration name="node" type="Node&lt;E&gt;" line="415"/>
+                <declaration name="putLock" type="ReentrantLock" line="416"/>
+                <scope line="418">
+                    <scope line="419"/>
+                </scope>
+                <scope line="425"/>
+            </method>
+            <method name="take" type="E" line="434">
+                <declaration name="x" type="E" line="435"/>
+                <declaration name="c" type="int" line="436"/>
+                <declaration name="count" type="AtomicInteger" line="437"/>
+                <declaration name="takeLock" type="ReentrantLock" line="438"/>
+                <scope line="440">
+                    <scope line="441"/>
+                </scope>
+                <scope line="448"/>
+            </method>
+            <method name="poll" type="E" line="456">
+                <params>
+                    <param name="timeout" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="x" type="E" line="457"/>
+                <declaration name="c" type="int" line="458"/>
+                <declaration name="nanos" type="long" line="459"/>
+                <declaration name="count" type="AtomicInteger" line="460"/>
+                <declaration name="takeLock" type="ReentrantLock" line="461"/>
+                <scope line="463">
+                    <scope line="464"/>
+                </scope>
+                <scope line="473"/>
+            </method>
+            <method name="poll" type="E" line="481">
+                <declaration name="count" type="AtomicInteger" line="482"/>
+                <declaration name="x" type="E" line="485"/>
+                <declaration name="c" type="int" line="486"/>
+                <declaration name="takeLock" type="ReentrantLock" line="487"/>
+                <scope line="489">
+                    <scope line="490"/>
+                </scope>
+                <scope line="496"/>
+            </method>
+            <method name="peek" type="E" line="504">
+                <declaration name="takeLock" type="ReentrantLock" line="507"/>
+                <scope line="509">
+                    <declaration name="first" type="Node&lt;E&gt;" line="510"/>
+                </scope>
+                <scope line="515"/>
+            </method>
+            <javadoc line="520">
+                Unlinks interior Node p with predecessor trail.                
+            </javadoc>
+            <method name="unlink" type="void" line="523">
+                <params>
+                    <param name="p" type="Node<E>"/>
+                    <param name="trail" type="Node<E>"/>
+                </params>
+                <comment line="524">
+                    assert isFullyLocked();                    
+                </comment>
+                <comment line="525">
+                    p.next is not changed, to allow iterators that are                    
+                </comment>
+                <comment line="526">
+                    traversing p to maintain their weak-consistency guarantee.                    
+                </comment>
+            </method>
+            <javadoc line="535">
+                Removes a single instance of the specified element from this queue,
+                  if it is present.  More formally, removes an element {@code e} such
+                  that {@code o.equals(e)}, if this queue contains one or more such
+                  elements.
+                  Returns {@code true} if this queue contained the specified element
+                  (or equivalently, if this queue changed as a result of the call).                
+                <param>
+                    o element to be removed from this queue, if present                    
+                </param>
+                <return>
+                    {@code true} if this queue changed as a result of the call                    
+                </return>
+            </javadoc>
+            <method name="remove" type="boolean" line="546">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="549">
+                    <scope line="552">
+                        <scope line="553"/>
+                    </scope>
+                </scope>
+                <scope line="559"/>
+            </method>
+            <javadoc line="564">
+                Returns {@code true} if this queue contains the specified element.
+                  More formally, returns {@code true} if and only if this queue contains
+                  at least one element {@code e} such that {@code o.equals(e)}.                
+                <param>
+                    o object to be checked for containment in this queue                    
+                </param>
+                <return>
+                    {@code true} if this queue contains the specified element                    
+                </return>
+            </javadoc>
+            <method name="contains" type="boolean" line="572">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="575"/>
+                <scope line="580"/>
+            </method>
+            <javadoc line="585">
+                Returns an array containing all of the elements in this queue, in
+                  proper sequence.
+                  &lt;p&gt;The returned array will be &quot;safe&quot; in that no references to it are
+                  maintained by this queue.  (In other words, this method must allocate
+                  a new array).  The caller is thus free to modify the returned array.
+                  &lt;p&gt;This method acts as bridge between array-based and collection-based
+                  APIs.                
+                <return>
+                    an array containing all of the elements in this queue                    
+                </return>
+            </javadoc>
+            <method name="toArray" type="Object[]" line="598">
+                <scope line="600">
+                    <declaration name="size" type="int" line="601"/>
+                    <declaration name="a" type="Object[]" line="602"/>
+                    <declaration name="k" type="int" line="603"/>
+                </scope>
+                <scope line="607"/>
+            </method>
+            <javadoc line="612">
+                Returns an array containing all of the elements in this queue, in
+                  proper sequence; the runtime type of the returned array is that of
+                  the specified array.  If the queue fits in the specified array, it
+                  is returned therein.  Otherwise, a new array is allocated with the
+                  runtime type of the specified array and the size of this queue.
+                  &lt;p&gt;If this queue fits in the specified array with room to spare
+                  (i.e., the array has more elements than this queue), the element in
+                  the array immediately following the end of the queue is set to{@code null}.
+                  &lt;p&gt;Like the {@link #toArray()} method, this method acts as bridge between
+                  array-based and collection-based APIs.  Further, this method allows
+                  precise control over the runtime type of the output array, and may,
+                  under certain circumstances, be used to save allocation costs.
+                  &lt;p&gt;Suppose {@code x} is a queue known to contain only strings.
+                  The following code can be used to dump the queue into a newly
+                  allocated array of {@code String}:
+                  &lt;pre&gt;
+                  String[] y = x.toArray(new String[0]);&lt;/pre&gt;
+                  Note that {@code toArray(new Object[0])} is identical in function to{@code toArray()}.                
+                <param>
+                    a the array into which the elements of the queue are to
+                      be stored, if it is big enough; otherwise, a new array of the
+                      same runtime type is allocated for this purpose                    
+                </param>
+                <return>
+                    an array containing all of the elements in this queue                    
+                </return>
+                <throws>
+                    ArrayStoreException if the runtime type of the specified array
+                      is not a supertype of the runtime type of every element in
+                      this queue                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified array is null                    
+                </throws>
+            </javadoc>
+            <method name="toArray" type="T[]" line="649">
+                <params>
+                    <param name="a" type="T[]"/>
+                </params>
+                <scope line="651">
+                    <declaration name="size" type="int" line="652"/>
+                    <declaration name="k" type="int" line="657"/>
+                </scope>
+                <scope line="663"/>
+            </method>
+            <method name="toString" type="String" line="668">
+                <scope line="670">
+                    <declaration name="p" type="Node&lt;E&gt;" line="671"/>
+                    <declaration name="sb" type="StringBuilder" line="675"/>
+                    <scope line="677">
+                        <declaration name="e" type="E" line="678"/>
+                    </scope>
+                </scope>
+                <scope line="685"/>
+            </method>
+            <javadoc line="690">
+                Atomically removes all of the elements from this queue.
+                  The queue will be empty after this call returns.                
+            </javadoc>
+            <method name="clear" type="void" line="694">
+                <comment line="702">
+                    assert head.item == null &amp;&amp; head.next == null;                    
+                </comment>
+                <scope line="696">
+                    <scope line="697"/>
+                </scope>
+                <scope line="705"/>
+            </method>
+            <javadoc line="710">
+                @throws UnsupportedOperationException {@inheritDoc}                
+                <throws>
+                    ClassCastException            {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException          {@inheritDoc}                    
+                </throws>
+                <throws>
+                    IllegalArgumentException      {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="drainTo" type="int" line="716">
+                <params>
+                    <param name="c" type="Collection<? super E>"/>
+                </params>
+            </method>
+            <javadoc line="720">
+                @throws UnsupportedOperationException {@inheritDoc}                
+                <throws>
+                    ClassCastException            {@inheritDoc}                    
+                </throws>
+                <throws>
+                    NullPointerException          {@inheritDoc}                    
+                </throws>
+                <throws>
+                    IllegalArgumentException      {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="drainTo" type="int" line="726">
+                <params>
+                    <param name="c" type="Collection<? super E>"/>
+                    <param name="maxElements" type="int"/>
+                </params>
+                <comment line="736">
+                    count.get provides visibility to first n Nodes                    
+                </comment>
+                <comment line="750">
+                    Restore invariants even if c.add() threw                    
+                </comment>
+                <comment line="752">
+                    assert h.item == null;                    
+                </comment>
+                <declaration name="signalNotFull" type="boolean" line="731"/>
+                <declaration name="takeLock" type="ReentrantLock" line="732"/>
+                <scope line="734">
+                    <declaration name="n" type="int" line="735"/>
+                    <declaration name="h" type="Node&lt;E&gt;" line="737"/>
+                    <declaration name="i" type="int" line="738"/>
+                    <scope line="739">
+                        <scope line="740">
+                            <declaration name="p" type="Node&lt;E&gt;" line="741"/>
+                        </scope>
+                    </scope>
+                    <scope line="749">
+                        <scope line="751"/>
+                    </scope>
+                </scope>
+                <scope line="757"/>
+            </method>
+            <javadoc line="764">
+                Returns an iterator over the elements in this queue in proper sequence.
+                  The elements will be returned in order from first (head) to last (tail).
+                  &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
+                  will never throw {@link java.util.ConcurrentModificationExceptionConcurrentModificationException}, and guarantees to traverse
+                  elements as they existed upon construction of the iterator, and
+                  may (but is not guaranteed to) reflect any modifications
+                  subsequent to construction.                
+                <return>
+                    an iterator over the elements in this queue in proper sequence                    
+                </return>
+            </javadoc>
+            <method name="iterator" type="Iterator<E>" line="777"/>
+            <class name="Itr" line="781">
+                <comment line="783">
+                    Basic weakly-consistent iterator.  At all times hold the next
+                     item to hand out so that if hasNext() reports true, we will
+                     still have it to return even if lost race with a take etc.                    
+                </comment>
+                <implements interface="Iterator">
+                    <type_params>
+                        <type_param name="E"/>
+                    </type_params>
+                </implements>
+                <declaration name="current" type="Node&lt;E&gt;" line="787"/>
+                <declaration name="lastRet" type="Node&lt;E&gt;" line="788"/>
+                <declaration name="currentElement" type="E" line="789"/>
+                <method name="Itr" type="constructor" line="791">
+                    <scope line="793"/>
+                    <scope line="797"/>
+                </method>
+                <method name="hasNext" type="boolean" line="802"/>
+                <javadoc line="806">
+                    Returns the next live successor of p, or null if no such.
+                      Unlike other traversal methods, iterators need to handle both:
+                      - dequeued nodes (p.next == p)
+                      - (possibly multiple) interior removed nodes (p.item == null)                    
+                </javadoc>
+                <method name="nextNode" type="Node<E>" line="813">
+                    <params>
+                        <param name="p" type="Node<E>"/>
+                    </params>
+                    <scope line="814">
+                        <declaration name="s" type="Node&lt;E&gt;" line="815"/>
+                    </scope>
+                </method>
+                <method name="next" type="E" line="824">
+                    <scope line="826">
+                        <declaration name="x" type="E" line="829"/>
+                    </scope>
+                    <scope line="834"/>
+                </method>
+                <method name="remove" type="void" line="839">
+                    <scope line="843">
+                        <declaration name="node" type="Node&lt;E&gt;" line="844"/>
+                        <scope line="848">
+                            <scope line="849"/>
+                        </scope>
+                    </scope>
+                    <scope line="854"/>
+                </method>
+            </class>
+            <javadoc line="860">
+                Save the state to a stream (that is, serialize it).                
+                <serialData>
+                    The capacity is emitted (int), followed by all of
+                      its elements (each an {@code Object}) in the proper order,
+                      followed by a null                    
+                </serialData>
+                <param>
+                    s the stream                    
+                </param>
+            </javadoc>
+            <method name="writeObject" type="void" line="869">
+                <params>
+                    <param name="s" type="java.io.ObjectOutputStream"/>
+                </params>
+                <comment line="873">
+                    Write out any hidden stuff, plus capacity                    
+                </comment>
+                <comment line="876">
+                    Write out all elements in the proper order.                    
+                </comment>
+                <comment line="880">
+                    Use trailing null as sentinel                    
+                </comment>
+                <scope line="872"/>
+                <scope line="882"/>
+            </method>
+            <javadoc line="887">
+                Reconstitute this queue instance from a stream (that is,
+                  deserialize it).                
+                <param>
+                    s the stream                    
+                </param>
+            </javadoc>
+            <method name="readObject" type="void" line="894">
+                <params>
+                    <param name="s" type="java.io.ObjectInputStream"/>
+                </params>
+                <comment line="895">
+                    Read in capacity, and any hidden stuff                    
+                </comment>
+                <comment line="901">
+                    Read in all elements and place in queue                    
+                </comment>
+                <scope line="902">
+                    <declaration name="item" type="E" line="903"/>
+                </scope>
+            </method>
+        </class>
+    </source>

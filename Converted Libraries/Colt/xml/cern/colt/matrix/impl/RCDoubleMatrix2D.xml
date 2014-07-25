@@ -1,0 +1,527 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="cern.colt.matrix.impl">
+        <import package="cern.colt.list.DoubleArrayList"/>
+        <import package="cern.colt.list.IntArrayList"/>
+        <import package="cern.colt.matrix.DoubleMatrix1D"/>
+        <import package="cern.colt.matrix.DoubleMatrix2D"/>
+        <class name="RCDoubleMatrix2D" line="15">
+            <extends class="WrapperDoubleMatrix2D"/>
+            <comment line="120">
+                The elements of the matrix.                
+            </comment>
+            <comment line="126">
+                protected int N;                
+            </comment>
+            <javadoc line="15">
+                Sparse row-compressed 2-d matrix holding &lt;tt&gt;double&lt;/tt&gt; elements.
+                  First see the &lt;a href=&quot;package-summary.html&quot;&gt;package summary&lt;/a&gt; and javadoc &lt;a href=&quot;package-tree.html&quot;&gt;tree view&lt;/a&gt; to get the broad picture.
+                  &lt;p&gt;
+                  &lt;b&gt;Implementation:&lt;/b&gt;
+                  &lt;p&gt;
+                  Internally uses the standard sparse row-compressed format, with two important differences that broaden the applicability of this storage format:
+                  &lt;ul&gt;
+                  &lt;li&gt;We use a {@link cern.colt.list.IntArrayList} and {@link cern.colt.list.DoubleArrayList} to hold the column indexes and nonzero values, respectively. 
+                  This improves set(...) performance, because the standard way of using non-resizable primitive arrays causes excessive memory allocation, garbage collection and array copying.
+                  The small downside of this is that set(...,0) does not free memory (The capacity of an arraylist does not shrink upon element removal).
+                  &lt;li&gt;Column indexes are kept sorted within a row. This both improves get and set performance on rows with many non-zeros, because we can use a binary search. 
+                  (Experiments show that this hurts &lt; 10% on rows with &lt; 4 nonZeros.)
+                  &lt;/ul&gt;
+                  &lt;br&gt;
+                  Note that this implementation is not synchronized.
+                  &lt;p&gt;
+                  &lt;b&gt;Memory requirements:&lt;/b&gt;
+                  &lt;p&gt;
+                  Cells that
+                  &lt;ul&gt;
+                  &lt;li&gt;are never set to non-zero values do not use any memory.
+                  &lt;li&gt;switch from zero to non-zero state do use memory.
+                  &lt;li&gt;switch back from non-zero to zero state also do use memory. Their memory is &lt;i&gt;not&lt;/i&gt; automatically reclaimed (because of the lists vs. arrays). Reclamation can be triggered via {@link #trimToSize()}.
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  &lt;tt&gt;memory [bytes] = 4rows + 12  nonZeros&lt;/tt&gt;.
+                  &lt;br&gt;Where &lt;tt&gt;nonZeros = cardinality()&lt;/tt&gt; is the number of non-zero cells.
+                  Thus, a 1000 x 1000 matrix with 1000000 non-zero cells consumes 11.5 MB.
+                  The same 1000 x 1000 matrix with 1000 non-zero cells consumes 15 KB.
+                  &lt;p&gt;
+                  &lt;b&gt;Time complexity:&lt;/b&gt;
+                  &lt;p&gt;
+                  Getting a cell value takes time&lt;tt&gt; O(log nzr)&lt;/tt&gt; where &lt;tt&gt;nzr&lt;/tt&gt; 
+                  is the number of non-zeros of the touched row. This is usually quick, because 
+                  typically there are only few nonzeros per row. So, in practice, get has &lt;i&gt;expected&lt;/i&gt; 
+                  constant time. Setting a cell value takes &lt;i&gt; &lt;/i&gt;worst-case time &lt;tt&gt;O(nz)&lt;/tt&gt; 
+                  where &lt;tt&gt;nzr&lt;/tt&gt; is the total number of non-zeros in the matrix. This can 
+                  be extremely slow, but if you traverse coordinates properly (i.e. upwards), each write is done much quicker:
+                  &lt;table&gt;
+                  &lt;td class=&quot;PRE&quot;&gt; 
+                  &lt;pre&gt;
+                  // rather quick
+                  matrix.assign(0);
+                  for (int row=0; row &lt; rows; row++) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;for (int column=0; column &lt; columns; column++) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;if (someCondition) matrix.setQuick(row,column,someValue);
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  }
+                  // poor
+                  matrix.assign(0);
+                  for (int row=rows; --row &gt;= 0; ) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;for (int column=columns; --column &gt;= 0; ) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;if (someCondition) matrix.setQuick(row,column,someValue);
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  }
+                  &lt;/pre&gt;
+                  &lt;/td&gt;
+                  &lt;/table&gt;
+                  If for whatever reasons you can&apos;t iterate properly, consider to create an empty dense matrix, store your non-zeros in it, then call &lt;tt&gt;sparse.assign(dense)&lt;/tt&gt;. Under the circumstances, this is still rather quick.
+                  &lt;p&gt;
+                  Fast iteration over non-zeros can be done via {@link #forEachNonZero}, which supplies your function with row, column and value of each nonzero.
+                  Although the internally implemented version is a bit more sophisticated,
+                  here is how a quite efficient user-level matrix-vector multiplication could look like:
+                  &lt;table&gt;
+                  &lt;td class=&quot;PRE&quot;&gt; 
+                  &lt;pre&gt;
+                  // Linear algebraic y = A  x
+                  A.forEachNonZero(
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;new cern.colt.function.IntIntDoubleFunction() {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;public double apply(int row, int column, double value) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;y.setQuick(row,y.getQuick(row) + value  x.getQuick(column));
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;return value;
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  );
+                  &lt;/pre&gt;
+                  &lt;/td&gt;
+                  &lt;/table&gt;
+                  &lt;p&gt;
+                  Here is how a a quite efficient user-level combined scaling operation could look like:
+                  &lt;table&gt;
+                  &lt;td class=&quot;PRE&quot;&gt; 
+                  &lt;pre&gt;
+                  // Elementwise A = A + alphaB
+                  B.forEachNonZero(
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;new cern.colt.function.IntIntDoubleFunction() {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;public double apply(int row, int column, double value) {
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;A.setQuick(row,column,A.getQuick(row,column) + alphavalue);
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;return value;
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  &amp;nbsp;&amp;nbsp;&amp;nbsp;}
+                  );
+                  &lt;/pre&gt;
+                  &lt;/td&gt;
+                  &lt;/table&gt;
+                  Method {@link #assign(DoubleMatrix2D,cern.colt.function.DoubleDoubleFunction)} does just that if you supply {@link cern.jet.math.Functions#plusMult} as argument.                
+                <author>
+                    wolfgang.hoschek@cern.ch                    
+                </author>
+                <version>
+                    0.9, 04/14/2000                    
+                </version>
+            </javadoc>
+            <declaration name="indexes" type="IntArrayList" line="122"/>
+            <declaration name="values" type="DoubleArrayList" line="123"/>
+            <declaration name="starts" type="int[]" line="124"/>
+            <javadoc line="126">
+                Constructs a matrix with a copy of the given values.
+                  &lt;tt&gt;values&lt;/tt&gt; is required to have the form &lt;tt&gt;values[row][column]&lt;/tt&gt;
+                  and have exactly the same number of columns in every row.
+                  &lt;p&gt;
+                  The values are copied. So subsequent changes in &lt;tt&gt;values&lt;/tt&gt; are not reflected in the matrix, and vice-versa.                
+                <param>
+                    values The values to be filled into the new matrix.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if <tt>for any 1 &lt;= row &lt; values.length: values[row].length != values[row-1].length</tt>.                    
+                </throws>
+            </javadoc>
+            <method name="RCDoubleMatrix2D" type="constructor" line="136">
+                <params>
+                    <param name="values" type="double[][]"/>
+                </params>
+            </method>
+            <javadoc line="140">
+                Constructs a matrix with a given number of rows and columns.
+                  All entries are initially &lt;tt&gt;0&lt;/tt&gt;.                
+                <param>
+                    rows the number of rows the matrix shall have.                    
+                </param>
+                <param>
+                    columns the number of columns the matrix shall have.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if <tt>rows<0 || columns<0 || (double)columnsrows > Integer.MAX_VALUE</tt>.                    
+                </throws>
+            </javadoc>
+            <method name="RCDoubleMatrix2D" type="constructor" line="147">
+                <params>
+                    <param name="rows" type="int"/>
+                    <param name="columns" type="int"/>
+                </params>
+                <comment line="152">
+                    we can hold rows*columns&gt;Integer.MAX_VALUE cells !                    
+                </comment>
+                <scope line="149"/>
+                <scope line="152"/>
+            </method>
+            <javadoc line="159">
+                Sets all cells to the state specified by &lt;tt&gt;value&lt;/tt&gt;.                
+                <param>
+                    value the value to be filled into the cells.                    
+                </param>
+                <return>
+                    <tt>this</tt> (for convenience only).                    
+                </return>
+            </javadoc>
+            <method name="assign" type="DoubleMatrix2D" line="164">
+                <params>
+                    <param name="value" type="double"/>
+                </params>
+                <comment line="165">
+                    overriden for performance only                    
+                </comment>
+                <scope line="166"/>
+            </method>
+            <method name="assign" type="DoubleMatrix2D" line="174">
+                <params>
+                    <param name="function" type="cern.colt.function.DoubleFunction"/>
+                </params>
+                <comment line="175">
+                    x[i] = mult*x[i]                    
+                </comment>
+                <comment line="179">
+                    the funny definition of isNaN(). This should better not happen.                    
+                </comment>
+                <comment line="186">
+                    forEachNonZero(
+                    new cern.colt.function.IntIntDoubleFunction() {
+                    public double apply(int i, int j, double value) {
+                    return function.apply(value);
+                    }
+                    }
+                    );                    
+                </comment>
+                <scope line="175">
+                    <declaration name="alpha" type="double" line="176"/>
+                    <declaration name="vals" type="double[]" line="181"/>
+                    <scope line="182"/>
+                </scope>
+                <scope line="196"/>
+            </method>
+            <javadoc line="201">
+                Replaces all cell values of the receiver with the values of another matrix.
+                  Both matrices must have the same number of rows and columns.
+                  If both matrices share the same cells (as is the case if they are views derived from the same matrix) and intersect in an ambiguous way, then replaces &lt;i&gt;as if&lt;/i&gt; using an intermediate auxiliary deep copy of &lt;tt&gt;other&lt;/tt&gt;.                
+                <param>
+                    source   the source matrix to copy from (may be identical to the receiver).                    
+                </param>
+                <return>
+                    <tt>this</tt> (for convenience only).                    
+                </return>
+                <throws>
+                    IllegalArgumentException if <tt>columns() != source.columns() || rows() != source.rows()</tt>                    
+                </throws>
+            </javadoc>
+            <method name="assign" type="DoubleMatrix2D" line="210">
+                <params>
+                    <param name="source" type="DoubleMatrix2D"/>
+                </params>
+                <comment line="211">
+                    nothing to do                    
+                </comment>
+                <comment line="213">
+                    overriden for performance only                    
+                </comment>
+                <comment line="215">
+                    return super.assign(source);                    
+                </comment>
+                <comment line="226">
+                    indexes.clear();
+                    values.clear();
+                    int nonZeros=0;
+                    for (int row=0; row&lt;rows; row++) {
+                    starts[row]=nonZeros;
+                    for (int column=0; column&lt;columns; column++) {
+                    double v = source.getQuick(row,column);
+                    if (v!=0) {
+                    values.add(v);
+                    indexes.add(column);
+                    nonZeros++;
+                    }
+                    }
+                    }
+                    starts[rows]=nonZeros;                    
+                </comment>
+                <comment line="246">
+                    even quicker                    
+                </comment>
+                <scope line="214">
+                    <anonymous_class line="219">
+                        <method name="apply" type="double" line="220">
+                            <params>
+                                <param name="i" type="int"/>
+                                <param name="j" type="int"/>
+                                <param name="value" type="double"/>
+                            </params>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <declaration name="other" type="RCDoubleMatrix2D" line="247"/>
+                <declaration name="s" type="int" line="250"/>
+            </method>
+            <method name="assign" type="DoubleMatrix2D" line="258">
+                <params>
+                    <param name="y" type="DoubleMatrix2D"/>
+                    <param name="function" type="cern.colt.function.DoubleDoubleFunction"/>
+                </params>
+                <comment line="261">
+                    x[i] = x[i] + alpha*y[i]                    
+                </comment>
+                <comment line="263">
+                    nothing to do                    
+                </comment>
+                <comment line="275">
+                    x[i] = x[i] * y[i]                    
+                </comment>
+                <comment line="290">
+                    x[i] = x[i] / y[i]                    
+                </comment>
+                <scope line="261">
+                    <declaration name="alpha" type="double" line="262"/>
+                    <anonymous_class line="265">
+                        <method name="apply" type="double" line="266">
+                            <params>
+                                <param name="i" type="int"/>
+                                <param name="j" type="int"/>
+                                <param name="value" type="double"/>
+                            </params>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="275">
+                    <declaration name="idx" type="int[]" line="276"/>
+                    <declaration name="vals" type="double[]" line="277"/>
+                    <scope line="279">
+                        <declaration name="low" type="int" line="280"/>
+                        <scope line="281">
+                            <declaration name="j" type="int" line="282"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="290">
+                    <declaration name="idx" type="int[]" line="291"/>
+                    <declaration name="vals" type="double[]" line="292"/>
+                    <scope line="294">
+                        <declaration name="low" type="int" line="295"/>
+                        <scope line="296">
+                            <declaration name="j" type="int" line="297"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="forEachNonZero" type="DoubleMatrix2D" line="307">
+                <params>
+                    <param name="function" type="cern.colt.function.IntIntDoubleFunction"/>
+                </params>
+                <declaration name="idx" type="int[]" line="308"/>
+                <declaration name="vals" type="double[]" line="309"/>
+                <scope line="311">
+                    <declaration name="low" type="int" line="312"/>
+                    <scope line="313">
+                        <declaration name="j" type="int" line="314"/>
+                        <declaration name="value" type="double" line="315"/>
+                        <declaration name="r" type="double" line="316"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="322">
+                Returns the content of this matrix if it is a wrapper; or &lt;tt&gt;this&lt;/tt&gt; otherwise.
+                  Override this method in wrappers.                
+            </javadoc>
+            <method name="getContent" type="DoubleMatrix2D" line="326"/>
+            <javadoc line="329">
+                Returns the matrix cell value at coordinate &lt;tt&gt;[row,column]&lt;/tt&gt;.
+                  &lt;p&gt;Provided with invalid parameters this method may return invalid objects without throwing any exception.
+                  &lt;b&gt;You should only use this method when you are absolutely sure that the coordinate is within bounds.&lt;/b&gt;
+                  Precondition (unchecked): &lt;tt&gt;0 &amp;lt;= column &amp;lt; columns() &amp;&amp; 0 &amp;lt;= row &amp;lt; rows()&lt;/tt&gt;.                
+                <param>
+                    row   the index of the row-coordinate.                    
+                </param>
+                <param>
+                    column   the index of the column-coordinate.                    
+                </param>
+                <return>
+                    the value at the specified coordinate.                    
+                </return>
+            </javadoc>
+            <method name="getQuick" type="double" line="340">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                </params>
+                <declaration name="k" type="int" line="341"/>
+                <declaration name="v" type="double" line="342"/>
+            </method>
+            <method name="insert" type="void" line="346">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                    <param name="index" type="int"/>
+                    <param name="value" type="double"/>
+                </params>
+            </method>
+            <javadoc line="351">
+                Construct and returns a new empty matrix &lt;i&gt;of the same dynamic type&lt;/i&gt; as the receiver, having the specified number of rows and columns.
+                  For example, if the receiver is an instance of type &lt;tt&gt;DenseDoubleMatrix2D&lt;/tt&gt; the new matrix must also be of type &lt;tt&gt;DenseDoubleMatrix2D&lt;/tt&gt;,
+                  if the receiver is an instance of type &lt;tt&gt;SparseDoubleMatrix2D&lt;/tt&gt; the new matrix must also be of type &lt;tt&gt;SparseDoubleMatrix2D&lt;/tt&gt;, etc.
+                  In general, the new matrix should have internal parametrization as similar as possible.                
+                <param>
+                    rows the number of rows the matrix shall have.                    
+                </param>
+                <param>
+                    columns the number of columns the matrix shall have.                    
+                </param>
+                <return>
+                    a new empty matrix of the same dynamic type.                    
+                </return>
+            </javadoc>
+            <method name="like" type="DoubleMatrix2D" line="361">
+                <params>
+                    <param name="rows" type="int"/>
+                    <param name="columns" type="int"/>
+                </params>
+            </method>
+            <javadoc line="364">
+                Construct and returns a new 1-d matrix &lt;i&gt;of the corresponding dynamic type&lt;/i&gt;, entirelly independent of the receiver.
+                  For example, if the receiver is an instance of type &lt;tt&gt;DenseDoubleMatrix2D&lt;/tt&gt; the new matrix must be of type &lt;tt&gt;DenseDoubleMatrix1D&lt;/tt&gt;,
+                  if the receiver is an instance of type &lt;tt&gt;SparseDoubleMatrix2D&lt;/tt&gt; the new matrix must be of type &lt;tt&gt;SparseDoubleMatrix1D&lt;/tt&gt;, etc.                
+                <param>
+                    size the number of cells the matrix shall have.                    
+                </param>
+                <return>
+                    a new matrix of the corresponding dynamic type.                    
+                </return>
+            </javadoc>
+            <method name="like1D" type="DoubleMatrix1D" line="372">
+                <params>
+                    <param name="size" type="int"/>
+                </params>
+            </method>
+            <method name="remove" type="void" line="375">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="index" type="int"/>
+                </params>
+            </method>
+            <javadoc line="380">
+                Sets the matrix cell at coordinate &lt;tt&gt;[row,column]&lt;/tt&gt; to the specified value.
+                  &lt;p&gt;Provided with invalid parameters this method may access illegal indexes without throwing any exception.
+                  &lt;b&gt;You should only use this method when you are absolutely sure that the coordinate is within bounds.&lt;/b&gt;
+                  Precondition (unchecked): &lt;tt&gt;0 &amp;lt;= column &amp;lt; columns() &amp;&amp; 0 &amp;lt;= row &amp;lt; rows()&lt;/tt&gt;.                
+                <param>
+                    row   the index of the row-coordinate.                    
+                </param>
+                <param>
+                    column   the index of the column-coordinate.                    
+                </param>
+                <param>
+                    value the value to be filled into the specified cell.                    
+                </param>
+            </javadoc>
+            <method name="setQuick" type="void" line="391">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                    <param name="value" type="double"/>
+                </params>
+                <comment line="393">
+                    found                    
+                </comment>
+                <declaration name="k" type="int" line="392"/>
+                <scope line="393"/>
+                <scope line="401"/>
+            </method>
+            <method name="trimToSize" type="void" line="406"/>
+            <method name="zMult" type="DoubleMatrix1D" line="410">
+                <params>
+                    <param name="y" type="DoubleMatrix1D"/>
+                    <param name="z" type="DoubleMatrix1D"/>
+                    <param name="alpha" type="double"/>
+                    <param name="beta" type="double"/>
+                    <param name="transposeA" type="boolean"/>
+                </params>
+                <comment line="440">
+                    forEachNonZero(
+                    new cern.colt.function.IntIntDoubleFunction() {
+                    public double apply(int i, int j, double value) {
+                    zElements[zi + zStridei] += value  yElements[yi + yStridej];
+                    z.setQuick(row,z.getQuick(row) + value  y.getQuick(column));
+                    System.out.println(&quot;[&quot;+i+&quot;,&quot;+j+&quot;]--&gt;&quot;+value);
+                    return value;
+                    }
+                    }
+                    );                    
+                </comment>
+                <declaration name="m" type="int" line="411"/>
+                <declaration name="n" type="int" line="412"/>
+                <scope line="413"/>
+                <declaration name="ignore" type="boolean" line="418"/>
+                <scope line="421"/>
+                <declaration name="zz" type="DenseDoubleMatrix1D" line="428"/>
+                <declaration name="zElements" type="double[]" line="429"/>
+                <declaration name="zStride" type="int" line="430"/>
+                <declaration name="zi" type="int" line="431"/>
+                <declaration name="yy" type="DenseDoubleMatrix1D" line="433"/>
+                <declaration name="yElements" type="double[]" line="434"/>
+                <declaration name="yStride" type="int" line="435"/>
+                <declaration name="yi" type="int" line="436"/>
+                <declaration name="idx" type="int[]" line="454"/>
+                <declaration name="vals" type="double[]" line="455"/>
+                <declaration name="s" type="int" line="456"/>
+                <scope line="457">
+                    <scope line="458">
+                        <declaration name="high" type="int" line="459"/>
+                        <declaration name="sum" type="double" line="460"/>
+                        <scope line="461">
+                            <declaration name="j" type="int" line="462"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="469">
+                    <scope line="471">
+                        <declaration name="high" type="int" line="472"/>
+                        <declaration name="yElem" type="double" line="473"/>
+                        <scope line="474">
+                            <declaration name="j" type="int" line="475"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="zMult" type="DoubleMatrix2D" line="483">
+                <params>
+                    <param name="B" type="DoubleMatrix2D"/>
+                    <param name="C" type="DoubleMatrix2D"/>
+                    <param name="alpha" type="double"/>
+                    <param name="beta" type="double"/>
+                    <param name="transposeA" type="boolean"/>
+                    <param name="transposeB" type="boolean"/>
+                </params>
+                <comment line="504">
+                    cache views                    
+                </comment>
+                <declaration name="m" type="int" line="485"/>
+                <declaration name="n" type="int" line="486"/>
+                <scope line="487"/>
+                <declaration name="p" type="int" line="491"/>
+                <declaration name="ignore" type="boolean" line="492"/>
+                <declaration name="Brows" type="DoubleMatrix1D[]" line="505"/>
+                <declaration name="Crows" type="DoubleMatrix1D[]" line="507"/>
+                <declaration name="fun" type="cern.jet.math.PlusMult" line="510"/>
+                <declaration name="idx" type="int[]" line="512"/>
+                <declaration name="vals" type="double[]" line="513"/>
+                <scope line="514">
+                    <declaration name="low" type="int" line="515"/>
+                    <scope line="516">
+                        <declaration name="j" type="int" line="517"/>
+                    </scope>
+                </scope>
+            </method>
+        </class>
+    </source>

@@ -1,0 +1,984 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.swing">
+        <import package="java.applet.Applet"/>
+        <import package="java.awt"/>
+        <import package="java.awt.event"/>
+        <import package="java.awt.image"/>
+        <import package="java.lang.reflect"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.util"/>
+        <import package="com.sun.java.swing.SwingUtilities3"/>
+        <import package="sun.awt.SubRegionShowable"/>
+        <import package="sun.java2d.SunGraphics2D"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <import package="sun.java2d.pipe.hw.ExtendedBufferCapabilities"/>
+        <import package="sun.awt.SunToolkit"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <class name="BufferStrategyPaintManager" line="45">
+            <extends class="RepaintManager.PaintManager"/>
+            <comment line="53">
+                                
+            </comment>
+            <comment line="54">
+                All drawing is done to a BufferStrategy.  At the end of painting                
+            </comment>
+            <comment line="55">
+                (endPaint) the region that was painted is flushed to the screen                
+            </comment>
+            <comment line="56">
+                (using BufferStrategy.show).                
+            </comment>
+            <comment line="57">
+                                
+            </comment>
+            <comment line="58">
+                PaintManager.show is overriden to show directly from the                
+            </comment>
+            <comment line="59">
+                BufferStrategy (when using blit), if successful true is                
+            </comment>
+            <comment line="60">
+                returned and a paint event will not be generated.  To avoid                
+            </comment>
+            <comment line="61">
+                showing from the buffer while painting a locking scheme is                
+            </comment>
+            <comment line="62">
+                implemented.  When beginPaint is invoked the field painting is                
+            </comment>
+            <comment line="63">
+                set to true.  If painting is true and show is invoked we                
+            </comment>
+            <comment line="64">
+                immediately return false.  This is done to avoid blocking the                
+            </comment>
+            <comment line="65">
+                toolkit thread while painting happens.  In a similar way when                
+            </comment>
+            <comment line="66">
+                show is invoked the field showing is set to true, beginPaint                
+            </comment>
+            <comment line="67">
+                will then block until showing is true.  This scheme ensures we                
+            </comment>
+            <comment line="68">
+                only ever have one thread using the BufferStrategy and it also                
+            </comment>
+            <comment line="69">
+                ensures the toolkit thread remains as responsive as possible.                
+            </comment>
+            <comment line="70">
+                                
+            </comment>
+            <comment line="71">
+                If we&apos;re using a flip strategy the contents of the backbuffer may                
+            </comment>
+            <comment line="72">
+                have changed and so show only attempts to show from the backbuffer                
+            </comment>
+            <comment line="73">
+                if we get a blit strategy.                
+            </comment>
+            <comment line="74">
+                                
+            </comment>
+            <comment line="76">
+                                
+            </comment>
+            <comment line="77">
+                Methods used to create BufferStrategy for Applets.                
+            </comment>
+            <comment line="78">
+                                
+            </comment>
+            <comment line="103">
+                                
+            </comment>
+            <comment line="104">
+                Region that we need to flush.  When beginPaint is called these are                
+            </comment>
+            <comment line="105">
+                reset and any subsequent calls to paint/copyArea then update these                
+            </comment>
+            <comment line="106">
+                fields accordingly.  When endPaint is called we then try and show                
+            </comment>
+            <comment line="107">
+                the accumulated region.                
+            </comment>
+            <comment line="108">
+                These fields are in the coordinate system of the root.                
+            </comment>
+            <comment line="109">
+                                
+            </comment>
+            <comment line="115">
+                                
+            </comment>
+            <comment line="116">
+                The following fields are set by prepare                
+            </comment>
+            <comment line="117">
+                                
+            </comment>
+            <comment line="196">
+                                
+            </comment>
+            <comment line="197">
+                PaintManager methods                
+            </comment>
+            <comment line="198">
+                                
+            </comment>
+            <javadoc line="45">
+                A PaintManager implementation that uses a BufferStrategy for
+                  rendering.                
+                <author>
+                    Scott Violet                    
+                </author>
+            </javadoc>
+            <declaration name="COMPONENT_CREATE_BUFFER_STRATEGY_METHOD" type="Method" line="78"/>
+            <declaration name="COMPONENT_GET_BUFFER_STRATEGY_METHOD" type="Method" line="79"/>
+            <declaration name="LOGGER" type="PlatformLogger" line="81"/>
+            <declaration name="bufferInfos" type="ArrayList&lt;BufferInfo&gt;" line="84"/>
+            <javadoc line="84">
+                List of BufferInfos.  We don&apos;t use a Map primarily because
+                  there are typically only a handful of top level components making
+                  a Map overkill.                
+            </javadoc>
+            <declaration name="painting" type="boolean" line="91"/>
+            <javadoc line="91">
+                Indicates &lt;code&gt;beginPaint&lt;/code&gt; has been invoked.  This is
+                  set to true for the life of beginPaint/endPaint pair.                
+            </javadoc>
+            <declaration name="showing" type="boolean" line="96"/>
+            <javadoc line="96">
+                Indicates we&apos;re in the process of showing.  All painting, on the EDT,
+                  is blocked while this is true.                
+            </javadoc>
+            <declaration name="accumulatedX" type="int" line="109"/>
+            <declaration name="accumulatedY" type="int" line="110"/>
+            <declaration name="accumulatedMaxX" type="int" line="111"/>
+            <declaration name="accumulatedMaxY" type="int" line="112"/>
+            <declaration name="rootJ" type="JComponent" line="118"/>
+            <javadoc line="118">
+                Farthest JComponent ancestor for the current paint/copyArea.                
+            </javadoc>
+            <declaration name="root" type="Container" line="122"/>
+            <javadoc line="122">
+                Parent Applet/Window for the current paint/copyArea                
+            </javadoc>
+            <declaration name="xOffset" type="int" line="126"/>
+            <javadoc line="126">
+                Location of component being painted relative to root.                
+            </javadoc>
+            <declaration name="yOffset" type="int" line="130"/>
+            <javadoc line="130">
+                Location of component being painted relative to root.                
+            </javadoc>
+            <declaration name="bsg" type="Graphics" line="134"/>
+            <javadoc line="134">
+                Graphics from the BufferStrategy.                
+            </javadoc>
+            <declaration name="bufferStrategy" type="BufferStrategy" line="138"/>
+            <javadoc line="138">
+                BufferStrategy currently being used.                
+            </javadoc>
+            <declaration name="bufferInfo" type="BufferInfo" line="142"/>
+            <javadoc line="142">
+                BufferInfo corresponding to root.                
+            </javadoc>
+            <declaration name="disposeBufferOnEnd" type="boolean" line="147"/>
+            <javadoc line="147">
+                Set to true if the bufferInfo needs to be disposed when current
+                  paint loop is done.                
+            </javadoc>
+            <method name="getGetBufferStrategyMethod" type="Method" line="153">
+                <scope line="154"/>
+            </method>
+            <method name="getCreateBufferStrategyMethod" type="Method" line="160">
+                <scope line="161"/>
+            </method>
+            <method name="getMethods" type="void" line="167">
+                <anonymous_class line="169">
+                    <method name="run" type="Object" line="170">
+                        <scope line="171"/>
+                        <scope line="181"/>
+                        <scope line="183"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="BufferStrategyPaintManager" type="constructor" line="191"/>
+            <javadoc line="199">
+                Cleans up any created BufferStrategies.                
+            </javadoc>
+            <method name="dispose" type="void" line="202">
+                <comment line="203">
+                    dipose can be invoked at any random time. To avoid                    
+                </comment>
+                <comment line="204">
+                    threading dependancies we do the actual diposing via an                    
+                </comment>
+                <comment line="205">
+                    invokeLater.                    
+                </comment>
+                <anonymous_class line="206">
+                    <method name="run" type="void" line="207">
+                        <declaration name="bufferInfos" type="java.util.List&lt;BufferInfo&gt;" line="208"/>
+                        <scope line="209">
+                            <scope line="210">
+                                <scope line="211"/>
+                                <scope line="213"/>
+                            </scope>
+                        </scope>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="dispose" type="void" line="224">
+                <params>
+                    <param name="bufferInfos" type="java.util.List<BufferInfo>"/>
+                </params>
+                <scope line="225"/>
+                <scope line="229">
+                    <scope line="230"/>
+                </scope>
+            </method>
+            <javadoc line="236">
+                Shows the specified region of the back buffer.  This will return
+                  true if successful, false otherwise.  This is invoked on the
+                  toolkit thread in response to an expose event.                
+            </javadoc>
+            <method name="show" type="boolean" line="241">
+                <params>
+                    <param name="c" type="Container"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="244">
+                    Don&apos;t show from backbuffer while in the process of                    
+                </comment>
+                <comment line="245">
+                    painting.                    
+                </comment>
+                <comment line="262">
+                    Mark the buffer as needing to be repainted.  We don&apos;t                    
+                </comment>
+                <comment line="263">
+                    immediately do a repaint as this method will return false                    
+                </comment>
+                <comment line="264">
+                    indicating a PaintEvent should be generated which will                    
+                </comment>
+                <comment line="265">
+                    trigger a complete repaint.                    
+                </comment>
+                <scope line="242">
+                    <scope line="243"/>
+                </scope>
+                <scope line="250">
+                    <declaration name="info" type="BufferInfo" line="251"/>
+                    <declaration name="bufferStrategy" type="BufferStrategy" line="252"/>
+                    <scope line="254">
+                        <declaration name="bsSubRegion" type="SubRegionShowable" line="255"/>
+                        <declaration name="paintAllOnExpose" type="boolean" line="257"/>
+                        <scope line="259"/>
+                    </scope>
+                </scope>
+                <scope line="269">
+                    <scope line="270"/>
+                </scope>
+            </method>
+            <method name="paint" type="boolean" line="280">
+                <params>
+                    <param name="paintingComponent" type="JComponent"/>
+                    <param name="bufferComponent" type="JComponent"/>
+                    <param name="g" type="Graphics"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="284">
+                    BufferStrategy may have already constrained the Graphics. To                    
+                </comment>
+                <comment line="285">
+                    account for that we revert the constrain, then apply a                    
+                </comment>
+                <comment line="286">
+                    constrain for Swing on top of that.                    
+                </comment>
+                <comment line="300">
+                    Assume they are going to eventually render to the screen.                    
+                </comment>
+                <comment line="301">
+                    This disables showing from backbuffer until a complete                    
+                </comment>
+                <comment line="302">
+                    repaint occurs.                    
+                </comment>
+                <comment line="304">
+                    Fall through to old rendering.                    
+                </comment>
+                <comment line="307">
+                    Invalid root, do what Swing has always done.                    
+                </comment>
+                <scope line="281">
+                    <scope line="283">
+                        <declaration name="cx" type="int" line="287"/>
+                        <declaration name="cy" type="int" line="288"/>
+                        <scope line="289"/>
+                    </scope>
+                    <scope line="299"/>
+                </scope>
+                <scope line="308"/>
+            </method>
+            <method name="copyArea" type="void" line="315">
+                <params>
+                    <param name="c" type="JComponent"/>
+                    <param name="g" type="Graphics"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                    <param name="deltaX" type="int"/>
+                    <param name="deltaY" type="int"/>
+                    <param name="clip" type="boolean"/>
+                </params>
+                <comment line="316">
+                    Note: this method is only called internally and we know that                    
+                </comment>
+                <comment line="317">
+                    g is from a heavyweight Component, so no check is necessary as                    
+                </comment>
+                <comment line="318">
+                    it is in paint() above.                    
+                </comment>
+                <comment line="319">
+                                        
+                </comment>
+                <comment line="320">
+                    If the buffer isn&apos;t in sync there is no point in doing a copyArea,                    
+                </comment>
+                <comment line="321">
+                    it has garbage.                    
+                </comment>
+                <comment line="341">
+                    Prepare failed, or not in sync. By calling super.copyArea                    
+                </comment>
+                <comment line="342">
+                    we&apos;ll copy on screen. We need to flush any pending paint to                    
+                </comment>
+                <comment line="343">
+                    the screen otherwise we&apos;ll do a copyArea on the wrong thing.                    
+                </comment>
+                <comment line="345">
+                    Flush failed, copyArea will be copying garbage,                    
+                </comment>
+                <comment line="346">
+                    force repaint of all.                    
+                </comment>
+                <scope line="322">
+                    <scope line="323">
+                        <declaration name="cBounds" type="Rectangle" line="324"/>
+                        <declaration name="relX" type="int" line="325"/>
+                        <declaration name="relY" type="int" line="326"/>
+                    </scope>
+                    <scope line="332"/>
+                </scope>
+                <scope line="337">
+                    <scope line="338"/>
+                    <scope line="344"/>
+                    <scope line="348"/>
+                </scope>
+            </method>
+            <method name="beginPaint" type="void" line="354">
+                <comment line="357">
+                    Make sure another thread isn&apos;t attempting to show from                    
+                </comment>
+                <comment line="358">
+                    the back buffer.                    
+                </comment>
+                <comment line="369">
+                    Reset the area that needs to be painted.                    
+                </comment>
+                <scope line="355">
+                    <scope line="359">
+                        <scope line="360"/>
+                        <scope line="362"/>
+                    </scope>
+                </scope>
+                <scope line="366"/>
+            </method>
+            <method name="endPaint" type="void" line="373">
+                <comment line="385">
+                    Contents lost twice in a row, punt.                    
+                </comment>
+                <comment line="387">
+                    In case we&apos;ve left junk on the screen, force a repaint.                    
+                </comment>
+                <scope line="374"/>
+                <scope line="379">
+                    <scope line="380">
+                        <scope line="381"/>
+                        <scope line="384"/>
+                    </scope>
+                </scope>
+                <declaration name="toDispose" type="BufferInfo" line="393"/>
+                <scope line="394">
+                    <scope line="396"/>
+                </scope>
+                <scope line="402"/>
+            </method>
+            <javadoc line="407">
+                Renders the BufferStrategy to the screen.                
+                <return>
+                    true if successful, false otherwise.                    
+                </return>
+            </javadoc>
+            <method name="flushAccumulatedRegion" type="boolean" line="412">
+                <comment line="426">
+                    Shown region was bogus, mark buffer as out of sync.                    
+                </comment>
+                <declaration name="success" type="boolean" line="413"/>
+                <scope line="414">
+                    <declaration name="bsSubRegion" type="SubRegionShowable" line="415"/>
+                    <declaration name="contentsLost" type="boolean" line="416"/>
+                    <scope line="417"/>
+                    <scope line="422">
+                        <scope line="423"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="resetAccumulated" type="void" line="435"/>
+            <javadoc line="442">
+                Invoked when the double buffering or useTrueDoubleBuffering
+                  changes for a JRootPane.  If the rootpane is not double
+                  buffered, or true double buffering changes we throw out any
+                  cache we may have.                
+            </javadoc>
+            <method name="doubleBufferingChanged" type="void" line="448">
+                <params>
+                    <param name="rootPane" type="JRootPane"/>
+                </params>
+                <scope line="451">
+                    <scope line="452">
+                        <anonymous_class line="453">
+                            <method name="run" type="void" line="454"/>
+                        </anonymous_class>
+                        <declaration name="updater" type="Runnable" line="453"/>
+                    </scope>
+                    <scope line="460"/>
+                </scope>
+            </method>
+            <javadoc line="466">
+                Does the work for doubleBufferingChanged.                
+            </javadoc>
+            <method name="doubleBufferingChanged0" type="void" line="469">
+                <params>
+                    <param name="rootPane" type="JRootPane"/>
+                </params>
+                <comment line="470">
+                    This will only happen on the EDT.                    
+                </comment>
+                <comment line="473">
+                    Make sure another thread isn&apos;t attempting to show from                    
+                </comment>
+                <comment line="474">
+                    the back buffer.                    
+                </comment>
+                <comment line="483">
+                    We&apos;re in the process of painting and the user grabbed                    
+                </comment>
+                <comment line="484">
+                    the Graphics. If we dispose now, endPaint will attempt                    
+                </comment>
+                <comment line="485">
+                    to show a bogus BufferStrategy. Set a flag so that                    
+                </comment>
+                <comment line="486">
+                    endPaint knows it needs to dispose this buffer.                    
+                </comment>
+                <declaration name="info" type="BufferInfo" line="471"/>
+                <scope line="472">
+                    <scope line="475">
+                        <scope line="476"/>
+                        <scope line="478"/>
+                    </scope>
+                    <scope line="482"/>
+                    <scope line="489"/>
+                </scope>
+                <scope line="493"/>
+            </method>
+            <javadoc line="498">
+                Calculates information common to paint/copyArea.                
+                <return>
+                    true if should use buffering per window in painting.                    
+                </return>
+            </javadoc>
+            <method name="prepare" type="boolean" line="504">
+                <params>
+                    <param name="c" type="JComponent"/>
+                    <param name="isPaint" type="boolean"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="535">
+                    Couldn&apos;t create BufferStrategy, fallback to normal                    
+                </comment>
+                <comment line="536">
+                    painting.                    
+                </comment>
+                <comment line="551">
+                    We either recreated the BufferStrategy, or the contents                    
+                </comment>
+                <comment line="552">
+                    of the buffer strategy were restored.  We need to                    
+                </comment>
+                <comment line="553">
+                    repaint the root pane so that the back buffer is in sync                    
+                </comment>
+                <comment line="554">
+                    again.                    
+                </comment>
+                <comment line="560">
+                    Contents lost twice in a row, punt                    
+                </comment>
+                <scope line="505"/>
+                <scope line="510">
+                    <declaration name="contentsLost" type="boolean" line="511"/>
+                    <declaration name="bufferInfo" type="BufferInfo" line="512"/>
+                    <scope line="513">
+                        <scope line="517"/>
+                    </scope>
+                    <scope line="522">
+                        <scope line="524">
+                            <scope line="526">
+                                <scope line="528"/>
+                            </scope>
+                        </scope>
+                        <scope line="534"/>
+                        <scope line="539">
+                            <scope line="542"/>
+                        </scope>
+                        <scope line="547"/>
+                        <scope line="550">
+                            <scope line="556"/>
+                            <scope line="559"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="fetchRoot" type="boolean" line="570">
+                <params>
+                    <param name="c" type="JComponent"/>
+                </params>
+                <comment line="590">
+                    We&apos;ve encountered two hws now and may have                    
+                </comment>
+                <comment line="591">
+                    a containment hierarchy with lightweights containing                    
+                </comment>
+                <comment line="592">
+                    heavyweights containing other lightweights.                    
+                </comment>
+                <comment line="593">
+                    Heavyweights poke holes in lightweight                    
+                </comment>
+                <comment line="594">
+                    rendering so that if we call show on the BS                    
+                </comment>
+                <comment line="595">
+                    (which is associated with the Window) you will                    
+                </comment>
+                <comment line="596">
+                    not see the contents over any child                    
+                </comment>
+                <comment line="597">
+                    heavyweights.  If we didn&apos;t do this when we                    
+                </comment>
+                <comment line="598">
+                    went to show the descendants of the nested hw                    
+                </comment>
+                <comment line="599">
+                    you would see nothing, so, we bail out here.                    
+                </comment>
+                <comment line="607">
+                    We&apos;re in a Swing heavyeight (JFrame/JWindow...), use double                    
+                </comment>
+                <comment line="608">
+                    buffering if double buffering enabled on the JRootPane and                    
+                </comment>
+                <comment line="609">
+                    the JRootPane wants true double buffering.                    
+                </comment>
+                <comment line="612">
+                    Whether or not a component is double buffered is a                    
+                </comment>
+                <comment line="613">
+                    bit tricky with Swing. This gives a good approximation                    
+                </comment>
+                <comment line="614">
+                    of the various ways to turn on double buffering for                    
+                </comment>
+                <comment line="615">
+                    components.                    
+                </comment>
+                <comment line="619">
+                    Don&apos;t do true double buffering.                    
+                </comment>
+                <declaration name="encounteredHW" type="boolean" line="571"/>
+                <scope line="577">
+                    <scope line="581">
+                        <scope line="582"/>
+                        <scope line="585">
+                            <scope line="586"/>
+                            <scope line="589"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="606">
+                    <scope line="611"/>
+                </scope>
+            </method>
+            <javadoc line="623">
+                Turns off double buffering per window.                
+            </javadoc>
+            <method name="resetDoubleBufferPerWindow" type="void" line="626">
+                <scope line="627"/>
+            </method>
+            <javadoc line="634">
+                Returns the BufferInfo for the specified root or null if one
+                  hasn&apos;t been created yet.                
+            </javadoc>
+            <method name="getBufferInfo" type="BufferInfo" line="638">
+                <params>
+                    <param name="root" type="Container"/>
+                </params>
+                <comment line="643">
+                    Window gc&apos;ed                    
+                </comment>
+                <scope line="639">
+                    <declaration name="bufferInfo" type="BufferInfo" line="640"/>
+                    <declaration name="biRoot" type="Container" line="641"/>
+                    <scope line="642">
+                        <scope line="645"/>
+                    </scope>
+                    <scope line="649"/>
+                </scope>
+            </method>
+            <method name="accumulate" type="void" line="656">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+            <class name="BufferInfo" line="665">
+                <extends class="ComponentAdapter"/>
+                <comment line="675">
+                    NOTE: This class does NOT hold a direct reference to the root, if it                    
+                </comment>
+                <comment line="676">
+                    did there would be a cycle between the BufferPerWindowPaintManager                    
+                </comment>
+                <comment line="677">
+                    and the Window so that it could never be GC&apos;ed                    
+                </comment>
+                <comment line="678">
+                                        
+                </comment>
+                <comment line="679">
+                    Reference to BufferStrategy is referenced via WeakReference for                    
+                </comment>
+                <comment line="680">
+                    same reason.                    
+                </comment>
+                <comment line="683">
+                    Indicates whether or not the backbuffer and display are in sync.                    
+                </comment>
+                <comment line="684">
+                    This is set to true when a full repaint on the rootpane is done.                    
+                </comment>
+                <comment line="686">
+                    Indicates the contents were lost during and expose event.                    
+                </comment>
+                <comment line="688">
+                    Indicates we need to generate a paint event on expose.                    
+                </comment>
+                <comment line="828">
+                    Creates and returns a buffer strategy.  If                    
+                </comment>
+                <comment line="829">
+                    there is a problem creating the buffer strategy this will                    
+                </comment>
+                <comment line="830">
+                    eat the exception and return null.                    
+                </comment>
+                <comment line="899">
+                    We mark the buffer as needing to be painted on a hide/iconify                    
+                </comment>
+                <comment line="900">
+                    because the developer may have conditionalized painting based on                    
+                </comment>
+                <comment line="901">
+                    visibility.                    
+                </comment>
+                <comment line="902">
+                    Ideally we would also move to having the BufferStrategy being                    
+                </comment>
+                <comment line="903">
+                    a SoftReference in Component here, but that requires changes to                    
+                </comment>
+                <comment line="904">
+                    Component and the like.                    
+                </comment>
+                <comment line="927">
+                    On a dispose we chuck everything.                    
+                </comment>
+                <implements interface="WindowListener"/>
+                <javadoc line="665">
+                    BufferInfo is used to track the BufferStrategy being used for
+                      a particular Component.  In addition to tracking the BufferStrategy
+                      it will install a WindowListener and ComponentListener.  When the
+                      component is hidden/iconified the buffer is marked as needing to be
+                      completely repainted.                    
+                </javadoc>
+                <declaration name="weakBS" type="WeakReference&lt;BufferStrategy&gt;" line="680"/>
+                <declaration name="root" type="WeakReference&lt;Container&gt;" line="681"/>
+                <declaration name="inSync" type="boolean" line="684"/>
+                <declaration name="contentsLostDuringExpose" type="boolean" line="686"/>
+                <declaration name="paintAllOnExpose" type="boolean" line="688"/>
+                <method name="BufferInfo" type="constructor" line="691">
+                    <params>
+                        <param name="root" type="Container"/>
+                    </params>
+                    <scope line="694"/>
+                </method>
+                <method name="setPaintAllOnExpose" type="void" line="699">
+                    <params>
+                        <param name="paintAllOnExpose" type="boolean"/>
+                    </params>
+                </method>
+                <method name="getPaintAllOnExpose" type="boolean" line="703"/>
+                <method name="setContentsLostDuringExpose" type="void" line="707">
+                    <params>
+                        <param name="value" type="boolean"/>
+                    </params>
+                </method>
+                <method name="getContentsLostDuringExpose" type="boolean" line="711"/>
+                <method name="setInSync" type="void" line="715">
+                    <params>
+                        <param name="inSync" type="boolean"/>
+                    </params>
+                </method>
+                <javadoc line="719">
+                    Whether or not the contents of the buffer strategy
+                      is in sync with the window.  This is set to true when the root
+                      pane paints all, and false when contents are lost/restored.                    
+                </javadoc>
+                <method name="isInSync" type="boolean" line="724"/>
+                <javadoc line="728">
+                    Returns the Root (Window or Applet) that this BufferInfo references.                    
+                </javadoc>
+                <method name="getRoot" type="Container" line="731"/>
+                <javadoc line="735">
+                    Returns the BufferStartegy.  This will return null if
+                      the BufferStartegy hasn&apos;t been created and &lt;code&gt;create&lt;/code&gt; is
+                      false, or if there is a problem in creating the
+                      &lt;code&gt;BufferStartegy&lt;/code&gt;.                    
+                    <param>
+                        create If true, and the BufferStartegy is currently null,
+                          one will be created.                        
+                    </param>
+                </javadoc>
+                <method name="getBufferStrategy" type="BufferStrategy" line="744">
+                    <params>
+                        <param name="create" type="boolean"/>
+                    </params>
+                    <declaration name="bs" type="BufferStrategy" line="745"/>
+                    <scope line="746">
+                        <scope line="748"/>
+                        <scope line="751"/>
+                    </scope>
+                </method>
+                <javadoc line="758">
+                    Returns true if the buffer strategy of the component differs
+                      from current buffer strategy.                    
+                </javadoc>
+                <method name="hasBufferStrategyChanged" type="boolean" line="762">
+                    <comment line="785">
+                        Component has a different BS, dispose ours.                        
+                    </comment>
+                    <declaration name="root" type="Container" line="763"/>
+                    <scope line="764">
+                        <declaration name="ourBS" type="BufferStrategy" line="765"/>
+                        <declaration name="componentBS" type="BufferStrategy" line="766"/>
+                        <scope line="769"/>
+                        <scope line="772">
+                            <scope line="773"/>
+                            <scope line="776"/>
+                            <scope line="778"/>
+                            <scope line="780"/>
+                        </scope>
+                        <scope line="784">
+                            <scope line="786"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="796">
+                    Creates the BufferStrategy.  If the appropriate system property
+                      has been set we&apos;ll try for flip first and then we&apos;ll try for
+                      blit.                    
+                </javadoc>
+                <method name="createBufferStrategy" type="BufferStrategy" line="801">
+                    <comment line="817">
+                        We do this for two reasons:                        
+                    </comment>
+                    <comment line="818">
+                        1. So that we know we can cast to SubRegionShowable and                        
+                    </comment>
+                    <comment line="819">
+                        invoke show with the minimal region to update                        
+                    </comment>
+                    <comment line="820">
+                        2. To avoid the possibility of invoking client code                        
+                    </comment>
+                    <comment line="821">
+                        on the toolkit thread.                        
+                    </comment>
+                    <declaration name="root" type="Container" line="802"/>
+                    <scope line="803"/>
+                    <declaration name="bs" type="BufferStrategy" line="806"/>
+                    <scope line="807">
+                        <scope line="809"/>
+                    </scope>
+                    <scope line="813"/>
+                    <scope line="816"/>
+                </method>
+                <method name="createBufferStrategy" type="BufferStrategy" line="831">
+                    <params>
+                        <param name="root" type="Container"/>
+                        <param name="isVsynced" type="boolean"/>
+                    </params>
+                    <comment line="850">
+                        Type is not supported                        
+                    </comment>
+                    <comment line="866">
+                        Type not supported                        
+                    </comment>
+                    <declaration name="caps" type="BufferCapabilities" line="832"/>
+                    <scope line="833"/>
+                    <scope line="838"/>
+                    <declaration name="bs" type="BufferStrategy" line="843"/>
+                    <scope line="844">
+                        <scope line="845"/>
+                        <scope line="849">
+                            <scope line="851"/>
+                        </scope>
+                        <scope line="855"/>
+                        <scope line="857"/>
+                    </scope>
+                    <scope line="861">
+                        <scope line="862"/>
+                        <scope line="865">
+                            <scope line="867"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="876">
+                    Cleans up and removes any references.                    
+                </javadoc>
+                <method name="dispose" type="void" line="879">
+                    <declaration name="root" type="Container" line="880"/>
+                    <scope line="881"/>
+                    <scope line="884">
+                        <scope line="886"/>
+                        <declaration name="bs" type="BufferStrategy" line="889"/>
+                        <scope line="890"/>
+                    </scope>
+                </method>
+                <method name="componentHidden" type="void" line="904">
+                    <params>
+                        <param name="e" type="ComponentEvent"/>
+                    </params>
+                    <comment line="907">
+                        This case will only happen if a developer calls                        
+                    </comment>
+                    <comment line="908">
+                        hide immediately followed by show.  In this case                        
+                    </comment>
+                    <comment line="909">
+                        the event is delivered after show and the window                        
+                    </comment>
+                    <comment line="910">
+                        will still be visible.  If a developer altered the                        
+                    </comment>
+                    <comment line="911">
+                        contents of the window between the hide/show                        
+                    </comment>
+                    <comment line="912">
+                        invocations we won&apos;t recognize we need to paint and                        
+                    </comment>
+                    <comment line="913">
+                        the contents would be bogus.  Calling repaint here                        
+                    </comment>
+                    <comment line="914">
+                        fixs everything up.                        
+                    </comment>
+                    <declaration name="root" type="Container" line="905"/>
+                    <scope line="906"/>
+                    <scope line="917"/>
+                </method>
+                <method name="windowIconified" type="void" line="922">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+                <method name="windowClosed" type="void" line="927">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                    <comment line="928">
+                        Make sure we&apos;re not showing.                        
+                    </comment>
+                    <scope line="929">
+                        <scope line="930">
+                            <scope line="931"/>
+                            <scope line="933"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="windowOpened" type="void" line="941">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+                <method name="windowClosing" type="void" line="944">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+                <method name="windowDeiconified" type="void" line="947">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+                <method name="windowActivated" type="void" line="950">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+                <method name="windowDeactivated" type="void" line="953">
+                    <params>
+                        <param name="e" type="WindowEvent"/>
+                    </params>
+                </method>
+            </class>
+        </class>
+    </source>

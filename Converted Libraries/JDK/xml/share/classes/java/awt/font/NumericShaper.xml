@@ -1,0 +1,1100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.awt.font">
+        <import package="java.io.IOException"/>
+        <import package="java.io.ObjectOutputStream"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Comparator"/>
+        <import package="java.util.EnumSet"/>
+        <import package="java.util.Set"/>
+        <class name="NumericShaper" line="35">
+            <comment line="495">
+                fixed                
+            </comment>
+            <comment line="521">
+                some ranges adjoin or overlap, rethink if we want to do a binary search on this                
+            </comment>
+            <comment line="546">
+                assume most characters are near each other so probing the cache is infrequent,                
+            </comment>
+            <comment line="547">
+                and a linear probe is ok.                
+            </comment>
+            <comment line="552">
+                warning, synchronize access to this as it modifies state                
+            </comment>
+            <comment line="564">
+                cache for the NumericShaper.Range version                
+            </comment>
+            <comment line="598">
+                A range table of strong directional characters (types L, R, AL).
+                 Even (left) indexes are starts of ranges of non-strong-directional (or undefined)
+                 characters, odd (right) indexes are starts of ranges of strong directional
+                 characters.                
+            </comment>
+            <comment line="890">
+                use a binary search with a cache                
+            </comment>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="35">
+                The &lt;code&gt;NumericShaper&lt;/code&gt; class is used to convert Latin-1 (European)
+                  digits to other Unicode decimal digits.  Users of this class will
+                  primarily be people who wish to present data using
+                  national digit shapes, but find it more convenient to represent the
+                  data internally using Latin-1 (European) digits.  This does not
+                  interpret the deprecated numeric shape selector character (U+206E).
+                  &lt;p&gt;
+                  Instances of &lt;code&gt;NumericShaper&lt;/code&gt; are typically applied
+                  as attributes to text with the{@link TextAttribute#NUMERIC_SHAPING NUMERIC_SHAPING} attribute
+                  of the &lt;code&gt;TextAttribute&lt;/code&gt; class.
+                  For example, this code snippet causes a &lt;code&gt;TextLayout&lt;/code&gt; to
+                  shape European digits to Arabic in an Arabic context:&lt;br&gt;
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  Map map = new HashMap();
+                  map.put(TextAttribute.NUMERIC_SHAPING,
+                  NumericShaper.getContextualShaper(NumericShaper.ARABIC));
+                  FontRenderContext frc = ...;
+                  TextLayout layout = new TextLayout(text, map, frc);
+                  layout.draw(g2d, x, y);
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  &lt;br&gt;
+                  It is also possible to perform numeric shaping explicitly using instances
+                  of &lt;code&gt;NumericShaper&lt;/code&gt;, as this code snippet demonstrates:&lt;br&gt;
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  char[] text = ...;
+                  // shape all EUROPEAN digits (except zero) to ARABIC digits
+                  NumericShaper shaper = NumericShaper.getShaper(NumericShaper.ARABIC);
+                  shaper.shape(text, start, count);
+                  // shape European digits to ARABIC digits if preceding text is Arabic, or
+                  // shape European digits to TAMIL digits if preceding text is Tamil, or
+                  // leave European digits alone if there is no preceding text, or
+                  // preceding text is neither Arabic nor Tamil
+                  NumericShaper shaper =
+                  NumericShaper.getContextualShaper(NumericShaper.ARABIC |
+                  NumericShaper.TAMIL,
+                  NumericShaper.EUROPEAN);
+                  shaper.shape(text, start, count);
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  &lt;p&gt;&lt;b&gt;Bit mask- and enum-based Unicode ranges&lt;/b&gt;&lt;/p&gt;
+                  &lt;p&gt;This class supports two different programming interfaces to
+                  represent Unicode ranges for script-specific digits: bit
+                  mask-based ones, such as {@link #ARABIC NumericShaper.ARABIC}, and
+                  enum-based ones, such as {@link NumericShaper.Range#ARABIC}.
+                  Multiple ranges can be specified by ORing bit mask-based constants,
+                  such as:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  NumericShaper.ARABIC | NumericShaper.TAMIL
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  or creating a {@code Set} with the {@link NumericShaper.Range}constants, such as:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  EnumSet.of(NumericShaper.Scirpt.ARABIC, NumericShaper.Range.TAMIL)
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  The enum-based ranges are a super set of the bit mask-based ones.
+                  &lt;p&gt;If the two interfaces are mixed (including serialization),
+                  Unicode range values are mapped to their counterparts where such
+                  mapping is possible, such as {@code NumericShaper.Range.ARABIC}from/to {@code NumericShaper.ARABIC}.  If any unmappable range
+                  values are specified, such as {@code NumericShaper.Range.BALINESE},
+                  those ranges are ignored.
+                  &lt;p&gt;&lt;b&gt;Decimal Digits Precedence&lt;/b&gt;&lt;/p&gt;
+                  &lt;p&gt;A Unicode range may have more than one set of decimal digits. If
+                  multiple decimal digits sets are specified for the same Unicode
+                  range, one of the sets will take precedence as follows.
+                  &lt;table border=1 cellspacing=3 cellpadding=0 summary=&quot;NumericShaper constants precedence.&quot;&gt;
+                  &lt;tr&gt;
+                  &lt;th class=&quot;TableHeadingColor&quot;&gt;Unicode Range&lt;/th&gt;
+                  &lt;th class=&quot;TableHeadingColor&quot;&gt;&lt;code&gt;NumericShaper&lt;/code&gt; Constants&lt;/th&gt;
+                  &lt;th class=&quot;TableHeadingColor&quot;&gt;Precedence&lt;/th&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td rowspan=&quot;2&quot;&gt;Arabic&lt;/td&gt;
+                  &lt;td&gt;{@link NumericShaper#ARABIC NumericShaper.ARABIC}&lt;br&gt;{@link NumericShaper#EASTERN_ARABIC NumericShaper.EASTERN_ARABIC}&lt;/td&gt;
+                  &lt;td&gt;{@link NumericShaper#EASTERN_ARABIC NumericShaper.EASTERN_ARABIC}&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;{@link NumericShaper.Range#ARABIC}&lt;br&gt;{@link NumericShaper.Range#EASTERN_ARABIC}&lt;/td&gt;
+                  &lt;td&gt;{@link NumericShaper.Range#EASTERN_ARABIC}&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;Tai Tham&lt;/td&gt;
+                  &lt;td&gt;{@link NumericShaper.Range#TAI_THAM_HORA}&lt;br&gt;{@link NumericShaper.Range#TAI_THAM_THAM}&lt;/td&gt;
+                  &lt;td&gt;{@link NumericShaper.Range#TAI_THAM_THAM}&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;/table&gt;                
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <javadoc line="137">
+                A {@code NumericShaper.Range} represents a Unicode range of a
+                  script having its own decimal digits. For example, the {@link NumericShaper.Range#THAI} range has the Thai digits, THAI DIGIT
+                  ZERO (U+0E50) to THAI DIGIT NINE (U+0E59).
+                  &lt;p&gt;The &lt;code&gt;Range&lt;/code&gt; enum replaces the traditional bit
+                  mask-based values (e.g., {@link NumericShaper#ARABIC}), and
+                  supports more Unicode ranges than the bit mask-based ones. For
+                  example, the following code using the bit mask:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  NumericShaper.getContextualShaper(NumericShaper.ARABIC |
+                  NumericShaper.TAMIL,
+                  NumericShaper.EUROPEAN);
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  can be written using this enum as:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  NumericShaper.getContextualShaper(EnumSet.of(
+                  NumericShaper.Range.ARABIC,
+                  NumericShaper.Range.TAMIL),
+                  NumericShaper.Range.EUROPEAN);
+                  &lt;/pre&gt;&lt;/blockquote&gt;                
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <javadoc line="165">
+                The Latin (European) range with the Latin (ASCII) digits.                
+            </javadoc>
+            <javadoc line="169">
+                The Arabic range with the Arabic-Indic digits.                
+            </javadoc>
+            <javadoc line="173">
+                The Arabic range with the Eastern Arabic-Indic digits.                
+            </javadoc>
+            <javadoc line="177">
+                The Devanagari range with the Devanagari digits.                
+            </javadoc>
+            <javadoc line="181">
+                The Bengali range with the Bengali digits.                
+            </javadoc>
+            <javadoc line="185">
+                The Gurmukhi range with the Gurmukhi digits.                
+            </javadoc>
+            <javadoc line="189">
+                The Gujarati range with the Gujarati digits.                
+            </javadoc>
+            <javadoc line="193">
+                The Oriya range with the Oriya digits.                
+            </javadoc>
+            <javadoc line="197">
+                The Tamil range with the Tamil digits.                
+            </javadoc>
+            <javadoc line="201">
+                The Telugu range with the Telugu digits.                
+            </javadoc>
+            <javadoc line="205">
+                The Kannada range with the Kannada digits.                
+            </javadoc>
+            <javadoc line="209">
+                The Malayalam range with the Malayalam digits.                
+            </javadoc>
+            <javadoc line="213">
+                The Thai range with the Thai digits.                
+            </javadoc>
+            <javadoc line="217">
+                The Lao range with the Lao digits.                
+            </javadoc>
+            <javadoc line="221">
+                The Tibetan range with the Tibetan digits.                
+            </javadoc>
+            <javadoc line="225">
+                The Myanmar range with the Myanmar digits.                
+            </javadoc>
+            <javadoc line="229">
+                The Ethiopic range with the Ethiopic digits. Ethiopic
+                  does not have a decimal digit 0 so Latin (European) 0 is
+                  used.                
+            </javadoc>
+            <anonymous_class line="234">
+                <method name="getNumericBase" type="char" line="236"/>
+            </anonymous_class>
+            <javadoc line="238">
+                The Khmer range with the Khmer digits.                
+            </javadoc>
+            <javadoc line="242">
+                The Mongolian range with the Mongolian digits.                
+            </javadoc>
+            <javadoc line="249">
+                The N&apos;Ko range with the N&apos;Ko digits.                
+            </javadoc>
+            <javadoc line="253">
+                The Myanmar range with the Myanmar Shan digits.                
+            </javadoc>
+            <javadoc line="257">
+                The Limbu range with the Limbu digits.                
+            </javadoc>
+            <javadoc line="261">
+                The New Tai Lue range with the New Tai Lue digits.                
+            </javadoc>
+            <javadoc line="265">
+                The Balinese range with the Balinese digits.                
+            </javadoc>
+            <javadoc line="269">
+                The Sundanese range with the Sundanese digits.                
+            </javadoc>
+            <javadoc line="273">
+                The Lepcha range with the Lepcha digits.                
+            </javadoc>
+            <javadoc line="277">
+                The Ol Chiki range with the Ol Chiki digits.                
+            </javadoc>
+            <javadoc line="281">
+                The Vai range with the Vai digits.                
+            </javadoc>
+            <javadoc line="285">
+                The Saurashtra range with the Saurashtra digits.                
+            </javadoc>
+            <javadoc line="289">
+                The Kayah Li range with the Kayah Li digits.                
+            </javadoc>
+            <javadoc line="293">
+                The Cham range with the Cham digits.                
+            </javadoc>
+            <javadoc line="297">
+                The Tai Tham Hora range with the Tai Tham Hora digits.                
+            </javadoc>
+            <javadoc line="301">
+                The Tai Tham Tham range with the Tai Tham Tham digits.                
+            </javadoc>
+            <javadoc line="305">
+                The Javanese range with the Javanese digits.                
+            </javadoc>
+            <javadoc line="309">
+                The Meetei Mayek range with the Meetei Mayek digits.                
+            </javadoc>
+            <method name="toRangeIndex" type="int" line="314">
+                <params>
+                    <param name="script" type="Range"/>
+                </params>
+                <declaration name="index" type="int" line="315"/>
+            </method>
+            <method name="indexToRange" type="Range" line="319">
+                <params>
+                    <param name="index" type="int"/>
+                </params>
+            </method>
+            <method name="toRangeMask" type="int" line="323">
+                <params>
+                    <param name="ranges" type="Set<Range>"/>
+                </params>
+                <declaration name="m" type="int" line="324"/>
+                <scope line="325">
+                    <declaration name="index" type="int" line="326"/>
+                    <scope line="327"/>
+                </scope>
+            </method>
+            <method name="maskToRangeSet" type="Set<Range>" line="334">
+                <params>
+                    <param name="mask" type="int"/>
+                </params>
+                <declaration name="set" type="Set&lt;Range&gt;" line="335"/>
+                <declaration name="a" type="Range[]" line="336"/>
+                <scope line="337">
+                    <scope line="338"/>
+                </scope>
+            </method>
+            <declaration name="base" type="int" line="346"/>
+            <declaration name="start" type="int" line="348"/>
+            <method name="Range" type="constructor" line="351">
+                <params>
+                    <param name="base" type="int"/>
+                    <param name="start" type="int"/>
+                    <param name="end" type="int"/>
+                </params>
+            </method>
+            <method name="getDigitBase" type="int" line="357"/>
+            <method name="getNumericBase" type="char" line="361"/>
+            <method name="inRange" type="boolean" line="365">
+                <params>
+                    <param name="c" type="int"/>
+                </params>
+            </method>
+            <declaration name="key" type="int" line="370"/>
+            <javadoc line="370">
+                index of context for contextual shaping - values range from 0 to 18                
+            </javadoc>
+            <declaration name="mask" type="int" line="373"/>
+            <javadoc line="373">
+                flag indicating whether to shape contextually (high bit) and which
+                  digit ranges to shape (bits 0-18)                
+            </javadoc>
+            <declaration name="shapingRange" type="Range" line="378"/>
+            <javadoc line="378">
+                The context {@code Range} for contextual shaping or the {@codeRange} for non-contextual shaping. {@code null} for the bit
+                  mask-based API.                
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <declaration name="rangeSet" type="Set&lt;Range&gt;" line="387"/>
+            <javadoc line="387">
+                {@code Set&lt;Range&gt;} indicating which Unicode ranges to
+                  shape. {@code null} for the bit mask-based API.                
+            </javadoc>
+            <declaration name="rangeArray" type="Range[]" line="393"/>
+            <javadoc line="393">
+                rangeSet.toArray() value. Sorted by Range.base when the number
+                  of elements is greater then BSEARCH_THRESHOLD.                
+            </javadoc>
+            <declaration name="BSEARCH_THRESHOLD" type="int" line="399"/>
+            <javadoc line="399">
+                If more than BSEARCH_THRESHOLD ranges are specified, binary search is used.                
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="404"/>
+            <declaration name="EUROPEAN" type="int" line="406"/>
+            <javadoc line="406">
+                Identifies the Latin-1 (European) and extended range, and
+                  Latin-1 (European) decimal base.                
+            </javadoc>
+            <declaration name="ARABIC" type="int" line="411"/>
+            <javadoc line="411">
+                Identifies the ARABIC range and decimal base.                
+            </javadoc>
+            <declaration name="EASTERN_ARABIC" type="int" line="414"/>
+            <javadoc line="414">
+                Identifies the ARABIC range and ARABIC_EXTENDED decimal base.                
+            </javadoc>
+            <declaration name="DEVANAGARI" type="int" line="417"/>
+            <javadoc line="417">
+                Identifies the DEVANAGARI range and decimal base.                
+            </javadoc>
+            <declaration name="BENGALI" type="int" line="420"/>
+            <javadoc line="420">
+                Identifies the BENGALI range and decimal base.                
+            </javadoc>
+            <declaration name="GURMUKHI" type="int" line="423"/>
+            <javadoc line="423">
+                Identifies the GURMUKHI range and decimal base.                
+            </javadoc>
+            <declaration name="GUJARATI" type="int" line="426"/>
+            <javadoc line="426">
+                Identifies the GUJARATI range and decimal base.                
+            </javadoc>
+            <declaration name="ORIYA" type="int" line="429"/>
+            <javadoc line="429">
+                Identifies the ORIYA range and decimal base.                
+            </javadoc>
+            <declaration name="TAMIL" type="int" line="432"/>
+            <javadoc line="432">
+                Identifies the TAMIL range and decimal base.                
+            </javadoc>
+            <declaration name="TELUGU" type="int" line="436"/>
+            <javadoc line="436">
+                Identifies the TELUGU range and decimal base.                
+            </javadoc>
+            <declaration name="KANNADA" type="int" line="439"/>
+            <javadoc line="439">
+                Identifies the KANNADA range and decimal base.                
+            </javadoc>
+            <declaration name="MALAYALAM" type="int" line="442"/>
+            <javadoc line="442">
+                Identifies the MALAYALAM range and decimal base.                
+            </javadoc>
+            <declaration name="THAI" type="int" line="445"/>
+            <javadoc line="445">
+                Identifies the THAI range and decimal base.                
+            </javadoc>
+            <declaration name="LAO" type="int" line="448"/>
+            <javadoc line="448">
+                Identifies the LAO range and decimal base.                
+            </javadoc>
+            <declaration name="TIBETAN" type="int" line="451"/>
+            <javadoc line="451">
+                Identifies the TIBETAN range and decimal base.                
+            </javadoc>
+            <declaration name="MYANMAR" type="int" line="454"/>
+            <javadoc line="454">
+                Identifies the MYANMAR range and decimal base.                
+            </javadoc>
+            <declaration name="ETHIOPIC" type="int" line="457"/>
+            <javadoc line="457">
+                Identifies the ETHIOPIC range and decimal base.                
+            </javadoc>
+            <declaration name="KHMER" type="int" line="460"/>
+            <javadoc line="460">
+                Identifies the KHMER range and decimal base.                
+            </javadoc>
+            <declaration name="MONGOLIAN" type="int" line="463"/>
+            <javadoc line="463">
+                Identifies the MONGOLIAN range and decimal base.                
+            </javadoc>
+            <declaration name="ALL_RANGES" type="int" line="466"/>
+            <javadoc line="466">
+                Identifies all ranges, for full contextual shaping.
+                  &lt;p&gt;This constant specifies all of the bit mask-based
+                  ranges. Use {@code EmunSet.allOf(NumericShaper.Range.class)} to
+                  specify all of the enum-based ranges.                
+            </javadoc>
+            <declaration name="EUROPEAN_KEY" type="int" line="474"/>
+            <declaration name="ARABIC_KEY" type="int" line="475"/>
+            <declaration name="EASTERN_ARABIC_KEY" type="int" line="476"/>
+            <declaration name="DEVANAGARI_KEY" type="int" line="477"/>
+            <declaration name="BENGALI_KEY" type="int" line="478"/>
+            <declaration name="GURMUKHI_KEY" type="int" line="479"/>
+            <declaration name="GUJARATI_KEY" type="int" line="480"/>
+            <declaration name="ORIYA_KEY" type="int" line="481"/>
+            <declaration name="TAMIL_KEY" type="int" line="482"/>
+            <declaration name="TELUGU_KEY" type="int" line="483"/>
+            <declaration name="KANNADA_KEY" type="int" line="484"/>
+            <declaration name="MALAYALAM_KEY" type="int" line="485"/>
+            <declaration name="THAI_KEY" type="int" line="486"/>
+            <declaration name="LAO_KEY" type="int" line="487"/>
+            <declaration name="TIBETAN_KEY" type="int" line="488"/>
+            <declaration name="MYANMAR_KEY" type="int" line="489"/>
+            <declaration name="ETHIOPIC_KEY" type="int" line="490"/>
+            <declaration name="KHMER_KEY" type="int" line="491"/>
+            <declaration name="MONGOLIAN_KEY" type="int" line="492"/>
+            <declaration name="NUM_KEYS" type="int" line="494"/>
+            <declaration name="CONTEXTUAL_MASK" type="int" line="496"/>
+            <declaration name="bases" type="char[]" line="498"/>
+            <declaration name="contexts" type="char[]" line="522"/>
+            <declaration name="ctCache" type="int" line="548"/>
+            <declaration name="ctCacheLimit" type="int" line="549"/>
+            <method name="getContextKey" type="int" line="552">
+                <params>
+                    <param name="c" type="char"/>
+                </params>
+                <comment line="559">
+                    if we&apos;re not in a known range, then return EUROPEAN as the range key                    
+                </comment>
+                <scope line="553"/>
+                <scope line="555"/>
+            </method>
+            <declaration name="currentRange" type="Range" line="564"/>
+            <method name="rangeForCodePoint" type="Range" line="566">
+                <params>
+                    <param name="codepoint" type="int"/>
+                </params>
+                <scope line="567"/>
+                <declaration name="ranges" type="Range[]" line="571"/>
+                <scope line="572">
+                    <declaration name="lo" type="int" line="573"/>
+                    <declaration name="hi" type="int" line="574"/>
+                    <scope line="575">
+                        <declaration name="mid" type="int" line="576"/>
+                        <declaration name="range" type="Range" line="577"/>
+                        <scope line="578"/>
+                        <scope line="580"/>
+                        <scope line="582"/>
+                    </scope>
+                </scope>
+                <scope line="587">
+                    <scope line="588">
+                        <scope line="589"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="strongTable" type="int[]" line="603"/>
+            <declaration name="stCache" type="int" line="891"/>
+            <method name="isStrongDirectional" type="boolean" line="893">
+                <params>
+                    <param name="c" type="char"/>
+                </params>
+                <declaration name="cachedIndex" type="int" line="894"/>
+                <scope line="895"/>
+                <scope line="897"/>
+                <declaration name="val" type="boolean" line="901"/>
+            </method>
+            <method name="getKeyFromMask" type="int" line="906">
+                <params>
+                    <param name="mask" type="int"/>
+                </params>
+                <declaration name="key" type="int" line="907"/>
+                <scope line="908"/>
+                <scope line="911"/>
+            </method>
+            <javadoc line="917">
+                Returns a shaper for the provided unicode range.  All
+                  Latin-1 (EUROPEAN) digits are converted
+                  to the corresponding decimal unicode digits.                
+                <param>
+                    singleRange the specified Unicode range                    
+                </param>
+                <return>
+                    a non-contextual numeric shaper                    
+                </return>
+                <throws>
+                    IllegalArgumentException if the range is not a single range                    
+                </throws>
+            </javadoc>
+            <method name="getShaper" type="NumericShaper" line="925">
+                <params>
+                    <param name="singleRange" type="int"/>
+                </params>
+                <declaration name="key" type="int" line="926"/>
+            </method>
+            <javadoc line="930">
+                Returns a shaper for the provided Unicode
+                  range. All Latin-1 (EUROPEAN) digits are converted to the
+                  corresponding decimal digits of the specified Unicode range.                
+                <param>
+                    singleRange the Unicode range given by a {@link NumericShaper.Range} constant.                    
+                </param>
+                <return>
+                    a non-contextual {@code NumericShaper}.                    
+                </return>
+                <throws>
+                    NullPointerException if {@code singleRange} is {@code null}                    
+                </throws>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getShaper" type="NumericShaper" line="941">
+                <params>
+                    <param name="singleRange" type="Range"/>
+                </params>
+            </method>
+            <javadoc line="945">
+                Returns a contextual shaper for the provided unicode range(s).
+                  Latin-1 (EUROPEAN) digits are converted to the decimal digits
+                  corresponding to the range of the preceding text, if the
+                  range is one of the provided ranges.  Multiple ranges are
+                  represented by or-ing the values together, such as,
+                  &lt;code&gt;NumericShaper.ARABIC | NumericShaper.THAI&lt;/code&gt;.  The
+                  shaper assumes EUROPEAN as the starting context, that is, if
+                  EUROPEAN digits are encountered before any strong directional
+                  text in the string, the context is presumed to be EUROPEAN, and
+                  so the digits will not shape.                
+                <param>
+                    ranges the specified Unicode ranges                    
+                </param>
+                <return>
+                    a shaper for the specified ranges                    
+                </return>
+            </javadoc>
+            <method name="getContextualShaper" type="NumericShaper" line="959">
+                <params>
+                    <param name="ranges" type="int"/>
+                </params>
+            </method>
+            <javadoc line="964">
+                Returns a contextual shaper for the provided Unicode
+                  range(s). The Latin-1 (EUROPEAN) digits are converted to the
+                  decimal digits corresponding to the range of the preceding
+                  text, if the range is one of the provided ranges.
+                  &lt;p&gt;The shaper assumes EUROPEAN as the starting context, that
+                  is, if EUROPEAN digits are encountered before any strong
+                  directional text in the string, the context is presumed to be
+                  EUROPEAN, and so the digits will not shape.                
+                <param>
+                    ranges the specified Unicode ranges                    
+                </param>
+                <return>
+                    a contextual shaper for the specified ranges                    
+                </return>
+                <throws>
+                    NullPointerException if {@code ranges} is {@code null}.                    
+                </throws>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getContextualShaper" type="NumericShaper" line="980">
+                <params>
+                    <param name="ranges" type="Set<Range>"/>
+                </params>
+                <declaration name="shaper" type="NumericShaper" line="981"/>
+            </method>
+            <javadoc line="986">
+                Returns a contextual shaper for the provided unicode range(s).
+                  Latin-1 (EUROPEAN) digits will be converted to the decimal digits
+                  corresponding to the range of the preceding text, if the
+                  range is one of the provided ranges.  Multiple ranges are
+                  represented by or-ing the values together, for example,
+                  &lt;code&gt;NumericShaper.ARABIC | NumericShaper.THAI&lt;/code&gt;.  The
+                  shaper uses defaultContext as the starting context.                
+                <param>
+                    ranges the specified Unicode ranges                    
+                </param>
+                <param>
+                    defaultContext the starting context, such as
+                      <code>NumericShaper.EUROPEAN</code>                    
+                </param>
+                <return>
+                    a shaper for the specified Unicode ranges.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if the specified
+                      <code>defaultContext</code> is not a single valid range.                    
+                </throws>
+            </javadoc>
+            <method name="getContextualShaper" type="NumericShaper" line="1001">
+                <params>
+                    <param name="ranges" type="int"/>
+                    <param name="defaultContext" type="int"/>
+                </params>
+                <declaration name="key" type="int" line="1002"/>
+            </method>
+            <javadoc line="1007">
+                Returns a contextual shaper for the provided Unicode range(s).
+                  The Latin-1 (EUROPEAN) digits will be converted to the decimal
+                  digits corresponding to the range of the preceding text, if the
+                  range is one of the provided ranges. The shaper uses {@codedefaultContext} as the starting context.                
+                <param>
+                    ranges the specified Unicode ranges                    
+                </param>
+                <param>
+                    defaultContext the starting context, such as{@code NumericShaper.Range.EUROPEAN}                    
+                </param>
+                <return>
+                    a contextual shaper for the specified Unicode ranges.                    
+                </return>
+                <throws>
+                    NullPointerExceptionif {@code ranges} or {@code defaultContext} is {@code null}                    
+                </throws>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getContextualShaper" type="NumericShaper" line="1023">
+                <params>
+                    <param name="ranges" type="Set<Range>"/>
+                    <param name="defaultContext" type="Range"/>
+                </params>
+                <scope line="1024"/>
+                <declaration name="shaper" type="NumericShaper" line="1027"/>
+            </method>
+            <javadoc line="1032">
+                Private constructor.                
+            </javadoc>
+            <method name="NumericShaper" type="constructor" line="1035">
+                <params>
+                    <param name="key" type="int"/>
+                    <param name="mask" type="int"/>
+                </params>
+            </method>
+            <method name="NumericShaper" type="constructor" line="1040">
+                <params>
+                    <param name="defaultContext" type="Range"/>
+                    <param name="ranges" type="Set<Range>"/>
+                </params>
+                <comment line="1042">
+                    throws NPE if ranges is null.                    
+                </comment>
+                <comment line="1044">
+                    Give precedance to EASTERN_ARABIC if both ARABIC and                    
+                </comment>
+                <comment line="1045">
+                    EASTERN_ARABIC are specified.                    
+                </comment>
+                <comment line="1051">
+                    As well as the above case, give precedance to TAI_THAM_THAM if both                    
+                </comment>
+                <comment line="1052">
+                    TAI_THAM_HORA and TAI_THAM_THAM are specified.                    
+                </comment>
+                <comment line="1060">
+                    sort rangeArray for binary search                    
+                </comment>
+                <scope line="1047"/>
+                <scope line="1054"/>
+                <scope line="1059">
+                    <anonymous_class line="1062">
+                        <method name="compare" type="int" line="1063">
+                            <params>
+                                <param name="s1" type="Range"/>
+                                <param name="s2" type="Range"/>
+                            </params>
+                        </method>
+                    </anonymous_class>
+                </scope>
+            </method>
+            <javadoc line="1070">
+                Converts the digits in the text that occur between start and
+                  start + count.                
+                <param>
+                    text an array of characters to convert                    
+                </param>
+                <param>
+                    start the index into <code>text</code> to start
+                      converting                    
+                </param>
+                <param>
+                    count the number of characters in <code>text</code>
+                      to convert                    
+                </param>
+                <throws>
+                    IndexOutOfBoundsException if start or start + count is
+                      out of bounds                    
+                </throws>
+                <throws>
+                    NullPointerException if text is null                    
+                </throws>
+            </javadoc>
+            <method name="shape" type="void" line="1082">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <scope line="1084">
+                    <scope line="1085"/>
+                    <scope line="1087"/>
+                </scope>
+                <scope line="1090"/>
+            </method>
+            <javadoc line="1095">
+                Converts the digits in the text that occur between start and
+                  start + count, using the provided context.
+                  Context is ignored if the shaper is not a contextual shaper.                
+                <param>
+                    text an array of characters                    
+                </param>
+                <param>
+                    start the index into <code>text</code> to start
+                      converting                    
+                </param>
+                <param>
+                    count the number of characters in <code>text</code>
+                      to convert                    
+                </param>
+                <param>
+                    context the context to which to convert the
+                      characters, such as <code>NumericShaper.EUROPEAN</code>                    
+                </param>
+                <throws>
+                    IndexOutOfBoundsException if start or start + count is
+                      out of bounds                    
+                </throws>
+                <throws>
+                    NullPointerException if text is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if this is a contextual shaper
+                      and the specified <code>context</code> is not a single valid
+                      range.                    
+                </throws>
+            </javadoc>
+            <method name="shape" type="void" line="1113">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="context" type="int"/>
+                </params>
+                <scope line="1115">
+                    <declaration name="ctxKey" type="int" line="1116"/>
+                    <scope line="1117"/>
+                    <scope line="1119"/>
+                </scope>
+                <scope line="1122"/>
+            </method>
+            <javadoc line="1127">
+                Converts the digits in the text that occur between {@codestart} and {@code start + count}, using the provided {@codecontext}. {@code Context} is ignored if the shaper is not a
+                  contextual shaper.                
+                <param>
+                    text  a {@code char} array                    
+                </param>
+                <param>
+                    start the index into {@code text} to start converting                    
+                </param>
+                <param>
+                    count the number of {@code char}s in {@code text}to convert                    
+                </param>
+                <param>
+                    context the context to which to convert the characters,
+                      such as {@code NumericShaper.Range.EUROPEAN}                    
+                </param>
+                <throws>
+                    IndexOutOfBoundsExceptionif {@code start} or {@code start + count} is out of bounds                    
+                </throws>
+                <throws>
+                    NullPointerExceptionif {@code text} or {@code context} is null                    
+                </throws>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="shape" type="void" line="1145">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="context" type="Range"/>
+                </params>
+                <scope line="1147"/>
+                <scope line="1151">
+                    <scope line="1152"/>
+                    <scope line="1154">
+                        <declaration name="key" type="int" line="1155"/>
+                        <scope line="1156"/>
+                        <scope line="1158"/>
+                    </scope>
+                </scope>
+                <scope line="1162"/>
+            </method>
+            <method name="checkParams" type="void" line="1167">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <scope line="1168"/>
+                <scope line="1174"/>
+            </method>
+            <javadoc line="1180">
+                Returns a &lt;code&gt;boolean&lt;/code&gt; indicating whether or not
+                  this shaper shapes contextually.                
+                <return>
+                    <code>true</code> if this shaper is contextual;
+                      <code>false</code> otherwise.                    
+                </return>
+            </javadoc>
+            <method name="isContextual" type="boolean" line="1186"/>
+            <javadoc line="1190">
+                Returns an &lt;code&gt;int&lt;/code&gt; that ORs together the values for
+                  all the ranges that will be shaped.
+                  &lt;p&gt;
+                  For example, to check if a shaper shapes to Arabic, you would use the
+                  following:
+                  &lt;blockquote&gt;
+                  &lt;code&gt;if ((shaper.getRanges() &amp; shaper.ARABIC) != 0) { ... &lt;/code&gt;
+                  &lt;/blockquote&gt;
+                  &lt;p&gt;Note that this method supports only the bit mask-based
+                  ranges. Call {@link #getRangeSet()} for the enum-based ranges.                
+                <return>
+                    the values for all the ranges to be shaped.                    
+                </return>
+            </javadoc>
+            <method name="getRanges" type="int" line="1205"/>
+            <javadoc line="1209">
+                Returns a {@code Set} representing all the Unicode ranges in
+                  this {@code NumericShaper} that will be shaped.                
+                <return>
+                    all the Unicode ranges to be shaped.                    
+                </return>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getRangeSet" type="Set<Range>" line="1216">
+                <scope line="1217"/>
+            </method>
+            <javadoc line="1223">
+                Perform non-contextual shaping.                
+            </javadoc>
+            <method name="shapeNonContextually" type="void" line="1226">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <comment line="1235">
+                    Ethiopic doesn&apos;t use decimal zero                    
+                </comment>
+                <declaration name="base" type="int" line="1227"/>
+                <declaration name="minDigit" type="char" line="1228"/>
+                <scope line="1229"/>
+                <scope line="1232">
+                    <scope line="1234"/>
+                </scope>
+                <scope line="1238">
+                    <declaration name="c" type="char" line="1239"/>
+                    <scope line="1240"/>
+                </scope>
+            </method>
+            <javadoc line="1246">
+                Perform contextual shaping.
+                  Synchronized to protect caches used in getContextKey.                
+            </javadoc>
+            <method name="shapeContextually" type="void" line="1250">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="ctxKey" type="int"/>
+                </params>
+                <comment line="1252">
+                    if we don&apos;t support this context, then don&apos;t shape                    
+                </comment>
+                <comment line="1259">
+                    Ethiopic doesn&apos;t use decimal zero                    
+                </comment>
+                <comment line="1288">
+                    Ethiopic doesn&apos;t use decimal zero                    
+                </comment>
+                <scope line="1253"/>
+                <declaration name="lastkey" type="int" line="1256"/>
+                <declaration name="base" type="int" line="1258"/>
+                <declaration name="minDigit" type="char" line="1259"/>
+                <scope line="1261">
+                    <scope line="1262">
+                        <declaration name="c" type="char" line="1263"/>
+                        <scope line="1264"/>
+                        <scope line="1268">
+                            <declaration name="newkey" type="int" line="1269"/>
+                            <scope line="1270">
+                                <scope line="1276"/>
+                                <scope line="1280"/>
+                                <scope line="1282"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="shapeContextually" type="void" line="1295">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="ctxKey" type="Range"/>
+                </params>
+                <comment line="1296">
+                    if we don&apos;t support the specified context, then don&apos;t shape.                    
+                </comment>
+                <scope line="1297"/>
+                <declaration name="lastKey" type="Range" line="1301"/>
+                <declaration name="base" type="int" line="1302"/>
+                <declaration name="minDigit" type="char" line="1303"/>
+                <declaration name="end" type="int" line="1304"/>
+                <scope line="1305">
+                    <declaration name="c" type="char" line="1306"/>
+                    <scope line="1307"/>
+                    <scope line="1311">
+                        <scope line="1313"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1322">
+                Returns a hash code for this shaper.                
+                <return>
+                    this shaper's hash code.                    
+                </return>
+                <see>
+                    java.lang.Object#hashCode                    
+                </see>
+            </javadoc>
+            <method name="hashCode" type="int" line="1327">
+                <comment line="1330">
+                    Use the CONTEXTUAL_MASK bit only for the enum-based                    
+                </comment>
+                <comment line="1331">
+                    NumericShaper. A deserialized NumericShaper might have                    
+                </comment>
+                <comment line="1332">
+                    bit masks.                    
+                </comment>
+                <declaration name="hash" type="int" line="1328"/>
+                <scope line="1329"/>
+            </method>
+            <javadoc line="1339">
+                Returns {@code true} if the specified object is an instance of
+                  &lt;code&gt;NumericShaper&lt;/code&gt; and shapes identically to this one,
+                  regardless of the range representations, the bit mask or the
+                  enum. For example, the following code produces {@code &quot;true&quot;}.
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  NumericShaper ns1 = NumericShaper.getShaper(NumericShaper.ARABIC);
+                  NumericShaper ns2 = NumericShaper.getShaper(NumericShaper.Range.ARABIC);
+                  System.out.println(ns1.equals(ns2));
+                  &lt;/pre&gt;&lt;/blockquote&gt;                
+                <param>
+                    o the specified object to compare to this
+                      <code>NumericShaper</code>                    
+                </param>
+                <return>
+                    <code>true</code> if <code>o</code> is an instance
+                      of <code>NumericShaper</code> and shapes in the same way;
+                      <code>false</code> otherwise.                    
+                </return>
+                <see>
+                    java.lang.Object#equals(java.lang.Object)                    
+                </see>
+            </javadoc>
+            <method name="equals" type="boolean" line="1357">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="1358">
+                    <scope line="1359">
+                        <declaration name="rhs" type="NumericShaper" line="1360"/>
+                        <scope line="1361">
+                            <scope line="1362"/>
+                        </scope>
+                        <scope line="1370">
+                            <declaration name="rset" type="Set&lt;Range&gt;" line="1371"/>
+                            <declaration name="srange" type="Range" line="1372"/>
+                        </scope>
+                    </scope>
+                    <scope line="1379"/>
+                </scope>
+            </method>
+            <javadoc line="1385">
+                Returns a &lt;code&gt;String&lt;/code&gt; that describes this shaper. This method
+                  is used for debugging purposes only.                
+                <return>
+                    a <code>String</code> describing this shaper.                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="1390">
+                <declaration name="buf" type="StringBuilder" line="1391"/>
+                <declaration name="keyNames" type="String[]" line="1395"/>
+                <scope line="1396"/>
+                <scope line="1401">
+                    <declaration name="first" type="boolean" line="1403"/>
+                    <scope line="1404">
+                        <scope line="1405">
+                            <scope line="1406"/>
+                            <scope line="1408"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="1414"/>
+            </method>
+            <javadoc line="1422">
+                Returns the index of the high bit in value (assuming le, actually
+                  power of 2 &gt;= value). value must be positive.                
+            </javadoc>
+            <method name="getHighBit" type="int" line="1426">
+                <params>
+                    <param name="value" type="int"/>
+                </params>
+                <scope line="1427"/>
+                <declaration name="bit" type="int" line="1431"/>
+                <scope line="1433"/>
+                <scope line="1438"/>
+                <scope line="1443"/>
+                <scope line="1448"/>
+                <scope line="1453"/>
+            </method>
+            <javadoc line="1460">
+                fast binary search over subrange of array.                
+            </javadoc>
+            <method name="search" type="int" line="1464">
+                <params>
+                    <param name="value" type="int"/>
+                    <param name="array" type="int[]"/>
+                    <param name="start" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <declaration name="power" type="int" line="1465"/>
+                <declaration name="extra" type="int" line="1466"/>
+                <declaration name="probe" type="int" line="1467"/>
+                <declaration name="index" type="int" line="1468"/>
+                <scope line="1470"/>
+                <scope line="1474">
+                    <scope line="1477"/>
+                </scope>
+            </method>
+            <javadoc line="1485">
+                Converts the {@code NumericShaper.Range} enum-based parameters,
+                  if any, to the bit mask-based counterparts and writes this
+                  object to the {@code stream}. Any enum constants that have no
+                  bit mask-based counterparts are ignored in the conversion.                
+                <param>
+                    stream the output stream to write to                    
+                </param>
+                <throws>
+                    IOException if an I/O error occurs while writing to {@code stream}                    
+                </throws>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="writeObject" type="void" line="1495">
+                <params>
+                    <param name="stream" type="ObjectOutputStream"/>
+                </params>
+                <scope line="1496">
+                    <declaration name="index" type="int" line="1497"/>
+                    <scope line="1498"/>
+                </scope>
+                <scope line="1502"/>
+            </method>
+        </class>
+    </source>

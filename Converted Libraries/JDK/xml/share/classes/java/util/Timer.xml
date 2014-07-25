@@ -1,0 +1,699 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util">
+        <import package="java.util.Date"/>
+        <import package="java.util.concurrent.atomic.AtomicInteger"/>
+        <class name="Timer" line="30">
+            <javadoc line="30">
+                A facility for threads to schedule tasks for future execution in a
+                  background thread.  Tasks may be scheduled for one-time execution, or for
+                  repeated execution at regular intervals.
+                  &lt;p&gt;Corresponding to each &lt;tt&gt;Timer&lt;/tt&gt; object is a single background
+                  thread that is used to execute all of the timer&apos;s tasks, sequentially.
+                  Timer tasks should complete quickly.  If a timer task takes excessive time
+                  to complete, it &quot;hogs&quot; the timer&apos;s task execution thread.  This can, in
+                  turn, delay the execution of subsequent tasks, which may &quot;bunch up&quot; and
+                  execute in rapid succession when (and if) the offending task finally
+                  completes.
+                  &lt;p&gt;After the last live reference to a &lt;tt&gt;Timer&lt;/tt&gt; object goes away
+                  &lt;i&gt;and&lt;/i&gt; all outstanding tasks have completed execution, the timer&apos;s task
+                  execution thread terminates gracefully (and becomes subject to garbage
+                  collection).  However, this can take arbitrarily long to occur.  By
+                  default, the task execution thread does not run as a &lt;i&gt;daemon thread&lt;/i&gt;,
+                  so it is capable of keeping an application from terminating.  If a caller
+                  wants to terminate a timer&apos;s task execution thread rapidly, the caller
+                  should invoke the timer&apos;s &lt;tt&gt;cancel&lt;/tt&gt; method.
+                  &lt;p&gt;If the timer&apos;s task execution thread terminates unexpectedly, for
+                  example, because its &lt;tt&gt;stop&lt;/tt&gt; method is invoked, any further
+                  attempt to schedule a task on the timer will result in an
+                  &lt;tt&gt;IllegalStateException&lt;/tt&gt;, as if the timer&apos;s &lt;tt&gt;cancel&lt;/tt&gt;
+                  method had been invoked.
+                  &lt;p&gt;This class is thread-safe: multiple threads can share a single
+                  &lt;tt&gt;Timer&lt;/tt&gt; object without the need for external synchronization.
+                  &lt;p&gt;This class does &lt;i&gt;not&lt;/i&gt; offer real-time guarantees: it schedules
+                  tasks using the &lt;tt&gt;Object.wait(long)&lt;/tt&gt; method.
+                  &lt;p&gt;Java 5.0 introduced the {@code java.util.concurrent} package and
+                  one of the concurrency utilities therein is the {@link java.util.concurrent.ScheduledThreadPoolExecutorScheduledThreadPoolExecutor} which is a thread pool for repeatedly
+                  executing tasks at a given rate or delay.  It is effectively a more
+                  versatile replacement for the {@code Timer}/{@code TimerTask}combination, as it allows multiple service threads, accepts various
+                  time units, and doesn&apos;t require subclassing {@code TimerTask} (just
+                  implement {@code Runnable}).  Configuring {@codeScheduledThreadPoolExecutor} with one thread makes it equivalent to{@code Timer}.
+                  &lt;p&gt;Implementation note: This class scales to large numbers of concurrently
+                  scheduled tasks (thousands should present no problem).  Internally,
+                  it uses a binary heap to represent its task queue, so the cost to schedule
+                  a task is O(log n), where n is the number of concurrently scheduled tasks.
+                  &lt;p&gt;Implementation note: All constructors start a timer thread.                
+                <author>
+                    Josh Bloch                    
+                </author>
+                <see>
+                    TimerTask                    
+                </see>
+                <see>
+                    Object#wait(long)                    
+                </see>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <declaration name="queue" type="TaskQueue" line="90"/>
+            <javadoc line="90">
+                The timer task queue.  This data structure is shared with the timer
+                  thread.  The timer produces tasks, via its various schedule calls,
+                  and the timer thread consumes, executing timer tasks as appropriate,
+                  and removing them from the queue when they&apos;re obsolete.                
+            </javadoc>
+            <declaration name="thread" type="TimerThread" line="98"/>
+            <javadoc line="98">
+                The timer thread.                
+            </javadoc>
+            <declaration name="threadReaper" type="Object" line="103"/>
+            <javadoc line="103">
+                This object causes the timer&apos;s task execution thread to exit
+                  gracefully when there are no live references to the Timer object and no
+                  tasks in the timer queue.  It is used in preference to a finalizer on
+                  Timer as such a finalizer would be susceptible to a subclass&apos;s
+                  finalizer forgetting to call it.                
+            </javadoc>
+            <anonymous_class line="110">
+                <method name="finalize" type="void" line="111">
+                    <comment line="114">
+                        In case queue is empty.                        
+                    </comment>
+                    <scope line="112"/>
+                </method>
+            </anonymous_class>
+            <declaration name="nextSerialNumber" type="AtomicInteger" line="119"/>
+            <javadoc line="119">
+                This ID is used to generate thread names.                
+            </javadoc>
+            <method name="serialNumber" type="int" line="123"/>
+            <javadoc line="127">
+                Creates a new timer.  The associated thread does &lt;i&gt;not&lt;/i&gt;{@linkplain Thread#setDaemon run as a daemon}.                
+            </javadoc>
+            <method name="Timer" type="constructor" line="131"/>
+            <javadoc line="135">
+                Creates a new timer whose associated thread may be specified to{@linkplain Thread#setDaemon run as a daemon}.
+                  A daemon thread is called for if the timer will be used to
+                  schedule repeating &quot;maintenance activities&quot;, which must be
+                  performed as long as the application is running, but should not
+                  prolong the lifetime of the application.                
+                <param>
+                    isDaemon true if the associated thread should run as a daemon.                    
+                </param>
+            </javadoc>
+            <method name="Timer" type="constructor" line="145">
+                <params>
+                    <param name="isDaemon" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="149">
+                Creates a new timer whose associated thread has the specified name.
+                  The associated thread does &lt;i&gt;not&lt;/i&gt;{@linkplain Thread#setDaemon run as a daemon}.                
+                <param>
+                    name the name of the associated thread                    
+                </param>
+                <throws>
+                    NullPointerException if {@code name} is null                    
+                </throws>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <method name="Timer" type="constructor" line="158">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="163">
+                Creates a new timer whose associated thread has the specified name,
+                  and may be specified to{@linkplain Thread#setDaemon run as a daemon}.                
+                <param>
+                    name the name of the associated thread                    
+                </param>
+                <param>
+                    isDaemon true if the associated thread should run as a daemon                    
+                </param>
+                <throws>
+                    NullPointerException if {@code name} is null                    
+                </throws>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <method name="Timer" type="constructor" line="173">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="isDaemon" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="179">
+                Schedules the specified task for execution after the specified delay.                
+                <param>
+                    task  task to be scheduled.                    
+                </param>
+                <param>
+                    delay delay in milliseconds before task is to be executed.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if <tt>delay</tt> is negative, or
+                      <tt>delay + System.currentTimeMillis()</tt> is negative.                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} is null                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="void" line="190">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="delay" type="long"/>
+                </params>
+            </method>
+            <javadoc line="196">
+                Schedules the specified task for execution at the specified time.  If
+                  the time is in the past, the task is scheduled for immediate execution.                
+                <param>
+                    task task to be scheduled.                    
+                </param>
+                <param>
+                    time time at which task is to be executed.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if <tt>time.getTime()</tt> is negative.                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} or {@code time} is null                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="void" line="207">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="time" type="Date"/>
+                </params>
+            </method>
+            <javadoc line="211">
+                Schedules the specified task for repeated &lt;i&gt;fixed-delay execution&lt;/i&gt;,
+                  beginning after the specified delay.  Subsequent executions take place
+                  at approximately regular intervals separated by the specified period.
+                  &lt;p&gt;In fixed-delay execution, each execution is scheduled relative to
+                  the actual execution time of the previous execution.  If an execution
+                  is delayed for any reason (such as garbage collection or other
+                  background activity), subsequent executions will be delayed as well.
+                  In the long run, the frequency of execution will generally be slightly
+                  lower than the reciprocal of the specified period (assuming the system
+                  clock underlying &lt;tt&gt;Object.wait(long)&lt;/tt&gt; is accurate).
+                  &lt;p&gt;Fixed-delay execution is appropriate for recurring activities
+                  that require &quot;smoothness.&quot;  In other words, it is appropriate for
+                  activities where it is more important to keep the frequency accurate
+                  in the short run than in the long run.  This includes most animation
+                  tasks, such as blinking a cursor at regular intervals.  It also includes
+                  tasks wherein regular activity is performed in response to human
+                  input, such as automatically repeating a character as long as a key
+                  is held down.                
+                <param>
+                    task   task to be scheduled.                    
+                </param>
+                <param>
+                    delay  delay in milliseconds before task is to be executed.                    
+                </param>
+                <param>
+                    period time in milliseconds between successive task executions.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code delay < 0}, or{@code delay + System.currentTimeMillis() < 0}, or{@code period <= 0}                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} is null                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="void" line="243">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="delay" type="long"/>
+                    <param name="period" type="long"/>
+                </params>
+            </method>
+            <javadoc line="251">
+                Schedules the specified task for repeated &lt;i&gt;fixed-delay execution&lt;/i&gt;,
+                  beginning at the specified time. Subsequent executions take place at
+                  approximately regular intervals, separated by the specified period.
+                  &lt;p&gt;In fixed-delay execution, each execution is scheduled relative to
+                  the actual execution time of the previous execution.  If an execution
+                  is delayed for any reason (such as garbage collection or other
+                  background activity), subsequent executions will be delayed as well.
+                  In the long run, the frequency of execution will generally be slightly
+                  lower than the reciprocal of the specified period (assuming the system
+                  clock underlying &lt;tt&gt;Object.wait(long)&lt;/tt&gt; is accurate).  As a
+                  consequence of the above, if the scheduled first time is in the past,
+                  it is scheduled for immediate execution.
+                  &lt;p&gt;Fixed-delay execution is appropriate for recurring activities
+                  that require &quot;smoothness.&quot;  In other words, it is appropriate for
+                  activities where it is more important to keep the frequency accurate
+                  in the short run than in the long run.  This includes most animation
+                  tasks, such as blinking a cursor at regular intervals.  It also includes
+                  tasks wherein regular activity is performed in response to human
+                  input, such as automatically repeating a character as long as a key
+                  is held down.                
+                <param>
+                    task   task to be scheduled.                    
+                </param>
+                <param>
+                    firstTime First time at which task is to be executed.                    
+                </param>
+                <param>
+                    period time in milliseconds between successive task executions.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code firstTime.getTime() < 0}, or{@code period <= 0}                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} or {@code firstTime} is null                    
+                </throws>
+            </javadoc>
+            <method name="schedule" type="void" line="284">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="firstTime" type="Date"/>
+                    <param name="period" type="long"/>
+                </params>
+            </method>
+            <javadoc line="290">
+                Schedules the specified task for repeated &lt;i&gt;fixed-rate execution&lt;/i&gt;,
+                  beginning after the specified delay.  Subsequent executions take place
+                  at approximately regular intervals, separated by the specified period.
+                  &lt;p&gt;In fixed-rate execution, each execution is scheduled relative to the
+                  scheduled execution time of the initial execution.  If an execution is
+                  delayed for any reason (such as garbage collection or other background
+                  activity), two or more executions will occur in rapid succession to
+                  &quot;catch up.&quot;  In the long run, the frequency of execution will be
+                  exactly the reciprocal of the specified period (assuming the system
+                  clock underlying &lt;tt&gt;Object.wait(long)&lt;/tt&gt; is accurate).
+                  &lt;p&gt;Fixed-rate execution is appropriate for recurring activities that
+                  are sensitive to &lt;i&gt;absolute&lt;/i&gt; time, such as ringing a chime every
+                  hour on the hour, or running scheduled maintenance every day at a
+                  particular time.  It is also appropriate for recurring activities
+                  where the total time to perform a fixed number of executions is
+                  important, such as a countdown timer that ticks once every second for
+                  ten seconds.  Finally, fixed-rate execution is appropriate for
+                  scheduling multiple repeating timer tasks that must remain synchronized
+                  with respect to one another.                
+                <param>
+                    task   task to be scheduled.                    
+                </param>
+                <param>
+                    delay  delay in milliseconds before task is to be executed.                    
+                </param>
+                <param>
+                    period time in milliseconds between successive task executions.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code delay < 0}, or{@code delay + System.currentTimeMillis() < 0}, or{@code period <= 0}                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} is null                    
+                </throws>
+            </javadoc>
+            <method name="scheduleAtFixedRate" type="void" line="323">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="delay" type="long"/>
+                    <param name="period" type="long"/>
+                </params>
+            </method>
+            <javadoc line="331">
+                Schedules the specified task for repeated &lt;i&gt;fixed-rate execution&lt;/i&gt;,
+                  beginning at the specified time. Subsequent executions take place at
+                  approximately regular intervals, separated by the specified period.
+                  &lt;p&gt;In fixed-rate execution, each execution is scheduled relative to the
+                  scheduled execution time of the initial execution.  If an execution is
+                  delayed for any reason (such as garbage collection or other background
+                  activity), two or more executions will occur in rapid succession to
+                  &quot;catch up.&quot;  In the long run, the frequency of execution will be
+                  exactly the reciprocal of the specified period (assuming the system
+                  clock underlying &lt;tt&gt;Object.wait(long)&lt;/tt&gt; is accurate).  As a
+                  consequence of the above, if the scheduled first time is in the past,
+                  then any &quot;missed&quot; executions will be scheduled for immediate &quot;catch up&quot;
+                  execution.
+                  &lt;p&gt;Fixed-rate execution is appropriate for recurring activities that
+                  are sensitive to &lt;i&gt;absolute&lt;/i&gt; time, such as ringing a chime every
+                  hour on the hour, or running scheduled maintenance every day at a
+                  particular time.  It is also appropriate for recurring activities
+                  where the total time to perform a fixed number of executions is
+                  important, such as a countdown timer that ticks once every second for
+                  ten seconds.  Finally, fixed-rate execution is appropriate for
+                  scheduling multiple repeating timer tasks that must remain synchronized
+                  with respect to one another.                
+                <param>
+                    task   task to be scheduled.                    
+                </param>
+                <param>
+                    firstTime First time at which task is to be executed.                    
+                </param>
+                <param>
+                    period time in milliseconds between successive task executions.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if {@code firstTime.getTime() < 0} or{@code period <= 0}                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} or {@code firstTime} is null                    
+                </throws>
+            </javadoc>
+            <method name="scheduleAtFixedRate" type="void" line="367">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="firstTime" type="Date"/>
+                    <param name="period" type="long"/>
+                </params>
+            </method>
+            <javadoc line="373">
+                Schedule the specified timer task for execution at the specified
+                  time with the specified period, in milliseconds.  If period is
+                  positive, the task is scheduled for repeated execution; if period is
+                  zero, the task is scheduled for one-time execution. Time is specified
+                  in Date.getTime() format.  This method checks timer state, task state,
+                  and initial execution time, but not period.                
+                <throws>
+                    IllegalArgumentException if <tt>time</tt> is negative.                    
+                </throws>
+                <throws>
+                    IllegalStateException if task was already scheduled or
+                      cancelled, timer was cancelled, or timer thread terminated.                    
+                </throws>
+                <throws>
+                    NullPointerException if {@code task} is null                    
+                </throws>
+            </javadoc>
+            <method name="sched" type="void" line="386">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                    <param name="time" type="long"/>
+                    <param name="period" type="long"/>
+                </params>
+                <comment line="390">
+                    Constrain value of period sufficiently to prevent numeric                    
+                </comment>
+                <comment line="391">
+                    overflow while still being effectively infinitely large.                    
+                </comment>
+                <scope line="395">
+                    <scope line="399"/>
+                </scope>
+            </method>
+            <javadoc line="414">
+                Terminates this timer, discarding any currently scheduled tasks.
+                  Does not interfere with a currently executing task (if it exists).
+                  Once a timer has been terminated, its execution thread terminates
+                  gracefully, and no more tasks may be scheduled on it.
+                  &lt;p&gt;Note that calling this method from within the run method of a
+                  timer task that was invoked by this timer absolutely guarantees that
+                  the ongoing task execution is the last task execution that will ever
+                  be performed by this timer.
+                  &lt;p&gt;This method may be called repeatedly; the second and subsequent
+                  calls have no effect.                
+            </javadoc>
+            <method name="cancel" type="void" line="428">
+                <comment line="432">
+                    In case queue was already empty.                    
+                </comment>
+                <scope line="429"/>
+            </method>
+            <javadoc line="436">
+                Removes all cancelled tasks from this timer&apos;s task queue.  &lt;i&gt;Calling
+                  this method has no effect on the behavior of the timer&lt;/i&gt;, but
+                  eliminates the references to the cancelled tasks from the queue.
+                  If there are no external references to these tasks, they become
+                  eligible for garbage collection.
+                  &lt;p&gt;Most programs will have no need to call this method.
+                  It is designed for use by the rare application that cancels a large
+                  number of tasks.  Calling this method trades time for space: the
+                  runtime of the method may be proportional to n + c log n, where n
+                  is the number of tasks in the queue and c is the number of cancelled
+                  tasks.
+                  &lt;p&gt;Note that it is permissible to call this method from within a
+                  a task scheduled on this timer.                
+                <return>
+                    the number of tasks removed from the queue.                    
+                </return>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <method name="purge" type="int" line="456">
+                <declaration name="result" type="int" line="457"/>
+                <scope line="459">
+                    <scope line="460">
+                        <scope line="461"/>
+                    </scope>
+                </scope>
+            </method>
+        </class>
+        <class name="TimerThread" line="475">
+            <extends class="Thread"/>
+            <javadoc line="475">
+                This &quot;helper class&quot; implements the timer&apos;s task execution thread, which
+                  waits for tasks on the timer queue, executions them when they fire,
+                  reschedules repeating tasks, and removes cancelled tasks and spent
+                  non-repeating tasks from the queue.                
+            </javadoc>
+            <declaration name="newTasksMayBeScheduled" type="boolean" line="482"/>
+            <javadoc line="482">
+                This flag is set to false by the reaper to inform us that there
+                  are no more live references to our Timer object.  Once this flag
+                  is true and there are no more tasks in our queue, there is no
+                  work left for us to do, so we terminate gracefully.  Note that
+                  this field is protected by queue&apos;s monitor!                
+            </javadoc>
+            <declaration name="queue" type="TaskQueue" line="491"/>
+            <javadoc line="491">
+                Our Timer&apos;s queue.  We store this reference in preference to
+                  a reference to the Timer so the reference graph remains acyclic.
+                  Otherwise, the Timer would never be garbage-collected and this
+                  thread would never go away.                
+            </javadoc>
+            <method name="TimerThread" type="constructor" line="499">
+                <params>
+                    <param name="queue" type="TaskQueue"/>
+                </params>
+            </method>
+            <method name="run" type="void" line="503">
+                <comment line="507">
+                    Someone killed this Thread, behave as if Timer cancelled                    
+                </comment>
+                <comment line="510">
+                    Eliminate obsolete references                    
+                </comment>
+                <scope line="504"/>
+                <scope line="506">
+                    <scope line="508"/>
+                </scope>
+            </method>
+            <javadoc line="515">
+                The main timer loop.  (See class comment.)                
+            </javadoc>
+            <method name="mainLoop" type="void" line="518">
+                <comment line="524">
+                    Wait for queue to become non-empty                    
+                </comment>
+                <comment line="528">
+                    Queue is empty and will forever remain; die                    
+                </comment>
+                <comment line="530">
+                    Queue nonempty; look at first evt and do the right thing                    
+                </comment>
+                <comment line="536">
+                    No action required, poll queue again                    
+                </comment>
+                <comment line="541">
+                    Non-repeating, remove                    
+                </comment>
+                <comment line="544">
+                    Repeating task, reschedule                    
+                </comment>
+                <comment line="551">
+                    Task hasn&apos;t yet fired; wait                    
+                </comment>
+                <comment line="554">
+                    Task fired; run it, holding no locks                    
+                </comment>
+                <scope line="519">
+                    <scope line="520">
+                        <declaration name="task" type="TimerTask" line="521"/>
+                        <declaration name="taskFired" type="boolean" line="522"/>
+                        <scope line="523">
+                            <declaration name="currentTime" type="long" line="531"/>
+                            <scope line="533">
+                                <scope line="534"/>
+                                <scope line="540">
+                                    <scope line="541"/>
+                                    <scope line="544"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="556"/>
+                </scope>
+            </method>
+        </class>
+        <class name="TaskQueue" line="562">
+            <javadoc line="562">
+                This class represents a timer task queue: a priority queue of TimerTasks,
+                  ordered on nextExecutionTime.  Each Timer object has one of these, which it
+                  shares with its TimerThread.  Internally this class uses a heap, which
+                  offers log(n) performance for the add, removeMin and rescheduleMin
+                  operations, and constant time performance for the getMin operation.                
+            </javadoc>
+            <declaration name="queue" type="TimerTask[]" line="570"/>
+            <javadoc line="570">
+                Priority queue represented as a balanced binary heap: the two children
+                  of queue[n] are queue[2n] and queue[2n+1].  The priority queue is
+                  ordered on the nextExecutionTime field: The TimerTask with the lowest
+                  nextExecutionTime is in queue[1] (assuming the queue is nonempty).  For
+                  each node n in the heap, and each descendant of n, d,
+                  n.nextExecutionTime &lt;= d.nextExecutionTime.                
+            </javadoc>
+            <declaration name="size" type="int" line="580"/>
+            <javadoc line="580">
+                The number of tasks in the priority queue.  (The tasks are stored in
+                  queue[1] up to queue[size]).                
+            </javadoc>
+            <javadoc line="586">
+                Returns the number of tasks currently on the queue.                
+            </javadoc>
+            <method name="size" type="int" line="589"/>
+            <javadoc line="593">
+                Adds a new task to the priority queue.                
+            </javadoc>
+            <method name="add" type="void" line="596">
+                <params>
+                    <param name="task" type="TimerTask"/>
+                </params>
+                <comment line="597">
+                    Grow backing store if necessary                    
+                </comment>
+            </method>
+            <javadoc line="605">
+                Return the &quot;head task&quot; of the priority queue.  (The head task is an
+                  task with the lowest nextExecutionTime.)                
+            </javadoc>
+            <method name="getMin" type="TimerTask" line="609"/>
+            <javadoc line="613">
+                Return the ith task in the priority queue, where i ranges from 1 (the
+                  head task, which is returned by getMin) to the number of tasks on the
+                  queue, inclusive.                
+            </javadoc>
+            <method name="get" type="TimerTask" line="618">
+                <params>
+                    <param name="i" type="int"/>
+                </params>
+            </method>
+            <javadoc line="622">
+                Remove the head task from the priority queue.                
+            </javadoc>
+            <method name="removeMin" type="void" line="625">
+                <comment line="627">
+                    Drop extra reference to prevent memory leak                    
+                </comment>
+            </method>
+            <javadoc line="631">
+                Removes the ith element from queue without regard for maintaining
+                  the heap invariant.  Recall that queue is one-based, so
+                  1 &lt;= i &lt;= size.                
+            </javadoc>
+            <method name="quickRemove" type="void" line="636">
+                <params>
+                    <param name="i" type="int"/>
+                </params>
+                <comment line="640">
+                    Drop extra ref to prevent memory leak                    
+                </comment>
+            </method>
+            <javadoc line="643">
+                Sets the nextExecutionTime associated with the head task to the
+                  specified value, and adjusts priority queue accordingly.                
+            </javadoc>
+            <method name="rescheduleMin" type="void" line="647">
+                <params>
+                    <param name="newTime" type="long"/>
+                </params>
+            </method>
+            <javadoc line="652">
+                Returns true if the priority queue contains no elements.                
+            </javadoc>
+            <method name="isEmpty" type="boolean" line="655"/>
+            <javadoc line="659">
+                Removes all elements from the priority queue.                
+            </javadoc>
+            <method name="clear" type="void" line="662">
+                <comment line="663">
+                    Null out task references to prevent memory leak                    
+                </comment>
+            </method>
+            <javadoc line="670">
+                Establishes the heap invariant (described above) assuming the heap
+                  satisfies the invariant except possibly for the leaf-node indexed by k
+                  (which may have a nextExecutionTime less than its parent&apos;s).
+                  This method functions by &quot;promoting&quot; queue[k] up the hierarchy
+                  (by swapping it with its parent) repeatedly until queue[k]&apos;s
+                  nextExecutionTime is greater than or equal to that of its parent.                
+            </javadoc>
+            <method name="fixUp" type="void" line="679">
+                <params>
+                    <param name="k" type="int"/>
+                </params>
+                <scope line="680">
+                    <declaration name="j" type="int" line="681"/>
+                    <declaration name="tmp" type="TimerTask" line="684"/>
+                </scope>
+            </method>
+            <javadoc line="689">
+                Establishes the heap invariant (described above) in the subtree
+                  rooted at k, which is assumed to satisfy the heap invariant except
+                  possibly for node k itself (which may have a nextExecutionTime greater
+                  than its children&apos;s).
+                  This method functions by &quot;demoting&quot; queue[k] down the hierarchy
+                  (by swapping it with its smaller child) repeatedly until queue[k]&apos;s
+                  nextExecutionTime is less than or equal to those of its children.                
+            </javadoc>
+            <method name="fixDown" type="void" line="699">
+                <params>
+                    <param name="k" type="int"/>
+                </params>
+                <comment line="704">
+                    j indexes smallest kid                    
+                </comment>
+                <declaration name="j" type="int" line="700"/>
+                <scope line="701">
+                    <declaration name="tmp" type="TimerTask" line="707"/>
+                </scope>
+            </method>
+            <javadoc line="712">
+                Establishes the heap invariant (described above) in the entire tree,
+                  assuming nothing about the order of the elements prior to the call.                
+            </javadoc>
+            <method name="heapify" type="void" line="716"/>
+        </class>
+    </source>

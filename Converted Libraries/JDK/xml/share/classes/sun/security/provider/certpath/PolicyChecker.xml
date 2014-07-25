@@ -1,0 +1,741 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.provider.certpath">
+        <import package="java.util"/>
+        <import package="java.io.IOException"/>
+        <import package="java.security.cert.Certificate"/>
+        <import package="java.security.cert.CertificateException"/>
+        <import package="java.security.cert.CertPathValidatorException"/>
+        <import package="java.security.cert.PKIXCertPathChecker"/>
+        <import package="java.security.cert.PKIXReason"/>
+        <import package="java.security.cert.PolicyNode"/>
+        <import package="java.security.cert.PolicyQualifierInfo"/>
+        <import package="java.security.cert.X509Certificate"/>
+        <import package="sun.security.util.Debug"/>
+        <import package="sun.security.x509.CertificatePoliciesExtension"/>
+        <import package="sun.security.x509.PolicyConstraintsExtension"/>
+        <import package="sun.security.x509.PolicyMappingsExtension"/>
+        <import package="sun.security.x509.CertificatePolicyMap"/>
+        <import package="sun.security.x509.PKIXExtensions"/>
+        <import package="sun.security.x509.PolicyInformation"/>
+        <import package="sun.security.x509.X509CertImpl"/>
+        <import package="sun.security.x509.InhibitAnyPolicyExtension"/>
+        <class name="PolicyChecker" line="50">
+            <extends class="PKIXCertPathChecker"/>
+            <javadoc line="50">
+                PolicyChecker is a &lt;code&gt;PKIXCertPathChecker&lt;/code&gt; that checks policy
+                  information on a PKIX certificate, namely certificate policies, policy
+                  mappings, policy constraints and policy qualifiers.                
+                <since>
+                    1.4                    
+                </since>
+                <author>
+                    Yassir Elley                    
+                </author>
+            </javadoc>
+            <declaration name="initPolicies" type="Set&lt;String&gt;" line="60"/>
+            <declaration name="certPathLen" type="int" line="61"/>
+            <declaration name="expPolicyRequired" type="boolean" line="62"/>
+            <declaration name="polMappingInhibited" type="boolean" line="63"/>
+            <declaration name="anyPolicyInhibited" type="boolean" line="64"/>
+            <declaration name="rejectPolicyQualifiers" type="boolean" line="65"/>
+            <declaration name="rootNode" type="PolicyNodeImpl" line="66"/>
+            <declaration name="explicitPolicy" type="int" line="67"/>
+            <declaration name="policyMapping" type="int" line="68"/>
+            <declaration name="inhibitAnyPolicy" type="int" line="69"/>
+            <declaration name="certIndex" type="int" line="70"/>
+            <declaration name="supportedExts" type="Set&lt;String&gt;" line="72"/>
+            <declaration name="debug" type="Debug" line="74"/>
+            <declaration name="ANY_POLICY" type="String" line="75"/>
+            <javadoc line="77">
+                Constructs a Policy Checker.                
+                <param>
+                    initialPolicies Set of initial policies                    
+                </param>
+                <param>
+                    certPathLen length of the certification path to be checked                    
+                </param>
+                <param>
+                    expPolicyRequired true if explicit policy is required                    
+                </param>
+                <param>
+                    polMappingInhibited true if policy mapping is inhibited                    
+                </param>
+                <param>
+                    anyPolicyInhibited true if the ANY_POLICY OID should be inhibited                    
+                </param>
+                <param>
+                    rejectPolicyQualifiers true if pol qualifiers are to be rejected                    
+                </param>
+                <param>
+                    rootNode the initial root node of the valid policy tree                    
+                </param>
+            </javadoc>
+            <method name="PolicyChecker" type="constructor" line="92">
+                <params>
+                    <param name="initialPolicies" type="Set<String>"/>
+                    <param name="certPathLen" type="int"/>
+                    <param name="expPolicyRequired" type="boolean"/>
+                    <param name="polMappingInhibited" type="boolean"/>
+                    <param name="anyPolicyInhibited" type="boolean"/>
+                    <param name="rejectPolicyQualifiers" type="boolean"/>
+                    <param name="rootNode" type="PolicyNodeImpl"/>
+                </params>
+                <comment line="94">
+                    if no initialPolicies are specified by user, set                    
+                </comment>
+                <comment line="95">
+                    initPolicies to be anyPolicy by default                    
+                </comment>
+                <scope line="93"/>
+                <scope line="98"/>
+            </method>
+            <javadoc line="110">
+                Initializes the internal state of the checker from parameters
+                  specified in the constructor                
+                <param>
+                    forward a boolean indicating whether this checker should
+                      be initialized capable of building in the forward direction                    
+                </param>
+                <exception>
+                    CertPathValidatorException Exception thrown if user
+                      wants to enable forward checking and forward checking is not supported.                    
+                </exception>
+            </javadoc>
+            <method name="init" type="void" line="119">
+                <params>
+                    <param name="forward" type="boolean"/>
+                </params>
+                <scope line="120"/>
+            </method>
+            <javadoc line="131">
+                Checks if forward checking is supported. Forward checking refers
+                  to the ability of the PKIXCertPathChecker to perform its checks
+                  when presented with certificates in the forward direction (from
+                  target to anchor).                
+                <return>
+                    true if forward checking is supported, false otherwise                    
+                </return>
+            </javadoc>
+            <method name="isForwardCheckingSupported" type="boolean" line="139"/>
+            <javadoc line="143">
+                Gets an immutable Set of the OID strings for the extensions that
+                  the PKIXCertPathChecker supports (i.e. recognizes, is able to
+                  process), or null if no extensions are
+                  supported. All OID strings that a PKIXCertPathChecker might
+                  possibly be able to process should be included.                
+                <return>
+                    the Set of extensions supported by this PKIXCertPathChecker,
+                      or null if no extensions are supported                    
+                </return>
+            </javadoc>
+            <method name="getSupportedExtensions" type="Set<String>" line="153">
+                <scope line="154"/>
+            </method>
+            <javadoc line="165">
+                Performs the policy processing checks on the certificate using its
+                  internal state.                
+                <param>
+                    cert the Certificate to be processed                    
+                </param>
+                <param>
+                    unresCritExts the unresolved critical extensions                    
+                </param>
+                <exception>
+                    CertPathValidatorException Exception thrown if
+                      the certificate does not verify.                    
+                </exception>
+            </javadoc>
+            <method name="check" type="void" line="176">
+                <params>
+                    <param name="cert" type="Certificate"/>
+                    <param name="unresCritExts" type="Collection<String>"/>
+                </params>
+                <comment line="177">
+                    now do the policy checks                    
+                </comment>
+                <scope line="180"/>
+            </method>
+            <javadoc line="188">
+                Internal method to run through all the checks.                
+                <param>
+                    currCert the certificate to be processed                    
+                </param>
+                <exception>
+                    CertPathValidatorException Exception thrown if
+                      the certificate does not verify                    
+                </exception>
+            </javadoc>
+            <method name="checkPolicy" type="void" line="197">
+                <params>
+                    <param name="currCert" type="X509Certificate"/>
+                </params>
+                <declaration name="msg" type="String" line="198"/>
+                <scope line="199"/>
+                <declaration name="currCertImpl" type="X509CertImpl" line="214"/>
+                <scope line="215"/>
+                <scope line="217"/>
+                <declaration name="finalCert" type="boolean" line="221"/>
+                <scope line="227"/>
+                <scope line="237"/>
+            </method>
+            <javadoc line="250">
+                Merges the specified explicitPolicy value with the
+                  requireExplicitPolicy field of the &lt;code&gt;PolicyConstraints&lt;/code&gt;
+                  extension obtained from the certificate. An explicitPolicy
+                  value of -1 implies no constraint.                
+                <param>
+                    explicitPolicy an integer which indicates if a non-null
+                      valid policy tree is required                    
+                </param>
+                <param>
+                    currCert the Certificate to be processed                    
+                </param>
+                <param>
+                    finalCert a boolean indicating whether currCert is
+                      the final cert in the cert path                    
+                </param>
+                <return>
+                    returns the new explicitPolicy value                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if an error
+                      occurs                    
+                </exception>
+            </javadoc>
+            <method name="mergeExplicitPolicy" type="int" line="267">
+                <params>
+                    <param name="explicitPolicy" type="int"/>
+                    <param name="currCert" type="X509CertImpl"/>
+                    <param name="finalCert" type="boolean"/>
+                </params>
+                <scope line="268"/>
+                <scope line="272">
+                    <declaration name="polConstExt" type="PolicyConstraintsExtension" line="273"/>
+                    <declaration name="require" type="int" line="277"/>
+                    <scope line="279"/>
+                    <scope line="283">
+                        <scope line="284">
+                            <scope line="285"/>
+                        </scope>
+                    </scope>
+                    <scope line="289"/>
+                </scope>
+                <scope line="293">
+                    <scope line="294"/>
+                </scope>
+            </method>
+            <javadoc line="305">
+                Merges the specified policyMapping value with the
+                  inhibitPolicyMapping field of the &lt;code&gt;PolicyConstraints&lt;/code&gt;
+                  extension obtained from the certificate. A policyMapping
+                  value of -1 implies no constraint.                
+                <param>
+                    policyMapping an integer which indicates if policy mapping
+                      is inhibited                    
+                </param>
+                <param>
+                    currCert the Certificate to be processed                    
+                </param>
+                <return>
+                    returns the new policyMapping value                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if an error
+                      occurs                    
+                </exception>
+            </javadoc>
+            <method name="mergePolicyMapping" type="int" line="320">
+                <params>
+                    <param name="policyMapping" type="int"/>
+                    <param name="currCert" type="X509CertImpl"/>
+                </params>
+                <scope line="321"/>
+                <scope line="325">
+                    <declaration name="polConstExt" type="PolicyConstraintsExtension" line="326"/>
+                    <declaration name="inhibit" type="int" line="331"/>
+                    <scope line="337">
+                        <scope line="338"/>
+                    </scope>
+                </scope>
+                <scope line="342">
+                    <scope line="343"/>
+                </scope>
+            </method>
+            <javadoc line="354">
+                Merges the specified inhibitAnyPolicy value with the
+                  SkipCerts value of the InhibitAnyPolicy
+                  extension obtained from the certificate.                
+                <param>
+                    inhibitAnyPolicy an integer which indicates whether
+                      "any-policy" is considered a match                    
+                </param>
+                <param>
+                    currCert the Certificate to be processed                    
+                </param>
+                <return>
+                    returns the new inhibitAnyPolicy value                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if an error
+                      occurs                    
+                </exception>
+            </javadoc>
+            <method name="mergeInhibitAnyPolicy" type="int" line="368">
+                <params>
+                    <param name="inhibitAnyPolicy" type="int"/>
+                    <param name="currCert" type="X509CertImpl"/>
+                </params>
+                <scope line="369"/>
+                <scope line="373">
+                    <declaration name="inhAnyPolExt" type="InhibitAnyPolicyExtension" line="374"/>
+                    <declaration name="skipCerts" type="int" line="379"/>
+                    <scope line="385">
+                        <scope line="386"/>
+                    </scope>
+                </scope>
+                <scope line="390">
+                    <scope line="391"/>
+                </scope>
+            </method>
+            <javadoc line="402">
+                Processes certificate policies in the certificate.                
+                <param>
+                    certIndex the index of the certificate                    
+                </param>
+                <param>
+                    initPolicies the initial policies required by the user                    
+                </param>
+                <param>
+                    explicitPolicy an integer which indicates if a non-null
+                      valid policy tree is required                    
+                </param>
+                <param>
+                    policyMapping an integer which indicates if policy
+                      mapping is inhibited                    
+                </param>
+                <param>
+                    inhibitAnyPolicy an integer which indicates whether
+                      "any-policy" is considered a match                    
+                </param>
+                <param>
+                    rejectPolicyQualifiers a boolean indicating whether the
+                      user wants to reject policies that have qualifiers                    
+                </param>
+                <param>
+                    origRootNode the root node of the valid policy tree                    
+                </param>
+                <param>
+                    currCert the Certificate to be processed                    
+                </param>
+                <param>
+                    finalCert a boolean indicating whether currCert is the final
+                      cert in the cert path                    
+                </param>
+                <return>
+                    the root node of the valid policy tree after modification                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if an
+                      error occurs while processing policies.                    
+                </exception>
+            </javadoc>
+            <method name="processPolicies" type="PolicyNodeImpl" line="428">
+                <params>
+                    <param name="certIndex" type="int"/>
+                    <param name="initPolicies" type="Set<String>"/>
+                    <param name="explicitPolicy" type="int"/>
+                    <param name="policyMapping" type="int"/>
+                    <param name="inhibitAnyPolicy" type="int"/>
+                    <param name="rejectPolicyQualifiers" type="boolean"/>
+                    <param name="origRootNode" type="PolicyNodeImpl"/>
+                    <param name="currCert" type="X509CertImpl"/>
+                    <param name="finalCert" type="boolean"/>
+                </params>
+                <comment line="439">
+                    retrieve policyOIDs from currCert                    
+                </comment>
+                <comment line="443">
+                    PKIX: Section 6.1.3: Step (d)                    
+                </comment>
+                <comment line="464">
+                    process each policy in cert                    
+                </comment>
+                <comment line="473">
+                    PKIX: Section 6.1.3: Step (d)(1)                    
+                </comment>
+                <comment line="478">
+                    retrieve policy qualifiers from cert                    
+                </comment>
+                <comment line="482">
+                    reject cert if we find critical policy qualifiers and                    
+                </comment>
+                <comment line="483">
+                    the policyQualifiersRejected flag is set in the params                    
+                </comment>
+                <comment line="491">
+                    PKIX: Section 6.1.3: Step (d)(1)(i)                    
+                </comment>
+                <comment line="497">
+                    PKIX: Section 6.1.3: Step (d)(1)(ii)                    
+                </comment>
+                <comment line="505">
+                    PKIX: Section 6.1.3: Step (d)(2)                    
+                </comment>
+                <comment line="519">
+                    PKIX: Section 6.1.3: Step (d)(3)                    
+                </comment>
+                <comment line="528">
+                    PKIX: Section 6.1.3: Step (e)                    
+                </comment>
+                <comment line="532">
+                    We delay PKIX: Section 6.1.3: Step (f) to the end                    
+                </comment>
+                <comment line="533">
+                    because the code that follows may delete some nodes                    
+                </comment>
+                <comment line="534">
+                    resulting in a null tree                    
+                </comment>
+                <comment line="537">
+                    PKIX: Section 6.1.4: Steps (a)-(b)                    
+                </comment>
+                <comment line="543">
+                    At this point, we optimize the PKIX algorithm by                    
+                </comment>
+                <comment line="544">
+                    removing those nodes which would later have                    
+                </comment>
+                <comment line="545">
+                    been removed by PKIX: Section 6.1.5: Step (g)(iii)                    
+                </comment>
+                <comment line="552">
+                    PKIX: Section 6.1.5: Step (g)(iii)                    
+                </comment>
+                <comment line="554">
+                    rewrite anyPolicy leaf nodes (see method comments)                    
+                </comment>
+                <comment line="561">
+                    PKIX: Section 6.1.5: Steps (a) and (b)                    
+                </comment>
+                <comment line="566">
+                    PKIX: Section 6.1.3: Step (f)                    
+                </comment>
+                <comment line="567">
+                    verify that either explicit policy is greater than 0 or                    
+                </comment>
+                <comment line="568">
+                    the valid_policy_tree is not equal to NULL                    
+                </comment>
+                <declaration name="policiesCritical" type="boolean" line="429"/>
+                <declaration name="policyInfo" type="List&lt;PolicyInformation&gt;" line="430"/>
+                <declaration name="rootNode" type="PolicyNodeImpl" line="431"/>
+                <declaration name="anyQuals" type="Set&lt;PolicyQualifierInfo&gt;" line="432"/>
+                <declaration name="currCertPolicies" type="CertificatePoliciesExtension" line="440"/>
+                <scope line="444">
+                    <scope line="450"/>
+                    <scope line="453"/>
+                    <declaration name="foundAnyPolicy" type="boolean" line="462"/>
+                    <scope line="465">
+                        <declaration name="curPolicy" type="String" line="466"/>
+                        <scope line="469"/>
+                        <scope line="472">
+                            <declaration name="pQuals" type="Set&lt;PolicyQualifierInfo&gt;" line="479"/>
+                            <scope line="485"/>
+                            <declaration name="foundMatch" type="boolean" line="492"/>
+                            <scope line="496"/>
+                        </scope>
+                    </scope>
+                    <scope line="506">
+                        <scope line="508">
+                            <scope line="509"/>
+                        </scope>
+                    </scope>
+                    <scope line="521"/>
+                </scope>
+                <scope line="524"/>
+                <scope line="535">
+                    <scope line="536"/>
+                </scope>
+                <scope line="548">
+                    <scope line="553"/>
+                </scope>
+                <scope line="560"/>
+                <scope line="570"/>
+            </method>
+            <javadoc line="579">
+                Rewrite leaf nodes at the end of validation as described in RFC 3280
+                  section 6.1.5: Step (g)(iii). Leaf nodes with anyPolicy are replaced
+                  by nodes explicitly representing initial policies not already
+                  represented by leaf nodes.
+                  This method should only be called when processing the final cert
+                  and if the policy tree is not null and initial policies is not
+                  anyPolicy.                
+                <param>
+                    certIndex the depth of the tree                    
+                </param>
+                <param>
+                    initPolicies Set of user specified initial policies                    
+                </param>
+                <param>
+                    rootNode the root of the policy tree                    
+                </param>
+            </javadoc>
+            <method name="rewriteLeafNodes" type="PolicyNodeImpl" line="594">
+                <params>
+                    <param name="certIndex" type="int"/>
+                    <param name="initPolicies" type="Set<String>"/>
+                    <param name="rootNode" type="PolicyNodeImpl"/>
+                </params>
+                <comment line="603">
+                    see if there are any initialPolicies not represented by leaf nodes                    
+                </comment>
+                <comment line="609">
+                    we deleted the anyPolicy node and have nothing to re-add,                    
+                </comment>
+                <comment line="610">
+                    so we need to prune the tree                    
+                </comment>
+                <declaration name="anyNodes" type="Set&lt;PolicyNodeImpl&gt;" line="595"/>
+                <scope line="597"/>
+                <declaration name="anyNode" type="PolicyNodeImpl" line="600"/>
+                <declaration name="parentNode" type="PolicyNodeImpl" line="601"/>
+                <declaration name="initial" type="Set&lt;String&gt;" line="604"/>
+                <scope line="605"/>
+                <scope line="608">
+                    <scope line="612"/>
+                </scope>
+                <scope line="615">
+                    <declaration name="anyCritical" type="boolean" line="616"/>
+                    <declaration name="anyQualifiers" type="Set&lt;PolicyQualifierInfo&gt;" line="617"/>
+                    <scope line="619">
+                        <declaration name="expectedPolicies" type="Set&lt;String&gt;" line="620"/>
+                        <declaration name="node" type="PolicyNodeImpl" line="621"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="628">
+                Finds the policy nodes of depth (certIndex-1) where curPolicy
+                  is in the expected policy set and creates a new child node
+                  appropriately. If matchAny is true, then a value of ANY_POLICY
+                  in the expected policy set will match any curPolicy. If matchAny
+                  is false, then the expected policy set must exactly contain the
+                  curPolicy to be considered a match. This method returns a boolean
+                  value indicating whether a match was found.                
+                <param>
+                    certIndex the index of the certificate whose policy is
+                      being processed                    
+                </param>
+                <param>
+                    policiesCritical a boolean indicating whether the certificate
+                      policies extension is critical                    
+                </param>
+                <param>
+                    rejectPolicyQualifiers a boolean indicating whether the
+                      user wants to reject policies that have qualifiers                    
+                </param>
+                <param>
+                    rootNode the root node of the valid policy tree                    
+                </param>
+                <param>
+                    curPolicy a String representing the policy being processed                    
+                </param>
+                <param>
+                    pQuals the policy qualifiers of the policy being processed or an
+                      empty Set if there are no qualifiers                    
+                </param>
+                <param>
+                    matchAny a boolean indicating whether a value of ANY_POLICY
+                      in the expected policy set will be considered a match                    
+                </param>
+                <return>
+                    a boolean indicating whether a match was found                    
+                </return>
+                <exception>
+                    CertPathValidatorException Exception thrown if error occurs.                    
+                </exception>
+            </javadoc>
+            <method name="processParents" type="boolean" line="657">
+                <params>
+                    <param name="certIndex" type="int"/>
+                    <param name="policiesCritical" type="boolean"/>
+                    <param name="rejectPolicyQualifiers" type="boolean"/>
+                    <param name="rootNode" type="PolicyNodeImpl"/>
+                    <param name="curPolicy" type="String"/>
+                    <param name="pQuals" type="Set<PolicyQualifierInfo>"/>
+                    <param name="matchAny" type="boolean"/>
+                </params>
+                <comment line="664">
+                    find matching parents                    
+                </comment>
+                <comment line="669">
+                    for each matching parent, extend policy tree                    
+                </comment>
+                <comment line="682">
+                    do step 2                    
+                </comment>
+                <declaration name="foundMatch" type="boolean" line="658"/>
+                <declaration name="parentNodes" type="Set&lt;PolicyNodeImpl&gt;" line="665"/>
+                <scope line="670">
+                    <declaration name="curParPolicy" type="String" line="676"/>
+                    <declaration name="curNode" type="PolicyNodeImpl" line="678"/>
+                    <declaration name="curExpPols" type="Set&lt;String&gt;" line="679"/>
+                    <scope line="681">
+                        <declaration name="parExpPols" type="Set&lt;String&gt;" line="683"/>
+                        <scope line="685">
+                            <declaration name="childIter" type="Iterator&lt;PolicyNodeImpl&gt;" line="687"/>
+                            <scope line="689">
+                                <declaration name="childNode" type="PolicyNodeImpl" line="690"/>
+                                <declaration name="childPolicy" type="String" line="691"/>
+                                <scope line="692"/>
+                            </scope>
+                            <declaration name="expPols" type="Set&lt;String&gt;" line="701"/>
+                        </scope>
+                    </scope>
+                    <scope line="708"/>
+                </scope>
+            </method>
+            <javadoc line="721">
+                Processes policy mappings in the certificate.                
+                <param>
+                    currCert the Certificate to be processed                    
+                </param>
+                <param>
+                    certIndex the index of the current certificate                    
+                </param>
+                <param>
+                    policyMapping an integer which indicates if policy
+                      mapping is inhibited                    
+                </param>
+                <param>
+                    rootNode the root node of the valid policy tree                    
+                </param>
+                <param>
+                    policiesCritical a boolean indicating if the certificate policies
+                      extension is critical                    
+                </param>
+                <param>
+                    anyQuals the qualifiers associated with ANY-POLICY, or an empty
+                      Set if there are no qualifiers associated with ANY-POLICY                    
+                </param>
+                <return>
+                    the root node of the valid policy tree after modification                    
+                </return>
+                <exception>
+                    CertPathValidatorException exception thrown if an error
+                      occurs while processing policy mappings                    
+                </exception>
+            </javadoc>
+            <method name="processPolicyMappings" type="PolicyNodeImpl" line="741">
+                <params>
+                    <param name="currCert" type="X509CertImpl"/>
+                    <param name="certIndex" type="int"/>
+                    <param name="policyMapping" type="int"/>
+                    <param name="rootNode" type="PolicyNodeImpl"/>
+                    <param name="policiesCritical" type="boolean"/>
+                    <param name="anyQuals" type="Set<PolicyQualifierInfo>"/>
+                </params>
+                <comment line="813">
+                    no node of depth i has a valid policy                    
+                </comment>
+                <declaration name="polMappingsExt" type="PolicyMappingsExtension" line="742"/>
+                <declaration name="maps" type="List&lt;CertificatePolicyMap&gt;" line="752"/>
+                <scope line="753"/>
+                <scope line="756">
+                    <scope line="757"/>
+                </scope>
+                <declaration name="childDeleted" type="boolean" line="766"/>
+                <scope line="767">
+                    <declaration name="polMap" type="CertificatePolicyMap" line="768"/>
+                    <declaration name="issuerDomain" type="String" line="769"/>
+                    <declaration name="subjectDomain" type="String" line="771"/>
+                    <scope line="773"/>
+                    <scope line="780"/>
+                    <scope line="786"/>
+                    <declaration name="validNodes" type="Set&lt;PolicyNodeImpl&gt;" line="792"/>
+                    <scope line="794">
+                        <scope line="795">
+                            <scope line="796"/>
+                            <scope line="798">
+                                <declaration name="parentNode" type="PolicyNodeImpl" line="799"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="813">
+                        <scope line="814">
+                            <declaration name="validAnyNodes" type="Set&lt;PolicyNodeImpl&gt;" line="815"/>
+                            <scope line="817">
+                                <declaration name="curAnyNodeParent" type="PolicyNodeImpl" line="818"/>
+                                <declaration name="expPols" type="Set&lt;String&gt;" line="821"/>
+                                <declaration name="curNode" type="PolicyNodeImpl" line="824"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="832">
+                    <scope line="834"/>
+                </scope>
+            </method>
+            <javadoc line="844">
+                Removes those nodes which do not intersect with the initial policies
+                  specified by the user.                
+                <param>
+                    rootNode the root node of the valid policy tree                    
+                </param>
+                <param>
+                    certIndex the index of the certificate being processed                    
+                </param>
+                <param>
+                    initPolicies the Set of policies required by the user                    
+                </param>
+                <param>
+                    currCertPolicies the CertificatePoliciesExtension of the
+                      certificate being processed                    
+                </param>
+                <returns>
+                    the root node of the valid policy tree after modification                    
+                </returns>
+                <exception>
+                    CertPathValidatorException Exception thrown if error occurs.                    
+                </exception>
+            </javadoc>
+            <method name="removeInvalidNodes" type="PolicyNodeImpl" line="860">
+                <params>
+                    <param name="rootNode" type="PolicyNodeImpl"/>
+                    <param name="certIndex" type="int"/>
+                    <param name="initPolicies" type="Set<String>"/>
+                    <param name="currCertPolicies" type="CertificatePoliciesExtension"/>
+                </params>
+                <declaration name="policyInfo" type="List&lt;PolicyInformation&gt;" line="861"/>
+                <scope line="862"/>
+                <scope line="865"/>
+                <declaration name="childDeleted" type="boolean" line="870"/>
+                <scope line="871">
+                    <declaration name="curPolicy" type="String" line="872"/>
+                    <declaration name="validNodes" type="Set&lt;PolicyNodeImpl&gt;" line="879"/>
+                    <scope line="881">
+                        <declaration name="parentNode" type="PolicyNodeImpl" line="882"/>
+                        <scope line="883">
+                            <scope line="885"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="899">
+                    <scope line="901"/>
+                </scope>
+            </method>
+            <javadoc line="909">
+                Gets the root node of the valid policy tree, or null if the
+                  valid policy tree is null. Marks each node of the returned tree
+                  immutable and thread-safe.                
+                <returns>
+                    the root node of the valid policy tree, or null if
+                      the valid policy tree is null                    
+                </returns>
+            </javadoc>
+            <method name="getPolicyTree" type="PolicyNode" line="917">
+                <scope line="920">
+                    <declaration name="policyTree" type="PolicyNodeImpl" line="921"/>
+                </scope>
+            </method>
+        </class>
+    </source>

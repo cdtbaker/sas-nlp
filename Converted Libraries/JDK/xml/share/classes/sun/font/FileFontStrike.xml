@@ -1,0 +1,677 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.font">
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.awt.Font"/>
+        <import package="java.awt.GraphicsEnvironment"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.geom.AffineTransform"/>
+        <import package="java.awt.geom.GeneralPath"/>
+        <import package="java.awt.geom.NoninvertibleTransformException"/>
+        <import package="java.awt.geom.Point2D"/>
+        <import package="java.awt.geom.Rectangle2D"/>
+        <import package="java.util.concurrent.ConcurrentHashMap"/>
+        <import package="sun.awt.SunHints"/>
+        <class name="FileFontStrike" line="42">
+            <extends class="PhysicalStrike"/>
+            <comment line="45">
+                fffe and ffff are values we specially interpret as meaning
+                 invisible glyphs.                
+            </comment>
+            <comment line="52">
+                REMIND: replace this scheme with one that installs a cache
+                 instance of the appropriate type. It will require changes in
+                 FontStrikeDisposer and NativeStrike etc.                
+            </comment>
+            <comment line="64">
+                                
+            </comment>
+            <comment line="72">
+                The &quot;metrics&quot; information requested by clients is usually nothing
+                 more than the horizontal advance of the character.
+                 In most cases this advance and other metrics information is stored
+                 in the glyph image cache.
+                 But in some cases we do not automatically retrieve the glyph
+                 image when the advance is requested. In those cases we want to
+                 cache the advances since this has been shown to be important for
+                 performance.
+                 The segmented cache is used in cases when the single array
+                 would be too large.                
+            </comment>
+            <comment line="86">
+                Outline bounds are used when printing and when drawing outlines
+                 to the screen. On balance the relative rarity of these cases
+                 and the fact that getting this requires generating a path at
+                 the scaler level means that its probably OK to store these
+                 in a Java-level hashmap as the trade-off between time and space.
+                 Later can revisit whether to cache these at all, or elsewhere.
+                 Should also profile whether subsequent to getting the bounds, the
+                 outline itself is also requested. The 1.4 implementation doesn&apos;t
+                 cache outlines so you could generate the path twice - once to get
+                 the bounds and again to return the outline to the client.
+                 If the two uses are coincident then also look into caching outlines.
+                 One simple optimisation is that we could store the last single
+                 outline retrieved. This assumes that bounds then outline will always
+                 be retrieved for a glyph rather than retrieving bounds for all glyphs
+                 then outlines for all glyphs.                
+            </comment>
+            <comment line="111">
+                                
+            </comment>
+            <comment line="114">
+                                
+            </comment>
+            <comment line="309">
+                A number of methods are delegated by the strike to the scaler
+                 context which is a shared resource on a physical font.                
+            </comment>
+            <comment line="325">
+                There&apos;s no global state conflicts, so this method is not
+                 presently synchronized.                
+            </comment>
+            <comment line="359">
+                                
+            </comment>
+            <comment line="422">
+                The following method is called from CompositeStrike as a special case.                
+            </comment>
+            <comment line="456">
+                                
+            </comment>
+            <comment line="541">
+                                
+            </comment>
+            <comment line="575">
+                Metrics info is always retrieved. If the GlyphInfo address is non-zero
+                 then metrics info there is valid and can just be copied.
+                 This is in user space coordinates unless getUserAdv == false.
+                 Device space advance should not be propagated out of this class.                
+            </comment>
+            <comment line="773">
+                These 3 metrics methods below should be implemented to return
+                 values in user space.                
+            </comment>
+            <comment line="873">
+                The caller of this can be trusted to return a copy of this
+                 return value rectangle to public API. In fact frequently it
+                 can&apos;t use use this return value directly anyway.
+                 This returns bounds in device space. Currently the only
+                 caller is SGV and it converts back to user space.
+                 We could change things so that this code does the conversion so
+                 that all coords coming out of the font system are converted back
+                 into user space even if they were measured in device space.
+                 The same applies to the other methods that return outlines (below)
+                 But it may make particular sense for this method that caches its
+                 results.
+                 There&apos;d be plenty of exceptions, to this too, eg getGlyphPoint needs
+                 device coords as its called from native layout and getGlyphImageBounds
+                 is used by GlyphVector.getGlyphPixelBounds which is specified to
+                 return device coordinates, the image pointers aren&apos;t really used
+                 up in Java code either.                
+            </comment>
+            <declaration name="INVISIBLE_GLYPHS" type="int" line="47"/>
+            <declaration name="fileFont" type="FileFont" line="49"/>
+            <declaration name="UNINITIALISED" type="int" line="55"/>
+            <declaration name="INTARRAY" type="int" line="56"/>
+            <declaration name="LONGARRAY" type="int" line="57"/>
+            <declaration name="SEGINTARRAY" type="int" line="58"/>
+            <declaration name="SEGLONGARRAY" type="int" line="59"/>
+            <declaration name="glyphCacheFormat" type="int" line="61"/>
+            <declaration name="SEGSHIFT" type="int" line="64"/>
+            <declaration name="SEGSIZE" type="int" line="65"/>
+            <declaration name="segmentedCache" type="boolean" line="67"/>
+            <declaration name="segIntGlyphImages" type="int[][]" line="68"/>
+            <declaration name="segLongGlyphImages" type="long[][]" line="69"/>
+            <declaration name="horizontalAdvances" type="float[]" line="82"/>
+            <declaration name="segHorizontalAdvances" type="float[][]" line="83"/>
+            <declaration name="boundsMap" type="ConcurrentHashMap&lt;Integer,Rectangle2D.Float&gt;" line="101"/>
+            <declaration name="glyphMetricsMapRef" type="SoftReference&lt;ConcurrentHashMap&lt;Integer,Point2D.Float&gt;&gt;" line="102"/>
+            <declaration name="invertDevTx" type="AffineTransform" line="105"/>
+            <declaration name="useNatives" type="boolean" line="107"/>
+            <declaration name="nativeStrikes" type="NativeStrike[]" line="108"/>
+            <declaration name="intPtSize" type="int" line="111"/>
+            <method name="initNative" type="boolean" line="114"/>
+            <declaration name="isXPorLater" type="boolean" line="115"/>
+            <scope line="116">
+                <scope line="118"/>
+            </scope>
+            <method name="FileFontStrike" type="constructor" line="123">
+                <params>
+                    <param name="fileFont" type="FileFont"/>
+                    <param name="desc" type="FontStrikeDesc"/>
+                </params>
+                <comment line="128">
+                    If using algorithmic styling, the base values are
+                     boldness = 1.0, italic = 0.0. The superclass constructor
+                     initialises these.                    
+                </comment>
+                <comment line="154">
+                    Amble fonts are better rendered unhinted although there&apos;s the
+                     inevitable fuzziness that accompanies this due to no longer
+                     snapping stems to the pixel grid. The exception is that in B&amp;W
+                     mode they are worse without hinting. The down side to that is that
+                     B&amp;W metrics will differ which normally isn&apos;t the case, although
+                     since AA mode is part of the measuring context that should be OK.
+                     We don&apos;t expect Amble to be installed in the Windows fonts folder.
+                     If we were to, then we&apos;d also might want to disable using the
+                     native rasteriser path which is used for LCD mode for platform
+                     fonts. since we have no way to disable hinting by GDI.
+                     In the case of Amble, since its &apos;gasp&apos; table says to disable
+                     hinting, I&apos;d expect GDI to follow that, so likely it should
+                     all be consistent even if GDI used.                    
+                </comment>
+                <comment line="171">
+                    If any of the values is NaN then substitute the null scaler context.
+                     This will return null images, zero advance, and empty outlines
+                     as no rendering need take place in this case.
+                     We pass in the null scaler as the singleton null context
+                     requires it. However                    
+                </comment>
+                <comment line="190">
+                    Always segment for fonts with &gt; 256 glyphs, but also for smaller
+                     fonts with non-typical sizes and transforms.
+                     Segmenting for all non-typical pt sizes helps to minimise memory
+                     usage when very many distinct strikes are created.
+                     The size range of 0-&gt;5 and 37-&gt;INF for segmenting is arbitrary
+                     but the intention is that typical GUI integer point sizes (6-&gt;36)
+                     should not segment unless there&apos;s another reason to do so.                    
+                </comment>
+                <comment line="198">
+                    interpreted only when meaningful.                    
+                </comment>
+                <comment line="206">
+                    This can only happen if we failed to allocate memory for context.
+                     NB: in such case we may still have some memory in java heap
+                         but subsequent attempt to allocate null scaler context
+                         may fail too (cause it is allocate in the native heap).
+                         It is not clear how to make this more robust but on the
+                         other hand getting NULL here seems to be extremely unlikely.                    
+                </comment>
+                <comment line="214">
+                    REMIND: when the code is updated to install cache objects
+                     rather than using a switch this will be more efficient.                    
+                </comment>
+                <comment line="223">
+                    First, see if native code should be used to create the glyph.
+                     GDI will return the integer metrics, not fractional metrics, which
+                     may be requested for this strike, so we would require here that :
+                     desc.fmHint != INTVAL_FRACTIONALMETRICS_ON
+                     except that the advance returned by GDI is always overwritten by
+                     the JDK rasteriser supplied one (see getGlyphImageFromWindows()).                    
+                </comment>
+                <comment line="243">
+                    Check its a simple scale of a pt size in the range                    
+                </comment>
+                <comment line="251">
+                    Maybe initialise these strikes lazily?. But we
+                     know we need at least one                    
+                </comment>
+                <comment line="272">
+                    Always get the image and the advance together for smaller sizes
+                     that are likely to be important to rendering performance.
+                     The pixel size of 48.0 can be thought of as
+                     &quot;maximumSizeForGetImageWithAdvance&quot;.
+                     This should be no greater than OutlineTextRender.THRESHOLD.                    
+                </comment>
+                <comment line="285">
+                    Some applications request advance frequently during layout.
+                     If we are not getting and caching the image with the advance,
+                     there is a potentially significant performance penalty if the
+                     advance is repeatedly requested before requesting the image.
+                     We should at least cache the horizontal advance.
+                     REMIND: could use info in the font, eg hmtx, to retrieve some
+                     advances. But still want to cache it here.                    
+                </comment>
+                <comment line="297">
+                                        
+                </comment>
+                <scope line="127">
+                    <scope line="133"/>
+                    <scope line="138"/>
+                </scope>
+                <declaration name="matrix" type="double[]" line="143"/>
+                <declaration name="at" type="AffineTransform" line="144"/>
+                <scope line="147">
+                    <scope line="148"/>
+                    <scope line="150"/>
+                </scope>
+                <declaration name="disableHinting" type="boolean" line="168"/>
+                <scope line="179"/>
+                <scope line="181"/>
+                <declaration name="numGlyphs" type="int" line="188"/>
+                <declaration name="ptSize" type="float" line="198"/>
+                <declaration name="iSize" type="int" line="199"/>
+                <declaration name="isSimpleTx" type="boolean" line="200"/>
+                <scope line="213"/>
+                <scope line="239"/>
+                <scope line="242">
+                    <scope line="247">
+                        <declaration name="numNatives" type="int" line="249"/>
+                        <scope line="254"/>
+                    </scope>
+                </scope>
+                <scope line="260"/>
+                <declaration name="maxSz" type="double" line="278"/>
+                <scope line="294">
+                    <scope line="295">
+                        <scope line="298"/>
+                    </scope>
+                    <scope line="301">
+                        <declaration name="numSegments" type="int" line="302"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getNumGlyphs" type="int" line="312"/>
+            <method name="getGlyphImageFromNative" type="long" line="316">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <scope line="317"/>
+                <scope line="319"/>
+            </method>
+            <method name="_getGlyphImageFromWindows" type="long" line="327"/>
+            <method name="getGlyphImageFromWindows" type="long" line="333">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <comment line="342">
+                    Get the advance from the JDK rasterizer. This is mostly
+                     necessary for the fractional metrics case, but there are
+                     also some very small number (&lt;0.25%) of marginal cases where
+                     there is some rounding difference between windows and JDK.
+                     After these are resolved, we can restrict this extra
+                     work to the FM case.                    
+                </comment>
+                <declaration name="family" type="String" line="334"/>
+                <declaration name="style" type="int" line="335"/>
+                <declaration name="size" type="int" line="337"/>
+                <declaration name="ptr" type="long" line="338"/>
+                <scope line="341">
+                    <declaration name="advance" type="float" line="349"/>
+                </scope>
+                <scope line="353"/>
+            </method>
+            <method name="getGlyphImageFromX11" type="long" line="359">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <declaration name="glyphPtr" type="long" line="360"/>
+                <declaration name="charCode" type="char" line="361"/>
+                <scope line="362">
+                    <declaration name="mapper" type="CharToGlyphMapper" line="363"/>
+                    <declaration name="gc" type="int" line="364"/>
+                    <scope line="365">
+                        <scope line="367"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getGlyphImagePtr" type="long" line="375">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <scope line="376"/>
+                <declaration name="glyphPtr" type="long" line="379"/>
+                <scope line="380"/>
+                <scope line="382">
+                    <scope line="383">
+                        <scope line="385"/>
+                    </scope>
+                    <scope line="391"/>
+                </scope>
+            </method>
+            <method name="getGlyphImagePtrs" type="void" line="399">
+                <params>
+                    <param name="glyphCodes" type="int[]"/>
+                    <param name="images" type="long[]"/>
+                    <param name="len" type="int"/>
+                </params>
+                <scope line="401">
+                    <declaration name="glyphCode" type="int" line="402"/>
+                    <scope line="403"/>
+                    <scope line="406"/>
+                    <scope line="408">
+                        <declaration name="glyphPtr" type="long" line="409"/>
+                        <scope line="410"/>
+                        <scope line="412"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="SLOTZEROMAX" type="int" line="423"/>
+            <method name="getSlot0GlyphImagePtrs" type="int" line="424">
+                <params>
+                    <param name="glyphCodes" type="int[]"/>
+                    <param name="images" type="long[]"/>
+                    <param name="len" type="int"/>
+                </params>
+                <declaration name="convertedCnt" type="int" line="426"/>
+                <scope line="428">
+                    <declaration name="glyphCode" type="int" line="429"/>
+                    <scope line="430"/>
+                    <scope line="432"/>
+                    <scope line="435"/>
+                    <scope line="438"/>
+                    <scope line="440">
+                        <declaration name="glyphPtr" type="long" line="441"/>
+                        <scope line="442"/>
+                        <scope line="445"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getCachedGlyphPtr" type="long" line="456">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <comment line="479">
+                                        
+                </comment>
+                <declaration name="segIndex" type="int" line="461"/>
+                <scope line="462">
+                    <declaration name="subIndex" type="int" line="463"/>
+                </scope>
+                <scope line="465"/>
+                <scope line="472">
+                    <declaration name="subIndex" type="int" line="473"/>
+                </scope>
+                <scope line="475"/>
+            </method>
+            <method name="setCachedGlyphPtr" type="long" line="483">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                    <param name="glyphPtr" type="long"/>
+                </params>
+                <comment line="532">
+                    Reach here only when the cache is not initialised which is only
+                     for the first glyph to be initialised in the strike.
+                     Initialise it and recurse. Note that we are already synchronized.                    
+                </comment>
+                <scope line="486"/>
+                <scope line="489"/>
+                <declaration name="segIndex" type="int" line="495"/>
+                <declaration name="subIndex" type="int" line="496"/>
+                <scope line="497"/>
+                <scope line="500"/>
+                <scope line="503"/>
+                <scope line="509"/>
+                <scope line="512"/>
+                <scope line="520"/>
+                <scope line="523"/>
+                <scope line="526"/>
+            </method>
+            <method name="initGlyphCache" type="void" line="541">
+                <declaration name="numGlyphs" type="int" line="543"/>
+                <declaration name="tmpFormat" type="int" line="544"/>
+                <scope line="545">
+                    <declaration name="numSegments" type="int" line="546"/>
+                    <scope line="547"/>
+                    <scope line="551"/>
+                </scope>
+                <scope line="556">
+                    <scope line="557"/>
+                    <scope line="561"/>
+                </scope>
+            </method>
+            <method name="getGlyphAdvance" type="float" line="570">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+            </method>
+            <method name="getGlyphAdvance" type="float" line="579">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                    <param name="getUserAdv" type="boolean"/>
+                </params>
+                <comment line="586">
+                    Notes on the (getUserAdv == false) case.
+                    
+                     Setting getUserAdv == false is internal to this class.
+                     If there&apos;s no graphics transform we can let
+                     getGlyphAdvance take its course, and potentially caching in
+                     advances arrays, except for signalling that
+                     getUserAdv == false means there is no need to create an image.
+                     It is possible that code already calculated the user advance,
+                     and it is desirable to take advantage of that work.
+                     But, if there&apos;s a transform and we want device advance, we
+                     can&apos;t use any values cached in the advances arrays - unless
+                     first re-transform them into device space using &apos;desc.devTx&apos;.
+                     invertDevTx is null if the graphics transform is identity,
+                     a translate, or non-invertible. The latter case should
+                     not ever occur in the getUserAdv == false path.
+                     In other words its either null, or the inversion of a
+                     simple uniform scale. If its null, we can populate and
+                     use the advance caches as normal.
+                    
+                     If we don&apos;t find a cached value, obtain the device advance and
+                     return it. This will get stashed on the image by the caller and any
+                     subsequent metrics calls will be able to use it as is the case
+                     whenever an image is what is initially requested.
+                    
+                     Don&apos;t query if there&apos;s a value cached on the image, since this
+                     getUserAdv==false code path is entered solely when none exists.                    
+                </comment>
+                <comment line="648">
+                    If there is a device transform need x &amp; y advance to
+                     transform back into user space.                    
+                </comment>
+                <comment line="655">
+                    A heuristic optimisation says that for most cases its
+                     worthwhile retrieving the image at the same time as the
+                     advance. So here we get the image data even if its not
+                     already cached.                    
+                </comment>
+                <declaration name="advance" type="float" line="580"/>
+                <scope line="582"/>
+                <scope line="613">
+                    <scope line="615">
+                        <scope line="616">
+                            <declaration name="metrics" type="Point2D.Float" line="617"/>
+                        </scope>
+                        <scope line="620"/>
+                    </scope>
+                </scope>
+                <scope line="624">
+                    <declaration name="segIndex" type="int" line="625"/>
+                    <declaration name="subArray" type="float[]" line="626"/>
+                    <scope line="627">
+                        <scope line="629">
+                            <scope line="630">
+                                <declaration name="metrics" type="Point2D.Float" line="631"/>
+                            </scope>
+                            <scope line="634"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="641">
+                    <declaration name="metrics" type="Point2D.Float" line="642"/>
+                </scope>
+                <scope line="647"/>
+                <scope line="652">
+                    <declaration name="glyphPtr" type="long" line="653"/>
+                    <scope line="654"/>
+                    <scope line="661"/>
+                    <scope line="664"/>
+                    <scope line="668"/>
+                </scope>
+                <scope line="673"/>
+                <scope line="675">
+                    <declaration name="segIndex" type="int" line="676"/>
+                    <declaration name="subIndex" type="int" line="677"/>
+                    <scope line="678">
+                        <scope line="680"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getCodePointAdvance" type="float" line="689">
+                <params>
+                    <param name="cp" type="int"/>
+                </params>
+            </method>
+            <javadoc line="693">
+                Result and pt are both in device space.                
+            </javadoc>
+            <method name="getGlyphImageBounds" type="void" line="697">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                    <param name="pt" type="Point2D.Float"/>
+                    <param name="result" type="Rectangle"/>
+                </params>
+                <comment line="702">
+                    With our current design NULL ptr is not possible
+                    but if we eventually allow scalers to return NULL pointers                    
+                </comment>
+                <comment line="722">
+                    HRGB LCD text may have padding that is empty. This is almost always
+                     going to be when topLeftX is -2 or less.
+                     Try to return a tighter bounding box in that case.
+                     If the first three bytes of every row are all zero, then
+                     add 1 to &quot;x&quot; and reduce &quot;width&quot; by 1.                    
+                </comment>
+                <declaration name="ptr" type="long" line="699"/>
+                <declaration name="topLeftX" type="float" line="700"/>
+                <scope line="705"/>
+                <scope line="730">
+                    <declaration name="minx" type="int" line="731"/>
+                    <scope line="732"/>
+                </scope>
+            </method>
+            <method name="getGlyphImageMinX" type="int" line="739">
+                <params>
+                    <param name="ptr" type="long"/>
+                    <param name="origMinX" type="int"/>
+                </params>
+                <declaration name="width" type="int" line="741"/>
+                <declaration name="height" type="int" line="742"/>
+                <declaration name="rowBytes" type="int" line="743"/>
+                <scope line="746"/>
+                <declaration name="pixelData" type="long" line="750"/>
+                <scope line="751"/>
+                <scope line="754"/>
+                <scope line="758"/>
+                <scope line="762">
+                    <scope line="763">
+                        <scope line="764"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getFontMetrics" type="StrikeMetrics" line="775">
+                <scope line="776">
+                    <scope line="779"/>
+                </scope>
+            </method>
+            <method name="getGlyphMetrics" type="Point2D.Float" line="786">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+            </method>
+            <method name="getGlyphMetrics" type="Point2D.Float" line="790">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                    <param name="getImage" type="boolean"/>
+                </params>
+                <comment line="793">
+                    !!! or do we force sgv user glyphs?                    
+                </comment>
+                <comment line="799">
+                    A heuristic optimisation says that for most cases its
+                     worthwhile retrieving the image at the same time as the
+                     metrics. So here we get the image data even if its not
+                     already cached.                    
+                </comment>
+                <comment line="814">
+                    advance is currently in device space, need to convert back
+                     into user space.                    
+                </comment>
+                <comment line="821">
+                    We sometimes cache these metrics as they are expensive to
+                     generate for large glyphs.
+                     We never reach this path if we obtain images with advances.
+                     But if we do not obtain images with advances its possible that
+                     we first obtain this information, then the image, and never
+                     will access this value again.                    
+                </comment>
+                <comment line="839">
+                                        
+                </comment>
+                <comment line="845">
+                    advance is currently in device space, need to convert back
+                     into user space.                    
+                </comment>
+                <comment line="852">
+                    We aren&apos;t synchronizing here so it is possible to
+                     overwrite the map with another one but this is harmless.                    
+                </comment>
+                <declaration name="metrics" type="Point2D.Float" line="791"/>
+                <scope line="794"/>
+                <declaration name="glyphPtr" type="long" line="797"/>
+                <scope line="798"/>
+                <scope line="805"/>
+                <scope line="808">
+                    <scope line="817"/>
+                </scope>
+                <scope line="820">
+                    <declaration name="key" type="Integer" line="828"/>
+                    <declaration name="value" type="Point2D.Float" line="829"/>
+                    <declaration name="glyphMetricsMap" type="ConcurrentHashMap&lt;Integer,Point2D.Float&gt;" line="830"/>
+                    <scope line="831"/>
+                    <scope line="834">
+                        <scope line="836"/>
+                    </scope>
+                    <scope line="843">
+                        <scope line="848"/>
+                        <scope line="855"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getCharMetrics" type="Point2D.Float" line="868">
+                <params>
+                    <param name="ch" type="char"/>
+                </params>
+            </method>
+            <method name="getGlyphOutlineBounds" type="Rectangle2D.Float" line="889">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+                <scope line="891"/>
+                <declaration name="key" type="Integer" line="895"/>
+                <declaration name="bounds" type="Rectangle2D.Float" line="896"/>
+                <scope line="898"/>
+            </method>
+            <method name="getOutlineBounds" type="Rectangle2D" line="905">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                </params>
+            </method>
+            <declaration name="outlineMapRef" type="WeakReference&lt;ConcurrentHashMap&lt;Integer,GeneralPath&gt;&gt;" line="909"/>
+            <method name="getGlyphOutline" type="GeneralPath" line="912">
+                <params>
+                    <param name="glyphCode" type="int"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <comment line="934">
+                    mutable!                    
+                </comment>
+                <declaration name="gp" type="GeneralPath" line="914"/>
+                <declaration name="outlineMap" type="ConcurrentHashMap&lt;Integer,GeneralPath&gt;" line="915"/>
+                <scope line="917">
+                    <scope line="919"/>
+                </scope>
+                <scope line="924">
+                    <scope line="926"/>
+                </scope>
+                <scope line="935"/>
+            </method>
+            <method name="getGlyphVectorOutline" type="GeneralPath" line="941">
+                <params>
+                    <param name="glyphs" type="int[]"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="adjustPoint" type="void" line="946">
+                <params>
+                    <param name="pt" type="Point2D.Float"/>
+                </params>
+                <scope line="947"/>
+            </method>
+        </class>
+    </source>

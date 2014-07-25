@@ -1,0 +1,1128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.awt">
+        <import package="java.awt.event"/>
+        <import package="java.awt.peer.ComponentPeer"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.lang.reflect.InvocationTargetException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.EmptyStackException"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <import package="sun.awt.AppContext"/>
+        <import package="sun.awt.AWTAutoShutdown"/>
+        <import package="sun.awt.PeerEvent"/>
+        <import package="sun.awt.SunToolkit"/>
+        <import package="sun.awt.EventQueueItem"/>
+        <import package="sun.awt.AWTAccessor"/>
+        <import package="java.util.concurrent.locks.Condition"/>
+        <import package="java.util.concurrent.locks.Lock"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.ProtectionDomain"/>
+        <import package="sun.misc.SharedSecrets"/>
+        <import package="sun.misc.JavaSecurityAccess"/>
+        <class name="EventQueue" line="57">
+            <comment line="104">
+                From Thread.java                
+            </comment>
+            <comment line="117">
+                We maintain one Queue for each priority that the EventQueue supports.
+                 That is, the EventQueue object is actually implemented as
+                 NUM_PRIORITIES queues and all Events on a particular internal Queue
+                 have identical priority. Events are pulled off the EventQueue starting
+                 with the Queue of highest priority. We progress in decreasing order
+                 across all Queues.                
+            </comment>
+            <comment line="127">
+                The next EventQueue on the stack, or null if this EventQueue is
+                 on the top of the stack.  If nextQueue is non-null, requests to post
+                 an event are forwarded to nextQueue.                
+            </comment>
+            <comment line="134">
+                The previous EventQueue on the stack, or null if this is the
+                 &quot;base&quot; EventQueue.                
+            </comment>
+            <comment line="140">
+                A single lock to synchronize the push()pop() and related operations with
+                 all the EventQueues from the AppContext. Synchronization on any particular
+                 event queue(s) is not enough: we should lock the whole stack.                
+            </comment>
+            <comment line="148">
+                Dummy runnable to wake up EDT from getNextEvent() after
+                pushpop is performed                
+            </comment>
+            <comment line="164">
+                The time stamp of the last dispatched InputEvent or ActionEvent.                
+            </comment>
+            <comment line="175">
+                Non-zero if a thread is waiting in getNextEvent(int) for an event of
+                 a particular ID to be posted to the queue.                
+            </comment>
+            <comment line="386">
+                Should avoid of calling this method by any means
+                 as it&apos;s working time is dependant on EQ length.
+                 In the wors case this method alone can slow down the entire application
+                 10 times by stalling the Event processing.
+                 Only here by backward compatibility reasons.                
+            </comment>
+            <comment line="523">
+                Must be called under the lock. Doesn&apos;t call flushPendingEvents()                
+            </comment>
+            <comment line="1065">
+                Gets the &lt;code&gt;EventDispatchThread&lt;code&gt; for this
+                 &lt;code&gt;EventQueue&lt;code&gt;.
+                 @return the event dispatch thread associated with this event queue
+                         or &lt;code&gt;null&lt;code&gt; if this event queue doesn&apos;t have a
+                         working thread associated with it
+                 @see    java.awt.EventQueue#initDispatchThread
+                 @see    java.awt.EventQueue#detachDispatchThread                
+            </comment>
+            <comment line="1083">
+                Removes any pending events for the specified source object.
+                 If removeAllEvents parameter is &lt;code&gt;true&lt;code&gt; then all
+                 events for the specified source object are removed, if it
+                 is &lt;code&gt;false&lt;code&gt; then &lt;code&gt;SequencedEvent&lt;code&gt;, &lt;code&gt;SentEvent&lt;code&gt;,
+                 &lt;code&gt;FocusEvent&lt;code&gt;, &lt;code&gt;WindowEvent&lt;code&gt;, &lt;code&gt;KeyEvent&lt;code&gt;,
+                 and &lt;code&gt;InputMethodEvent&lt;code&gt; are kept in the queue, but all other
+                 events are removed.
+                
+                 This method is normally called by the source&apos;s
+                 &lt;code&gt;removeNotify&lt;code&gt; method.                
+            </comment>
+            <comment line="1247">
+                Called from PostEventQueue.postEvent to notify that a new event
+                 appeared. First it proceeds to the EventQueue on the top of the
+                 stack, then notifies the associated dispatch thread if it exists
+                 or starts a new one otherwise.                
+            </comment>
+            <javadoc line="57">
+                &lt;code&gt;EventQueue&lt;/code&gt; is a platform-independent class
+                  that queues events, both from the underlying peer classes
+                  and from trusted application classes.
+                  &lt;p&gt;
+                  It encapsulates asynchronous event dispatch machinery which
+                  extracts events from the queue and dispatches them by calling{@link #dispatchEvent(AWTEvent) dispatchEvent(AWTEvent)} method
+                  on this &lt;code&gt;EventQueue&lt;/code&gt; with the event to be dispatched
+                  as an argument.  The particular behavior of this machinery is
+                  implementation-dependent.  The only requirements are that events
+                  which were actually enqueued to this queue (note that events
+                  being posted to the &lt;code&gt;EventQueue&lt;/code&gt; can be coalesced)
+                  are dispatched:
+                  &lt;dl&gt;
+                  &lt;dt&gt; Sequentially.
+                  &lt;dd&gt; That is, it is not permitted that several events from
+                  this queue are dispatched simultaneously.
+                  &lt;dt&gt; In the same order as they are enqueued.
+                  &lt;dd&gt; That is, if &lt;code&gt;AWTEvent&lt;/code&gt;&amp;nbsp;A is enqueued
+                  to the &lt;code&gt;EventQueue&lt;/code&gt; before
+                  &lt;code&gt;AWTEvent&lt;/code&gt;&amp;nbsp;B then event B will not be
+                  dispatched before event A.
+                  &lt;/dl&gt;
+                  &lt;p&gt;
+                  Some browsers partition applets in different code bases into
+                  separate contexts, and establish walls between these contexts.
+                  In such a scenario, there will be one &lt;code&gt;EventQueue&lt;/code&gt;
+                  per context. Other browsers place all applets into the same
+                  context, implying that there will be only a single, global
+                  &lt;code&gt;EventQueue&lt;/code&gt; for all applets. This behavior is
+                  implementation-dependent.  Consult your browser&apos;s documentation
+                  for more information.
+                  &lt;p&gt;
+                  For information on the threading issues of the event dispatch
+                  machinery, see &lt;a href=&quot;doc-files/AWTThreadIssues.html#Autoshutdown&quot;
+                  &gt;AWT Threading Issues&lt;/a&gt;.                
+                <author>
+                    Thomas Ball                    
+                </author>
+                <author>
+                    Fred Ecks                    
+                </author>
+                <author>
+                    David Mendenhall                    
+                </author>
+                <since>
+                    1.1                    
+                </since>
+            </javadoc>
+            <declaration name="threadInitNumber" type="int" line="104"/>
+            <method name="nextThreadNum" type="int" line="105"/>
+            <declaration name="LOW_PRIORITY" type="int" line="109"/>
+            <declaration name="NORM_PRIORITY" type="int" line="110"/>
+            <declaration name="HIGH_PRIORITY" type="int" line="111"/>
+            <declaration name="ULTIMATE_PRIORITY" type="int" line="112"/>
+            <declaration name="NUM_PRIORITIES" type="int" line="114"/>
+            <declaration name="queues" type="Queue[]" line="124"/>
+            <declaration name="nextQueue" type="EventQueue" line="131"/>
+            <declaration name="previousQueue" type="EventQueue" line="137"/>
+            <declaration name="pushPopLock" type="Lock" line="144"/>
+            <declaration name="pushPopCond" type="Condition" line="145"/>
+            <declaration name="dummyRunnable" type="Runnable" line="151"/>
+            <anonymous_class line="151">
+                <method name="run" type="void" line="152"/>
+            </anonymous_class>
+            <declaration name="dispatchThread" type="EventDispatchThread" line="156"/>
+            <declaration name="threadGroup" type="ThreadGroup" line="158"/>
+            <declaration name="classLoader" type="ClassLoader" line="160"/>
+            <declaration name="mostRecentEventTime" type="long" line="166"/>
+            <declaration name="currentEvent" type="WeakReference" line="168"/>
+            <javadoc line="168">
+                The modifiers field of the current event, if the current event is an
+                  InputEvent or ActionEvent.                
+            </javadoc>
+            <declaration name="waitForID" type="int" line="178"/>
+            <declaration name="name" type="String" line="180"/>
+            <declaration name="eventLog" type="PlatformLogger" line="182"/>
+            <scope line="184">
+                <anonymous_class line="186">
+                    <method name="getDispatchThread" type="Thread" line="187">
+                        <params>
+                            <param name="eventQueue" type="EventQueue"/>
+                        </params>
+                    </method>
+                    <method name="isDispatchThreadImpl" type="boolean" line="190">
+                        <params>
+                            <param name="eventQueue" type="EventQueue"/>
+                        </params>
+                    </method>
+                </anonymous_class>
+            </scope>
+            <method name="EventQueue" type="constructor" line="196">
+                <comment line="200">
+                    NOTE: if you ever have to start the associated event dispatch
+                     thread at this point, be aware of the following problem:
+                     If this EventQueue instance is created in
+                     SunToolkit.createNewAppContext() the started dispatch thread
+                     may call AppContext.getAppContext() before createNewAppContext()
+                     completes thus causing mess in thread group to appcontext mapping.                    
+                </comment>
+                <scope line="197"/>
+            </method>
+            <javadoc line="213">
+                Posts a 1.1-style event to the &lt;code&gt;EventQueue&lt;/code&gt;.
+                  If there is an existing event on the queue with the same ID
+                  and event source, the source &lt;code&gt;Component&lt;/code&gt;&apos;s
+                  &lt;code&gt;coalesceEvents&lt;/code&gt; method will be called.                
+                <param>
+                    theEvent an instance of <code>java.awt.AWTEvent</code>,
+                      or a subclass of it                    
+                </param>
+                <throws>
+                    NullPointerException if <code>theEvent</code> is <code>null</code>                    
+                </throws>
+            </javadoc>
+            <method name="postEvent" type="void" line="223">
+                <params>
+                    <param name="theEvent" type="AWTEvent"/>
+                </params>
+            </method>
+            <javadoc line="228">
+                Posts a 1.1-style event to the &lt;code&gt;EventQueue&lt;/code&gt;.
+                  If there is an existing event on the queue with the same ID
+                  and event source, the source &lt;code&gt;Component&lt;/code&gt;&apos;s
+                  &lt;code&gt;coalesceEvents&lt;/code&gt; method will be called.                
+                <param>
+                    theEvent an instance of <code>java.awt.AWTEvent</code>,
+                      or a subclass of it                    
+                </param>
+            </javadoc>
+            <method name="postEventPrivate" type="void" line="237">
+                <params>
+                    <param name="theEvent" type="AWTEvent"/>
+                </params>
+                <comment line="242">
+                    Forward the event to the top of EventQueue stack                    
+                </comment>
+                <scope line="240">
+                    <scope line="241"/>
+                    <scope line="246">
+                        <scope line="247"/>
+                        <scope line="249"/>
+                    </scope>
+                </scope>
+                <scope line="254"/>
+            </method>
+            <method name="getPriority" type="int" line="259">
+                <params>
+                    <param name="theEvent" type="AWTEvent"/>
+                </params>
+                <scope line="260">
+                    <declaration name="peerEvent" type="PeerEvent" line="261"/>
+                    <scope line="262"/>
+                    <scope line="265"/>
+                    <scope line="268"/>
+                </scope>
+                <declaration name="id" type="int" line="272"/>
+                <scope line="273"/>
+            </method>
+            <javadoc line="279">
+                Posts the event to the internal Queue of specified priority,
+                  coalescing as appropriate.                
+                <param>
+                    theEvent an instance of <code>java.awt.AWTEvent</code>,
+                      or a subclass of it                    
+                </param>
+                <param>
+                    priority  the desired priority of the event                    
+                </param>
+            </javadoc>
+            <method name="postEvent" type="void" line="287">
+                <params>
+                    <param name="theEvent" type="AWTEvent"/>
+                    <param name="priority" type="int"/>
+                </params>
+                <comment line="311">
+                    The event was not coalesced or has non-Component source.                    
+                </comment>
+                <comment line="312">
+                    Insert it at the end of the appropriate Queue.                    
+                </comment>
+                <scope line="288"/>
+                <declaration name="newItem" type="EventQueueItem" line="292"/>
+                <declaration name="notifyID" type="boolean" line="296"/>
+                <scope line="298">
+                    <declaration name="shouldNotify" type="boolean" line="299"/>
+                    <scope line="302">
+                        <scope line="303"/>
+                    </scope>
+                    <scope line="307"/>
+                </scope>
+                <scope line="310">
+                    <scope line="315"/>
+                </scope>
+            </method>
+            <method name="coalescePaintEvent" type="boolean" line="321">
+                <params>
+                    <param name="e" type="PaintEvent"/>
+                </params>
+                <declaration name="sourcePeer" type="ComponentPeer" line="322"/>
+                <scope line="323"/>
+                <declaration name="cache" type="EventQueueItem[]" line="326"/>
+                <scope line="327"/>
+                <declaration name="index" type="int" line="330"/>
+                <scope line="332">
+                    <declaration name="merged" type="PaintEvent" line="333"/>
+                    <scope line="334"/>
+                </scope>
+            </method>
+            <method name="mergePaintEvents" type="PaintEvent" line="342">
+                <params>
+                    <param name="a" type="PaintEvent"/>
+                    <param name="b" type="PaintEvent"/>
+                </params>
+                <declaration name="aRect" type="Rectangle" line="343"/>
+                <declaration name="bRect" type="Rectangle" line="344"/>
+                <scope line="345"/>
+                <scope line="348"/>
+            </method>
+            <method name="coalesceMouseEvent" type="boolean" line="354">
+                <params>
+                    <param name="e" type="MouseEvent"/>
+                </params>
+                <declaration name="cache" type="EventQueueItem[]" line="355"/>
+                <scope line="356"/>
+                <declaration name="index" type="int" line="359"/>
+                <scope line="360"/>
+            </method>
+            <method name="coalescePeerEvent" type="boolean" line="367">
+                <params>
+                    <param name="e" type="PeerEvent"/>
+                </params>
+                <declaration name="cache" type="EventQueueItem[]" line="368"/>
+                <scope line="369"/>
+                <declaration name="index" type="int" line="372"/>
+                <scope line="373">
+                    <scope line="375"/>
+                    <scope line="378"/>
+                </scope>
+            </method>
+            <method name="coalesceOtherEvent" type="boolean" line="392">
+                <params>
+                    <param name="e" type="AWTEvent"/>
+                    <param name="priority" type="int"/>
+                </params>
+                <comment line="398">
+                    Give Component.coalesceEvents a chance                    
+                </comment>
+                <declaration name="id" type="int" line="393"/>
+                <declaration name="source" type="Component" line="394"/>
+                <scope line="397">
+                    <scope line="399">
+                        <declaration name="coalescedEvent" type="AWTEvent" line="400"/>
+                        <scope line="402"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="coalesceEvent" type="boolean" line="411">
+                <params>
+                    <param name="e" type="AWTEvent"/>
+                    <param name="priority" type="int"/>
+                </params>
+                <comment line="418">
+                    The worst case                    
+                </comment>
+                <scope line="412"/>
+                <scope line="415"/>
+                <scope line="421"/>
+                <scope line="424"/>
+                <scope line="427"/>
+            </method>
+            <method name="cacheEQItem" type="void" line="433">
+                <params>
+                    <param name="entry" type="EventQueueItem"/>
+                </params>
+                <declaration name="index" type="int" line="434"/>
+                <scope line="435">
+                    <declaration name="source" type="Component" line="436"/>
+                    <scope line="437"/>
+                </scope>
+            </method>
+            <method name="uncacheEQItem" type="void" line="444">
+                <params>
+                    <param name="entry" type="EventQueueItem"/>
+                </params>
+                <declaration name="index" type="int" line="445"/>
+                <scope line="446">
+                    <declaration name="source" type="Component" line="447"/>
+                    <scope line="448"/>
+                </scope>
+            </method>
+            <declaration name="PAINT" type="int" line="455"/>
+            <declaration name="UPDATE" type="int" line="456"/>
+            <declaration name="MOVE" type="int" line="457"/>
+            <declaration name="DRAG" type="int" line="458"/>
+            <declaration name="PEER" type="int" line="459"/>
+            <declaration name="CACHE_LENGTH" type="int" line="460"/>
+            <method name="eventToCacheIndex" type="int" line="462">
+                <params>
+                    <param name="e" type="AWTEvent"/>
+                </params>
+            </method>
+            <javadoc line="477">
+                Returns whether an event is pending on any of the separate
+                  Queues.                
+                <return>
+                    whether an event is pending on any of the separate Queues                    
+                </return>
+            </javadoc>
+            <method name="noEvents" type="boolean" line="482">
+                <scope line="483">
+                    <scope line="484"/>
+                </scope>
+            </method>
+            <javadoc line="492">
+                Removes an event from the &lt;code&gt;EventQueue&lt;/code&gt; and
+                  returns it.  This method will block until an event has
+                  been posted by another thread.                
+                <return>
+                    the next <code>AWTEvent</code>                    
+                </return>
+                <exception>
+                    InterruptedExceptionif any thread has interrupted this thread                    
+                </exception>
+            </javadoc>
+            <method name="getNextEvent" type="AWTEvent" line="500">
+                <comment line="502">
+                    SunToolkit.flushPendingEvents must be called outside
+                     of the synchronized block to avoid deadlock when
+                     event queues are nested with push()pop().                    
+                </comment>
+                <scope line="501">
+                    <scope line="509">
+                        <declaration name="event" type="AWTEvent" line="510"/>
+                        <scope line="511"/>
+                    </scope>
+                    <scope line="516"/>
+                </scope>
+            </method>
+            <method name="getNextEventPrivate" type="AWTEvent" line="525">
+                <scope line="526">
+                    <scope line="527">
+                        <declaration name="entry" type="EventQueueItem" line="528"/>
+                        <scope line="530"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getNextEvent" type="AWTEvent" line="540">
+                <params>
+                    <param name="id" type="int"/>
+                </params>
+                <comment line="542">
+                    SunToolkit.flushPendingEvents must be called outside
+                     of the synchronized block to avoid deadlock when
+                     event queues are nested with push()pop().                    
+                </comment>
+                <scope line="541">
+                    <scope line="549">
+                        <scope line="550">
+                            <scope line="553">
+                                <scope line="554">
+                                    <scope line="555"/>
+                                    <scope line="557"/>
+                                    <scope line="560"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="571"/>
+                </scope>
+            </method>
+            <javadoc line="577">
+                Returns the first event on the &lt;code&gt;EventQueue&lt;/code&gt;
+                  without removing it.                
+                <return>
+                    the first event                    
+                </return>
+            </javadoc>
+            <method name="peekEvent" type="AWTEvent" line="582">
+                <scope line="584">
+                    <scope line="585">
+                        <scope line="586"/>
+                    </scope>
+                </scope>
+                <scope line="590"/>
+            </method>
+            <javadoc line="597">
+                Returns the first event with the specified id, if any.                
+                <param>
+                    id the id of the type of event desired                    
+                </param>
+                <return>
+                    the first event of the specified id or <code>null</code>
+                      if there is no such event                    
+                </return>
+            </javadoc>
+            <method name="peekEvent" type="AWTEvent" line="603">
+                <params>
+                    <param name="id" type="int"/>
+                </params>
+                <scope line="605">
+                    <scope line="606">
+                        <declaration name="q" type="EventQueueItem" line="607"/>
+                        <scope line="608">
+                            <scope line="609"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="614"/>
+            </method>
+            <declaration name="javaSecurityAccess" type="JavaSecurityAccess" line="621"/>
+            <javadoc line="624">
+                Dispatches an event. The manner in which the event is
+                  dispatched depends upon the type of the event and the
+                  type of the event&apos;s source object:
+                  &lt;p&gt; &lt;/p&gt;
+                  &lt;table border=1 summary=&quot;Event types, source types, and dispatch methods&quot;&gt;
+                  &lt;tr&gt;
+                  &lt;th&gt;Event Type&lt;/th&gt;
+                  &lt;th&gt;Source Type&lt;/th&gt;
+                  &lt;th&gt;Dispatched To&lt;/th&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;ActiveEvent&lt;/td&gt;
+                  &lt;td&gt;Any&lt;/td&gt;
+                  &lt;td&gt;event.dispatch()&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;Other&lt;/td&gt;
+                  &lt;td&gt;Component&lt;/td&gt;
+                  &lt;td&gt;source.dispatchEvent(AWTEvent)&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;Other&lt;/td&gt;
+                  &lt;td&gt;MenuComponent&lt;/td&gt;
+                  &lt;td&gt;source.dispatchEvent(AWTEvent)&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;tr&gt;
+                  &lt;td&gt;Other&lt;/td&gt;
+                  &lt;td&gt;Other&lt;/td&gt;
+                  &lt;td&gt;No action (ignored)&lt;/td&gt;
+                  &lt;/tr&gt;
+                  &lt;/table&gt;
+                  &lt;p&gt; &lt;/p&gt;                
+                <param>
+                    event an instance of <code>java.awt.AWTEvent</code>,
+                      or a subclass of it                    
+                </param>
+                <throws>
+                    NullPointerException if <code>event</code> is <code>null</code>                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="dispatchEvent" type="void" line="662">
+                <params>
+                    <param name="event" type="AWTEvent"/>
+                </params>
+                <declaration name="src" type="Object" line="663"/>
+                <anonymous_class line="664">
+                    <method name="run" type="Void" line="665"/>
+                </anonymous_class>
+                <declaration name="action" type="PrivilegedAction&lt;Void&gt;" line="664"/>
+                <declaration name="stack" type="AccessControlContext" line="671"/>
+                <declaration name="srcAcc" type="AccessControlContext" line="672"/>
+                <declaration name="eventAcc" type="AccessControlContext" line="673"/>
+                <scope line="674"/>
+                <scope line="676">
+                    <anonymous_class line="678">
+                        <method name="run" type="Void" line="679"/>
+                    </anonymous_class>
+                </scope>
+            </method>
+            <method name="getAccessControlContextFrom" type="AccessControlContext" line="687">
+                <params>
+                    <param name="src" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="697">
+                Called from dispatchEvent() under a correct AccessControlContext                
+            </javadoc>
+            <method name="dispatchEventImpl" type="void" line="700">
+                <params>
+                    <param name="event" type="AWTEvent"/>
+                    <param name="src" type="Object"/>
+                </params>
+                <comment line="703">
+                    This could become the sole method of dispatching in time.                    
+                </comment>
+                <scope line="702"/>
+                <scope line="706"/>
+                <scope line="709"/>
+                <scope line="711"/>
+                <scope line="713">
+                    <scope line="714"/>
+                </scope>
+                <scope line="717">
+                    <scope line="718"/>
+                </scope>
+            </method>
+            <javadoc line="724">
+                Returns the timestamp of the most recent event that had a timestamp, and
+                  that was dispatched from the &lt;code&gt;EventQueue&lt;/code&gt; associated with the
+                  calling thread. If an event with a timestamp is currently being
+                  dispatched, its timestamp will be returned. If no events have yet
+                  been dispatched, the EventQueue&apos;s initialization time will be
+                  returned instead.In the current version of
+                  the JDK, only &lt;code&gt;InputEvent&lt;/code&gt;s,
+                  &lt;code&gt;ActionEvent&lt;/code&gt;s, and &lt;code&gt;InvocationEvent&lt;/code&gt;s have
+                  timestamps; however, future versions of the JDK may add timestamps to
+                  additional event types. Note that this method should only be invoked
+                  from an application&apos;s {@link #isDispatchThread event dispatching thread}.
+                  If this method is
+                  invoked from another thread, the current system time (as reported by
+                  &lt;code&gt;System.currentTimeMillis()&lt;/code&gt;) will be returned instead.                
+                <return>
+                    the timestamp of the last <code>InputEvent</code>,
+                      <code>ActionEvent</code>, or <code>InvocationEvent</code> to be
+                      dispatched, or <code>System.currentTimeMillis()</code> if this
+                      method is invoked on a thread other than an event dispatching
+                      thread                    
+                </return>
+                <see>
+                    java.awt.event.InputEvent#getWhen                    
+                </see>
+                <see>
+                    java.awt.event.ActionEvent#getWhen                    
+                </see>
+                <see>
+                    java.awt.event.InvocationEvent#getWhen                    
+                </see>
+                <see>
+                    #isDispatchThread                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getMostRecentEventTime" type="long" line="752"/>
+            <method name="getMostRecentEventTimeImpl" type="long" line="755">
+                <scope line="757"/>
+                <scope line="761"/>
+            </method>
+            <javadoc line="766">
+                @return most recent event time on all threads.                
+            </javadoc>
+            <method name="getMostRecentEventTimeEx" type="long" line="769">
+                <scope line="771"/>
+                <scope line="773"/>
+            </method>
+            <javadoc line="778">
+                Returns the the event currently being dispatched by the
+                  &lt;code&gt;EventQueue&lt;/code&gt; associated with the calling thread. This is
+                  useful if a method needs access to the event, but was not designed to
+                  receive a reference to it as an argument. Note that this method should
+                  only be invoked from an application&apos;s event dispatching thread. If this
+                  method is invoked from another thread, null will be returned.                
+                <return>
+                    the event currently being dispatched, or null if this method is
+                      invoked on a thread other than an event dispatching thread                    
+                </return>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getCurrentEvent" type="AWTEvent" line="790"/>
+            <method name="getCurrentEventImpl" type="AWTEvent" line="793">
+                <scope line="795"/>
+                <scope line="799"/>
+            </method>
+            <javadoc line="804">
+                Replaces the existing &lt;code&gt;EventQueue&lt;/code&gt; with the specified one.
+                  Any pending events are transferred to the new &lt;code&gt;EventQueue&lt;/code&gt;
+                  for processing by it.                
+                <param>
+                    newEventQueue an <code>EventQueue</code>
+                      (or subclass thereof) instance to be use                    
+                </param>
+                <see>
+                    java.awt.EventQueue#pop                    
+                </see>
+                <throws>
+                    NullPointerException if <code>newEventQueue</code> is <code>null</code>                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="push" type="void" line="815">
+                <params>
+                    <param name="newEventQueue" type="EventQueue"/>
+                </params>
+                <comment line="834">
+                    Transfer all events forward to new EventQueue.                    
+                </comment>
+                <comment line="837">
+                    Use getNextEventPrivate() as it doesn&apos;t call flushPendingEvents()                    
+                </comment>
+                <comment line="846">
+                    Wake up EDT waiting in getNextEvent(), so it can                    
+                </comment>
+                <comment line="847">
+                    pick up a new EventQueue. Post the waking event before                    
+                </comment>
+                <comment line="848">
+                    topQueue.nextQueue is assigned, otherwise the event would                    
+                </comment>
+                <comment line="849">
+                    go newEventQueue                    
+                </comment>
+                <scope line="816"/>
+                <scope line="821">
+                    <declaration name="topQueue" type="EventQueue" line="822"/>
+                    <scope line="823"/>
+                    <scope line="829"/>
+                    <scope line="835">
+                        <scope line="836"/>
+                        <scope line="839">
+                            <scope line="840"/>
+                        </scope>
+                    </scope>
+                    <declaration name="appContext" type="AppContext" line="855"/>
+                    <scope line="856"/>
+                </scope>
+                <scope line="861"/>
+            </method>
+            <javadoc line="866">
+                Stops dispatching events using this &lt;code&gt;EventQueue&lt;/code&gt;.
+                  Any pending events are transferred to the previous
+                  &lt;code&gt;EventQueue&lt;/code&gt; for processing.
+                  &lt;p&gt;
+                  Warning: To avoid deadlock, do not declare this method
+                  synchronized in a subclass.                
+                <exception>
+                    EmptyStackException if no previous push was made
+                      on this <code>EventQueue</code>                    
+                </exception>
+                <see>
+                    java.awt.EventQueue#push                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="pop" type="void" line="879">
+                <comment line="898">
+                    Transfer all events back to previous EventQueue.                    
+                </comment>
+                <comment line="921">
+                    Wake up EDT waiting in getNextEvent(), so it can                    
+                </comment>
+                <comment line="922">
+                    pick up a new EventQueue                    
+                </comment>
+                <scope line="880"/>
+                <scope line="885">
+                    <declaration name="topQueue" type="EventQueue" line="886"/>
+                    <scope line="887"/>
+                    <declaration name="prevQueue" type="EventQueue" line="890"/>
+                    <scope line="891"/>
+                    <scope line="899">
+                        <scope line="900"/>
+                        <scope line="902">
+                            <scope line="903"/>
+                        </scope>
+                    </scope>
+                    <scope line="911"/>
+                    <declaration name="appContext" type="AppContext" line="916"/>
+                    <scope line="917"/>
+                </scope>
+                <scope line="926"/>
+            </method>
+            <javadoc line="931">
+                Creates a new {@code secondary loop} associated with this
+                  event queue. Use the {@link SecondaryLoop#enter} and{@link SecondaryLoop#exit} methods to start and stop the
+                  event loop and dispatch the events from this queue.                
+                <return>
+                    secondaryLoop A new secondary loop object, which can
+                      be used to launch a new nested event
+                      loop and dispatch events from this queue                    
+                </return>
+                <see>
+                    SecondaryLoop#enter                    
+                </see>
+                <see>
+                    SecondaryLoop#exit                    
+                </see>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="createSecondaryLoop" type="SecondaryLoop" line="946"/>
+            <method name="createSecondaryLoop" type="SecondaryLoop" line="950">
+                <params>
+                    <param name="cond" type="Conditional"/>
+                    <param name="filter" type="EventFilter"/>
+                    <param name="interval" type="long"/>
+                </params>
+                <comment line="954">
+                    Forward the request to the top of EventQueue stack                    
+                </comment>
+                <scope line="952">
+                    <scope line="953"/>
+                    <scope line="957"/>
+                </scope>
+                <scope line="961"/>
+            </method>
+            <javadoc line="966">
+                Returns true if the calling thread is{@link Toolkit#getSystemEventQueue the current AWT EventQueue}&apos;s
+                  dispatch thread. Use this method to ensure that a particular
+                  task is being executed (or not being) there.
+                  &lt;p&gt;
+                  Note: use the {@link #invokeLater} or {@link #invokeAndWait}methods to execute a task in{@link Toolkit#getSystemEventQueue the current AWT EventQueue}&apos;s
+                  dispatch thread.
+                  &lt;p&gt;                
+                <return>
+                    true if running in{@link Toolkit#getSystemEventQueue the current AWT EventQueue}'s
+                      dispatch thread                    
+                </return>
+                <see>
+                    #invokeLater                    
+                </see>
+                <see>
+                    #invokeAndWait                    
+                </see>
+                <see>
+                    Toolkit#getSystemEventQueue                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="isDispatchThread" type="boolean" line="986">
+                <declaration name="eq" type="EventQueue" line="987"/>
+            </method>
+            <method name="isDispatchThreadImpl" type="boolean" line="991">
+                <declaration name="eq" type="EventQueue" line="992"/>
+                <scope line="994">
+                    <declaration name="next" type="EventQueue" line="995"/>
+                    <scope line="996"/>
+                </scope>
+                <scope line="1001"/>
+            </method>
+            <method name="initDispatchThread" type="void" line="1006">
+                <scope line="1008">
+                    <declaration name="appContext" type="AppContext" line="1009"/>
+                    <scope line="1010">
+                        <anonymous_class line="1012">
+                            <method name="run" type="EventDispatchThread" line="1013">
+                                <declaration name="t" type="EventDispatchThread" line="1014"/>
+                            </method>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+                <scope line="1028"/>
+            </method>
+            <method name="detachDispatchThread" type="boolean" line="1033">
+                <params>
+                    <param name="edt" type="EventDispatchThread"/>
+                </params>
+                <comment line="1034">
+                    This synchronized block is to secure that the event dispatch
+                     thread won&apos;t die in the middle of posting a new event to the
+                     associated event queue. It is important because we notify
+                     that the event dispatch thread is busy after posting a new event
+                     to its queue, so the EventQueue.dispatchThread reference must
+                     be valid at that point.                    
+                </comment>
+                <comment line="1045">
+                    Don&apos;t detach the thread if any events are pending. Not
+                     sure if it&apos;s a possible scenario, though.
+                    
+                     Fix for 4648733. Check both the associated java event
+                     queue and the PostEventQueue.                    
+                </comment>
+                <scope line="1043">
+                    <scope line="1044">
+                        <scope line="1052"/>
+                    </scope>
+                </scope>
+                <scope line="1059"/>
+            </method>
+            <method name="getDispatchThread" type="EventDispatchThread" line="1073">
+                <scope line="1075"/>
+                <scope line="1077"/>
+            </method>
+            <method name="removeSourceEvents" type="void" line="1094">
+                <params>
+                    <param name="source" type="Object"/>
+                    <param name="removeAllEvents" type="boolean"/>
+                </params>
+                <scope line="1097">
+                    <scope line="1098">
+                        <declaration name="entry" type="EventQueueItem" line="1099"/>
+                        <declaration name="prev" type="EventQueueItem" line="1100"/>
+                        <scope line="1101">
+                            <scope line="1110">
+                                <scope line="1111"/>
+                                <scope line="1114"/>
+                                <scope line="1117"/>
+                                <scope line="1119"/>
+                            </scope>
+                            <scope line="1123"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="1130"/>
+            </method>
+            <method name="setCurrentEventAndMostRecentTime" type="void" line="1135">
+                <params>
+                    <param name="e" type="AWTEvent"/>
+                </params>
+            </method>
+            <method name="setCurrentEventAndMostRecentTimeImpl" type="void" line="1138">
+                <params>
+                    <param name="e" type="AWTEvent"/>
+                </params>
+                <comment line="1147">
+                    This series of &apos;instanceof&apos; checks should be replaced with a                    
+                </comment>
+                <comment line="1148">
+                    polymorphic type (for example, an interface which declares a                    
+                </comment>
+                <comment line="1149">
+                    getWhen() method). However, this would require us to make such                    
+                </comment>
+                <comment line="1150">
+                    a type public, or to place it in sun.awt. Both of these approaches                    
+                </comment>
+                <comment line="1151">
+                    have been frowned upon. So for now, we hack.                    
+                </comment>
+                <comment line="1152">
+                                        
+                </comment>
+                <comment line="1153">
+                    In tiger, we will probably give timestamps to all events, so this                    
+                </comment>
+                <comment line="1154">
+                    will no longer be an issue.                    
+                </comment>
+                <scope line="1140">
+                    <scope line="1141"/>
+                    <declaration name="mostRecentEventTime2" type="long" line="1155"/>
+                    <scope line="1156">
+                        <declaration name="ie" type="InputEvent" line="1157"/>
+                    </scope>
+                    <scope line="1159">
+                        <declaration name="ime" type="InputMethodEvent" line="1160"/>
+                    </scope>
+                    <scope line="1162">
+                        <declaration name="ae" type="ActionEvent" line="1163"/>
+                    </scope>
+                    <scope line="1165">
+                        <declaration name="ie" type="InvocationEvent" line="1166"/>
+                    </scope>
+                </scope>
+                <scope line="1170"/>
+            </method>
+            <javadoc line="1175">
+                Causes &lt;code&gt;runnable&lt;/code&gt; to have its &lt;code&gt;run&lt;/code&gt;
+                  method called in the {@link #isDispatchThread dispatch thread} of{@link Toolkit#getSystemEventQueue the system EventQueue}.
+                  This will happen after all pending events are processed.                
+                <param>
+                    runnable  the <code>Runnable</code> whose <code>run</code>
+                      method should be executed
+                      asynchronously in the{@link #isDispatchThread event dispatch thread}of {@link Toolkit#getSystemEventQueue the system EventQueue}                    
+                </param>
+                <see>
+                    #invokeAndWait                    
+                </see>
+                <see>
+                    Toolkit#getSystemEventQueue                    
+                </see>
+                <see>
+                    #isDispatchThread                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="invokeLater" type="void" line="1191">
+                <params>
+                    <param name="runnable" type="Runnable"/>
+                </params>
+            </method>
+            <javadoc line="1196">
+                Causes &lt;code&gt;runnable&lt;/code&gt; to have its &lt;code&gt;run&lt;/code&gt;
+                  method called in the {@link #isDispatchThread dispatch thread} of{@link Toolkit#getSystemEventQueue the system EventQueue}.
+                  This will happen after all pending events are processed.
+                  The call blocks until this has happened.  This method
+                  will throw an Error if called from the{@link #isDispatchThread event dispatcher thread}.                
+                <param>
+                    runnable  the <code>Runnable</code> whose <code>run</code>
+                      method should be executed
+                      synchronously in the{@link #isDispatchThread event dispatch thread}of {@link Toolkit#getSystemEventQueue the system EventQueue}                    
+                </param>
+                <exception>
+                    InterruptedException  if any thread has
+                      interrupted this thread                    
+                </exception>
+                <exception>
+                    InvocationTargetException  if an throwable is thrown
+                      when running <code>runnable</code>                    
+                </exception>
+                <see>
+                    #invokeLater                    
+                </see>
+                <see>
+                    Toolkit#getSystemEventQueue                    
+                </see>
+                <see>
+                    #isDispatchThread                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="invokeAndWait" type="void" line="1220">
+                <params>
+                    <param name="runnable" type="Runnable"/>
+                </params>
+                <scope line="1222"/>
+                <class name="AWTInvocationLock" line="1226"/>
+                <declaration name="lock" type="Object" line="1227"/>
+                <declaration name="event" type="InvocationEvent" line="1229"/>
+                <scope line="1233">
+                    <scope line="1235"/>
+                </scope>
+                <declaration name="eventThrowable" type="Throwable" line="1240"/>
+                <scope line="1241"/>
+            </method>
+            <method name="wakeup" type="void" line="1252">
+                <params>
+                    <param name="isShutdown" type="boolean"/>
+                </params>
+                <comment line="1256">
+                    Forward call to the top of EventQueue stack.                    
+                </comment>
+                <scope line="1254">
+                    <scope line="1255"/>
+                    <scope line="1258"/>
+                    <scope line="1260"/>
+                </scope>
+                <scope line="1263"/>
+            </method>
+        </class>
+        <class name="Queue" line="1269">
+            <comment line="104">
+                From Thread.java                
+            </comment>
+            <comment line="117">
+                We maintain one Queue for each priority that the EventQueue supports.
+                 That is, the EventQueue object is actually implemented as
+                 NUM_PRIORITIES queues and all Events on a particular internal Queue
+                 have identical priority. Events are pulled off the EventQueue starting
+                 with the Queue of highest priority. We progress in decreasing order
+                 across all Queues.                
+            </comment>
+            <comment line="127">
+                The next EventQueue on the stack, or null if this EventQueue is
+                 on the top of the stack.  If nextQueue is non-null, requests to post
+                 an event are forwarded to nextQueue.                
+            </comment>
+            <comment line="134">
+                The previous EventQueue on the stack, or null if this is the
+                 &quot;base&quot; EventQueue.                
+            </comment>
+            <comment line="140">
+                A single lock to synchronize the push()pop() and related operations with
+                 all the EventQueues from the AppContext. Synchronization on any particular
+                 event queue(s) is not enough: we should lock the whole stack.                
+            </comment>
+            <comment line="148">
+                Dummy runnable to wake up EDT from getNextEvent() after
+                pushpop is performed                
+            </comment>
+            <comment line="164">
+                The time stamp of the last dispatched InputEvent or ActionEvent.                
+            </comment>
+            <comment line="175">
+                Non-zero if a thread is waiting in getNextEvent(int) for an event of
+                 a particular ID to be posted to the queue.                
+            </comment>
+            <comment line="386">
+                Should avoid of calling this method by any means
+                 as it&apos;s working time is dependant on EQ length.
+                 In the wors case this method alone can slow down the entire application
+                 10 times by stalling the Event processing.
+                 Only here by backward compatibility reasons.                
+            </comment>
+            <comment line="523">
+                Must be called under the lock. Doesn&apos;t call flushPendingEvents()                
+            </comment>
+            <comment line="1065">
+                Gets the &lt;code&gt;EventDispatchThread&lt;code&gt; for this
+                 &lt;code&gt;EventQueue&lt;code&gt;.
+                 @return the event dispatch thread associated with this event queue
+                         or &lt;code&gt;null&lt;code&gt; if this event queue doesn&apos;t have a
+                         working thread associated with it
+                 @see    java.awt.EventQueue#initDispatchThread
+                 @see    java.awt.EventQueue#detachDispatchThread                
+            </comment>
+            <comment line="1083">
+                Removes any pending events for the specified source object.
+                 If removeAllEvents parameter is &lt;code&gt;true&lt;code&gt; then all
+                 events for the specified source object are removed, if it
+                 is &lt;code&gt;false&lt;code&gt; then &lt;code&gt;SequencedEvent&lt;code&gt;, &lt;code&gt;SentEvent&lt;code&gt;,
+                 &lt;code&gt;FocusEvent&lt;code&gt;, &lt;code&gt;WindowEvent&lt;code&gt;, &lt;code&gt;KeyEvent&lt;code&gt;,
+                 and &lt;code&gt;InputMethodEvent&lt;code&gt; are kept in the queue, but all other
+                 events are removed.
+                
+                 This method is normally called by the source&apos;s
+                 &lt;code&gt;removeNotify&lt;code&gt; method.                
+            </comment>
+            <comment line="1247">
+                Called from PostEventQueue.postEvent to notify that a new event
+                 appeared. First it proceeds to the EventQueue on the top of the
+                 stack, then notifies the associated dispatch thread if it exists
+                 or starts a new one otherwise.                
+            </comment>
+            <javadoc line="1269">
+                The Queue object holds pointers to the beginning and end of one internal
+                  queue. An EventQueue object is composed of multiple internal Queues, one
+                  for each priority supported by the EventQueue. All Events on a particular
+                  internal Queue have identical priority.                
+            </javadoc>
+            <declaration name="head" type="EventQueueItem" line="1276"/>
+            <declaration name="tail" type="EventQueueItem" line="1277"/>
+        </class>
+    </source>

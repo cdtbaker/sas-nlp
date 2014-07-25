@@ -1,0 +1,734 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.security">
+        <import package="java.io"/>
+        <import package="java.lang.RuntimePermission"/>
+        <import package="java.lang.reflect"/>
+        <import package="java.net.MalformedURLException"/>
+        <import package="java.net.URL"/>
+        <import package="java.util.Enumeration"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.PropertyPermission"/>
+        <import package="java.util.StringTokenizer"/>
+        <import package="java.util.Vector"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="sun.security.jca.GetInstance"/>
+        <import package="sun.security.util.Debug"/>
+        <import package="sun.security.util.SecurityConstants"/>
+        <class name="Policy" line="45">
+            <comment line="108">
+                package private for AccessControlContext                
+            </comment>
+            <comment line="112">
+                Cache mapping ProtectionDomain.Key to PermissionCollection                
+            </comment>
+            <javadoc line="45">
+                A Policy object is responsible for determining whether code executing
+                  in the Java runtime environment has permission to perform a
+                  security-sensitive operation.
+                  &lt;p&gt; There is only one Policy object installed in the runtime at any
+                  given time.  A Policy object can be installed by calling the
+                  &lt;code&gt;setPolicy&lt;/code&gt; method.  The installed Policy object can be
+                  obtained by calling the &lt;code&gt;getPolicy&lt;/code&gt; method.
+                  &lt;p&gt; If no Policy object has been installed in the runtime, a call to
+                  &lt;code&gt;getPolicy&lt;/code&gt; installs an instance of the default Policy
+                  implementation (a default subclass implementation of this abstract class).
+                  The default Policy implementation can be changed by setting the value
+                  of the &quot;policy.provider&quot; security property (in the Java security properties
+                  file) to the fully qualified name of the desired Policy subclass
+                  implementation.  The Java security properties file is located in the
+                  file named &amp;lt;JAVA_HOME&amp;gt;/lib/security/java.security.
+                  &amp;lt;JAVA_HOME&amp;gt; refers to the value of the java.home system property,
+                  and specifies the directory where the JRE is installed.
+                  &lt;p&gt; Application code can directly subclass Policy to provide a custom
+                  implementation.  In addition, an instance of a Policy object can be
+                  constructed by invoking one of the &lt;code&gt;getInstance&lt;/code&gt; factory methods
+                  with a standard type.  The default policy type is &quot;JavaPolicy&quot;.
+                  &lt;p&gt; Once a Policy instance has been installed (either by default, or by
+                  calling &lt;code&gt;setPolicy&lt;/code&gt;),
+                  the Java runtime invokes its &lt;code&gt;implies&lt;/code&gt; when it needs to
+                  determine whether executing code (encapsulated in a ProtectionDomain)
+                  can perform SecurityManager-protected operations.  How a Policy object
+                  retrieves its policy data is up to the Policy implementation itself.
+                  The policy data may be stored, for example, in a flat ASCII file,
+                  in a serialized binary file of the Policy class, or in a database.
+                  &lt;p&gt; The &lt;code&gt;refresh&lt;/code&gt; method causes the policy object to
+                  refresh/reload its data.  This operation is implementation-dependent.
+                  For example, if the policy object stores its data in configuration files,
+                  calling &lt;code&gt;refresh&lt;/code&gt; will cause it to re-read the configuration
+                  policy files.  If a refresh operation is not supported, this method does
+                  nothing.  Note that refreshed policy may not have an effect on classes
+                  in a particular ProtectionDomain. This is dependent on the Policy
+                  provider&apos;s implementation of the &lt;code&gt;implies&lt;/code&gt;
+                  method and its PermissionCollection caching strategy.                
+                <author>
+                    Roland Schemers                    
+                </author>
+                <author>
+                    Gary Ellison                    
+                </author>
+                <see>
+                    java.security.Provider                    
+                </see>
+                <see>
+                    java.security.ProtectionDomain                    
+                </see>
+                <see>
+                    java.security.Permission                    
+                </see>
+            </javadoc>
+            <declaration name="UNSUPPORTED_EMPTY_COLLECTION" type="PermissionCollection" line="99"/>
+            <javadoc line="99">
+                A read-only empty PermissionCollection instance.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="policy" type="Policy" line="106"/>
+            <javadoc line="106">
+                the system-wide policy.                
+            </javadoc>
+            <declaration name="debug" type="Debug" line="109"/>
+            <declaration name="pdMapping" type="WeakHashMap&lt;ProtectionDomain.Key,PermissionCollection&gt;" line="112"/>
+            <javadoc line="114">
+                package private for AccessControlContext                
+            </javadoc>
+            <method name="isSet" type="boolean" line="116"/>
+            <method name="checkPermission" type="void" line="120">
+                <params>
+                    <param name="type" type="String"/>
+                </params>
+                <declaration name="sm" type="SecurityManager" line="121"/>
+                <scope line="122"/>
+            </method>
+            <javadoc line="127">
+                Returns the installed Policy object. This value should not be cached,
+                  as it may be changed by a call to &lt;code&gt;setPolicy&lt;/code&gt;.
+                  This method first calls
+                  &lt;code&gt;SecurityManager.checkPermission&lt;/code&gt; with a
+                  &lt;code&gt;SecurityPermission(&quot;getPolicy&quot;)&lt;/code&gt; permission
+                  to ensure it&apos;s ok to get the Policy object.                
+                <return>
+                    the installed Policy.                    
+                </return>
+                <throws>
+                    SecurityExceptionif a security manager exists and its
+                      <code>checkPermission</code> method doesn't allow
+                      getting the Policy object.                    
+                </throws>
+                <see>
+                    SecurityManager#checkPermission(Permission)                    
+                </see>
+                <see>
+                    #setPolicy(java.security.Policy)                    
+                </see>
+            </javadoc>
+            <method name="getPolicy" type="Policy" line="146">
+                <declaration name="sm" type="SecurityManager" line="147"/>
+            </method>
+            <javadoc line="153">
+                Returns the installed Policy object, skipping the security check.
+                  Used by SecureClassLoader and getPolicy.                
+                <return>
+                    the installed Policy.                    
+                </return>
+            </javadoc>
+            <method name="getPolicyNoCheck" type="Policy" line="161">
+                <comment line="178">
+                    The policy_class seems to be an extension
+                     so we have to bootstrap loading it via a policy
+                     provider that is on the bootclasspath
+                     If it loads then shift gears to using the configured
+                     provider.                    
+                </comment>
+                <comment line="186">
+                    install the bootstrap provider to avoid recursion                    
+                </comment>
+                <comment line="196">
+                    we want the extension loader                    
+                </comment>
+                <comment line="215">
+                    if it loaded install it as the policy provider. Otherwise
+                     continue to use the system default implementation                    
+                </comment>
+                <scope line="162">
+                    <declaration name="policy_class" type="String" line="163"/>
+                    <anonymous_class line="165">
+                        <method name="run" type="String" line="166"/>
+                    </anonymous_class>
+                    <scope line="170"/>
+                    <scope line="174"/>
+                    <scope line="177">
+                        <declaration name="pc" type="String" line="189"/>
+                        <anonymous_class line="191">
+                            <method name="run" type="Policy" line="192">
+                                <comment line="196">
+                                    we want the extension loader                                    
+                                </comment>
+                                <scope line="193">
+                                    <declaration name="cl" type="ClassLoader" line="194"/>
+                                    <declaration name="extcl" type="ClassLoader" line="197"/>
+                                    <scope line="198"/>
+                                </scope>
+                                <scope line="204">
+                                    <scope line="205"/>
+                                </scope>
+                            </method>
+                        </anonymous_class>
+                        <declaration name="p" type="Policy" line="190"/>
+                        <scope line="219"/>
+                        <scope line="221">
+                            <scope line="222"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="231">
+                Sets the system-wide Policy object. This method first calls
+                  &lt;code&gt;SecurityManager.checkPermission&lt;/code&gt; with a
+                  &lt;code&gt;SecurityPermission(&quot;setPolicy&quot;)&lt;/code&gt;
+                  permission to ensure it&apos;s ok to set the Policy.                
+                <param>
+                    p the new system Policy object.                    
+                </param>
+                <throws>
+                    SecurityExceptionif a security manager exists and its
+                      <code>checkPermission</code> method doesn't allow
+                      setting the Policy.                    
+                </throws>
+                <see>
+                    SecurityManager#checkPermission(Permission)                    
+                </see>
+                <see>
+                    #getPolicy()                    
+                </see>
+            </javadoc>
+            <method name="setPolicy" type="void" line="249">
+                <params>
+                    <param name="p" type="Policy"/>
+                </params>
+                <declaration name="sm" type="SecurityManager" line="250"/>
+                <scope line="253"/>
+                <scope line="256"/>
+            </method>
+            <javadoc line="261">
+                Initialize superclass state such that a legacy provider can
+                  handle queries for itself.                
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="initPolicy" type="void" line="267">
+                <params>
+                    <param name="p" type="Policy"/>
+                </params>
+                <comment line="268">
+                    A policy provider not on the bootclasspath could trigger
+                     security checks fulfilling a call to either Policy.implies
+                     or Policy.getPermissions. If this does occur the provider
+                     must be able to answer for it&apos;s own ProtectionDomain
+                     without triggering additional security checks, otherwise
+                     the policy implementation will end up in an infinite
+                     recursion.
+                    
+                     To mitigate this, the provider can collect it&apos;s own
+                     ProtectionDomain and associate a PermissionCollection while
+                     it is being installed. The currently installed policy
+                     provider (if there is one) will handle calls to
+                     Policy.implies or Policy.getPermissions during this
+                     process.
+                    
+                     This Policy superclass caches away the ProtectionDomain and
+                     statically binds permissions so that legacy Policy
+                     implementations will continue to function.                    
+                </comment>
+                <comment line="296">
+                    Collect the permissions granted to this protection domain
+                     so that the provider can be security checked while processing
+                     calls to Policy.implies or Policy.getPermissions.                    
+                </comment>
+                <comment line="314">
+                    assume it has all                    
+                </comment>
+                <comment line="320">
+                    cache of pd to permissions                    
+                </comment>
+                <anonymous_class line="290">
+                    <method name="run" type="ProtectionDomain" line="291"/>
+                </anonymous_class>
+                <declaration name="policyDomain" type="ProtectionDomain" line="289"/>
+                <declaration name="policyPerms" type="PermissionCollection" line="301"/>
+                <scope line="302">
+                    <scope line="303"/>
+                </scope>
+                <scope line="309">
+                    <scope line="310"/>
+                    <scope line="314"/>
+                    <scope line="319"/>
+                </scope>
+            </method>
+            <javadoc line="328">
+                Returns a Policy object of the specified type.
+                  &lt;p&gt; This method traverses the list of registered security providers,
+                  starting with the most preferred Provider.
+                  A new Policy object encapsulating the
+                  PolicySpi implementation from the first
+                  Provider that supports the specified type is returned.
+                  &lt;p&gt; Note that the list of registered providers may be retrieved via
+                  the {@link Security#getProviders() Security.getProviders()} method.                
+                <param>
+                    type the specified Policy type.  See the Policy section in the
+                      <a href=
+                      "{@docRoot}/../technotes/guides/security/StandardNames.html#Policy">
+                      Java Cryptography Architecture Standard Algorithm Name Documentation</a>
+                      for a list of standard Policy types.                    
+                </param>
+                <param>
+                    params parameters for the Policy, which may be null.                    
+                </param>
+                <return>
+                    the new Policy object.                    
+                </return>
+                <exception>
+                    SecurityException if the caller does not have permission
+                      to get a Policy instance for the specified type.                    
+                </exception>
+                <exception>
+                    NullPointerException if the specified type is null.                    
+                </exception>
+                <exception>
+                    IllegalArgumentException if the specified parameters
+                      are not understood by the PolicySpi implementation
+                      from the selected Provider.                    
+                </exception>
+                <exception>
+                    NoSuchAlgorithmException if no Provider supports a PolicySpi
+                      implementation for the specified type.                    
+                </exception>
+                <see>
+                    Provider                    
+                </see>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getInstance" type="Policy" line="366">
+                <params>
+                    <param name="type" type="String"/>
+                    <param name="params" type="Policy.Parameters"/>
+                </params>
+                <scope line="369">
+                    <declaration name="instance" type="GetInstance.Instance" line="370"/>
+                </scope>
+                <scope line="378"/>
+            </method>
+            <javadoc line="383">
+                Returns a Policy object of the specified type.
+                  &lt;p&gt; A new Policy object encapsulating the
+                  PolicySpi implementation from the specified provider
+                  is returned.   The specified provider must be registered
+                  in the provider list.
+                  &lt;p&gt; Note that the list of registered providers may be retrieved via
+                  the {@link Security#getProviders() Security.getProviders()} method.                
+                <param>
+                    type the specified Policy type.  See the Policy section in the
+                      <a href=
+                      "{@docRoot}/../technotes/guides/security/StandardNames.html#Policy">
+                      Java Cryptography Architecture Standard Algorithm Name Documentation</a>
+                      for a list of standard Policy types.                    
+                </param>
+                <param>
+                    params parameters for the Policy, which may be null.                    
+                </param>
+                <param>
+                    provider the provider.                    
+                </param>
+                <return>
+                    the new Policy object.                    
+                </return>
+                <exception>
+                    SecurityException if the caller does not have permission
+                      to get a Policy instance for the specified type.                    
+                </exception>
+                <exception>
+                    NullPointerException if the specified type is null.                    
+                </exception>
+                <exception>
+                    IllegalArgumentException if the specified provider
+                      is null or empty,
+                      or if the specified parameters are not understood by
+                      the PolicySpi implementation from the specified provider.                    
+                </exception>
+                <exception>
+                    NoSuchProviderException if the specified provider is not
+                      registered in the security provider list.                    
+                </exception>
+                <exception>
+                    NoSuchAlgorithmException if the specified provider does not
+                      support a PolicySpi implementation for the specified type.                    
+                </exception>
+                <see>
+                    Provider                    
+                </see>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getInstance" type="Policy" line="428">
+                <params>
+                    <param name="type" type="String"/>
+                    <param name="params" type="Policy.Parameters"/>
+                    <param name="provider" type="String"/>
+                </params>
+                <scope line="430"/>
+                <scope line="435">
+                    <declaration name="instance" type="GetInstance.Instance" line="436"/>
+                </scope>
+                <scope line="445"/>
+            </method>
+            <javadoc line="450">
+                Returns a Policy object of the specified type.
+                  &lt;p&gt; A new Policy object encapsulating the
+                  PolicySpi implementation from the specified Provider
+                  object is returned.  Note that the specified Provider object
+                  does not have to be registered in the provider list.                
+                <param>
+                    type the specified Policy type.  See the Policy section in the
+                      <a href=
+                      "{@docRoot}/../technotes/guides/security/StandardNames.html#Policy">
+                      Java Cryptography Architecture Standard Algorithm Name Documentation</a>
+                      for a list of standard Policy types.                    
+                </param>
+                <param>
+                    params parameters for the Policy, which may be null.                    
+                </param>
+                <param>
+                    provider the Provider.                    
+                </param>
+                <return>
+                    the new Policy object.                    
+                </return>
+                <exception>
+                    SecurityException if the caller does not have permission
+                      to get a Policy instance for the specified type.                    
+                </exception>
+                <exception>
+                    NullPointerException if the specified type is null.                    
+                </exception>
+                <exception>
+                    IllegalArgumentException if the specified Provider is null,
+                      or if the specified parameters are not understood by
+                      the PolicySpi implementation from the specified Provider.                    
+                </exception>
+                <exception>
+                    NoSuchAlgorithmException if the specified Provider does not
+                      support a PolicySpi implementation for the specified type.                    
+                </exception>
+                <see>
+                    Provider                    
+                </see>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getInstance" type="Policy" line="488">
+                <params>
+                    <param name="type" type="String"/>
+                    <param name="params" type="Policy.Parameters"/>
+                    <param name="provider" type="Provider"/>
+                </params>
+                <scope line="490"/>
+                <scope line="495">
+                    <declaration name="instance" type="GetInstance.Instance" line="496"/>
+                </scope>
+                <scope line="505"/>
+            </method>
+            <method name="handleException" type="Policy" line="511">
+                <params>
+                    <param name="nsae" type="NoSuchAlgorithmException"/>
+                </params>
+                <declaration name="cause" type="Throwable" line="512"/>
+                <scope line="513"/>
+            </method>
+            <javadoc line="519">
+                Return the Provider of this Policy.
+                  &lt;p&gt; This Policy instance will only have a Provider if it
+                  was obtained via a call to &lt;code&gt;Policy.getInstance&lt;/code&gt;.
+                  Otherwise this method returns null.                
+                <return>
+                    the Provider of this Policy, or null.                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getProvider" type="Provider" line="530"/>
+            <javadoc line="534">
+                Return the type of this Policy.
+                  &lt;p&gt; This Policy instance will only have a type if it
+                  was obtained via a call to &lt;code&gt;Policy.getInstance&lt;/code&gt;.
+                  Otherwise this method returns null.                
+                <return>
+                    the type of this Policy, or null.                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getType" type="String" line="545"/>
+            <javadoc line="549">
+                Return Policy parameters.
+                  &lt;p&gt; This Policy instance will only have parameters if it
+                  was obtained via a call to &lt;code&gt;Policy.getInstance&lt;/code&gt;.
+                  Otherwise this method returns null.                
+                <return>
+                    Policy parameters, or null.                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="getParameters" type="Policy.Parameters" line="560"/>
+            <javadoc line="564">
+                Return a PermissionCollection object containing the set of
+                  permissions granted to the specified CodeSource.
+                  &lt;p&gt; Applications are discouraged from calling this method
+                  since this operation may not be supported by all policy implementations.
+                  Applications should solely rely on the &lt;code&gt;implies&lt;/code&gt; method
+                  to perform policy checks.  If an application absolutely must call
+                  a getPermissions method, it should call
+                  &lt;code&gt;getPermissions(ProtectionDomain)&lt;/code&gt;.
+                  &lt;p&gt; The default implementation of this method returns
+                  Policy.UNSUPPORTED_EMPTY_COLLECTION.  This method can be
+                  overridden if the policy implementation can return a set of
+                  permissions granted to a CodeSource.                
+                <param>
+                    codesource the CodeSource to which the returned
+                      PermissionCollection has been granted.                    
+                </param>
+                <return>
+                    a set of permissions granted to the specified CodeSource.
+                      If this operation is supported, the returned
+                      set of permissions must be a new mutable instance
+                      and it must support heterogeneous Permission types.
+                      If this operation is not supported,
+                      Policy.UNSUPPORTED_EMPTY_COLLECTION is returned.                    
+                </return>
+            </javadoc>
+            <method name="getPermissions" type="PermissionCollection" line="590">
+                <params>
+                    <param name="codesource" type="CodeSource"/>
+                </params>
+            </method>
+            <javadoc line="594">
+                Return a PermissionCollection object containing the set of
+                  permissions granted to the specified ProtectionDomain.
+                  &lt;p&gt; Applications are discouraged from calling this method
+                  since this operation may not be supported by all policy implementations.
+                  Applications should rely on the &lt;code&gt;implies&lt;/code&gt; method
+                  to perform policy checks.
+                  &lt;p&gt; The default implementation of this method first retrieves
+                  the permissions returned via &lt;code&gt;getPermissions(CodeSource)&lt;/code&gt;
+                  (the CodeSource is taken from the specified ProtectionDomain),
+                  as well as the permissions located inside the specified ProtectionDomain.
+                  All of these permissions are then combined and returned in a new
+                  PermissionCollection object.  If &lt;code&gt;getPermissions(CodeSource)&lt;/code&gt;
+                  returns Policy.UNSUPPORTED_EMPTY_COLLECTION, then this method
+                  returns the permissions contained inside the specified ProtectionDomain
+                  in a new PermissionCollection object.
+                  &lt;p&gt; This method can be overridden if the policy implementation
+                  supports returning a set of permissions granted to a ProtectionDomain.                
+                <param>
+                    domain the ProtectionDomain to which the returned
+                      PermissionCollection has been granted.                    
+                </param>
+                <return>
+                    a set of permissions granted to the specified ProtectionDomain.
+                      If this operation is supported, the returned
+                      set of permissions must be a new mutable instance
+                      and it must support heterogeneous Permission types.
+                      If this operation is not supported,
+                      Policy.UNSUPPORTED_EMPTY_COLLECTION is returned.                    
+                </return>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="getPermissions" type="PermissionCollection" line="628">
+                <params>
+                    <param name="domain" type="ProtectionDomain"/>
+                </params>
+                <declaration name="pc" type="PermissionCollection" line="629"/>
+                <scope line="634"/>
+                <scope line="638"/>
+                <scope line="642">
+                    <declaration name="perms" type="Permissions" line="643"/>
+                    <scope line="644">
+                        <scope line="645"/>
+                    </scope>
+                </scope>
+                <scope line="653"/>
+            </method>
+            <javadoc line="661">
+                add static permissions to provided permission collection                
+            </javadoc>
+            <method name="addStaticPerms" type="void" line="665">
+                <params>
+                    <param name="perms" type="PermissionCollection"/>
+                    <param name="statics" type="PermissionCollection"/>
+                </params>
+                <scope line="666">
+                    <scope line="667">
+                        <declaration name="e" type="Enumeration&lt;Permission&gt;" line="668"/>
+                        <scope line="669"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="676">
+                Evaluates the global policy for the permissions granted to
+                  the ProtectionDomain and tests whether the permission is
+                  granted.                
+                <param>
+                    domain the ProtectionDomain to test                    
+                </param>
+                <param>
+                    permission the Permission object to be tested for implication.                    
+                </param>
+                <return>
+                    true if "permission" is a proper subset of a permission
+                      granted to this ProtectionDomain.                    
+                </return>
+                <see>
+                    java.security.ProtectionDomain                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="implies" type="boolean" line="690">
+                <params>
+                    <param name="domain" type="ProtectionDomain"/>
+                    <param name="permission" type="Permission"/>
+                </params>
+                <comment line="711">
+                    cache it                    
+                </comment>
+                <declaration name="pc" type="PermissionCollection" line="691"/>
+                <scope line="693"/>
+                <scope line="697"/>
+                <scope line="701"/>
+                <scope line="706"/>
+                <scope line="710"/>
+            </method>
+            <javadoc line="718">
+                Refreshes/reloads the policy configuration. The behavior of this method
+                  depends on the implementation. For example, calling &lt;code&gt;refresh&lt;/code&gt;
+                  on a file-based policy will cause the file to be re-read.
+                  &lt;p&gt; The default implementation of this method does nothing.
+                  This method should be overridden if a refresh operation is supported
+                  by the policy implementation.                
+            </javadoc>
+            <method name="refresh" type="void" line="727"/>
+            <class name="PolicyDelegate" line="729">
+                <extends class="Policy"/>
+                <javadoc line="729">
+                    This subclass is returned by the getInstance calls.  All Policy calls
+                      are delegated to the underlying PolicySpi.                    
+                </javadoc>
+                <declaration name="spi" type="PolicySpi" line="735"/>
+                <declaration name="p" type="Provider" line="736"/>
+                <declaration name="type" type="String" line="737"/>
+                <declaration name="params" type="Policy.Parameters" line="738"/>
+                <method name="PolicyDelegate" type="constructor" line="741">
+                    <params>
+                        <param name="spi" type="PolicySpi"/>
+                        <param name="p" type="Provider"/>
+                        <param name="type" type="String"/>
+                        <param name="params" type="Policy.Parameters"/>
+                    </params>
+                </method>
+                <method name="getType" type="String" line="748"/>
+                <method name="getParameters" type="Policy.Parameters" line="750"/>
+                <method name="getProvider" type="Provider" line="752"/>
+                <method name="getPermissions" type="PermissionCollection" line="755">
+                    <params>
+                        <param name="codesource" type="CodeSource"/>
+                    </params>
+                </method>
+                <method name="getPermissions" type="PermissionCollection" line="759">
+                    <params>
+                        <param name="domain" type="ProtectionDomain"/>
+                    </params>
+                </method>
+                <method name="implies" type="boolean" line="763">
+                    <params>
+                        <param name="domain" type="ProtectionDomain"/>
+                        <param name="perm" type="Permission"/>
+                    </params>
+                </method>
+                <method name="refresh" type="void" line="767"/>
+            </class>
+            <interface name="Parameters">
+                <javadoc line="772">
+                    This represents a marker interface for Policy parameters.                    
+                    <since>
+                        1.6                        
+                    </since>
+                </javadoc>
+            </interface>
+            <class name="UnsupportedEmptyCollection" line="779">
+                <extends class="PermissionCollection"/>
+                <javadoc line="779">
+                    This class represents a read-only empty PermissionCollection object that
+                      is returned from the &lt;code&gt;getPermissions(CodeSource)&lt;/code&gt; and
+                      &lt;code&gt;getPermissions(ProtectionDomain)&lt;/code&gt;
+                      methods in the Policy class when those operations are not
+                      supported by the Policy implementation.                    
+                </javadoc>
+                <declaration name="perms" type="Permissions" line="789"/>
+                <javadoc line="791">
+                    Create a read-only empty PermissionCollection object.                    
+                </javadoc>
+                <method name="UnsupportedEmptyCollection" type="constructor" line="794"/>
+                <javadoc line="799">
+                    Adds a permission object to the current collection of permission
+                      objects.                    
+                    <param>
+                        permission the Permission object to add.                        
+                    </param>
+                    <exception>
+                        SecurityException - if this PermissionCollection object
+                          has been marked readonly                        
+                    </exception>
+                </javadoc>
+                <method name="add" type="void" line="808">
+                    <params>
+                        <param name="permission" type="Permission"/>
+                    </params>
+                </method>
+                <javadoc line="812">
+                    Checks to see if the specified permission is implied by the
+                      collection of Permission objects held in this PermissionCollection.                    
+                    <param>
+                        permission the Permission object to compare.                        
+                    </param>
+                    <return>
+                        true if "permission" is implied by the  permissions in
+                          the collection, false if not.                        
+                    </return>
+                </javadoc>
+                <method name="implies" type="boolean" line="821">
+                    <params>
+                        <param name="permission" type="Permission"/>
+                    </params>
+                </method>
+                <javadoc line="825">
+                    Returns an enumeration of all the Permission objects in the
+                      collection.                    
+                    <return>
+                        an enumeration of all the Permissions.                        
+                    </return>
+                </javadoc>
+                <method name="elements" type="Enumeration<Permission>" line="831"/>
+            </class>
+        </class>
+    </source>

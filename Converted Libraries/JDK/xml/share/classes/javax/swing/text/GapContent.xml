@@ -1,0 +1,929 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.swing.text">
+        <import package="java.util.Vector"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.ObjectInputStream"/>
+        <import package="java.io.Serializable"/>
+        <import package="javax.swing.undo.AbstractUndoableEdit"/>
+        <import package="javax.swing.undo.CannotRedoException"/>
+        <import package="javax.swing.undo.CannotUndoException"/>
+        <import package="javax.swing.undo.UndoableEdit"/>
+        <import package="javax.swing.SwingUtilities"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.lang.ref.ReferenceQueue"/>
+        <class name="GapContent" line="39">
+            <extends class="GapVector"/>
+            <comment line="106">
+                --- AbstractDocument.Content methods -------------------------                
+            </comment>
+            <comment line="316">
+                --- variables --------------------------------------                
+            </comment>
+            <comment line="337">
+                --- gap management -------------------------------                
+            </comment>
+            <comment line="688">
+                --- serialization -------------------------------------                
+            </comment>
+            <comment line="699">
+                --- undo support --------------------------------------                
+            </comment>
+            <comment line="853">
+                End of GapContent.UndoPosRef                
+            </comment>
+            <comment line="903">
+                GapContent.InsertUndo                
+            </comment>
+            <comment line="954">
+                GapContent.RemoveUndo                
+            </comment>
+            <implements interface="AbstractDocument.Content"/>
+            <implements interface="Serializable"/>
+            <javadoc line="39">
+                An implementation of the AbstractDocument.Content interface
+                  implemented using a gapped buffer similar to that used by emacs.
+                  The underlying storage is a array of unicode characters with
+                  a gap somewhere.  The gap is moved to the location of changes
+                  to take advantage of common behavior where most changes are
+                  in the same location.  Changes that occur at a gap boundary are
+                  generally cheap and moving the gap is generally cheaper than
+                  moving the array contents directly to accomodate the change.
+                  &lt;p&gt;
+                  The positions tracking change are also generally cheap to
+                  maintain.  The Position implementations (marks) store the array
+                  index and can easily calculate the sequential position from
+                  the current gap location.  Changes only require update to the
+                  the marks between the old and new gap boundaries when the gap
+                  is moved, so generally updating the marks is pretty cheap.
+                  The marks are stored sorted so they can be located quickly
+                  with a binary search.  This increases the cost of adding a
+                  mark, and decreases the cost of keeping the mark updated.                
+                <author>
+                    Timothy Prinzing                    
+                </author>
+            </javadoc>
+            <javadoc line="63">
+                Creates a new GapContent object.  Initial size defaults to 10.                
+            </javadoc>
+            <method name="GapContent" type="constructor" line="66"/>
+            <javadoc line="70">
+                Creates a new GapContent object, with the initial
+                  size specified.  The initial size will not be allowed
+                  to go below 2, to give room for the implied break and
+                  the gap.                
+                <param>
+                    initialLength the initial size                    
+                </param>
+            </javadoc>
+            <method name="GapContent" type="constructor" line="78">
+                <params>
+                    <param name="initialLength" type="int"/>
+                </params>
+                <declaration name="implied" type="char[]" line="80"/>
+            </method>
+            <javadoc line="89">
+                Allocate an array to store items of the type
+                  appropriate (which is determined by the subclass).                
+            </javadoc>
+            <method name="allocateArray" type="Object" line="93">
+                <params>
+                    <param name="len" type="int"/>
+                </params>
+            </method>
+            <javadoc line="97">
+                Get the length of the allocated array.                
+            </javadoc>
+            <method name="getArrayLength" type="int" line="100">
+                <declaration name="carray" type="char[]" line="101"/>
+            </method>
+            <javadoc line="107">
+                Returns the length of the content.                
+                <return>
+                    the length >= 1                    
+                </return>
+                <see>
+                    AbstractDocument.Content#length                    
+                </see>
+            </javadoc>
+            <method name="length" type="int" line="113">
+                <declaration name="len" type="int" line="114"/>
+            </method>
+            <javadoc line="118">
+                Inserts a string into the content.                
+                <param>
+                    where the starting position >= 0, < length()                    
+                </param>
+                <param>
+                    str the non-null string to insert                    
+                </param>
+                <return>
+                    an UndoableEdit object for undoing                    
+                </return>
+                <exception>
+                    BadLocationException if the specified position is invalid                    
+                </exception>
+                <see>
+                    AbstractDocument.Content#insertString                    
+                </see>
+            </javadoc>
+            <method name="insertString" type="UndoableEdit" line="127">
+                <params>
+                    <param name="where" type="int"/>
+                    <param name="str" type="String"/>
+                </params>
+                <scope line="128"/>
+                <declaration name="chars" type="char[]" line="131"/>
+            </method>
+            <javadoc line="136">
+                Removes part of the content.                
+                <param>
+                    where the starting position >= 0, where + nitems < length()                    
+                </param>
+                <param>
+                    nitems the number of characters to remove >= 0                    
+                </param>
+                <return>
+                    an UndoableEdit object for undoing                    
+                </return>
+                <exception>
+                    BadLocationException if the specified position is invalid                    
+                </exception>
+                <see>
+                    AbstractDocument.Content#remove                    
+                </see>
+            </javadoc>
+            <method name="remove" type="UndoableEdit" line="145">
+                <params>
+                    <param name="where" type="int"/>
+                    <param name="nitems" type="int"/>
+                </params>
+                <scope line="146"/>
+                <declaration name="removedString" type="String" line="149"/>
+                <declaration name="edit" type="UndoableEdit" line="150"/>
+            </method>
+            <javadoc line="156">
+                Retrieves a portion of the content.                
+                <param>
+                    where the starting position >= 0                    
+                </param>
+                <param>
+                    len the length to retrieve >= 0                    
+                </param>
+                <return>
+                    a string representing the content                    
+                </return>
+                <exception>
+                    BadLocationException if the specified position is invalid                    
+                </exception>
+                <see>
+                    AbstractDocument.Content#getString                    
+                </see>
+            </javadoc>
+            <method name="getString" type="String" line="165">
+                <params>
+                    <param name="where" type="int"/>
+                    <param name="len" type="int"/>
+                </params>
+                <declaration name="s" type="Segment" line="166"/>
+            </method>
+            <javadoc line="171">
+                Retrieves a portion of the content.  If the desired content spans
+                  the gap, we copy the content.  If the desired content does not
+                  span the gap, the actual store is returned to avoid the copy since
+                  it is contiguous.                
+                <param>
+                    where the starting position >= 0, where + len <= length()                    
+                </param>
+                <param>
+                    len the number of characters to retrieve >= 0                    
+                </param>
+                <param>
+                    chars the Segment object to return the characters in                    
+                </param>
+                <exception>
+                    BadLocationException if the specified position is invalid                    
+                </exception>
+                <see>
+                    AbstractDocument.Content#getChars                    
+                </see>
+            </javadoc>
+            <method name="getChars" type="void" line="183">
+                <params>
+                    <param name="where" type="int"/>
+                    <param name="len" type="int"/>
+                    <param name="chars" type="Segment"/>
+                </params>
+                <comment line="195">
+                    below gap                    
+                </comment>
+                <comment line="199">
+                    above gap                    
+                </comment>
+                <comment line="203">
+                    spans the gap                    
+                </comment>
+                <comment line="206">
+                    partial return allowed, return amount before the gap                    
+                </comment>
+                <comment line="212">
+                    partial return not allowed, must copy                    
+                </comment>
+                <declaration name="end" type="int" line="184"/>
+                <scope line="185"/>
+                <scope line="188"/>
+                <declaration name="g0" type="int" line="191"/>
+                <declaration name="g1" type="int" line="192"/>
+                <declaration name="array" type="char[]" line="193"/>
+                <scope line="194"/>
+                <scope line="198"/>
+                <scope line="202">
+                    <declaration name="before" type="int" line="204"/>
+                    <scope line="205"/>
+                </scope>
+            </method>
+            <javadoc line="221">
+                Creates a position within the content that will
+                  track change as the content is mutated.                
+                <param>
+                    offset the offset to track >= 0                    
+                </param>
+                <return>
+                    the position                    
+                </return>
+                <exception>
+                    BadLocationException if the specified position is invalid                    
+                </exception>
+            </javadoc>
+            <method name="createPosition" type="Position" line="229">
+                <params>
+                    <param name="offset" type="int"/>
+                </params>
+                <comment line="246">
+                    position references the correct StickyPostition                    
+                </comment>
+                <scope line="230"/>
+                <scope line="233"/>
+                <declaration name="g0" type="int" line="236"/>
+                <declaration name="g1" type="int" line="237"/>
+                <declaration name="index" type="int" line="238"/>
+                <declaration name="sortIndex" type="int" line="240"/>
+                <declaration name="m" type="MarkData" line="241"/>
+                <declaration name="position" type="StickyPosition" line="242"/>
+                <scope line="245"/>
+                <scope line="247"/>
+            </method>
+            <class name="MarkData" line="257">
+                <extends class="WeakReference">
+                    <type_params>
+                        <type_param name="StickyPosition"/>
+                    </type_params>
+                </extends>
+                <javadoc line="257">
+                    Holds the data for a mark... separately from
+                      the real mark so that the real mark (Position
+                      that the caller of createPosition holds) can be
+                      collected if there are no more references to
+                      it.  The update table holds only a reference
+                      to this data.                    
+                </javadoc>
+                <method name="MarkData" type="constructor" line="267">
+                    <params>
+                        <param name="index" type="int"/>
+                    </params>
+                </method>
+                <method name="MarkData" type="constructor" line="271">
+                    <params>
+                        <param name="index" type="int"/>
+                        <param name="position" type="StickyPosition"/>
+                        <param name="queue" type="ReferenceQueue<? super StickyPosition>"/>
+                    </params>
+                </method>
+                <javadoc line="276">
+                    Fetch the location in the contiguous sequence
+                      being modeled.  The index in the gap array
+                      is held by the mark, so it is adjusted according
+                      to it&apos;s relationship to the gap.                    
+                </javadoc>
+                <method name="getOffset" type="int" line="282">
+                    <declaration name="g0" type="int" line="283"/>
+                    <declaration name="g1" type="int" line="284"/>
+                    <declaration name="offs" type="int" line="285"/>
+                </method>
+                <method name="getPosition" type="StickyPosition" line="289"/>
+                <declaration name="index" type="int" line="292"/>
+            </class>
+            <class name="StickyPosition" line="295">
+                <implements interface="Position"/>
+                <method name="StickyPosition" type="constructor" line="297"/>
+                <method name="setMark" type="void" line="300">
+                    <params>
+                        <param name="mark" type="MarkData"/>
+                    </params>
+                </method>
+                <method name="getOffset" type="int" line="304"/>
+                <method name="toString" type="String" line="308"/>
+                <declaration name="mark" type="MarkData" line="312"/>
+            </class>
+            <declaration name="empty" type="char[]" line="317"/>
+            <declaration name="marks" type="MarkVector" line="318"/>
+            <declaration name="search" type="MarkData" line="320"/>
+            <javadoc line="320">
+                Record used for searching for the place to
+                  start updating mark indexs when the gap
+                  boundaries are moved.                
+            </javadoc>
+            <declaration name="unusedMarks" type="int" line="327"/>
+            <javadoc line="327">
+                The number of unused mark entries                
+            </javadoc>
+            <declaration name="queue" type="ReferenceQueue&lt;StickyPosition&gt;" line="332"/>
+            <declaration name="GROWTH_SIZE" type="int" line="334"/>
+            <javadoc line="338">
+                Make the gap bigger, moving any necessary data and updating
+                  the appropriate marks                
+            </javadoc>
+            <method name="shiftEnd" type="void" line="342">
+                <params>
+                    <param name="newSize" type="int"/>
+                </params>
+                <comment line="347">
+                    Adjust marks.                    
+                </comment>
+                <declaration name="oldGapEnd" type="int" line="343"/>
+                <declaration name="dg" type="int" line="348"/>
+                <declaration name="adjustIndex" type="int" line="349"/>
+                <declaration name="n" type="int" line="350"/>
+                <scope line="351">
+                    <declaration name="mark" type="MarkData" line="352"/>
+                </scope>
+            </method>
+            <javadoc line="357">
+                Overridden to make growth policy less agressive for large
+                  text amount.                
+            </javadoc>
+            <method name="getNewArraySize" type="int" line="361">
+                <params>
+                    <param name="reqSize" type="int"/>
+                </params>
+                <scope line="362"/>
+                <scope line="364"/>
+            </method>
+            <javadoc line="369">
+                Move the start of the gap to a new location,
+                  without changing the size of the gap.  This
+                  moves the data in the array and updates the
+                  marks accordingly.                
+            </javadoc>
+            <method name="shiftGap" type="void" line="375">
+                <params>
+                    <param name="newGapStart" type="int"/>
+                </params>
+                <comment line="382">
+                    shift gap in the character array                    
+                </comment>
+                <comment line="385">
+                    update the marks                    
+                </comment>
+                <comment line="387">
+                    Move gap up, move data and marks down.                    
+                </comment>
+                <comment line="398">
+                    Move gap down, move data and marks up.                    
+                </comment>
+                <declaration name="oldGapStart" type="int" line="376"/>
+                <declaration name="dg" type="int" line="377"/>
+                <declaration name="oldGapEnd" type="int" line="378"/>
+                <declaration name="newGapEnd" type="int" line="379"/>
+                <declaration name="gapSize" type="int" line="380"/>
+                <scope line="386">
+                    <declaration name="adjustIndex" type="int" line="388"/>
+                    <declaration name="n" type="int" line="389"/>
+                    <scope line="390">
+                        <declaration name="mark" type="MarkData" line="391"/>
+                        <scope line="392"/>
+                    </scope>
+                </scope>
+                <scope line="397">
+                    <declaration name="adjustIndex" type="int" line="399"/>
+                    <declaration name="n" type="int" line="400"/>
+                    <scope line="401">
+                        <declaration name="mark" type="MarkData" line="402"/>
+                        <scope line="403"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="412">
+                Resets all the marks that have an offset of 0 to have an index of
+                  zero as well.                
+            </javadoc>
+            <method name="resetMarksAtZero" type="void" line="416">
+                <scope line="417">
+                    <declaration name="g1" type="int" line="418"/>
+                    <scope line="420">
+                        <declaration name="mark" type="MarkData" line="421"/>
+                        <scope line="422"/>
+                        <scope line="425"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="432">
+                Adjust the gap end downward.  This doesn&apos;t move
+                  any data, but it does update any marks affected
+                  by the boundary change.  All marks from the old
+                  gap start down to the new gap start are squeezed
+                  to the end of the gap (their location has been
+                  removed).                
+            </javadoc>
+            <method name="shiftGapStartDown" type="void" line="440">
+                <params>
+                    <param name="newGapStart" type="int"/>
+                </params>
+                <comment line="441">
+                    Push aside all marks from oldGapStart down to newGapStart.                    
+                </comment>
+                <comment line="449">
+                    no more marks to adjust                    
+                </comment>
+                <comment line="455">
+                    shift the gap in the character array                    
+                </comment>
+                <declaration name="adjustIndex" type="int" line="442"/>
+                <declaration name="n" type="int" line="443"/>
+                <declaration name="g0" type="int" line="444"/>
+                <declaration name="g1" type="int" line="445"/>
+                <scope line="446">
+                    <declaration name="mark" type="MarkData" line="447"/>
+                    <scope line="448"/>
+                </scope>
+            </method>
+            <javadoc line="461">
+                Adjust the gap end upward.  This doesn&apos;t move
+                  any data, but it does update any marks affected
+                  by the boundary change. All marks from the old
+                  gap end up to the new gap end are squeezed
+                  to the end of the gap (their location has been
+                  removed).                
+            </javadoc>
+            <method name="shiftGapEndUp" type="void" line="469">
+                <params>
+                    <param name="newGapEnd" type="int"/>
+                </params>
+                <comment line="480">
+                    shift the gap in the character array                    
+                </comment>
+                <declaration name="adjustIndex" type="int" line="470"/>
+                <declaration name="n" type="int" line="471"/>
+                <scope line="472">
+                    <declaration name="mark" type="MarkData" line="473"/>
+                    <scope line="474"/>
+                </scope>
+            </method>
+            <javadoc line="486">
+                Compares two marks.                
+                <param>
+                    o1 the first object                    
+                </param>
+                <param>
+                    o2 the second object                    
+                </param>
+                <return>
+                    < 0 if o1 < o2, 0 if the same, > 0 if o1 > o2                    
+                </return>
+            </javadoc>
+            <method name="compare" type="int" line="493">
+                <params>
+                    <param name="o1" type="MarkData"/>
+                    <param name="o2" type="MarkData"/>
+                </params>
+                <scope line="494"/>
+                <scope line="496"/>
+                <scope line="498"/>
+            </method>
+            <javadoc line="503">
+                Finds the index to start mark adjustments given
+                  some search index.                
+            </javadoc>
+            <method name="findMarkAdjustIndex" type="int" line="507">
+                <params>
+                    <param name="searchIndex" type="int"/>
+                </params>
+                <comment line="511">
+                    return the first in the series                    
+                </comment>
+                <comment line="512">
+                    (ie. there may be duplicates).                    
+                </comment>
+                <declaration name="index" type="int" line="509"/>
+                <scope line="513">
+                    <declaration name="d" type="MarkData" line="514"/>
+                    <scope line="515"/>
+                </scope>
+            </method>
+            <javadoc line="523">
+                Finds the index of where to insert a new mark.                
+                <param>
+                    o the mark to insert                    
+                </param>
+                <return>
+                    the index                    
+                </return>
+            </javadoc>
+            <method name="findSortIndex" type="int" line="529">
+                <params>
+                    <param name="o" type="MarkData"/>
+                </params>
+                <comment line="550">
+                    found a match                    
+                </comment>
+                <comment line="559">
+                    didn&apos;t find it, but we indicate the index of where it would belong.                    
+                </comment>
+                <declaration name="lower" type="int" line="530"/>
+                <declaration name="upper" type="int" line="531"/>
+                <declaration name="mid" type="int" line="532"/>
+                <scope line="534"/>
+                <declaration name="cmp" type="int" line="538"/>
+                <declaration name="last" type="MarkData" line="539"/>
+                <scope line="544">
+                    <declaration name="entry" type="MarkData" line="546"/>
+                    <scope line="549"/>
+                    <scope line="552"/>
+                    <scope line="554"/>
+                </scope>
+            </method>
+            <javadoc line="563">
+                Remove all unused marks out of the sorted collection
+                  of marks.                
+            </javadoc>
+            <method name="removeUnusedMarks" type="void" line="567">
+                <declaration name="n" type="int" line="568"/>
+                <declaration name="cleaned" type="MarkVector" line="569"/>
+                <scope line="570">
+                    <declaration name="mark" type="MarkData" line="571"/>
+                    <scope line="572"/>
+                </scope>
+            </method>
+            <class name="MarkVector" line="581">
+                <extends class="GapVector"/>
+                <method name="MarkVector" type="constructor" line="583"/>
+                <method name="MarkVector" type="constructor" line="587">
+                    <params>
+                        <param name="size" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="591">
+                    Allocate an array to store items of the type
+                      appropriate (which is determined by the subclass).                    
+                </javadoc>
+                <method name="allocateArray" type="Object" line="595">
+                    <params>
+                        <param name="len" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="599">
+                    Get the length of the allocated array                    
+                </javadoc>
+                <method name="getArrayLength" type="int" line="602">
+                    <declaration name="marks" type="MarkData[]" line="603"/>
+                </method>
+                <javadoc line="607">
+                    Returns the number of marks currently held                    
+                </javadoc>
+                <method name="size" type="int" line="610">
+                    <declaration name="len" type="int" line="611"/>
+                </method>
+                <javadoc line="615">
+                    Inserts a mark into the vector                    
+                </javadoc>
+                <method name="insertElementAt" type="void" line="618">
+                    <params>
+                        <param name="m" type="MarkData"/>
+                        <param name="index" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="623">
+                    Add a mark to the end                    
+                </javadoc>
+                <method name="addElement" type="void" line="626">
+                    <params>
+                        <param name="m" type="MarkData"/>
+                    </params>
+                </method>
+                <javadoc line="630">
+                    Fetches the mark at the given index                    
+                </javadoc>
+                <method name="elementAt" type="MarkData" line="633">
+                    <params>
+                        <param name="index" type="int"/>
+                    </params>
+                    <comment line="638">
+                        below gap                        
+                    </comment>
+                    <comment line="641">
+                        above gap                        
+                    </comment>
+                    <declaration name="g0" type="int" line="634"/>
+                    <declaration name="g1" type="int" line="635"/>
+                    <declaration name="array" type="MarkData[]" line="636"/>
+                    <scope line="637"/>
+                    <scope line="640"/>
+                </method>
+                <javadoc line="647">
+                    Replaces the elements in the specified range with the passed
+                      in objects. This will NOT adjust the gap. The passed in indices
+                      do not account for the gap, they are the same as would be used
+                      int &lt;code&gt;elementAt&lt;/code&gt;.                    
+                </javadoc>
+                <method name="replaceRange" type="void" line="653">
+                    <params>
+                        <param name="start" type="int"/>
+                        <param name="end" type="int"/>
+                        <param name="marks" type="Object[]"/>
+                    </params>
+                    <comment line="660">
+                        Completely passed gap                        
+                    </comment>
+                    <comment line="665">
+                        straddles gap                        
+                    </comment>
+                    <comment line="673">
+                        below gap                        
+                    </comment>
+                    <declaration name="g0" type="int" line="654"/>
+                    <declaration name="g1" type="int" line="655"/>
+                    <declaration name="index" type="int" line="656"/>
+                    <declaration name="newIndex" type="int" line="657"/>
+                    <declaration name="array" type="Object[]" line="658"/>
+                    <scope line="659"/>
+                    <scope line="664">
+                        <scope line="667"/>
+                    </scope>
+                    <scope line="672">
+                        <scope line="674"/>
+                    </scope>
+                    <scope line="678"/>
+                </method>
+                <declaration name="oneMark" type="MarkData[]" line="683"/>
+            </class>
+            <method name="readObject" type="void" line="690">
+                <params>
+                    <param name="s" type="ObjectInputStream"/>
+                </params>
+            </method>
+            <javadoc line="700">
+                Returns a Vector containing instances of UndoPosRef for the
+                  Positions in the range
+                  &lt;code&gt;offset&lt;/code&gt; to &lt;code&gt;offset&lt;/code&gt; + &lt;code&gt;length&lt;/code&gt;.
+                  If &lt;code&gt;v&lt;/code&gt; is not null the matching Positions are placed in
+                  there. The vector with the resulting Positions are returned.                
+                <param>
+                    v the Vector to use, with a new one created on null                    
+                </param>
+                <param>
+                    offset the starting offset >= 0                    
+                </param>
+                <param>
+                    length the length >= 0                    
+                </param>
+                <return>
+                    the set of instances                    
+                </return>
+            </javadoc>
+            <method name="getPositionsInRange" type="Vector" line="712">
+                <params>
+                    <param name="v" type="Vector"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <comment line="719">
+                    Find the index of the marks.                    
+                </comment>
+                <comment line="722">
+                    findMarkAdjustIndex start at 1!                    
+                </comment>
+                <declaration name="endOffset" type="int" line="713"/>
+                <declaration name="startIndex" type="int" line="714"/>
+                <declaration name="endIndex" type="int" line="715"/>
+                <declaration name="g0" type="int" line="716"/>
+                <declaration name="g1" type="int" line="717"/>
+                <scope line="720">
+                    <scope line="721"/>
+                    <scope line="725"/>
+                    <scope line="728"/>
+                    <scope line="731"/>
+                </scope>
+                <scope line="735"/>
+                <declaration name="placeIn" type="Vector" line="740"/>
+                <scope line="743"/>
+            </method>
+            <javadoc line="749">
+                Resets the location for all the UndoPosRef instances
+                  in &lt;code&gt;positions&lt;/code&gt;.
+                  &lt;p&gt;
+                  This is meant for internal usage, and is generally not of interest
+                  to subclasses.                
+                <param>
+                    positions the UndoPosRef instances to reset                    
+                </param>
+            </javadoc>
+            <method name="updateUndoPositions" type="void" line="759">
+                <params>
+                    <param name="positions" type="Vector"/>
+                    <param name="offset" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <comment line="760">
+                    Find the indexs of the end points.                    
+                </comment>
+                <comment line="773">
+                    Reset the location of the refenences.                    
+                </comment>
+                <comment line="778">
+                    We have to resort the marks in the range startIndex to endIndex.                    
+                </comment>
+                <comment line="779">
+                    We can take advantage of the fact that it will be in                    
+                </comment>
+                <comment line="780">
+                    increasing order, accept there will be a bunch of MarkData&apos;s with                    
+                </comment>
+                <comment line="781">
+                    the index g1 (or 0 if offset == 0) interspersed throughout.                    
+                </comment>
+                <comment line="787">
+                    If the offset is 0, the positions won&apos;t have incremented,                    
+                </comment>
+                <comment line="788">
+                    have to do the reverse thing.                    
+                </comment>
+                <comment line="789">
+                    Find the elements in startIndex whose index is 0                    
+                </comment>
+                <comment line="817">
+                    And replace                    
+                </comment>
+                <declaration name="endOffset" type="int" line="761"/>
+                <declaration name="g1" type="int" line="762"/>
+                <declaration name="startIndex" type="int" line="763"/>
+                <declaration name="endIndex" type="int" line="764"/>
+                <scope line="766"/>
+                <scope line="769"/>
+                <scope line="774">
+                    <declaration name="ref" type="UndoPosRef" line="775"/>
+                </scope>
+                <scope line="782">
+                    <declaration name="sorted" type="Object[]" line="783"/>
+                    <declaration name="addIndex" type="int" line="784"/>
+                    <declaration name="counter" type="int" line="785"/>
+                    <scope line="786">
+                        <scope line="790">
+                            <declaration name="mark" type="MarkData" line="791"/>
+                            <scope line="792"/>
+                        </scope>
+                        <scope line="796">
+                            <declaration name="mark" type="MarkData" line="797"/>
+                            <scope line="798"/>
+                        </scope>
+                    </scope>
+                    <scope line="803">
+                        <scope line="804">
+                            <declaration name="mark" type="MarkData" line="805"/>
+                            <scope line="806"/>
+                        </scope>
+                        <scope line="810">
+                            <declaration name="mark" type="MarkData" line="811"/>
+                            <scope line="812"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <class name="UndoPosRef" line="822">
+                <javadoc line="822">
+                    Used to hold a reference to a Mark that is being reset as the
+                      result of removing from the content.                    
+                </javadoc>
+                <method name="UndoPosRef" type="constructor" line="827">
+                    <params>
+                        <param name="rec" type="MarkData"/>
+                    </params>
+                </method>
+                <javadoc line="832">
+                    Resets the location of the Position to the offset when the
+                      receiver was instantiated.                    
+                    <param>
+                        endOffset end location of inserted string.                        
+                    </param>
+                    <param>
+                        g1 resulting end of gap.                        
+                    </param>
+                </javadoc>
+                <method name="resetLocation" type="void" line="839">
+                    <params>
+                        <param name="endOffset" type="int"/>
+                        <param name="g1" type="int"/>
+                    </params>
+                    <scope line="840"/>
+                    <scope line="843"/>
+                </method>
+                <declaration name="undoLocation" type="int" line="848"/>
+                <javadoc line="848">
+                    Previous Offset of rec.                    
+                </javadoc>
+                <declaration name="rec" type="MarkData" line="850"/>
+                <javadoc line="850">
+                    Mark to reset offset.                    
+                </javadoc>
+            </class>
+            <class name="InsertUndo" line="855">
+                <extends class="AbstractUndoableEdit"/>
+                <javadoc line="855">
+                    UnoableEdit created for inserts.                    
+                </javadoc>
+                <method name="InsertUndo" type="constructor" line="859">
+                    <params>
+                        <param name="offset" type="int"/>
+                        <param name="length" type="int"/>
+                    </params>
+                </method>
+                <method name="undo" type="void" line="865">
+                    <comment line="868">
+                        Get the Positions in the range being removed.                        
+                    </comment>
+                    <scope line="867"/>
+                    <scope line="872"/>
+                </method>
+                <method name="redo" type="void" line="877">
+                    <comment line="882">
+                        Update the Positions that were in the range removed.                        
+                    </comment>
+                    <scope line="879">
+                        <scope line="883"/>
+                    </scope>
+                    <scope line="887"/>
+                </method>
+                <declaration name="offset" type="int" line="892"/>
+                <javadoc line="892">
+                    Where string was inserted.                    
+                </javadoc>
+                <declaration name="length" type="int" line="894"/>
+                <javadoc line="894">
+                    Length of string inserted.                    
+                </javadoc>
+                <declaration name="string" type="String" line="896"/>
+                <javadoc line="896">
+                    The string that was inserted. This will only be valid after an
+                      undo.                    
+                </javadoc>
+                <declaration name="posRefs" type="Vector" line="899"/>
+                <javadoc line="899">
+                    An array of instances of UndoPosRef for the Positions in the
+                      range that was removed, valid after undo.                    
+                </javadoc>
+            </class>
+            <class name="RemoveUndo" line="905">
+                <extends class="AbstractUndoableEdit"/>
+                <javadoc line="905">
+                    UndoableEdit created for removes.                    
+                </javadoc>
+                <method name="RemoveUndo" type="constructor" line="909">
+                    <params>
+                        <param name="offset" type="int"/>
+                        <param name="string" type="String"/>
+                    </params>
+                </method>
+                <method name="undo" type="void" line="917">
+                    <comment line="921">
+                        Update the Positions that were in the range removed.                        
+                    </comment>
+                    <scope line="919">
+                        <scope line="922"/>
+                    </scope>
+                    <scope line="927"/>
+                </method>
+                <method name="redo" type="void" line="932">
+                    <comment line="936">
+                        Get the Positions in the range being removed.                        
+                    </comment>
+                    <scope line="934"/>
+                    <scope line="939"/>
+                </method>
+                <declaration name="offset" type="int" line="944"/>
+                <javadoc line="944">
+                    Where the string was removed from.                    
+                </javadoc>
+                <declaration name="length" type="int" line="946"/>
+                <javadoc line="946">
+                    Length of string removed.                    
+                </javadoc>
+                <declaration name="string" type="String" line="948"/>
+                <javadoc line="948">
+                    The string that was removed. This is valid when redo is valid.                    
+                </javadoc>
+                <declaration name="posRefs" type="Vector" line="950"/>
+                <javadoc line="950">
+                    An array of instances of UndoPosRef for the Positions in the
+                      range that was removed, valid before undo.                    
+                </javadoc>
+            </class>
+        </class>
+    </source>

@@ -1,0 +1,483 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="cern.colt.matrix.linalg">
+        <import package="cern.colt.matrix.DoubleMatrix1D"/>
+        <import package="cern.colt.matrix.DoubleMatrix2D"/>
+        <import package="EDU.oswego.cs.dl.util.concurrent.FJTask"/>
+        <class name="SmpBlas" line="14">
+            <comment line="67">
+                blocks are operated on in parallel; for each block this seq algo is used.                
+            </comment>
+            <implements interface="Blas"/>
+            <javadoc line="14">
+                Parallel implementation of the Basic Linear Algebra System for symmetric multi processing boxes.
+                  Currently only a few algorithms are parallelised; the others are fully functional, but run in sequential mode.
+                  Parallelised are:
+                  &lt;ul&gt;
+                  &lt;li&gt;{@link #dgemm dgemm} (matrix-matrix multiplication)&lt;/li&gt;
+                  &lt;li&gt;{@link #dgemv dgemv} (matrix-vector multiplication)&lt;/li&gt;
+                  &lt;li&gt;{@link #assign(DoubleMatrix2D,cern.colt.function.DoubleFunction) assign(A,function)} (generalized matrix scaling/transform): Strong speedup only for expensive functions like logarithm, sin, etc.&lt;/li&gt;
+                  &lt;li&gt;{@link #assign(DoubleMatrix2D,DoubleMatrix2D,cern.colt.function.DoubleDoubleFunction) assign(A,B,function)} (generalized matrix scaling/transform): Strong speedup only for expensive functions like pow etc.&lt;/li&gt;
+                  &lt;/ul&gt;
+                  In all cases, no or only marginal speedup is seen for small problem sizes; they are detected and the sequential algorithm is used.
+                  &lt;h4&gt;Usage&lt;/h4&gt;
+                  Call the static method {@link #allocateBlas} at the very beginning of your program, supplying the main parameter for SmpBlas, the number of available CPUs.
+                  The method sets the public global variable &lt;tt&gt;SmpBlas.smpBlas&lt;/tt&gt; to a blas using a maximum of &lt;tt&gt;CPUs&lt;/tt&gt; threads, each concurrently processing matrix blocks with the given sequential blas algorithms.
+                  Normally there is no need to call &lt;tt&gt;allocateBlas&lt;/tt&gt; more than once.
+                  Then use &lt;tt&gt;SmpBlas.smpBlas.someRoutine(...)&lt;/tt&gt; to run &lt;tt&gt;someRoutine&lt;/tt&gt; in parallel.
+                  E.g.
+                  &lt;table&gt;
+                  &lt;td class=&quot;PRE&quot;&gt; 
+                  &lt;pre&gt;
+                  int cpu_s = 4;
+                  SmpBlas.allocateBlas(cpu_s, SeqBlas.seqBlas);
+                  ...
+                  SmpBlas.smpBlas.dgemm(...)
+                  SmpBlas.smpBlas.dgemv(...)
+                  &lt;/pre&gt;
+                  &lt;/td&gt;
+                  &lt;/table&gt;
+                  Even if you don&apos;t call a blas routine yourself, it often makes sense to allocate a SmpBlas, because other matrix library routines sometimes call the blas.
+                  So if you&apos;re lucky, you get parallel performance for free.
+                  &lt;h4&gt;Notes&lt;/h4&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;Unfortunately, there is no portable means of automatically detecting the
+                  number of CPUs on a JVM, so there is no good way to automate defaults.&lt;/li&gt;
+                  &lt;li&gt;Only improves performance on boxes with &gt; 1 CPUs and VMs with &lt;b&gt;native threads&lt;/b&gt;.&lt;/li&gt;
+                  &lt;li&gt;Currently only improves performance when working on dense matrix types. On sparse types, performance is likely to degrade (because of the implementation of sub-range views)!&lt;/li&gt;
+                  &lt;li&gt;Implemented using Doug Lea&apos;s fast lightweight task framework ({@link EDU.oswego.cs.dl.util.concurrent}) built upon Java threads, and geared for parallel computation.&lt;/li&gt;
+                  &lt;/ul&gt;                
+                <see>
+                    EDU.oswego.cs.dl.util.concurrent.FJTaskRunnerGroup                    
+                </see>
+                <see>
+                    EDU.oswego.cs.dl.util.concurrent.FJTask                    
+                </see>
+                <author>
+                    wolfgang.hoschek@cern.ch                    
+                </author>
+                <version>
+                    0.9, 16/04/2000                    
+                </version>
+            </javadoc>
+            <declaration name="smpBlas" type="Blas" line="60"/>
+            <javadoc line="60">
+                The public global parallel blas; initialized via {@link #allocateBlas}.
+                  Do not modify this variable via other means (it is public).                
+            </javadoc>
+            <declaration name="seqBlas" type="Blas" line="66"/>
+            <declaration name="smp" type="Smp" line="68"/>
+            <declaration name="maxThreads" type="int" line="70"/>
+            <declaration name="NN_THRESHOLD" type="int" line="72"/>
+            <javadoc line="73">
+                Constructs a blas using a maximum of &lt;tt&gt;maxThreads&lt;tt&gt; threads; each executing the given sequential algos.                
+            </javadoc>
+            <method name="SmpBlas" type="constructor" line="76">
+                <params>
+                    <param name="maxThreads" type="int"/>
+                    <param name="seqBlas" type="Blas"/>
+                </params>
+                <comment line="80">
+                    Smp.smp = new Smp(maxThreads);                    
+                </comment>
+            </method>
+            <javadoc line="82">
+                Sets the public global variable &lt;tt&gt;SmpBlas.smpBlas&lt;/tt&gt; to a blas using a maximum of &lt;tt&gt;maxThreads&lt;/tt&gt; threads, each executing the given sequential algorithm; &lt;tt&gt;maxThreads&lt;/tt&gt; is normally the number of CPUs.
+                  Call this method at the very beginning of your program. 
+                  Normally there is no need to call this method more than once.                
+                <param>
+                    maxThreads the maximum number of threads (= CPUs) to be used                    
+                </param>
+                <param>
+                    seqBlas the sequential blas algorithms to be used on concurrently processed matrix blocks.                    
+                </param>
+            </javadoc>
+            <method name="allocateBlas" type="void" line="89">
+                <params>
+                    <param name="maxThreads" type="int"/>
+                    <param name="seqBlas" type="Blas"/>
+                </params>
+                <comment line="90">
+                    no need to change anything?                    
+                </comment>
+                <scope line="90">
+                    <declaration name="s" type="SmpBlas" line="91"/>
+                </scope>
+                <scope line="97"/>
+            </method>
+            <method name="assign" type="void" line="101">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="function" type="cern.colt.function.DoubleFunction"/>
+                </params>
+                <anonymous_class line="103">
+                    <method name="apply" type="double" line="104">
+                        <params>
+                            <param name="AA" type="DoubleMatrix2D"/>
+                            <param name="BB" type="DoubleMatrix2D"/>
+                        </params>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="assign" type="void" line="111">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                    <param name="function" type="cern.colt.function.DoubleDoubleFunction"/>
+                </params>
+                <anonymous_class line="113">
+                    <method name="apply" type="double" line="114">
+                        <params>
+                            <param name="AA" type="DoubleMatrix2D"/>
+                            <param name="BB" type="DoubleMatrix2D"/>
+                        </params>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="dasum" type="double" line="121">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="daxpy" type="void" line="124">
+                <params>
+                    <param name="alpha" type="double"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="daxpy" type="void" line="127">
+                <params>
+                    <param name="alpha" type="double"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                </params>
+            </method>
+            <method name="dcopy" type="void" line="130">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="dcopy" type="void" line="133">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                </params>
+            </method>
+            <method name="ddot" type="double" line="136">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="dgemm" type="void" line="139">
+                <params>
+                    <param name="transposeA" type="boolean"/>
+                    <param name="transposeB" type="boolean"/>
+                    <param name="alpha" type="double"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                    <param name="beta" type="double"/>
+                    <param name="C" type="DoubleMatrix2D"/>
+                </params>
+                <comment line="140">
+                    determine how to split and parallelize best into blocks
+                    if more B.columns than tasks --&gt; split B.columns, as follows:
+                    
+                    xx|xx|xxx B
+                    xx|xx|xxx
+                    xx|xx|xxx
+                    A
+                    xxx     xx|xx|xxx C
+                    xxx		xx|xx|xxx
+                    xxx		xx|xx|xxx
+                    xxx		xx|xx|xxx
+                    xxx		xx|xx|xxx
+                    
+                    if less B.columns than tasks --&gt; split A.rows, as follows:
+                    
+                    xxxxxxx B
+                    xxxxxxx
+                    xxxxxxx
+                    A
+                    xxx     xxxxxxx C
+                    xxx     xxxxxxx
+                    ---     -------
+                    xxx     xxxxxxx
+                    xxx     xxxxxxx
+                    ---     -------
+                    xxx     xxxxxxx                    
+                </comment>
+                <comment line="189">
+                    each thread should process at least 30000 flops                    
+                </comment>
+                <comment line="194">
+                    parallelization doesn&apos;t pay off (too much start up overhead)                    
+                </comment>
+                <comment line="199">
+                    set up concurrent tasks                    
+                </comment>
+                <comment line="204">
+                    last span may be a bit larger                    
+                </comment>
+                <comment line="208">
+                    split B along columns into blocks                    
+                </comment>
+                <comment line="214">
+                    split A along rows into blocks                    
+                </comment>
+                <comment line="223">
+                    System.out.println(&quot;Hello &quot;+offset);                    
+                </comment>
+                <comment line="228">
+                    run tasks and wait for completion                    
+                </comment>
+                <scope line="169"/>
+                <scope line="173"/>
+                <declaration name="m" type="int" line="177"/>
+                <declaration name="n" type="int" line="178"/>
+                <declaration name="p" type="int" line="179"/>
+                <declaration name="flops" type="long" line="188"/>
+                <declaration name="noOfTasks" type="int" line="189"/>
+                <declaration name="splitB" type="boolean" line="190"/>
+                <declaration name="width" type="int" line="191"/>
+                <scope line="194"/>
+                <declaration name="span" type="int" line="200"/>
+                <declaration name="subTasks" type="FJTask[]" line="201"/>
+                <scope line="202">
+                    <declaration name="offset" type="int" line="203"/>
+                    <declaration name="AA" type="DoubleMatrix2D" line="206"/>
+                    <scope line="207"/>
+                    <scope line="213"/>
+                    <anonymous_class line="220">
+                        <method name="run" type="void" line="221">
+                            <comment line="223">
+                                System.out.println(&quot;Hello &quot;+offset);                                
+                            </comment>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="229">
+                    <anonymous_class line="231">
+                        <method name="run" type="void" line="232"/>
+                    </anonymous_class>
+                </scope>
+                <scope line="237"/>
+            </method>
+            <method name="dgemv" type="void" line="239">
+                <params>
+                    <param name="transposeA" type="boolean"/>
+                    <param name="alpha" type="double"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="beta" type="double"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+                <comment line="240">
+                    split A, as follows:
+                    
+                    x x
+                    x
+                    x
+                    A
+                    xxx     x y
+                    xxx     x
+                    ---     -
+                    xxx     x
+                    xxx     x
+                    ---     -
+                    xxx     x                    
+                </comment>
+                <comment line="263">
+                    each thread should process at least 30000 flops                    
+                </comment>
+                <comment line="267">
+                    parallelization doesn&apos;t pay off (too much start up overhead)                    
+                </comment>
+                <comment line="272">
+                    set up concurrent tasks                    
+                </comment>
+                <comment line="277">
+                    last span may be a bit larger                    
+                </comment>
+                <comment line="279">
+                    split A along rows into blocks                    
+                </comment>
+                <comment line="286">
+                    System.out.println(&quot;Hello &quot;+offset);                    
+                </comment>
+                <comment line="291">
+                    run tasks and wait for completion                    
+                </comment>
+                <scope line="256"/>
+                <declaration name="m" type="int" line="260"/>
+                <declaration name="n" type="int" line="261"/>
+                <declaration name="flops" type="long" line="262"/>
+                <declaration name="noOfTasks" type="int" line="263"/>
+                <declaration name="width" type="int" line="264"/>
+                <scope line="267"/>
+                <declaration name="span" type="int" line="273"/>
+                <declaration name="subTasks" type="FJTask[]" line="274"/>
+                <scope line="275">
+                    <declaration name="offset" type="int" line="276"/>
+                    <declaration name="AA" type="DoubleMatrix2D" line="280"/>
+                    <declaration name="yy" type="DoubleMatrix1D" line="281"/>
+                    <anonymous_class line="283">
+                        <method name="run" type="void" line="284">
+                            <comment line="286">
+                                System.out.println(&quot;Hello &quot;+offset);                                
+                            </comment>
+                        </method>
+                    </anonymous_class>
+                </scope>
+                <scope line="292">
+                    <anonymous_class line="294">
+                        <method name="run" type="void" line="295"/>
+                    </anonymous_class>
+                </scope>
+                <scope line="300"/>
+            </method>
+            <method name="dger" type="void" line="302">
+                <params>
+                    <param name="alpha" type="double"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                </params>
+            </method>
+            <method name="dnrm2" type="double" line="305">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="drot" type="void" line="308">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                    <param name="c" type="double"/>
+                    <param name="s" type="double"/>
+                </params>
+            </method>
+            <method name="drotg" type="void" line="311">
+                <params>
+                    <param name="a" type="double"/>
+                    <param name="b" type="double"/>
+                    <param name="rotvec" type="double"/>
+                </params>
+            </method>
+            <method name="dscal" type="void" line="314">
+                <params>
+                    <param name="alpha" type="double"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="dscal" type="void" line="317">
+                <params>
+                    <param name="alpha" type="double"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                </params>
+            </method>
+            <method name="dswap" type="void" line="320">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="dswap" type="void" line="323">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                </params>
+            </method>
+            <method name="dsymv" type="void" line="326">
+                <params>
+                    <param name="isUpperTriangular" type="boolean"/>
+                    <param name="alpha" type="double"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                    <param name="beta" type="double"/>
+                    <param name="y" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="dtrmv" type="void" line="329">
+                <params>
+                    <param name="isUpperTriangular" type="boolean"/>
+                    <param name="transposeA" type="boolean"/>
+                    <param name="isUnitTriangular" type="boolean"/>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="x" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="idamax" type="int" line="332">
+                <params>
+                    <param name="x" type="DoubleMatrix1D"/>
+                </params>
+            </method>
+            <method name="run" type="double[]" line="335">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="B" type="DoubleMatrix2D"/>
+                    <param name="collectResults" type="boolean"/>
+                    <param name="fun" type="Matrix2DMatrix2DFunction"/>
+                </params>
+                <comment line="338">
+                    blocks = this.smp.splitStridedNN(A, B, NN_THRESHOLD, A.rows()*A.columns());                    
+                </comment>
+                <comment line="342">
+                    too small --&gt; sequential                    
+                </comment>
+                <comment line="347">
+                    parallel                    
+                </comment>
+                <declaration name="blocks" type="DoubleMatrix2D[][]" line="336"/>
+                <declaration name="b" type="int" line="339"/>
+                <declaration name="results" type="double[]" line="340"/>
+                <scope line="342">
+                    <declaration name="result" type="double" line="343"/>
+                </scope>
+                <scope line="347"/>
+            </method>
+            <method name="run" type="double[]" line="352">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                    <param name="collectResults" type="boolean"/>
+                    <param name="fun" type="Matrix2DMatrix2DFunction"/>
+                </params>
+                <comment line="355">
+                    blocks = this.smp.splitStridedNN(A, NN_THRESHOLD, A.rows()*A.columns());                    
+                </comment>
+                <comment line="359">
+                    too small -&gt; sequential                    
+                </comment>
+                <comment line="364">
+                    parallel                    
+                </comment>
+                <declaration name="blocks" type="DoubleMatrix2D[]" line="353"/>
+                <declaration name="b" type="int" line="356"/>
+                <declaration name="results" type="double[]" line="357"/>
+                <scope line="359">
+                    <declaration name="result" type="double" line="360"/>
+                </scope>
+                <scope line="364"/>
+            </method>
+            <javadoc line="369">
+                Prints various snapshot statistics to System.out; Simply delegates to {@link EDU.oswego.cs.dl.util.concurrent.FJTaskRunnerGroup#stats}.                
+            </javadoc>
+            <method name="stats" type="void" line="372"/>
+            <method name="xsum" type="double" line="375">
+                <params>
+                    <param name="A" type="DoubleMatrix2D"/>
+                </params>
+                <anonymous_class line="377">
+                    <method name="apply" type="double" line="378">
+                        <params>
+                            <param name="AA" type="DoubleMatrix2D"/>
+                            <param name="BB" type="DoubleMatrix2D"/>
+                        </params>
+                    </method>
+                </anonymous_class>
+                <declaration name="sums" type="double[]" line="376"/>
+                <declaration name="sum" type="double" line="384"/>
+            </method>
+        </class>
+    </source>

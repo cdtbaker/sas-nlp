@@ -1,0 +1,637 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.java2d.opengl">
+        <import package="java.awt.Composite"/>
+        <import package="java.awt.Transparency"/>
+        <import package="java.awt.geom.AffineTransform"/>
+        <import package="java.awt.image.AffineTransformOp"/>
+        <import package="java.awt.image.BufferedImage"/>
+        <import package="java.awt.image.BufferedImageOp"/>
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="sun.java2d.SurfaceData"/>
+        <import package="sun.java2d.loops.Blit"/>
+        <import package="sun.java2d.loops.CompositeType"/>
+        <import package="sun.java2d.loops.GraphicsPrimitive"/>
+        <import package="sun.java2d.loops.GraphicsPrimitiveMgr"/>
+        <import package="sun.java2d.loops.ScaledBlit"/>
+        <import package="sun.java2d.loops.SurfaceType"/>
+        <import package="sun.java2d.loops.TransformBlit"/>
+        <import package="sun.java2d.pipe.Region"/>
+        <import package="sun.java2d.pipe.RenderBuffer"/>
+        <import package="sun.java2d.pipe.RenderQueue"/>
+        <import package="sun.java2d.pipe.BufferedOpCodes"/>
+        <class name="OGLBlitLoops" line="48">
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="register" type="void" line="50">
+                <comment line="59">
+                    surface-&gt;surface ops                    
+                </comment>
+                <comment line="64">
+                    render-to-texture surface-&gt;surface ops                    
+                </comment>
+                <comment line="69">
+                    surface-&gt;sw ops                    
+                </comment>
+                <comment line="73">
+                    sw-&gt;surface ops                    
+                </comment>
+                <comment line="145">
+                    texture-&gt;surface ops                    
+                </comment>
+                <comment line="150">
+                    sw-&gt;texture ops                    
+                </comment>
+                <declaration name="blitIntArgbPreToSurface" type="Blit" line="51"/>
+                <declaration name="blitIntArgbPreToTexture" type="Blit" line="54"/>
+                <declaration name="primitives" type="GraphicsPrimitive[]" line="58"/>
+            </method>
+            <declaration name="OFFSET_SRCTYPE" type="int" line="179"/>
+            <javadoc line="179">
+                The following offsets are used to pack the parameters in
+                  createPackedParams().  (They are also used at the native level when
+                  unpacking the params.)                
+            </javadoc>
+            <declaration name="OFFSET_HINT" type="int" line="185"/>
+            <declaration name="OFFSET_TEXTURE" type="int" line="186"/>
+            <declaration name="OFFSET_RTT" type="int" line="187"/>
+            <declaration name="OFFSET_XFORM" type="int" line="188"/>
+            <declaration name="OFFSET_ISOBLIT" type="int" line="189"/>
+            <javadoc line="191">
+                Packs the given parameters into a single int value in order to save
+                  space on the rendering queue.                
+            </javadoc>
+            <method name="createPackedParams" type="int" line="198">
+                <params>
+                    <param name="isoblit" type="boolean"/>
+                    <param name="texture" type="boolean"/>
+                    <param name="rtt" type="boolean"/>
+                    <param name="xform" type="boolean"/>
+                    <param name="hint" type="int"/>
+                    <param name="srctype" type="int"/>
+                </params>
+            </method>
+            <javadoc line="208">
+                Enqueues a BLIT operation with the given parameters.  Note that the
+                  RenderQueue lock must be held before calling this method.                
+            </javadoc>
+            <method name="enqueueBlit" type="void" line="219">
+                <params>
+                    <param name="rq" type="RenderQueue"/>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="packedParams" type="int"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                </params>
+                <comment line="220">
+                    assert rq.lock.isHeldByCurrentThread();                    
+                </comment>
+                <declaration name="buf" type="RenderBuffer" line="221"/>
+            </method>
+            <method name="Blit" type="void" line="241">
+                <params>
+                    <param name="srcData" type="SurfaceData"/>
+                    <param name="dstData" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="xform" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                    <param name="srctype" type="int"/>
+                    <param name="texture" type="boolean"/>
+                </params>
+                <comment line="250">
+                    make sure the RenderQueue keeps a hard reference to the                    
+                </comment>
+                <comment line="251">
+                    source (sysmem) SurfaceData to prevent it from being                    
+                </comment>
+                <comment line="252">
+                    disposed while the operation is processed on the QFT                    
+                </comment>
+                <comment line="257">
+                    make sure we have a current context before uploading                    
+                </comment>
+                <comment line="258">
+                    the sysmem data to the texture object                    
+                </comment>
+                <comment line="275">
+                    always flush immediately, since we (currently) have no means                    
+                </comment>
+                <comment line="276">
+                    of tracking changes to the system memory surface                    
+                </comment>
+                <declaration name="ctxflags" type="int" line="242"/>
+                <scope line="243"/>
+                <declaration name="rq" type="OGLRenderQueue" line="247"/>
+                <scope line="249">
+                    <declaration name="oglDst" type="OGLSurfaceData" line="255"/>
+                    <scope line="256">
+                        <declaration name="gc" type="OGLGraphicsConfig" line="259"/>
+                    </scope>
+                    <scope line="261"/>
+                    <declaration name="packedParams" type="int" line="267"/>
+                </scope>
+                <scope line="278"/>
+            </method>
+            <javadoc line="283">
+                Note: The srcImg and biop parameters are only used when invoked
+                  from the OGLBufImgOps.renderImageWithOp() method; in all other cases,
+                  this method can be called with null values for those two parameters,
+                  and they will be effectively ignored.                
+            </javadoc>
+            <method name="IsoBlit" type="void" line="298">
+                <params>
+                    <param name="srcData" type="SurfaceData"/>
+                    <param name="dstData" type="SurfaceData"/>
+                    <param name="srcImg" type="BufferedImage"/>
+                    <param name="biop" type="BufferedImageOp"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="xform" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                    <param name="texture" type="boolean"/>
+                </params>
+                <comment line="313">
+                    the source is a regular texture object; we substitute                    
+                </comment>
+                <comment line="314">
+                    the destination surface for the purposes of making a                    
+                </comment>
+                <comment line="315">
+                    context current                    
+                </comment>
+                <comment line="319">
+                    the source is a pbuffer, backbuffer, or render-to-texture                    
+                </comment>
+                <comment line="320">
+                    surface; we set rtt to true to differentiate this kind                    
+                </comment>
+                <comment line="321">
+                    of surface from a regular texture object                    
+                </comment>
+                <comment line="340">
+                                        
+                </comment>
+                <comment line="351">
+                    we only have to flush immediately when copying from a                    
+                </comment>
+                <comment line="352">
+                    (non-texture) surface to the screen; otherwise Swing apps                    
+                </comment>
+                <comment line="353">
+                    might appear unresponsive until the auto-flush completes                    
+                </comment>
+                <declaration name="ctxflags" type="int" line="299"/>
+                <scope line="300"/>
+                <declaration name="rq" type="OGLRenderQueue" line="304"/>
+                <scope line="306">
+                    <declaration name="oglSrc" type="OGLSurfaceData" line="307"/>
+                    <declaration name="oglDst" type="OGLSurfaceData" line="308"/>
+                    <declaration name="srctype" type="int" line="309"/>
+                    <declaration name="rtt" type="boolean" line="310"/>
+                    <declaration name="srcCtxData" type="OGLSurfaceData" line="311"/>
+                    <scope line="312"/>
+                    <scope line="318">
+                        <scope line="323"/>
+                        <scope line="325"/>
+                    </scope>
+                    <scope line="334"/>
+                    <declaration name="packedParams" type="int" line="338"/>
+                    <scope line="346"/>
+                    <scope line="350"/>
+                </scope>
+                <scope line="356"/>
+            </method>
+        </class>
+        <class name="OGLSurfaceToSurfaceBlit" line="362">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLSurfaceToSurfaceBlit" type="constructor" line="364"/>
+            <method name="Blit" type="void" line="373">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSurfaceToSurfaceScale" line="384">
+            <extends class="ScaledBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLSurfaceToSurfaceScale" type="constructor" line="386"/>
+            <method name="Scale" type="void" line="398">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSurfaceToSurfaceTransform" line="409">
+            <extends class="TransformBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLSurfaceToSurfaceTransform" type="constructor" line="411"/>
+            <method name="Transform" type="void" line="422">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="at" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLRTTSurfaceToSurfaceBlit" line="432">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLRTTSurfaceToSurfaceBlit" type="constructor" line="434"/>
+            <method name="Blit" type="void" line="443">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLRTTSurfaceToSurfaceScale" line="454">
+            <extends class="ScaledBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLRTTSurfaceToSurfaceScale" type="constructor" line="456"/>
+            <method name="Scale" type="void" line="468">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLRTTSurfaceToSurfaceTransform" line="479">
+            <extends class="TransformBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLRTTSurfaceToSurfaceTransform" type="constructor" line="481"/>
+            <method name="Transform" type="void" line="491">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="at" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSurfaceToSwBlit" line="501">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <declaration name="typeval" type="int" line="503"/>
+            <method name="OGLSurfaceToSwBlit" type="constructor" line="506">
+                <params>
+                    <param name="dstType" type="SurfaceType"/>
+                    <param name="typeval" type="int"/>
+                </params>
+            </method>
+            <method name="Blit" type="void" line="517">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="521">
+                    make sure the RenderQueue keeps a hard reference to the                    
+                </comment>
+                <comment line="522">
+                    destination (sysmem) SurfaceData to prevent it from being                    
+                </comment>
+                <comment line="523">
+                    disposed while the operation is processed on the QFT                    
+                </comment>
+                <comment line="538">
+                    always flush immediately                    
+                </comment>
+                <declaration name="rq" type="OGLRenderQueue" line="518"/>
+                <scope line="520">
+                    <declaration name="buf" type="RenderBuffer" line="526"/>
+                </scope>
+                <scope line="540"/>
+            </method>
+        </class>
+        <class name="OGLSwToSurfaceBlit" line="546">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <declaration name="typeval" type="int" line="548"/>
+            <method name="OGLSwToSurfaceBlit" type="constructor" line="550">
+                <params>
+                    <param name="srcType" type="SurfaceType"/>
+                    <param name="typeval" type="int"/>
+                </params>
+            </method>
+            <method name="Blit" type="void" line="560">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSwToSurfaceScale" line="570">
+            <extends class="ScaledBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <declaration name="typeval" type="int" line="572"/>
+            <method name="OGLSwToSurfaceScale" type="constructor" line="574">
+                <params>
+                    <param name="srcType" type="SurfaceType"/>
+                    <param name="typeval" type="int"/>
+                </params>
+            </method>
+            <method name="Scale" type="void" line="587">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSwToSurfaceTransform" line="597">
+            <extends class="TransformBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <declaration name="typeval" type="int" line="599"/>
+            <method name="OGLSwToSurfaceTransform" type="constructor" line="601">
+                <params>
+                    <param name="srcType" type="SurfaceType"/>
+                    <param name="typeval" type="int"/>
+                </params>
+            </method>
+            <method name="Transform" type="void" line="612">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="at" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLSwToTextureBlit" line="621">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <declaration name="typeval" type="int" line="623"/>
+            <method name="OGLSwToTextureBlit" type="constructor" line="625">
+                <params>
+                    <param name="srcType" type="SurfaceType"/>
+                    <param name="typeval" type="int"/>
+                </params>
+            </method>
+            <method name="Blit" type="void" line="635">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLTextureToSurfaceBlit" line="645">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLTextureToSurfaceBlit" type="constructor" line="647"/>
+            <method name="Blit" type="void" line="656">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLTextureToSurfaceScale" line="667">
+            <extends class="ScaledBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLTextureToSurfaceScale" type="constructor" line="669"/>
+            <method name="Scale" type="void" line="681">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="dx1" type="double"/>
+                    <param name="dy1" type="double"/>
+                    <param name="dx2" type="double"/>
+                    <param name="dy2" type="double"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLTextureToSurfaceTransform" line="692">
+            <extends class="TransformBlit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <method name="OGLTextureToSurfaceTransform" type="constructor" line="694"/>
+            <method name="Transform" type="void" line="705">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="at" type="AffineTransform"/>
+                    <param name="hint" type="int"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+            </method>
+        </class>
+        <class name="OGLGeneralBlit" line="715">
+            <extends class="Blit"/>
+            <comment line="506">
+                REMIND: destination will actually be opaque/premultiplied...                
+            </comment>
+            <javadoc line="715">
+                This general Blit implemenation converts any source surface to an
+                  intermediate IntArgbPre surface, and then uses the more specific
+                  IntArgbPre-&gt;OpenGLSurface/Texture loop to get the intermediate
+                  (premultiplied) surface down to OpenGL.                
+            </javadoc>
+            <declaration name="performop" type="Blit" line="723"/>
+            <declaration name="srcTmp" type="WeakReference" line="724"/>
+            <method name="OGLGeneralBlit" type="constructor" line="729">
+                <params>
+                    <param name="dstType" type="SurfaceType"/>
+                    <param name="compType" type="CompositeType"/>
+                    <param name="performop" type="Blit"/>
+                </params>
+            </method>
+            <method name="Blit" type="void" line="738">
+                <params>
+                    <param name="src" type="SurfaceData"/>
+                    <param name="dst" type="SurfaceData"/>
+                    <param name="comp" type="Composite"/>
+                    <param name="clip" type="Region"/>
+                    <param name="sx" type="int"/>
+                    <param name="sy" type="int"/>
+                    <param name="dx" type="int"/>
+                    <param name="dy" type="int"/>
+                    <param name="w" type="int"/>
+                    <param name="h" type="int"/>
+                </params>
+                <comment line="745">
+                    use cached intermediate surface, if available                    
+                </comment>
+                <comment line="749">
+                    convert source to IntArgbPre                    
+                </comment>
+                <comment line="753">
+                    copy IntArgbPre intermediate surface to OpenGL surface                    
+                </comment>
+                <comment line="758">
+                    cache the intermediate surface                    
+                </comment>
+                <declaration name="convertsrc" type="Blit" line="739"/>
+                <declaration name="cachedSrc" type="SurfaceData" line="743"/>
+                <scope line="744"/>
+                <scope line="757"/>
+            </method>
+        </class>
+    </source>

@@ -1,0 +1,2054 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.print">
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.util.Hashtable"/>
+        <import package="sun.font.CharToGlyphMapper"/>
+        <import package="sun.font.CompositeFont"/>
+        <import package="sun.font.Font2D"/>
+        <import package="sun.font.Font2DHandle"/>
+        <import package="sun.font.FontManager"/>
+        <import package="sun.font.FontManagerFactory"/>
+        <import package="sun.font.FontUtilities"/>
+        <import package="java.awt.Color"/>
+        <import package="java.awt.Font"/>
+        <import package="java.awt.Graphics2D"/>
+        <import package="java.awt.Image"/>
+        <import package="java.awt.Paint"/>
+        <import package="java.awt.Polygon"/>
+        <import package="java.awt.Shape"/>
+        <import package="java.text.AttributedCharacterIterator"/>
+        <import package="java.awt.font.FontRenderContext"/>
+        <import package="java.awt.font.GlyphVector"/>
+        <import package="java.awt.font.TextAttribute"/>
+        <import package="java.awt.font.TextLayout"/>
+        <import package="java.awt.geom.AffineTransform"/>
+        <import package="java.awt.geom.Arc2D"/>
+        <import package="java.awt.geom.Ellipse2D"/>
+        <import package="java.awt.geom.Line2D"/>
+        <import package="java.awt.geom.Point2D"/>
+        <import package="java.awt.geom.Rectangle2D"/>
+        <import package="java.awt.geom.RoundRectangle2D"/>
+        <import package="java.awt.geom.PathIterator"/>
+        <import package="java.awt.image.BufferedImage"/>
+        <import package="java.awt.image.BufferedImageOp"/>
+        <import package="java.awt.image.ColorModel"/>
+        <import package="java.awt.image.DataBuffer"/>
+        <import package="java.awt.image.DataBufferInt"/>
+        <import package="java.awt.image.ImageObserver"/>
+        <import package="java.awt.image.IndexColorModel"/>
+        <import package="java.awt.image.Raster"/>
+        <import package="java.awt.image.RenderedImage"/>
+        <import package="java.awt.image.SampleModel"/>
+        <import package="java.awt.image.SinglePixelPackedSampleModel"/>
+        <import package="java.awt.image.VolatileImage"/>
+        <import package="sun.awt.image.ByteComponentRaster"/>
+        <import package="sun.awt.image.ToolkitImage"/>
+        <import package="sun.awt.image.SunWritableRaster"/>
+        <import package="java.awt.print.PageFormat"/>
+        <import package="java.awt.print.Printable"/>
+        <import package="java.awt.print.PrinterException"/>
+        <import package="java.awt.print.PrinterGraphics"/>
+        <import package="java.awt.print.PrinterJob"/>
+        <import package="java.util.Map"/>
+        <class name="PathGraphics" line="86">
+            <extends class="ProxyGraphics2D"/>
+            <comment line="676">
+                GlyphVectors are usually encountered because TextLayout is in use.
+                 Some times TextLayout is needed to handle complex text or some
+                 rendering attributes trigger it.
+                 We try to print GlyphVectors by reconstituting into a String,
+                 as that is most recoverable for applications that export to formats
+                 such as Postscript or PDF. In some cases (eg where its not complex
+                 text and its just that positions aren&apos;t what we&apos;d expect) we print
+                 one character at a time. positioning individually.
+                 Failing that, if we can directly send glyph codes to the printer
+                 then we do that (printGlyphVector).
+                 As a last resort we return false and let the caller print as filled
+                 shapes.                
+            </comment>
+            <comment line="966">
+                The same codes must be in the same positions for this to return true.
+                 This would look cleaner if it took the original GV as a parameter but
+                 we already have the codes and will need to get the positions array
+                 too in most cases anyway. So its cheaper to pass them in.
+                 This call wouldn&apos;t be necessary if layout didn&apos;t always set the
+                 FLAG_HAS_POSITION_ADJUSTMENTS even if the default advances are used
+                 and there was no re-ordering (this should be fixed some day).                
+            </comment>
+            <comment line="999">
+                return an array which can map glyphs back to char codes.
+                 Glyphs which aren&apos;t mapped from a simple unicode code point
+                 will have no mapping in this array, and will be assumed to be
+                 because of some substitution that we can&apos;t handle.                
+            </comment>
+            <comment line="1102">
+                Set the clipping path to that defined by
+                 the passed in &lt;code&gt;PathIterator&lt;code&gt;.                
+            </comment>
+            <comment line="1108">
+                Draw the outline of the rectangle without using path
+                 if supported by platform.                
+            </comment>
+            <comment line="1116">
+                Draw a line without using path if supported by platform.                
+            </comment>
+            <comment line="1122">
+                Fill a rectangle using specified color.                
+            </comment>
+            <comment line="1128">
+                Obtain a BI from known implementations of java.awt.Image                
+            </comment>
+            <comment line="1221">
+                An optimisation for the special case of ICM images which have
+                 bitmask transparency.                
+            </comment>
+            <comment line="1441">
+                Draws as much of the specified image as is currently available.
+                 The image is drawn with its top-left corner at
+                 (&lt;i&gt;x&lt;i&gt;,&amp;nbsp;&lt;i&gt;y&lt;i&gt;) in this graphics context&apos;s coordinate
+                 space.  Transparent pixels are drawn in the specified
+                 background color.
+                 &lt;p&gt;
+                 This operation is equivalent to filling a rectangle of the
+                 width and height of the specified image with the given color and then
+                 drawing the image on top of it, but possibly more efficient.
+                 &lt;p&gt;
+                 This method returns immediately in all cases, even if the
+                 complete image has not yet been loaded, and it has not been dithered
+                 and converted for the current output device.
+                 &lt;p&gt;
+                 If the image has not yet been completely loaded, then
+                 &lt;code&gt;drawImage&lt;code&gt; returns &lt;code&gt;false&lt;code&gt;. As more of
+                 the image becomes available, the process that draws the image notifies
+                 the specified image observer.
+                 @param    img    the specified image to be drawn.
+                                  This method does nothing if &lt;code&gt;img&lt;code&gt; is null.
+                 @param    x      the &lt;i&gt;x&lt;i&gt; coordinate.
+                 @param    y      the &lt;i&gt;y&lt;i&gt; coordinate.
+                 @param    bgcolor the background color to paint under the
+                                   non-opaque portions of the image.
+                                   In this WPathGraphics implementation,
+                                   this parameter can be null in which
+                                   case that background is made a transparent
+                                   white.
+                 @param    observer    object to be notified as more of
+                                          the image is converted.
+                 @see      java.awt.Image
+                 @see      java.awt.image.ImageObserver
+                 @see      java.awt.image.ImageObserver#imageUpdate(java.awt.Image, int, int, int, int, int)
+                 @since    JDK1.0                
+            </comment>
+            <declaration name="mPainter" type="Printable" line="88"/>
+            <declaration name="mPageFormat" type="PageFormat" line="89"/>
+            <declaration name="mPageIndex" type="int" line="90"/>
+            <declaration name="mCanRedraw" type="boolean" line="91"/>
+            <declaration name="printingGlyphVector" type="boolean" line="92"/>
+            <method name="PathGraphics" type="constructor" line="96">
+                <params>
+                    <param name="graphics" type="Graphics2D"/>
+                    <param name="printerJob" type="PrinterJob"/>
+                    <param name="painter" type="Printable"/>
+                    <param name="pageFormat" type="PageFormat"/>
+                    <param name="pageIndex" type="int"/>
+                    <param name="canRedraw" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="105">
+                Return the Printable instance responsible for drawing
+                  into this Graphics.                
+            </javadoc>
+            <method name="getPrintable" type="Printable" line="109"/>
+            <javadoc line="113">
+                Return the PageFormat associated with this page of
+                  Graphics.                
+            </javadoc>
+            <method name="getPageFormat" type="PageFormat" line="117"/>
+            <javadoc line="121">
+                Return the page index associated with this Graphics.                
+            </javadoc>
+            <method name="getPageIndex" type="int" line="124"/>
+            <javadoc line="128">
+                Return true if we are allowed to ask the application
+                  to redraw portions of the page. In general, with the
+                  PrinterJob API, the application can be asked to do a
+                  redraw. When PrinterJob is emulating PrintJob then we
+                  can not.                
+            </javadoc>
+            <method name="canDoRedraws" type="boolean" line="135"/>
+            <method name="redrawRegion" type="void" line="139"/>
+            <javadoc line="139">
+                Redraw a rectanglular area using a proxy graphics                
+            </javadoc>
+            <javadoc line="149">
+                Draws a line, using the current color, between the points
+                  &lt;code&gt;(x1,&amp;nbsp;y1)&lt;/code&gt; and &lt;code&gt;(x2,&amp;nbsp;y2)&lt;/code&gt;
+                  in this graphics context&apos;s coordinate system.                
+                <param>
+                    x1  the first point's <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y1  the first point's <i>y</i> coordinate.                    
+                </param>
+                <param>
+                    x2  the second point's <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y2  the second point's <i>y</i> coordinate.                    
+                </param>
+            </javadoc>
+            <method name="drawLine" type="void" line="158">
+                <params>
+                    <param name="x1" type="int"/>
+                    <param name="y1" type="int"/>
+                    <param name="x2" type="int"/>
+                    <param name="y2" type="int"/>
+                </params>
+                <declaration name="paint" type="Paint" line="160"/>
+                <scope line="162">
+                    <declaration name="deviceTransform" type="AffineTransform" line="163"/>
+                    <scope line="164"/>
+                </scope>
+                <scope line="170"/>
+            </method>
+            <javadoc line="176">
+                Draws the outline of the specified rectangle.
+                  The left and right edges of the rectangle are at
+                  &lt;code&gt;x&lt;/code&gt; and &lt;code&gt;x&amp;nbsp;+&amp;nbsp;width&lt;/code&gt;.
+                  The top and bottom edges are at
+                  &lt;code&gt;y&lt;/code&gt; and &lt;code&gt;y&amp;nbsp;+&amp;nbsp;height&lt;/code&gt;.
+                  The rectangle is drawn using the graphics context&apos;s current color.                
+                <param>
+                    x   the <i>x</i> coordinate
+                      of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    y   the <i>y</i> coordinate
+                      of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    width   the width of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    height   the height of the rectangle to be drawn.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillRect                    
+                </see>
+                <see>
+                    java.awt.Graphics#clearRect                    
+                </see>
+            </javadoc>
+            <method name="drawRect" type="void" line="192">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                </params>
+                <declaration name="paint" type="Paint" line="194"/>
+                <scope line="196">
+                    <declaration name="deviceTransform" type="AffineTransform" line="197"/>
+                    <scope line="198"/>
+                </scope>
+                <scope line="204"/>
+            </method>
+            <javadoc line="210">
+                Fills the specified rectangle.
+                  The left and right edges of the rectangle are at
+                  &lt;code&gt;x&lt;/code&gt; and &lt;code&gt;x&amp;nbsp;+&amp;nbsp;width&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;.
+                  The top and bottom edges are at
+                  &lt;code&gt;y&lt;/code&gt; and &lt;code&gt;y&amp;nbsp;+&amp;nbsp;height&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;.
+                  The resulting rectangle covers an area
+                  &lt;code&gt;width&lt;/code&gt; pixels wide by
+                  &lt;code&gt;height&lt;/code&gt; pixels tall.
+                  The rectangle is filled using the graphics context&apos;s current color.                
+                <param>
+                    x   the <i>x</i> coordinate
+                      of the rectangle to be filled.                    
+                </param>
+                <param>
+                    y   the <i>y</i> coordinate
+                      of the rectangle to be filled.                    
+                </param>
+                <param>
+                    width   the width of the rectangle to be filled.                    
+                </param>
+                <param>
+                    height   the height of the rectangle to be filled.                    
+                </param>
+                <see>
+                    java.awt.Graphics#clearRect                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawRect                    
+                </see>
+            </javadoc>
+            <method name="fillRect" type="void" line="229">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                </params>
+                <declaration name="paint" type="Paint" line="231"/>
+                <scope line="233">
+                    <declaration name="deviceTransform" type="AffineTransform" line="234"/>
+                    <scope line="235"/>
+                </scope>
+                <scope line="241"/>
+            </method>
+            <javadoc line="246">
+                Clears the specified rectangle by filling it with the background
+                  color of the current drawing surface. This operation does not
+                  use the current paint mode.
+                  &lt;p&gt;
+                  Beginning with Java&amp;nbsp;1.1, the background color
+                  of offscreen images may be system dependent. Applications should
+                  use &lt;code&gt;setColor&lt;/code&gt; followed by &lt;code&gt;fillRect&lt;/code&gt; to
+                  ensure that an offscreen image is cleared to a specific color.                
+                <param>
+                    x the <i>x</i> coordinate of the rectangle to clear.                    
+                </param>
+                <param>
+                    y the <i>y</i> coordinate of the rectangle to clear.                    
+                </param>
+                <param>
+                    width the width of the rectangle to clear.                    
+                </param>
+                <param>
+                    height the height of the rectangle to clear.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillRect(int,int,int,int)                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawRect                    
+                </see>
+                <see>
+                    java.awt.Graphics#setColor(java.awt.Color)                    
+                </see>
+                <see>
+                    java.awt.Graphics#setPaintMode                    
+                </see>
+                <see>
+                    java.awt.Graphics#setXORMode(java.awt.Color)                    
+                </see>
+            </javadoc>
+            <method name="clearRect" type="void" line="265">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                </params>
+            </method>
+            <javadoc line="270">
+                Draws an outlined round-cornered rectangle using this graphics
+                  context&apos;s current color. The left and right edges of the rectangle
+                  are at &lt;code&gt;x&lt;/code&gt; and &lt;code&gt;x&amp;nbsp;+&amp;nbsp;width&lt;/code&gt;,
+                  respectively. The top and bottom edges of the rectangle are at
+                  &lt;code&gt;y&lt;/code&gt; and &lt;code&gt;y&amp;nbsp;+&amp;nbsp;height&lt;/code&gt;.                
+                <param>
+                    x the <i>x</i> coordinate of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    y the <i>y</i> coordinate of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    width the width of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    height the height of the rectangle to be drawn.                    
+                </param>
+                <param>
+                    arcWidth the horizontal diameter of the arc
+                      at the four corners.                    
+                </param>
+                <param>
+                    arcHeight the vertical diameter of the arc
+                      at the four corners.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillRoundRect                    
+                </see>
+            </javadoc>
+            <method name="drawRoundRect" type="void" line="287">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="arcWidth" type="int"/>
+                    <param name="arcHeight" type="int"/>
+                </params>
+            </method>
+            <javadoc line="295">
+                Fills the specified rounded corner rectangle with the current color.
+                  The left and right edges of the rectangle
+                  are at &lt;code&gt;x&lt;/code&gt; and &lt;code&gt;x&amp;nbsp;+&amp;nbsp;width&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;,
+                  respectively. The top and bottom edges of the rectangle are at
+                  &lt;code&gt;y&lt;/code&gt; and &lt;code&gt;y&amp;nbsp;+&amp;nbsp;height&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;.                
+                <param>
+                    x the <i>x</i> coordinate of the rectangle to be filled.                    
+                </param>
+                <param>
+                    y the <i>y</i> coordinate of the rectangle to be filled.                    
+                </param>
+                <param>
+                    width the width of the rectangle to be filled.                    
+                </param>
+                <param>
+                    height the height of the rectangle to be filled.                    
+                </param>
+                <param>
+                    arcWidth the horizontal diameter
+                      of the arc at the four corners.                    
+                </param>
+                <param>
+                    arcHeight the vertical diameter
+                      of the arc at the four corners.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawRoundRect                    
+                </see>
+            </javadoc>
+            <method name="fillRoundRect" type="void" line="312">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="arcWidth" type="int"/>
+                    <param name="arcHeight" type="int"/>
+                </params>
+            </method>
+            <javadoc line="319">
+                Draws the outline of an oval.
+                  The result is a circle or ellipse that fits within the
+                  rectangle specified by the &lt;code&gt;x&lt;/code&gt;, &lt;code&gt;y&lt;/code&gt;,
+                  &lt;code&gt;width&lt;/code&gt;, and &lt;code&gt;height&lt;/code&gt; arguments.
+                  &lt;p&gt;
+                  The oval covers an area that is
+                  &lt;code&gt;width&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels wide
+                  and &lt;code&gt;height&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels tall.                
+                <param>
+                    x the <i>x</i> coordinate of the upper left
+                      corner of the oval to be drawn.                    
+                </param>
+                <param>
+                    y the <i>y</i> coordinate of the upper left
+                      corner of the oval to be drawn.                    
+                </param>
+                <param>
+                    width the width of the oval to be drawn.                    
+                </param>
+                <param>
+                    height the height of the oval to be drawn.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillOval                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="drawOval" type="void" line="337">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                </params>
+            </method>
+            <javadoc line="341">
+                Fills an oval bounded by the specified rectangle with the
+                  current color.                
+                <param>
+                    x the <i>x</i> coordinate of the upper left corner
+                      of the oval to be filled.                    
+                </param>
+                <param>
+                    y the <i>y</i> coordinate of the upper left corner
+                      of the oval to be filled.                    
+                </param>
+                <param>
+                    width the width of the oval to be filled.                    
+                </param>
+                <param>
+                    height the height of the oval to be filled.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawOval                    
+                </see>
+            </javadoc>
+            <method name="fillOval" type="void" line="352">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                </params>
+            </method>
+            <javadoc line="357">
+                Draws the outline of a circular or elliptical arc
+                  covering the specified rectangle.
+                  &lt;p&gt;
+                  The resulting arc begins at &lt;code&gt;startAngle&lt;/code&gt; and extends
+                  for &lt;code&gt;arcAngle&lt;/code&gt; degrees, using the current color.
+                  Angles are interpreted such that 0&amp;nbsp;degrees
+                  is at the 3&amp;nbsp;o&apos;clock position.
+                  A positive value indicates a counter-clockwise rotation
+                  while a negative value indicates a clockwise rotation.
+                  &lt;p&gt;
+                  The center of the arc is the center of the rectangle whose origin
+                  is (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) and whose size is specified by the
+                  &lt;code&gt;width&lt;/code&gt; and &lt;code&gt;height&lt;/code&gt; arguments.
+                  &lt;p&gt;
+                  The resulting arc covers an area
+                  &lt;code&gt;width&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels wide
+                  by &lt;code&gt;height&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels tall.
+                  &lt;p&gt;
+                  The angles are specified relative to the non-square extents of
+                  the bounding rectangle such that 45 degrees always falls on the
+                  line from the center of the ellipse to the upper right corner of
+                  the bounding rectangle. As a result, if the bounding rectangle is
+                  noticeably longer in one axis than the other, the angles to the
+                  start and end of the arc segment will be skewed farther along the
+                  longer axis of the bounds.                
+                <param>
+                    x the <i>x</i> coordinate of the
+                      upper-left corner of the arc to be drawn.                    
+                </param>
+                <param>
+                    y the <i>y</i>  coordinate of the
+                      upper-left corner of the arc to be drawn.                    
+                </param>
+                <param>
+                    width the width of the arc to be drawn.                    
+                </param>
+                <param>
+                    height the height of the arc to be drawn.                    
+                </param>
+                <param>
+                    startAngle the beginning angle.                    
+                </param>
+                <param>
+                    arcAngle the angular extent of the arc,
+                      relative to the start angle.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillArc                    
+                </see>
+            </javadoc>
+            <method name="drawArc" type="void" line="395">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="startAngle" type="int"/>
+                    <param name="arcAngle" type="int"/>
+                </params>
+            </method>
+            <javadoc line="402">
+                Fills a circular or elliptical arc covering the specified rectangle.
+                  &lt;p&gt;
+                  The resulting arc begins at &lt;code&gt;startAngle&lt;/code&gt; and extends
+                  for &lt;code&gt;arcAngle&lt;/code&gt; degrees.
+                  Angles are interpreted such that 0&amp;nbsp;degrees
+                  is at the 3&amp;nbsp;o&apos;clock position.
+                  A positive value indicates a counter-clockwise rotation
+                  while a negative value indicates a clockwise rotation.
+                  &lt;p&gt;
+                  The center of the arc is the center of the rectangle whose origin
+                  is (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) and whose size is specified by the
+                  &lt;code&gt;width&lt;/code&gt; and &lt;code&gt;height&lt;/code&gt; arguments.
+                  &lt;p&gt;
+                  The resulting arc covers an area
+                  &lt;code&gt;width&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels wide
+                  by &lt;code&gt;height&amp;nbsp;+&amp;nbsp;1&lt;/code&gt; pixels tall.
+                  &lt;p&gt;
+                  The angles are specified relative to the non-square extents of
+                  the bounding rectangle such that 45 degrees always falls on the
+                  line from the center of the ellipse to the upper right corner of
+                  the bounding rectangle. As a result, if the bounding rectangle is
+                  noticeably longer in one axis than the other, the angles to the
+                  start and end of the arc segment will be skewed farther along the
+                  longer axis of the bounds.                
+                <param>
+                    x the <i>x</i> coordinate of the
+                      upper-left corner of the arc to be filled.                    
+                </param>
+                <param>
+                    y the <i>y</i>  coordinate of the
+                      upper-left corner of the arc to be filled.                    
+                </param>
+                <param>
+                    width the width of the arc to be filled.                    
+                </param>
+                <param>
+                    height the height of the arc to be filled.                    
+                </param>
+                <param>
+                    startAngle the beginning angle.                    
+                </param>
+                <param>
+                    arcAngle the angular extent of the arc,
+                      relative to the start angle.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawArc                    
+                </see>
+            </javadoc>
+            <method name="fillArc" type="void" line="439">
+                <params>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="startAngle" type="int"/>
+                    <param name="arcAngle" type="int"/>
+                </params>
+            </method>
+            <javadoc line="446">
+                Draws a sequence of connected lines defined by
+                  arrays of &lt;i&gt;x&lt;/i&gt; and &lt;i&gt;y&lt;/i&gt; coordinates.
+                  Each pair of (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) coordinates defines a point.
+                  The figure is not closed if the first point
+                  differs from the last point.                
+                <param>
+                    xPoints an array of <i>x</i> points                    
+                </param>
+                <param>
+                    yPoints an array of <i>y</i> points                    
+                </param>
+                <param>
+                    nPoints the total number of points                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawPolygon(int[],int[],int)                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <method name="drawPolyline" type="void" line="459">
+                <params>
+                    <param name="xPoints" type="int"/>
+                    <param name="yPoints" type="int"/>
+                    <param name="nPoints" type="int"/>
+                </params>
+                <declaration name="fromX" type="float" line="460"/>
+                <declaration name="fromY" type="float" line="461"/>
+                <declaration name="toX" type="float" line="462"/>
+                <declaration name="toY" type="float" line="463"/>
+                <scope line="465">
+                    <scope line="468"/>
+                </scope>
+            </method>
+            <javadoc line="480">
+                Draws a closed polygon defined by
+                  arrays of &lt;i&gt;x&lt;/i&gt; and &lt;i&gt;y&lt;/i&gt; coordinates.
+                  Each pair of (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) coordinates defines a point.
+                  &lt;p&gt;
+                  This method draws the polygon defined by &lt;code&gt;nPoint&lt;/code&gt; line
+                  segments, where the first &lt;code&gt;nPoint&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;
+                  line segments are line segments from
+                  &lt;code&gt;(xPoints[i&amp;nbsp;-&amp;nbsp;1],&amp;nbsp;yPoints[i&amp;nbsp;-&amp;nbsp;1])&lt;/code&gt;
+                  to &lt;code&gt;(xPoints[i],&amp;nbsp;yPoints[i])&lt;/code&gt;, for
+                  1&amp;nbsp;&amp;le;&amp;nbsp;&lt;i&gt;i&lt;/i&gt;&amp;nbsp;&amp;le;&amp;nbsp;&lt;code&gt;nPoints&lt;/code&gt;.
+                  The figure is automatically closed by drawing a line connecting
+                  the final point to the first point, if those points are different.                
+                <param>
+                    xPoints   a an array of <code>x</code> coordinates.                    
+                </param>
+                <param>
+                    yPoints   a an array of <code>y</code> coordinates.                    
+                </param>
+                <param>
+                    nPoints   a the total number of points.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillPolygon                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawPolyline                    
+                </see>
+            </javadoc>
+            <method name="drawPolygon" type="void" line="500">
+                <params>
+                    <param name="xPoints" type="int"/>
+                    <param name="yPoints" type="int"/>
+                    <param name="nPoints" type="int"/>
+                </params>
+            </method>
+            <javadoc line="505">
+                Draws the outline of a polygon defined by the specified
+                  &lt;code&gt;Polygon&lt;/code&gt; object.                
+                <param>
+                    p the polygon to draw.                    
+                </param>
+                <see>
+                    java.awt.Graphics#fillPolygon                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawPolyline                    
+                </see>
+            </javadoc>
+            <method name="drawPolygon" type="void" line="512">
+                <params>
+                    <param name="p" type="Polygon"/>
+                </params>
+            </method>
+            <javadoc line="516">
+                Fills a closed polygon defined by
+                  arrays of &lt;i&gt;x&lt;/i&gt; and &lt;i&gt;y&lt;/i&gt; coordinates.
+                  &lt;p&gt;
+                  This method draws the polygon defined by &lt;code&gt;nPoint&lt;/code&gt; line
+                  segments, where the first &lt;code&gt;nPoint&amp;nbsp;-&amp;nbsp;1&lt;/code&gt;
+                  line segments are line segments from
+                  &lt;code&gt;(xPoints[i&amp;nbsp;-&amp;nbsp;1],&amp;nbsp;yPoints[i&amp;nbsp;-&amp;nbsp;1])&lt;/code&gt;
+                  to &lt;code&gt;(xPoints[i],&amp;nbsp;yPoints[i])&lt;/code&gt;, for
+                  1&amp;nbsp;&amp;le;&amp;nbsp;&lt;i&gt;i&lt;/i&gt;&amp;nbsp;&amp;le;&amp;nbsp;&lt;code&gt;nPoints&lt;/code&gt;.
+                  The figure is automatically closed by drawing a line connecting
+                  the final point to the first point, if those points are different.
+                  &lt;p&gt;
+                  The area inside the polygon is defined using an
+                  even-odd fill rule, also known as the alternating rule.                
+                <param>
+                    xPoints   a an array of <code>x</code> coordinates.                    
+                </param>
+                <param>
+                    yPoints   a an array of <code>y</code> coordinates.                    
+                </param>
+                <param>
+                    nPoints   a the total number of points.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawPolygon(int[],int[],int)                    
+                </see>
+            </javadoc>
+            <method name="fillPolygon" type="void" line="537">
+                <params>
+                    <param name="xPoints" type="int"/>
+                    <param name="yPoints" type="int"/>
+                    <param name="nPoints" type="int"/>
+                </params>
+            </method>
+            <javadoc line="543">
+                Fills the polygon defined by the specified Polygon object with
+                  the graphics context&apos;s current color.
+                  &lt;p&gt;
+                  The area inside the polygon is defined using an
+                  even-odd fill rule, also known as the alternating rule.                
+                <param>
+                    p the polygon to fill.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawPolygon(int[],int[],int)                    
+                </see>
+            </javadoc>
+            <method name="fillPolygon" type="void" line="552">
+                <params>
+                    <param name="p" type="Polygon"/>
+                </params>
+            </method>
+            <javadoc line="557">
+                Draws the text given by the specified string, using this
+                  graphics context&apos;s current font and color. The baseline of the
+                  first character is at position (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) in this
+                  graphics context&apos;s coordinate system.                
+                <param>
+                    str      the string to be drawn.                    
+                </param>
+                <param>
+                    x        the <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y        the <i>y</i> coordinate.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawBytes                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawChars                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="drawString" type="void" line="569">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                </params>
+            </method>
+            <method name="drawString" type="void" line="573">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <scope line="574"/>
+                <declaration name="layout" type="TextLayout" line="577"/>
+            </method>
+            <method name="drawString" type="void" line="583">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="font" type="Font"/>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="w" type="float"/>
+                </params>
+                <declaration name="layout" type="TextLayout" line="584"/>
+                <declaration name="textShape" type="Shape" line="586"/>
+            </method>
+            <javadoc line="591">
+                Draws the text given by the specified iterator, using this
+                  graphics context&apos;s current color. The iterator has to specify a font
+                  for each character. The baseline of the
+                  first character is at position (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) in this
+                  graphics context&apos;s coordinate system.                
+                <param>
+                    iterator the iterator whose text is to be drawn                    
+                </param>
+                <param>
+                    x        the <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y        the <i>y</i> coordinate.                    
+                </param>
+                <see>
+                    java.awt.Graphics#drawBytes                    
+                </see>
+                <see>
+                    java.awt.Graphics#drawChars                    
+                </see>
+            </javadoc>
+            <method name="drawString" type="void" line="604">
+                <params>
+                    <param name="iterator" type="AttributedCharacterIterator"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                </params>
+            </method>
+            <method name="drawString" type="void" line="608">
+                <params>
+                    <param name="iterator" type="AttributedCharacterIterator"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <scope line="609"/>
+                <declaration name="layout" type="TextLayout" line="613"/>
+            </method>
+            <javadoc line="618">
+                Draws a GlyphVector.
+                  The rendering attributes applied include the clip, transform,
+                  paint or color, and composite attributes.  The GlyphVector specifies
+                  individual glyphs from a Font.                
+                <param>
+                    g The GlyphVector to be drawn.                    
+                </param>
+                <param>
+                    x,y The coordinates where the glyphs should be drawn.                    
+                </param>
+                <see>
+                    #setPaint                    
+                </see>
+                <see>
+                    java.awt.Graphics#setColor                    
+                </see>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+            </javadoc>
+            <method name="drawGlyphVector" type="void" line="635">
+                <params>
+                    <param name="g" type="GlyphVector"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <comment line="637">
+                    We should not reach here if printingGlyphVector is already true.
+                     Add an assert so this can be tested if need be.
+                     But also ensure that we do at least render properly by filling
+                     the outline.                    
+                </comment>
+                <comment line="643">
+                    ie false.                    
+                </comment>
+                <scope line="642"/>
+                <scope line="648">
+                    <scope line="651"/>
+                </scope>
+                <scope line="654"/>
+            </method>
+            <declaration name="fontMapRef" type="SoftReference&lt;Hashtable&lt;Font2DHandle,Object&gt;&gt;" line="659"/>
+            <method name="platformFontCount" type="int" line="662">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <javadoc line="666">
+                Default implementation returns false.
+                  Callers of this method must always be prepared for this,
+                  and delegate to outlines or some other solution.                
+            </javadoc>
+            <method name="printGlyphVector" type="boolean" line="671">
+                <params>
+                    <param name="gv" type="GlyphVector"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="printedSimpleGlyphVector" type="boolean" line="688">
+                <params>
+                    <param name="g" type="GlyphVector"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <comment line="692">
+                    We can&apos;t handle RTL, re-ordering, complex glyphs etc by
+                     reconstituting glyphs into a String. So if any flags besides
+                     position adjustments are set, see if we can directly
+                     print the GlyphVector as glyph codes, using the positions
+                     layout has assigned. If that fails return false;                    
+                </comment>
+                <comment line="705">
+                                        
+                </comment>
+                <comment line="725">
+                                        
+                </comment>
+                <comment line="737">
+                                        
+                </comment>
+                <comment line="767">
+                    X11 symbol &amp; dingbats fonts used only for global metrics,
+                     so the glyph codes we have really refer to Lucida Sans
+                     Regular.
+                     So its possible the glyph code may appear out of range.
+                     Note that later on we double-check the glyph codes that
+                     we get from re-creating the GV from the string are the
+                     same as those we started with.
+                    
+                     If the glyphcode is INVISIBLE_GLYPH_ID then this may
+                     be \t, \n or \r which are mapped to that by layout.
+                     This is a case we can handle. It doesn&apos;t matter what
+                     character we use (we use \n) so long as layout maps it
+                     back to this in the verification, since the invisible
+                     glyph isn&apos;t visible :)                    
+                </comment>
+                <comment line="821">
+                    Needed to double-check remapping of X11 symbol &amp; dingbats.                    
+                </comment>
+                <comment line="832">
+                    If differ only in specifying A-A or a translation, these are
+                     also compatible FRC&apos;s, and we can do one drawString call.                    
+                </comment>
+                <comment line="863">
+                    We have to consider that the application may be directly
+                     creating a GlyphVector, rather than one being created by
+                     TextLayout or indirectly from drawString. In such a case, if the
+                     font has layout attributes, the text may measure differently
+                     when we reconstitute it into a String and ask for the length that
+                     drawString would use. For example, KERNING will be applied in such
+                     a case but that Font attribute is not applied when the application
+                     directly created a GlyphVector. So in this case we need to verify
+                     that the text measures the same in both cases - ie that the
+                     layout attribute has no effect. If it does we can&apos;t always
+                     use the drawString call unless we can coerce the drawString call
+                     into measuring and displaying the string to the same length.
+                     That is the case where there is only one font used and we can
+                     specify the overall advance of the string. (See below).                    
+                </comment>
+                <comment line="885">
+                    If TRACKING is in use then the glyph vector will report
+                     position adjustments, then that ought to be sufficient to
+                     tell us we can&apos;t just ask native to do &quot;drawString&quot;. But layout
+                     always sets the position adjustment flag, so we don&apos;t believe
+                     it and verify the positions are really different than
+                     createGlyphVector() (with no layout) would create. However
+                     inconsistently, TRACKING is applied when creating a GlyphVector,
+                     since it doesn&apos;t actually require &quot;layout&quot; (even though its
+                     considered a layout attribute), it just requires a fractional
+                     tweak to the[default]advances. So we need to specifically
+                     check for tracking until such time as as we can trust
+                     the GlyphVector.FLAG_HAS_POSITION_ADJUSTMENTS bit.                    
+                </comment>
+                <comment line="919">
+                    If positions have not been explicitly assigned, we can
+                     ask the string to be drawn adjusted to this width.
+                     This call is supported only in the PS generator.
+                     GDI has API to specify the advance for each glyph in a
+                     string which could be used here too, but that is not yet
+                     implemented, and we&apos;d need to update the signature of the
+                     drawString method to take the advances (ie relative positions)
+                     and use that instead of the width.                    
+                </comment>
+                <comment line="933">
+                    In some scripts chars drawn individually do not have the
+                     same representation (glyphs) as when combined with other chars.
+                     The logic here is erring on the side of caution, in particular
+                     in including supplementary characters.                    
+                </comment>
+                <comment line="942">
+                    If we reach here we have mapped all the glyphs back
+                     one-to-one to simple unicode chars that we know are in the font.
+                     We can call &quot;drawChars&quot; on each one of them in turn, setting
+                     the position based on the glyph positions.
+                     There&apos;s typically overhead in this. If numGlyphs is &apos;large&apos;,
+                     it may even be better to try printGlyphVector() in this case.
+                     This may be less recoverable for apps, but sophisticated apps
+                     should be able to recover the text from simple glyph vectors
+                     and we can avoid penalising the more common case - although
+                     this is already a minority case.                    
+                </comment>
+                <declaration name="flags" type="int" line="690"/>
+                <scope line="698"/>
+                <declaration name="font" type="Font" line="702"/>
+                <declaration name="font2D" type="Font2D" line="703"/>
+                <scope line="704"/>
+                <declaration name="fontMap" type="Hashtable&lt;Font2DHandle,Object&gt;" line="708"/>
+                <scope line="709">
+                    <scope line="711"/>
+                </scope>
+                <declaration name="numGlyphs" type="int" line="718"/>
+                <declaration name="glyphCodes" type="int[]" line="719"/>
+                <declaration name="glyphToCharMap" type="char[]" line="721"/>
+                <declaration name="mapArray" type="char[][]" line="722"/>
+                <declaration name="cf" type="CompositeFont" line="723"/>
+                <scope line="726">
+                    <scope line="727">
+                        <declaration name="numSlots" type="int" line="729"/>
+                        <scope line="731"/>
+                        <scope line="735">
+                            <declaration name="slot" type="int" line="736"/>
+                            <scope line="737"/>
+                            <scope line="740">
+                                <declaration name="slotFont" type="Font2D" line="741"/>
+                                <declaration name="map" type="char[]" line="742"/>
+                                <scope line="743"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="749">
+                        <scope line="751"/>
+                    </scope>
+                </scope>
+                <declaration name="chars" type="char[]" line="758"/>
+                <scope line="759">
+                    <scope line="760">
+                        <declaration name="gc" type="int" line="761"/>
+                        <declaration name="map" type="char[]" line="762"/>
+                        <scope line="764"/>
+                        <declaration name="ch" type="char" line="782"/>
+                        <scope line="783"/>
+                        <scope line="785"/>
+                        <scope line="787"/>
+                        <scope line="790"/>
+                        <scope line="792"/>
+                    </scope>
+                </scope>
+                <scope line="796">
+                    <scope line="797">
+                        <declaration name="gc" type="int" line="798"/>
+                        <declaration name="ch" type="char" line="799"/>
+                        <scope line="800"/>
+                        <scope line="802"/>
+                        <scope line="804"/>
+                        <scope line="807"/>
+                        <scope line="809"/>
+                    </scope>
+                </scope>
+                <declaration name="gvFrc" type="FontRenderContext" line="815"/>
+                <declaration name="gv2" type="GlyphVector" line="816"/>
+                <scope line="817"/>
+                <declaration name="glyphCodes2" type="int[]" line="820"/>
+                <scope line="824">
+                    <scope line="825"/>
+                </scope>
+                <declaration name="g2dFrc" type="FontRenderContext" line="830"/>
+                <declaration name="compatibleFRC" type="boolean" line="831"/>
+                <scope line="836">
+                    <declaration name="gvAT" type="AffineTransform" line="837"/>
+                    <declaration name="g2dAT" type="AffineTransform" line="838"/>
+                    <declaration name="gvMatrix" type="double[]" line="839"/>
+                    <declaration name="g2dMatrix" type="double[]" line="840"/>
+                    <scope line="844">
+                        <scope line="845"/>
+                    </scope>
+                </scope>
+                <declaration name="str" type="String" line="852"/>
+                <declaration name="numFonts" type="int" line="853"/>
+                <scope line="854"/>
+                <declaration name="positions" type="float[]" line="858"/>
+                <declaration name="noPositionAdjustments" type="boolean" line="859"/>
+                <declaration name="gvAdvancePt" type="Point2D" line="879"/>
+                <declaration name="gvAdvanceX" type="float" line="880"/>
+                <declaration name="layoutAffectsAdvance" type="boolean" line="881"/>
+                <scope line="883">
+                    <declaration name="map" type="Map&lt;TextAttribute,?&gt;" line="898"/>
+                    <declaration name="o" type="Object" line="899"/>
+                    <declaration name="tracking" type="boolean" line="900"/>
+                    <scope line="903"/>
+                    <scope line="905">
+                        <declaration name="bounds" type="Rectangle2D" line="906"/>
+                        <declaration name="strAdvanceX" type="float" line="907"/>
+                        <scope line="908"/>
+                    </scope>
+                </scope>
+                <scope line="914"/>
+                <scope line="928"/>
+                <scope line="938"/>
+                <scope line="953"/>
+                <scope line="957">
+                    <declaration name="s" type="String" line="958"/>
+                </scope>
+            </method>
+            <method name="samePositions" type="boolean" line="974">
+                <params>
+                    <param name="gv" type="GlyphVector"/>
+                    <param name="gvcodes" type="int[]"/>
+                    <param name="origCodes" type="int[]"/>
+                    <param name="origPositions" type="float[]"/>
+                </params>
+                <comment line="979">
+                                        
+                </comment>
+                <comment line="980">
+                                        
+                </comment>
+                <declaration name="numGlyphs" type="int" line="976"/>
+                <declaration name="gvpos" type="float[]" line="977"/>
+                <scope line="982"/>
+                <scope line="986">
+                    <scope line="987"/>
+                </scope>
+            </method>
+            <method name="canDrawStringToWidth" type="boolean" line="994"/>
+            <method name="getGlyphToCharMapForFont" type="char[]" line="1003">
+                <params>
+                    <param name="font2D" type="Font2D"/>
+                </params>
+                <comment line="1004">
+                    NB Composites report the number of glyphs in slot 0.
+                     So if a string uses a char from a later slot, or a fallback slot,
+                     it will not be able to use this faster path.                    
+                </comment>
+                <comment line="1017">
+                    Consider refining the ranges to try to map by asking the font
+                     what ranges it supports.
+                     Since a glyph may be mapped by multiple code points, and this
+                     code can&apos;t handle that, we always prefer the earlier code point.                    
+                </comment>
+                <declaration name="numGlyphs" type="int" line="1008"/>
+                <declaration name="missingGlyph" type="int" line="1009"/>
+                <declaration name="glyphToCharMap" type="char[]" line="1010"/>
+                <declaration name="glyph" type="int" line="1011"/>
+                <scope line="1013"/>
+                <scope line="1022">
+                    <scope line="1024"/>
+                    <scope line="1030"/>
+                </scope>
+            </method>
+            <javadoc line="1037">
+                Strokes the outline of a Shape using the settings of the current
+                  graphics state.  The rendering attributes applied include the
+                  clip, transform, paint or color, composite and stroke attributes.                
+                <param>
+                    s The shape to be drawn.                    
+                </param>
+                <see>
+                    #setStroke                    
+                </see>
+                <see>
+                    #setPaint                    
+                </see>
+                <see>
+                    java.awt.Graphics#setColor                    
+                </see>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+            </javadoc>
+            <method name="draw" type="void" line="1051">
+                <params>
+                    <param name="s" type="Shape"/>
+                </params>
+            </method>
+            <javadoc line="1056">
+                Fills the interior of a Shape using the settings of the current
+                  graphics state. The rendering attributes applied include the
+                  clip, transform, paint or color, and composite.                
+                <see>
+                    #setPaint                    
+                </see>
+                <see>
+                    java.awt.Graphics#setColor                    
+                </see>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+            </javadoc>
+            <method name="fill" type="void" line="1068">
+                <params>
+                    <param name="s" type="Shape"/>
+                </params>
+                <comment line="1074">
+                    The PathGraphics class only supports filling with
+                     solid colors and so we do not expect the cast of Paint
+                     to Color to fail. If it does fail then something went
+                     wrong, like the app draw a page with a solid color but
+                     then redrew it with a Gradient.                    
+                </comment>
+                <declaration name="paint" type="Paint" line="1069"/>
+                <scope line="1071"/>
+                <scope line="1080"/>
+            </method>
+            <method name="fill" type="void" line="1085">
+                <params>
+                    <param name="s" type="Shape"/>
+                    <param name="color" type="Color"/>
+                </params>
+                <declaration name="deviceTransform" type="AffineTransform" line="1086"/>
+                <scope line="1088"/>
+            </method>
+            <method name="deviceFill" type="void" line="1094"/>
+            <javadoc line="1094">
+                Fill the path defined by &lt;code&gt;pathIter&lt;/code&gt;
+                  with the specified color.
+                  The path is provided in device coordinates.                
+            </javadoc>
+            <method name="deviceClip" type="void" line="1105"/>
+            <method name="deviceFrameRect" type="void" line="1111"/>
+            <method name="deviceDrawLine" type="void" line="1118"/>
+            <method name="deviceFillRect" type="void" line="1124"/>
+            <method name="getBufferedImage" type="BufferedImage" line="1129">
+                <params>
+                    <param name="img" type="Image"/>
+                </params>
+                <comment line="1131">
+                    Otherwise we expect a BufferedImage to behave as a standard BI                    
+                </comment>
+                <comment line="1134">
+                    This can be null if the image isn&apos;t loaded yet.                    
+                </comment>
+                <comment line="1135">
+                    This is fine as in that case our caller will return                    
+                </comment>
+                <comment line="1136">
+                    as it will only draw a fully loaded image                    
+                </comment>
+                <comment line="1139">
+                    VI needs to make a new BI: this is unavoidable but                    
+                </comment>
+                <comment line="1140">
+                    I don&apos;t expect VI&apos;s to be &quot;huge&quot; in any case.                    
+                </comment>
+                <comment line="1143">
+                    may be null or may be some non-standard Image which                    
+                </comment>
+                <comment line="1144">
+                    shouldn&apos;t happen as Image is implemented by the platform                    
+                </comment>
+                <comment line="1145">
+                    not by applications                    
+                </comment>
+                <comment line="1146">
+                    If you add a new Image implementation to the platform you                    
+                </comment>
+                <comment line="1147">
+                    will need to support it here similarly to VI.                    
+                </comment>
+                <scope line="1130"/>
+                <scope line="1133"/>
+                <scope line="1138"/>
+                <scope line="1142"/>
+            </method>
+            <javadoc line="1152">
+                Return true if the BufferedImage argument has non-opaque
+                  bits in it and therefore can not be directly rendered by
+                  GDI. Return false if the image is opaque. If this function
+                  can not tell for sure whether the image has transparent
+                  pixels then it assumes that it does.                
+            </javadoc>
+            <method name="hasTransparentPixels" type="boolean" line="1159">
+                <params>
+                    <param name="bufferedImage" type="BufferedImage"/>
+                </params>
+                <comment line="1165">
+                    For the default INT ARGB check the image to see if any pixels are
+                     really transparent. If there are no transparent pixels then the
+                     transparency of the color model can be ignored.
+                     We assume that IndexColorModel images have already been
+                     checked for transparency and will be OPAQUE unless they actually
+                     have transparent pixels present.                    
+                </comment>
+                <comment line="1182">
+                    Stealing the data array for reading only...                    
+                </comment>
+                <declaration name="colorModel" type="ColorModel" line="1160"/>
+                <declaration name="hasTransparency" type="boolean" line="1161"/>
+                <scope line="1173">
+                    <scope line="1175">
+                        <declaration name="db" type="DataBuffer" line="1176"/>
+                        <declaration name="sm" type="SampleModel" line="1177"/>
+                        <scope line="1179">
+                            <declaration name="psm" type="SinglePixelPackedSampleModel" line="1180"/>
+                            <declaration name="int_data" type="int[]" line="1183"/>
+                            <declaration name="x" type="int" line="1185"/>
+                            <declaration name="y" type="int" line="1186"/>
+                            <declaration name="w" type="int" line="1187"/>
+                            <declaration name="h" type="int" line="1188"/>
+                            <declaration name="stride" type="int" line="1189"/>
+                            <declaration name="hastranspixel" type="boolean" line="1190"/>
+                            <scope line="1191">
+                                <declaration name="yoff" type="int" line="1192"/>
+                                <scope line="1193">
+                                    <scope line="1194"/>
+                                </scope>
+                                <scope line="1199"/>
+                            </scope>
+                            <scope line="1203"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="isBitmaskTransparency" type="boolean" line="1213">
+                <params>
+                    <param name="bufferedImage" type="BufferedImage"/>
+                </params>
+                <declaration name="colorModel" type="ColorModel" line="1214"/>
+            </method>
+            <method name="drawBitmaskImage" type="boolean" line="1227">
+                <params>
+                    <param name="bufferedImage" type="BufferedImage"/>
+                    <param name="xform" type="AffineTransform"/>
+                    <param name="bgcolor" type="Color"/>
+                    <param name="srcX" type="int"/>
+                    <param name="srcY" type="int"/>
+                    <param name="srcWidth" type="int"/>
+                    <param name="srcHeight" type="int"/>
+                </params>
+                <comment line="1243">
+                    to be compatible with 1.1 printing which treated b/g colors                    
+                </comment>
+                <comment line="1244">
+                    with alpha 128 as opaque                    
+                </comment>
+                <comment line="1274">
+                    don&apos;t just use srcWidth &amp; srcHeight from application - they
+                     may exceed the extent of the image - may need to clip.
+                     The image xform will ensure that points are still mapped properly.                    
+                </comment>
+                <declaration name="colorModel" type="ColorModel" line="1229"/>
+                <declaration name="icm" type="IndexColorModel" line="1230"/>
+                <declaration name="pixels" type="int[]" line="1231"/>
+                <scope line="1233"/>
+                <scope line="1235"/>
+                <scope line="1239"/>
+                <scope line="1245"/>
+                <scope line="1253"/>
+                <scope line="1261"/>
+                <declaration name="subImage" type="BufferedImage" line="1265"/>
+                <declaration name="raster" type="Raster" line="1266"/>
+                <declaration name="transpixel" type="int" line="1267"/>
+                <declaration name="alphas" type="byte[]" line="1268"/>
+                <scope line="1270"/>
+                <declaration name="rw" type="int" line="1278"/>
+                <declaration name="rh" type="int" line="1279"/>
+                <scope line="1280"/>
+                <declaration name="right" type="int" line="1283"/>
+                <scope line="1284"/>
+                <scope line="1287"/>
+                <scope line="1291"/>
+                <scope line="1294"/>
+                <scope line="1299">
+                    <declaration name="startx" type="int" line="1300"/>
+                    <scope line="1302">
+                        <scope line="1303">
+                            <scope line="1304"/>
+                        </scope>
+                        <scope line="1313"/>
+                    </scope>
+                    <scope line="1317"/>
+                </scope>
+            </method>
+            <method name="drawImageToPlatform" type="boolean" line="1331"/>
+            <javadoc line="1331">
+                The various &lt;code&gt;drawImage()&lt;/code&gt; methods for
+                  &lt;code&gt;PathGraphics&lt;/code&gt; are all decomposed
+                  into an invocation of &lt;code&gt;drawImageToPlatform&lt;/code&gt;.
+                  The portion of the passed in image defined by
+                  &lt;code&gt;srcX, srcY, srcWidth, and srcHeight&lt;/code&gt;
+                  is transformed by the supplied AffineTransform and
+                  drawn using PS to the printer context.                
+                <param>
+                    img     The image to be drawn.
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    xform   Used to tranform the image before drawing.
+                      This can be null.                    
+                </param>
+                <param>
+                    bgcolor This color is drawn where the image has transparent
+                      pixels. If this parameter is null then the
+                      pixels already in the destination should show
+                      through.                    
+                </param>
+                <param>
+                    srcX    With srcY this defines the upper-left corner
+                      of the portion of the image to be drawn.                    
+                </param>
+                <param>
+                    srcY    With srcX this defines the upper-left corner
+                      of the portion of the image to be drawn.                    
+                </param>
+                <param>
+                    srcWidth    The width of the portion of the image to
+                      be drawn.                    
+                </param>
+                <param>
+                    srcHeight   The height of the portion of the image to
+                      be drawn.                    
+                </param>
+                <param>
+                    handlingTransparency if being recursively called to
+                      print opaque region of transparent image                    
+                </param>
+            </javadoc>
+            <javadoc line="1367">
+                Draws as much of the specified image as is currently available.
+                  The image is drawn with its top-left corner at
+                  (&lt;i&gt;x&lt;/i&gt;,&amp;nbsp;&lt;i&gt;y&lt;/i&gt;) in this graphics context&apos;s coordinate
+                  space. Transparent pixels in the image do not affect whatever
+                  pixels are already there.
+                  &lt;p&gt;
+                  This method returns immediately in all cases, even if the
+                  complete image has not yet been loaded, and it has not been dithered
+                  and converted for the current output device.
+                  &lt;p&gt;
+                  If the image has not yet been completely loaded, then
+                  &lt;code&gt;drawImage&lt;/code&gt; returns &lt;code&gt;false&lt;/code&gt;. As more of
+                  the image becomes available, the process that draws the image notifies
+                  the specified image observer.                
+                <param>
+                    img the specified image to be drawn.                    
+                </param>
+                <param>
+                    x   the <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y   the <i>y</i> coordinate.                    
+                </param>
+                <param>
+                    observer    object to be notified as more of
+                      the image is converted.                    
+                </param>
+                <see>
+                    java.awt.Image                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver#imageUpdate(java.awt.Image,int,int,int,int,int)                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1393">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+            </method>
+            <javadoc line="1398">
+                Draws as much of the specified image as has already been scaled
+                  to fit inside the specified rectangle.
+                  &lt;p&gt;
+                  The image is drawn inside the specified rectangle of this
+                  graphics context&apos;s coordinate space, and is scaled if
+                  necessary. Transparent pixels do not affect whatever pixels
+                  are already there.
+                  &lt;p&gt;
+                  This method returns immediately in all cases, even if the
+                  entire image has not yet been scaled, dithered, and converted
+                  for the current output device.
+                  If the current output representation is not yet complete, then
+                  &lt;code&gt;drawImage&lt;/code&gt; returns &lt;code&gt;false&lt;/code&gt;. As more of
+                  the image becomes available, the process that draws the image notifies
+                  the image observer by calling its &lt;code&gt;imageUpdate&lt;/code&gt; method.
+                  &lt;p&gt;
+                  A scaled version of an image will not necessarily be
+                  available immediately just because an unscaled version of the
+                  image has been constructed for this output device.  Each size of
+                  the image may be cached separately and generated from the original
+                  data in a separate image production sequence.                
+                <param>
+                    img    the specified image to be drawn.                    
+                </param>
+                <param>
+                    x      the <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y      the <i>y</i> coordinate.                    
+                </param>
+                <param>
+                    width  the width of the rectangle.                    
+                </param>
+                <param>
+                    height the height of the rectangle.                    
+                </param>
+                <param>
+                    observer    object to be notified as more of
+                      the image is converted.                    
+                </param>
+                <see>
+                    java.awt.Image                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver#imageUpdate(java.awt.Image,int,int,int,int,int)                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1434">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+            </method>
+            <method name="drawImage" type="boolean" line="1478">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="bgcolor" type="Color"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+                <scope line="1480"/>
+                <declaration name="result" type="boolean" line="1484"/>
+                <declaration name="srcWidth" type="int" line="1485"/>
+                <declaration name="srcHeight" type="int" line="1486"/>
+                <scope line="1488"/>
+                <scope line="1490"/>
+            </method>
+            <javadoc line="1497">
+                Draws as much of the specified image as has already been scaled
+                  to fit inside the specified rectangle.
+                  &lt;p&gt;
+                  The image is drawn inside the specified rectangle of this
+                  graphics context&apos;s coordinate space, and is scaled if
+                  necessary. Transparent pixels are drawn in the specified
+                  background color.
+                  This operation is equivalent to filling a rectangle of the
+                  width and height of the specified image with the given color and then
+                  drawing the image on top of it, but possibly more efficient.
+                  &lt;p&gt;
+                  This method returns immediately in all cases, even if the
+                  entire image has not yet been scaled, dithered, and converted
+                  for the current output device.
+                  If the current output representation is not yet complete then
+                  &lt;code&gt;drawImage&lt;/code&gt; returns &lt;code&gt;false&lt;/code&gt;. As more of
+                  the image becomes available, the process that draws the image notifies
+                  the specified image observer.
+                  &lt;p&gt;
+                  A scaled version of an image will not necessarily be
+                  available immediately just because an unscaled version of the
+                  image has been constructed for this output device.  Each size of
+                  the image may be cached separately and generated from the original
+                  data in a separate image production sequence.                
+                <param>
+                    img       the specified image to be drawn.
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    x         the <i>x</i> coordinate.                    
+                </param>
+                <param>
+                    y         the <i>y</i> coordinate.                    
+                </param>
+                <param>
+                    width     the width of the rectangle.                    
+                </param>
+                <param>
+                    height    the height of the rectangle.                    
+                </param>
+                <param>
+                    bgcolor   the background color to paint under the
+                      non-opaque portions of the image.                    
+                </param>
+                <param>
+                    observer    object to be notified as more of
+                      the image is converted.                    
+                </param>
+                <see>
+                    java.awt.Image                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver#imageUpdate(java.awt.Image,int,int,int,int,int)                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1540">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="bgcolor" type="Color"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+                <scope line="1542"/>
+                <declaration name="result" type="boolean" line="1546"/>
+                <declaration name="srcWidth" type="int" line="1547"/>
+                <declaration name="srcHeight" type="int" line="1548"/>
+                <scope line="1550"/>
+                <scope line="1552"/>
+            </method>
+            <javadoc line="1562">
+                Draws as much of the specified area of the specified image as is
+                  currently available, scaling it on the fly to fit inside the
+                  specified area of the destination drawable surface. Transparent pixels
+                  do not affect whatever pixels are already there.
+                  &lt;p&gt;
+                  This method returns immediately in all cases, even if the
+                  image area to be drawn has not yet been scaled, dithered, and converted
+                  for the current output device.
+                  If the current output representation is not yet complete then
+                  &lt;code&gt;drawImage&lt;/code&gt; returns &lt;code&gt;false&lt;/code&gt;. As more of
+                  the image becomes available, the process that draws the image notifies
+                  the specified image observer.
+                  &lt;p&gt;
+                  This method always uses the unscaled version of the image
+                  to render the scaled rectangle and performs the required
+                  scaling on the fly. It does not use a cached, scaled version
+                  of the image for this operation. Scaling of the image from source
+                  to destination is performed such that the first coordinate
+                  of the source rectangle is mapped to the first coordinate of
+                  the destination rectangle, and the second source coordinate is
+                  mapped to the second destination coordinate. The subimage is
+                  scaled and flipped as needed to preserve those mappings.                
+                <param>
+                    img the specified image to be drawn                    
+                </param>
+                <param>
+                    dx1 the <i>x</i> coordinate of the first corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dy1 the <i>y</i> coordinate of the first corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dx2 the <i>x</i> coordinate of the second corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dy2 the <i>y</i> coordinate of the second corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    sx1 the <i>x</i> coordinate of the first corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sy1 the <i>y</i> coordinate of the first corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sx2 the <i>x</i> coordinate of the second corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sy2 the <i>y</i> coordinate of the second corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    observer object to be notified as more of the image is
+                      scaled and converted.                    
+                </param>
+                <see>
+                    java.awt.Image                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver#imageUpdate(java.awt.Image,int,int,int,int,int)                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1612">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="dx1" type="int"/>
+                    <param name="dy1" type="int"/>
+                    <param name="dx2" type="int"/>
+                    <param name="dy2" type="int"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+            </method>
+            <javadoc line="1620">
+                Draws as much of the specified area of the specified image as is
+                  currently available, scaling it on the fly to fit inside the
+                  specified area of the destination drawable surface.
+                  &lt;p&gt;
+                  Transparent pixels are drawn in the specified background color.
+                  This operation is equivalent to filling a rectangle of the
+                  width and height of the specified image with the given color and then
+                  drawing the image on top of it, but possibly more efficient.
+                  &lt;p&gt;
+                  This method returns immediately in all cases, even if the
+                  image area to be drawn has not yet been scaled, dithered, and converted
+                  for the current output device.
+                  If the current output representation is not yet complete then
+                  &lt;code&gt;drawImage&lt;/code&gt; returns &lt;code&gt;false&lt;/code&gt;. As more of
+                  the image becomes available, the process that draws the image notifies
+                  the specified image observer.
+                  &lt;p&gt;
+                  This method always uses the unscaled version of the image
+                  to render the scaled rectangle and performs the required
+                  scaling on the fly. It does not use a cached, scaled version
+                  of the image for this operation. Scaling of the image from source
+                  to destination is performed such that the first coordinate
+                  of the source rectangle is mapped to the first coordinate of
+                  the destination rectangle, and the second source coordinate is
+                  mapped to the second destination coordinate. The subimage is
+                  scaled and flipped as needed to preserve those mappings.                
+                <param>
+                    img the specified image to be drawn
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    dx1 the <i>x</i> coordinate of the first corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dy1 the <i>y</i> coordinate of the first corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dx2 the <i>x</i> coordinate of the second corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    dy2 the <i>y</i> coordinate of the second corner of the
+                      destination rectangle.                    
+                </param>
+                <param>
+                    sx1 the <i>x</i> coordinate of the first corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sy1 the <i>y</i> coordinate of the first corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sx2 the <i>x</i> coordinate of the second corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    sy2 the <i>y</i> coordinate of the second corner of the
+                      source rectangle.                    
+                </param>
+                <param>
+                    bgcolor the background color to paint under the
+                      non-opaque portions of the image.                    
+                </param>
+                <param>
+                    observer object to be notified as more of the image is
+                      scaled and converted.                    
+                </param>
+                <see>
+                    java.awt.Image                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver                    
+                </see>
+                <see>
+                    java.awt.image.ImageObserver#imageUpdate(java.awt.Image,int,int,int,int,int)                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1678">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="dx1" type="int"/>
+                    <param name="dy1" type="int"/>
+                    <param name="dx2" type="int"/>
+                    <param name="dy2" type="int"/>
+                    <param name="sx1" type="int"/>
+                    <param name="sy1" type="int"/>
+                    <param name="sx2" type="int"/>
+                    <param name="sy2" type="int"/>
+                    <param name="bgcolor" type="Color"/>
+                    <param name="observer" type="ImageObserver"/>
+                </params>
+                <comment line="1693">
+                    Create a transform which describes the changes
+                     from the source coordinates to the destination
+                     coordinates. The scaling is determined by the
+                     ratio of the two rectangles, while the translation
+                     comes from the difference of their origins.                    
+                </comment>
+                <comment line="1709">
+                    drawImageToPlatform needs the top-left of the source area and
+                     a positive width and height. The xform describes how to map
+                     src-&gt;dest, so that information is not lost.                    
+                </comment>
+                <comment line="1725">
+                    if src area is beyond the bounds of the image, we must clip it.
+                     The transform is based on the specified area, not the clipped one.                    
+                </comment>
+                <comment line="1730">
+                    empty srcArea, nothing to draw                    
+                </comment>
+                <comment line="1733">
+                    empty srcArea, nothing to draw                    
+                </comment>
+                <comment line="1740">
+                    empty srcArea                    
+                </comment>
+                <comment line="1743">
+                    empty srcArea                    
+                </comment>
+                <scope line="1680"/>
+                <declaration name="imgWidth" type="int" line="1683"/>
+                <declaration name="imgHeight" type="int" line="1684"/>
+                <scope line="1686"/>
+                <declaration name="srcWidth" type="int" line="1690"/>
+                <declaration name="srcHeight" type="int" line="1691"/>
+                <declaration name="scalex" type="float" line="1699"/>
+                <declaration name="scaley" type="float" line="1700"/>
+                <declaration name="xForm" type="AffineTransform" line="1701"/>
+                <declaration name="tmp" type="int" line="1713"/>
+                <scope line="1714"/>
+                <scope line="1719"/>
+                <scope line="1728"/>
+                <scope line="1730"/>
+                <scope line="1733"/>
+                <scope line="1735"/>
+                <scope line="1738"/>
+                <scope line="1740"/>
+                <scope line="1743"/>
+                <scope line="1745"/>
+                <scope line="1752"/>
+            </method>
+            <javadoc line="1762">
+                Draws an image, applying a transform from image space into user space
+                  before drawing.
+                  The transformation from user space into device space is done with
+                  the current transform in the Graphics2D.
+                  The given transformation is applied to the image before the
+                  transform attribute in the Graphics2D state is applied.
+                  The rendering attributes applied include the clip, transform,
+                  and composite attributes. Note that the result is
+                  undefined, if the given transform is noninvertible.                
+                <param>
+                    img The image to be drawn.
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    xform The transformation from image space into user space.                    
+                </param>
+                <param>
+                    obs The image observer to be notified as more of the image
+                      is converted.                    
+                </param>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+            </javadoc>
+            <method name="drawImage" type="boolean" line="1785">
+                <params>
+                    <param name="img" type="Image"/>
+                    <param name="xform" type="AffineTransform"/>
+                    <param name="obs" type="ImageObserver"/>
+                </params>
+                <scope line="1787"/>
+                <declaration name="result" type="boolean" line="1791"/>
+                <declaration name="srcWidth" type="int" line="1792"/>
+                <declaration name="srcHeight" type="int" line="1793"/>
+                <scope line="1795"/>
+                <scope line="1797"/>
+            </method>
+            <javadoc line="1805">
+                Draws a BufferedImage that is filtered with a BufferedImageOp.
+                  The rendering attributes applied include the clip, transform
+                  and composite attributes.  This is equivalent to:
+                  &lt;pre&gt;
+                  img1 = op.filter(img, null);
+                  drawImage(img1, new AffineTransform(1f,0f,0f,1f,x,y), null);
+                  &lt;/pre&gt;                
+                <param>
+                    op The filter to be applied to the image before drawing.                    
+                </param>
+                <param>
+                    img The BufferedImage to be drawn.
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    x,y The location in user space where the image should be drawn.                    
+                </param>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+            </javadoc>
+            <method name="drawImage" type="void" line="1826">
+                <params>
+                    <param name="img" type="BufferedImage"/>
+                    <param name="op" type="BufferedImageOp"/>
+                    <param name="x" type="int"/>
+                    <param name="y" type="int"/>
+                </params>
+                <scope line="1828"/>
+                <declaration name="srcWidth" type="int" line="1832"/>
+                <declaration name="srcHeight" type="int" line="1833"/>
+                <scope line="1835"/>
+                <scope line="1838"/>
+                <scope line="1840">
+                    <declaration name="xform" type="AffineTransform" line="1841"/>
+                </scope>
+            </method>
+            <javadoc line="1848">
+                Draws an image, applying a transform from image space into user space
+                  before drawing.
+                  The transformation from user space into device space is done with
+                  the current transform in the Graphics2D.
+                  The given transformation is applied to the image before the
+                  transform attribute in the Graphics2D state is applied.
+                  The rendering attributes applied include the clip, transform,
+                  and composite attributes. Note that the result is
+                  undefined, if the given transform is noninvertible.                
+                <param>
+                    img The image to be drawn.
+                      This method does nothing if <code>img</code> is null.                    
+                </param>
+                <param>
+                    xform The transformation from image space into user space.                    
+                </param>
+                <see>
+                    #transform                    
+                </see>
+                <see>
+                    #setTransform                    
+                </see>
+                <see>
+                    #setComposite                    
+                </see>
+                <see>
+                    #clip                    
+                </see>
+                <see>
+                    #setClip                    
+                </see>
+            </javadoc>
+            <method name="drawRenderedImage" type="void" line="1868">
+                <params>
+                    <param name="img" type="RenderedImage"/>
+                    <param name="xform" type="AffineTransform"/>
+                </params>
+                <scope line="1870"/>
+                <declaration name="bufferedImage" type="BufferedImage" line="1874"/>
+                <declaration name="srcWidth" type="int" line="1875"/>
+                <declaration name="srcHeight" type="int" line="1876"/>
+                <scope line="1878"/>
+                <scope line="1882"/>
+                <scope line="1884">
+                    <declaration name="imageGraphics" type="Graphics2D" line="1887"/>
+                </scope>
+            </method>
+        </class>
+    </source>

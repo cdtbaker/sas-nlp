@@ -1,0 +1,1392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.imageio.plugins.jpeg">
+        <import package="javax.imageio.IIOException"/>
+        <import package="javax.imageio.ImageReader"/>
+        <import package="javax.imageio.ImageReadParam"/>
+        <import package="javax.imageio.ImageTypeSpecifier"/>
+        <import package="javax.imageio.metadata.IIOMetadata"/>
+        <import package="javax.imageio.spi.ImageReaderSpi"/>
+        <import package="javax.imageio.stream.ImageInputStream"/>
+        <import package="javax.imageio.plugins.jpeg.JPEGImageReadParam"/>
+        <import package="javax.imageio.plugins.jpeg.JPEGQTable"/>
+        <import package="javax.imageio.plugins.jpeg.JPEGHuffmanTable"/>
+        <import package="java.awt.Point"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.color.ColorSpace"/>
+        <import package="java.awt.color.ICC_Profile"/>
+        <import package="java.awt.color.ICC_ColorSpace"/>
+        <import package="java.awt.color.CMMException"/>
+        <import package="java.awt.image.BufferedImage"/>
+        <import package="java.awt.image.Raster"/>
+        <import package="java.awt.image.WritableRaster"/>
+        <import package="java.awt.image.DataBuffer"/>
+        <import package="java.awt.image.DataBufferByte"/>
+        <import package="java.awt.image.ColorModel"/>
+        <import package="java.awt.image.IndexColorModel"/>
+        <import package="java.awt.image.ColorConvertOp"/>
+        <import package="java.io.IOException"/>
+        <import package="java.util.List"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.NoSuchElementException"/>
+        <import package="sun.java2d.Disposer"/>
+        <import package="sun.java2d.DisposerRecord"/>
+        <class name="JPEGImageReader" line="62">
+            <extends class="ImageReader"/>
+            <comment line="97">
+                The following warnings are converted to strings when used                
+            </comment>
+            <comment line="98">
+                as keys to get localized resources from JPEGImageReaderResources                
+            </comment>
+            <comment line="99">
+                and its children.                
+            </comment>
+            <comment line="130">
+                The following is copied out from C after reading the header.                
+            </comment>
+            <comment line="131">
+                Unlike metadata, which may never be retrieved, we need this                
+            </comment>
+            <comment line="132">
+                if we are to read an image at all.                
+            </comment>
+            <comment line="202">
+                Number of passes                
+            </comment>
+            <comment line="203">
+                IJG default                
+            </comment>
+            <comment line="574">
+                Called by the native code whenever an image header has been
+                 read.  Whether we read metadata or not, we always need this
+                 information, so it is passed back independently of
+                 metadata, which may never be read.                
+            </comment>
+            <comment line="672">
+                ///////// Color Conversion and Image Types                
+            </comment>
+            <comment line="920">
+                ///// End of Color Conversion &amp; Image Types                
+            </comment>
+            <comment line="1278">
+                Provide access to protected superclass method                
+            </comment>
+            <comment line="1283">
+                Provide access to protected superclass method                
+            </comment>
+            <declaration name="debug" type="boolean" line="64"/>
+            <declaration name="structPointer" type="long" line="66"/>
+            <javadoc line="66">
+                The following variable contains a pointer to the IJG library
+                  structure for this reader.  It is assigned in the constructor
+                  and then is passed in to every native call.  It is set to 0
+                  by dispose to avoid disposing twice.                
+            </javadoc>
+            <declaration name="iis" type="ImageInputStream" line="74"/>
+            <javadoc line="74">
+                The input stream we read from                
+            </javadoc>
+            <declaration name="imagePositions" type="List" line="77"/>
+            <javadoc line="77">
+                List of stream positions for images, reinitialized every time
+                  a new input source is set.                
+            </javadoc>
+            <declaration name="numImages" type="int" line="83"/>
+            <javadoc line="83">
+                The number of images in the stream, or 0.                
+            </javadoc>
+            <scope line="88"/>
+            <declaration name="WARNING_NO_EOI" type="int" line="100"/>
+            <javadoc line="100">
+                Warning code to be passed to warningOccurred to indicate
+                  that the EOI marker is missing from the end of the stream.
+                  This usually signals that the stream is corrupted, but
+                  everything up to the last MCU should be usable.                
+            </javadoc>
+            <declaration name="WARNING_NO_JFIF_IN_THUMB" type="int" line="108"/>
+            <javadoc line="108">
+                Warning code to be passed to warningOccurred to indicate
+                  that a JFIF segment was encountered inside a JFXX JPEG
+                  thumbnail and is being ignored.                
+            </javadoc>
+            <declaration name="WARNING_IGNORE_INVALID_ICC" type="int" line="115"/>
+            <javadoc line="115">
+                Warning code to be passed to warningOccurred to indicate
+                  that embedded ICC profile is invalid and will be ignored.                
+            </javadoc>
+            <declaration name="MAX_WARNING" type="int" line="121"/>
+            <declaration name="currentImage" type="int" line="123"/>
+            <javadoc line="123">
+                Image index of image for which header information
+                  is available.                
+            </javadoc>
+            <declaration name="width" type="int" line="133"/>
+            <javadoc line="133">
+                Set by setImageData native code callback                
+            </javadoc>
+            <declaration name="height" type="int" line="135"/>
+            <javadoc line="135">
+                Set by setImageData native code callback                
+            </javadoc>
+            <declaration name="colorSpaceCode" type="int" line="137"/>
+            <javadoc line="137">
+                Set by setImageData native code callback.  A modified
+                  IJG+NIFTY colorspace code.                
+            </javadoc>
+            <declaration name="outColorSpaceCode" type="int" line="142"/>
+            <javadoc line="142">
+                Set by setImageData native code callback.  A modified
+                  IJG+NIFTY colorspace code.                
+            </javadoc>
+            <declaration name="numComponents" type="int" line="147"/>
+            <javadoc line="147">
+                Set by setImageData native code callback                
+            </javadoc>
+            <declaration name="iccCS" type="ColorSpace" line="149"/>
+            <javadoc line="149">
+                Set by setImageData native code callback                
+            </javadoc>
+            <declaration name="convert" type="ColorConvertOp" line="153"/>
+            <javadoc line="153">
+                If we need to post-convert in Java, convert with this op                
+            </javadoc>
+            <declaration name="image" type="BufferedImage" line="156"/>
+            <javadoc line="156">
+                The image we are going to fill                
+            </javadoc>
+            <declaration name="raster" type="WritableRaster" line="159"/>
+            <javadoc line="159">
+                An intermediate Raster to hold decoded data                
+            </javadoc>
+            <declaration name="target" type="WritableRaster" line="162"/>
+            <javadoc line="162">
+                A view of our target Raster that we can setRect to                
+            </javadoc>
+            <declaration name="buffer" type="DataBufferByte" line="165"/>
+            <javadoc line="165">
+                The databuffer for the above Raster                
+            </javadoc>
+            <declaration name="destROI" type="Rectangle" line="168"/>
+            <javadoc line="168">
+                The region in the destination where we will write pixels                
+            </javadoc>
+            <declaration name="destinationBands" type="int[]" line="171"/>
+            <javadoc line="171">
+                The list of destination bands, if any                
+            </javadoc>
+            <declaration name="streamMetadata" type="JPEGMetadata" line="174"/>
+            <javadoc line="174">
+                Stream metadata, cached, even when the stream is changed.                
+            </javadoc>
+            <declaration name="imageMetadata" type="JPEGMetadata" line="177"/>
+            <javadoc line="177">
+                Image metadata, valid for the imageMetadataIndex only.                
+            </javadoc>
+            <declaration name="imageMetadataIndex" type="int" line="179"/>
+            <declaration name="haveSeeked" type="boolean" line="181"/>
+            <javadoc line="181">
+                Set to true every time we seek in the stream; used to
+                  invalidate the native buffer contents in C.                
+            </javadoc>
+            <declaration name="abbrevQTables" type="JPEGQTable[]" line="187"/>
+            <javadoc line="187">
+                Tables that have been read from a tables-only image at the
+                  beginning of a stream.                
+            </javadoc>
+            <declaration name="abbrevDCHuffmanTables" type="JPEGHuffmanTable[]" line="192"/>
+            <declaration name="abbrevACHuffmanTables" type="JPEGHuffmanTable[]" line="193"/>
+            <declaration name="minProgressivePass" type="int" line="195"/>
+            <declaration name="maxProgressivePass" type="int" line="196"/>
+            <declaration name="UNKNOWN" type="int" line="198"/>
+            <javadoc line="198">
+                Variables used by progress monitoring.                
+            </javadoc>
+            <declaration name="MIN_ESTIMATED_PASSES" type="int" line="202"/>
+            <declaration name="knownPassCount" type="int" line="203"/>
+            <declaration name="pass" type="int" line="204"/>
+            <declaration name="percentToDate" type="float" line="205"/>
+            <declaration name="previousPassPercentage" type="float" line="206"/>
+            <declaration name="progInterval" type="int" line="207"/>
+            <declaration name="tablesOnlyChecked" type="boolean" line="209"/>
+            <javadoc line="209">
+                Set to true once stream has been checked for stream metadata                
+            </javadoc>
+            <declaration name="disposerReferent" type="Object" line="214"/>
+            <javadoc line="214">
+                The referent to be registered with the Disposer.                
+            </javadoc>
+            <declaration name="disposerRecord" type="DisposerRecord" line="217"/>
+            <javadoc line="217">
+                The DisposerRecord that handles the actual disposal of this reader.                
+            </javadoc>
+            <method name="initReaderIDs" type="void" line="220"/>
+            <javadoc line="220">
+                Sets up static C structures.                
+            </javadoc>
+            <method name="JPEGImageReader" type="constructor" line="225">
+                <params>
+                    <param name="originator" type="ImageReaderSpi"/>
+                </params>
+            </method>
+            <method name="initJPEGImageReader" type="long" line="232"/>
+            <javadoc line="232">
+                Sets up per-reader C structure and returns a pointer to it.                
+            </javadoc>
+            <javadoc line="235">
+                Called by the native code or other classes to signal a warning.
+                  The code is used to lookup a localized message to be used when
+                  sending warnings to listeners.                
+            </javadoc>
+            <method name="warningOccurred" type="void" line="240">
+                <params>
+                    <param name="code" type="int"/>
+                </params>
+                <scope line="241"/>
+            </method>
+            <javadoc line="249">
+                The library has it&apos;s own error facility that emits warning messages.
+                  This routine is called by the native code when it has already
+                  formatted a string for output.
+                  XXX  For truly complete localization of all warning messages,
+                  the sun_jpeg_output_message routine in the native code should
+                  send only the codes and parameters to a method here in Java,
+                  which will then format and send the warnings, using localized
+                  strings.  This method will have to deal with all the parameters
+                  and formats (%u with possibly large numbers, %02d, %02x, etc.)
+                  that actually occur in the JPEG library.  For now, this prevents
+                  library warnings from being printed to stderr.                
+            </javadoc>
+            <method name="warningWithMessage" type="void" line="262">
+                <params>
+                    <param name="msg" type="String"/>
+                </params>
+            </method>
+            <method name="setInput" type="void" line="269">
+                <params>
+                    <param name="input" type="Object"/>
+                    <param name="seekForwardOnly" type="boolean"/>
+                    <param name="ignoreMetadata" type="boolean"/>
+                </params>
+                <comment line="275">
+                    Always works                    
+                </comment>
+                <scope line="271"/>
+                <scope line="277"/>
+            </method>
+            <method name="setSource" type="void" line="282"/>
+            <method name="checkTablesOnly" type="void" line="285">
+                <comment line="294">
+                    Read the first header                    
+                </comment>
+                <comment line="302">
+                    This reads the tables-only image twice, once from C                    
+                </comment>
+                <comment line="303">
+                    and once from Java, but only if ignoreMetadata is false                    
+                </comment>
+                <comment line="315">
+                    Now we are at the first image if there are any, so add it                    
+                </comment>
+                <comment line="316">
+                    to the list                    
+                </comment>
+                <comment line="320">
+                    Not tables only, so add original pos to the list                    
+                </comment>
+                <comment line="322">
+                    And set current image since we&apos;ve read it now                    
+                </comment>
+                <scope line="286"/>
+                <declaration name="savePos" type="long" line="289"/>
+                <scope line="290"/>
+                <declaration name="tablesOnly" type="boolean" line="295"/>
+                <scope line="296">
+                    <scope line="297">
+                        <declaration name="pos" type="long" line="299"/>
+                    </scope>
+                    <scope line="304">
+                        <declaration name="pos" type="long" line="309"/>
+                        <scope line="310"/>
+                    </scope>
+                    <scope line="317"/>
+                </scope>
+                <scope line="320"/>
+                <scope line="325">
+                    <declaration name="pos" type="Long" line="326"/>
+                </scope>
+            </method>
+            <method name="getNumImages" type="int" line="332">
+                <params>
+                    <param name="allowSearch" type="boolean"/>
+                </params>
+                <comment line="334">
+                    locked thread                    
+                </comment>
+                <scope line="334"/>
+                <scope line="336"/>
+            </method>
+            <method name="getNumImagesOnThread" type="int" line="342">
+                <params>
+                    <param name="allowSearch" type="boolean"/>
+                </params>
+                <comment line="354">
+                    Otherwise we have to read the entire stream                    
+                </comment>
+                <comment line="373">
+                    FALL THROUGH to decrement buffer vars                    
+                </comment>
+                <comment line="374">
+                    This first set doesn&apos;t have a length                    
+                </comment>
+                <comment line="375">
+                    not a marker, just a data 0xff                    
+                </comment>
+                <comment line="388">
+                    All the others have a length                    
+                </comment>
+                <comment line="396">
+                    length includes itself                    
+                </comment>
+                <comment line="407">
+                    Search is necessary for JPEG                    
+                </comment>
+                <scope line="343"/>
+                <scope line="346"/>
+                <scope line="349">
+                    <scope line="350"/>
+                    <scope line="356"/>
+                    <declaration name="buffer" type="JPEGBuffer" line="364"/>
+                    <declaration name="done" type="boolean" line="367"/>
+                    <scope line="368">
+                        <declaration name="length" type="int" line="393"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="410">
+                Sets the input stream to the start of the requested image.
+                  &lt;pre&gt;                
+                <exception>
+                    IllegalStateException if the input source has not been
+                      set.                    
+                </exception>
+                <exception>
+                    IndexOutOfBoundsException if the supplied index is
+                      out of bounds.
+                      </pre>                    
+                </exception>
+            </javadoc>
+            <method name="gotoImage" type="void" line="419">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="432">
+                    read to start of image, saving positions                    
+                </comment>
+                <comment line="433">
+                    First seek to the last position we already have, and skip the                    
+                </comment>
+                <comment line="434">
+                    entire image                    
+                </comment>
+                <comment line="438">
+                    Now add all intervening positions, skipping images                    
+                </comment>
+                <comment line="442">
+                    Is there an image?                    
+                </comment>
+                <comment line="453">
+                    Otherwise we are where we want to be                    
+                </comment>
+                <comment line="461">
+                    No way is native buffer still valid                    
+                </comment>
+                <scope line="420"/>
+                <scope line="423"/>
+                <scope line="426"/>
+                <scope line="429"/>
+                <scope line="431">
+                    <declaration name="pos" type="Long" line="435"/>
+                    <scope line="441">
+                        <scope line="443"/>
+                        <scope line="448"/>
+                        <scope line="451"/>
+                    </scope>
+                </scope>
+                <scope line="457"/>
+            </method>
+            <javadoc line="464">
+                Skip over a complete image in the stream, leaving the stream
+                  positioned such that the next byte to be read is the first
+                  byte of the next image.  For JPEG, this means that we read
+                  until we encounter an EOI marker or until the end of the stream.
+                  If the stream ends before an EOI marker is encountered, an
+                  IndexOutOfBoundsException is thrown.                
+            </javadoc>
+            <method name="skipImage" type="void" line="472">
+                <scope line="473"/>
+                <declaration name="foundFF" type="boolean" line="476"/>
+                <scope line="479">
+                    <scope line="481">
+                        <scope line="482"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="491">
+                Returns &lt;code&gt;true&lt;/code&gt; if there is an image beyond
+                  the current stream position.  Does not disturb the
+                  stream position.                
+            </javadoc>
+            <method name="hasNextImage" type="boolean" line="496">
+                <comment line="517">
+                    We hit the end of the stream before we hit an SOI, so no image                    
+                </comment>
+                <scope line="497"/>
+                <declaration name="foundFF" type="boolean" line="501"/>
+                <scope line="504">
+                    <scope line="506">
+                        <scope line="507">
+                            <scope line="509"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="519"/>
+            </method>
+            <javadoc line="525">
+                Push back the given number of bytes to the input stream.
+                  Called by the native code at the end of each image so
+                  that the next one can be identified from Java.                
+            </javadoc>
+            <method name="pushBack" type="void" line="530">
+                <params>
+                    <param name="num" type="int"/>
+                </params>
+                <comment line="535">
+                    The buffer is clear after this, so no need to set haveSeeked.                    
+                </comment>
+                <scope line="531"/>
+            </method>
+            <javadoc line="538">
+                Reads header information for the given image, if possible.                
+            </javadoc>
+            <method name="readHeader" type="void" line="542">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="reset" type="boolean"/>
+                </params>
+                <comment line="544">
+                    Ignore return                    
+                </comment>
+            </method>
+            <method name="readNativeHeader" type="boolean" line="548">
+                <params>
+                    <param name="reset" type="boolean"/>
+                </params>
+                <declaration name="retval" type="boolean" line="549"/>
+            </method>
+            <method name="readImageHeader" type="boolean" line="555"/>
+            <javadoc line="555">
+                Read in the header information starting from the current
+                  stream position, returning &lt;code&gt;true&lt;/code&gt; if the
+                  header was a tables-only image.  After this call, the
+                  native IJG decompression struct will contain the image
+                  information required by most query calls below
+                  (e.g. getWidth, getHeight, etc.), if the header was not
+                  a tables-only image.
+                  If reset is &lt;code&gt;true&lt;/code&gt;, the state of the IJG
+                  object is reset so that it can read a header again.
+                  This happens automatically if the header was a tables-only
+                  image.                
+            </javadoc>
+            <method name="setImageData" type="void" line="584">
+                <params>
+                    <param name="width" type="int"/>
+                    <param name="height" type="int"/>
+                    <param name="colorSpaceCode" type="int"/>
+                    <param name="outColorSpaceCode" type="int"/>
+                    <param name="numComponents" type="int"/>
+                    <param name="iccData" type="byte[]"/>
+                </params>
+                <comment line="600">
+                    Color profile data seems to be invalid.
+                     Ignore this profile.                    
+                </comment>
+                <comment line="620">
+                    At the moment we can&apos;t rely on the ColorSpace.equals()
+                     and ICC_Profile.equals() because they do not detect
+                     the case when two profiles are created from same data.
+                    
+                     So, we have to do data comparison in order to avoid
+                     creation of different ColorSpace instances for the same
+                     embedded data.                    
+                </comment>
+                <comment line="633">
+                    verify new color space                    
+                </comment>
+                <comment line="637">
+                    Embedded profile seems to be corrupted.
+                     Ignore this profile.                    
+                </comment>
+                <scope line="591"/>
+                <declaration name="newProfile" type="ICC_Profile" line="596"/>
+                <scope line="597"/>
+                <scope line="599"/>
+                <declaration name="newData" type="byte[]" line="609"/>
+                <declaration name="oldProfile" type="ICC_Profile" line="611"/>
+                <scope line="612"/>
+                <declaration name="oldData" type="byte[]" line="615"/>
+                <scope line="616"/>
+                <scope line="631">
+                    <scope line="634">
+                        <declaration name="colors" type="float[]" line="635"/>
+                    </scope>
+                    <scope line="636"/>
+                </scope>
+            </method>
+            <method name="getWidth" type="int" line="647">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <scope line="649">
+                    <scope line="650"/>
+                </scope>
+                <scope line="654"/>
+            </method>
+            <method name="getHeight" type="int" line="659">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <scope line="661">
+                    <scope line="662"/>
+                </scope>
+                <scope line="666"/>
+            </method>
+            <javadoc line="673">
+                Return an ImageTypeSpecifier corresponding to the given
+                  color space code, or null if the color space is unsupported.                
+            </javadoc>
+            <method name="getImageType" type="ImageTypeProducer" line="677">
+                <params>
+                    <param name="code" type="int"/>
+                </params>
+                <declaration name="ret" type="ImageTypeProducer" line="678"/>
+                <scope line="680"/>
+            </method>
+            <method name="getRawImageType" type="ImageTypeSpecifier" line="687">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="694">
+                    Returns null if it can&apos;t be represented                    
+                </comment>
+                <scope line="689">
+                    <scope line="690"/>
+                </scope>
+                <scope line="696"/>
+            </method>
+            <method name="getImageTypes" type="Iterator" line="702">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <scope line="704"/>
+                <scope line="706"/>
+            </method>
+            <method name="getImageTypesOnThread" type="Iterator" line="712">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="717">
+                    We return an iterator containing the default, any                    
+                </comment>
+                <comment line="718">
+                    conversions that the library provides, and                    
+                </comment>
+                <comment line="719">
+                    all the other default types with the same number                    
+                </comment>
+                <comment line="720">
+                    of components, as we can do these as a post-process.                    
+                </comment>
+                <comment line="721">
+                    As we convert Rasters rather than images, images                    
+                </comment>
+                <comment line="722">
+                    with alpha cannot be converted in a post-process.                    
+                </comment>
+                <comment line="724">
+                    If this image can&apos;t be interpreted, this method                    
+                </comment>
+                <comment line="725">
+                    returns an empty Iterator.                    
+                </comment>
+                <comment line="727">
+                    Get the raw ITS, if there is one.  Note that this                    
+                </comment>
+                <comment line="728">
+                    won&apos;t always be the same as the default.                    
+                </comment>
+                <comment line="731">
+                    Given the encoded colorspace, build a list of ITS&apos;s                    
+                </comment>
+                <comment line="732">
+                    representing outputs you could handle starting                    
+                </comment>
+                <comment line="733">
+                    with the default.                    
+                </comment>
+                <comment line="751">
+                    Might be null if PYCC.pf not installed                    
+                </comment>
+                <comment line="757">
+                    Might be null if PYCC.pf not installed                    
+                </comment>
+                <comment line="762">
+                    As there is no YCbCr ColorSpace, we can&apos;t support                    
+                </comment>
+                <comment line="763">
+                    the raw type.                    
+                </comment>
+                <comment line="765">
+                    due to 4705399, use RGB as default in order to avoid                    
+                </comment>
+                <comment line="766">
+                    slowing down of drawing operations with result image.                    
+                </comment>
+                <comment line="774">
+                    Assume it&apos;s for RGB                    
+                </comment>
+                <comment line="786">
+                    Default is to convert to RGBA                    
+                </comment>
+                <comment line="787">
+                    As there is no YCbCr ColorSpace, we can&apos;t support                    
+                </comment>
+                <comment line="788">
+                    the raw type.                    
+                </comment>
+                <scope line="713"/>
+                <declaration name="raw" type="ImageTypeProducer" line="729"/>
+                <declaration name="list" type="ArrayList&lt;ImageTypeProducer&gt;" line="735"/>
+                <scope line="751"/>
+                <scope line="757"/>
+                <scope line="769">
+                    <anonymous_class line="770">
+                        <method name="produce" type="ImageTypeSpecifier" line="771">
+                            <comment line="774">
+                                Assume it&apos;s for RGB                                
+                            </comment>
+                        </method>
+                    </anonymous_class>
+                </scope>
+            </method>
+            <javadoc line="796">
+                Checks the implied color conversion between the stream and
+                  the target image, altering the IJG output color space if necessary.
+                  If a java color conversion is required, then this sets up
+                  &lt;code&gt;convert&lt;/code&gt;.
+                  If bands are being rearranged at all (either source or destination
+                  bands are specified in the param), then the default color
+                  conversions are assumed to be correct.
+                  Throws an IIOException if there is no conversion available.                
+            </javadoc>
+            <method name="checkColorConversion" type="void" line="808">
+                <params>
+                    <param name="image" type="BufferedImage"/>
+                    <param name="param" type="ImageReadParam"/>
+                </params>
+                <comment line="810">
+                    If we are rearranging channels at all, the default                    
+                </comment>
+                <comment line="811">
+                    conversions remain in place.  If the user wants                    
+                </comment>
+                <comment line="812">
+                    raw channels then he should do this while reading                    
+                </comment>
+                <comment line="813">
+                    a Raster.                    
+                </comment>
+                <comment line="817">
+                    Accept default conversions out of decoder, silently                    
+                </comment>
+                <comment line="822">
+                    XXX - We do not currently support any indexed color models,                    
+                </comment>
+                <comment line="823">
+                    though we could, as IJG will quantize for us.                    
+                </comment>
+                <comment line="824">
+                    This is a performance and memory-use issue, as                    
+                </comment>
+                <comment line="825">
+                    users can read RGB and then convert to indexed in Java.                    
+                </comment>
+                <comment line="833">
+                    Now check the ColorSpace type against outColorSpaceCode                    
+                </comment>
+                <comment line="834">
+                    We may want to tweak the default                    
+                </comment>
+                <comment line="839">
+                    Its gray in the file                    
+                </comment>
+                <comment line="840">
+                    We want RGB                    
+                </comment>
+                <comment line="841">
+                    IJG can do this for us more efficiently                    
+                </comment>
+                <comment line="843">
+                    Update java state according to changes                    
+                </comment>
+                <comment line="844">
+                    in the native part of decoder.                    
+                </comment>
+                <comment line="851">
+                    IJG wants to go to RGB                    
+                </comment>
+                <comment line="852">
+                    We want gray                    
+                </comment>
+                <comment line="854">
+                    If the jpeg space is YCbCr, IJG can do it                    
+                </comment>
+                <comment line="856">
+                    Update java state according to changes                    
+                </comment>
+                <comment line="857">
+                    in the native part of decoder.                    
+                </comment>
+                <comment line="864">
+                    We have an ICC profile but it isn&apos;t used in the dest                    
+                </comment>
+                <comment line="865">
+                    image.  So convert from the profile cs to the target cs                    
+                </comment>
+                <comment line="867">
+                    Leave IJG conversion in place; we still need it                    
+                </comment>
+                <comment line="871">
+                    Target isn&apos;t sRGB, so convert from sRGB to the target                    
+                </comment>
+                <comment line="878">
+                    No conversions available; image must be RGBA                    
+                </comment>
+                <comment line="887">
+                    We can&apos;t do YCC at all                    
+                </comment>
+                <comment line="899">
+                    No conversions available; image must be YCCA                    
+                </comment>
+                <comment line="900">
+                    We can&apos;t do YCC at all                    
+                </comment>
+                <comment line="908">
+                    Anything else we can&apos;t handle at all                    
+                </comment>
+                <scope line="814">
+                    <scope line="816"/>
+                </scope>
+                <declaration name="cm" type="ColorModel" line="827"/>
+                <scope line="829"/>
+                <declaration name="cs" type="ColorSpace" line="835"/>
+                <declaration name="csType" type="int" line="836"/>
+                <scope line="840"/>
+                <scope line="847"/>
+                <scope line="852">
+                    <scope line="853"/>
+                </scope>
+                <scope line="863"/>
+                <scope line="870"/>
+                <scope line="873"/>
+                <scope line="880"/>
+                <scope line="885">
+                    <declaration name="YCC" type="ColorSpace" line="886"/>
+                    <scope line="887"/>
+                    <scope line="891"/>
+                </scope>
+                <scope line="897">
+                    <declaration name="YCC" type="ColorSpace" line="898"/>
+                    <scope line="902"/>
+                </scope>
+            </method>
+            <method name="setOutColorSpace" type="void" line="913"/>
+            <javadoc line="913">
+                Set the IJG output space to the given value.  The library will
+                  perform the appropriate colorspace conversions.                
+            </javadoc>
+            <method name="getDefaultReadParam" type="ImageReadParam" line="921"/>
+            <method name="getStreamMetadata" type="IIOMetadata" line="925">
+                <scope line="927">
+                    <scope line="928"/>
+                </scope>
+                <scope line="932"/>
+            </method>
+            <method name="getImageMetadata" type="IIOMetadata" line="938">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="941">
+                    imageMetadataIndex will always be either a valid index or                    
+                </comment>
+                <comment line="942">
+                    -1, in which case imageMetadata will not be null.                    
+                </comment>
+                <comment line="943">
+                    So we can leave checking imageIndex for gotoImage.                    
+                </comment>
+                <scope line="940">
+                    <scope line="945"/>
+                </scope>
+                <scope line="956"/>
+            </method>
+            <method name="read" type="BufferedImage" line="962">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="param" type="ImageReadParam"/>
+                </params>
+                <comment line="976">
+                    don&apos;t keep a reference here                    
+                </comment>
+                <scope line="964">
+                    <scope line="965"/>
+                    <scope line="967"/>
+                    <scope line="970"/>
+                    <declaration name="ret" type="BufferedImage" line="975"/>
+                </scope>
+                <scope line="978"/>
+            </method>
+            <method name="readInternal" type="Raster" line="985">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="param" type="ImageReadParam"/>
+                    <param name="wantRaster" type="boolean"/>
+                </params>
+                <comment line="992">
+                    Can we read this image?                    
+                </comment>
+                <comment line="1001">
+                    The destination may still be incompatible.                    
+                </comment>
+                <comment line="1005">
+                    Check whether we can handle any implied color conversion                    
+                </comment>
+                <comment line="1007">
+                    Throws IIOException if the stream and the image are                    
+                </comment>
+                <comment line="1008">
+                    incompatible, and sets convert if a java conversion                    
+                </comment>
+                <comment line="1009">
+                    is necessary                    
+                </comment>
+                <comment line="1012">
+                    Check the source and destination bands in the param                    
+                </comment>
+                <comment line="1015">
+                    Set the output color space equal to the input colorspace                    
+                </comment>
+                <comment line="1016">
+                    This disables all conversions                    
+                </comment>
+                <comment line="1021">
+                    Create an intermediate 1-line Raster that will hold the decoded,                    
+                </comment>
+                <comment line="1022">
+                    subsampled, clipped, band-selected image data in a single                    
+                </comment>
+                <comment line="1023">
+                    byte-interleaved buffer.  The above transformations                    
+                </comment>
+                <comment line="1024">
+                    will occur in C for performance.  Every time this Raster                    
+                </comment>
+                <comment line="1025">
+                    is filled we will call back to acceptPixels below to copy                    
+                </comment>
+                <comment line="1026">
+                    this to whatever kind of buffer our image has.                    
+                </comment>
+                <comment line="1051">
+                    ignore dest bands for Raster                    
+                </comment>
+                <comment line="1081">
+                    Now that we have the Raster we&apos;ll decode to, get a view of the                    
+                </comment>
+                <comment line="1082">
+                    target Raster that will permit a simple setRect for each scanline                    
+                </comment>
+                <comment line="1096">
+                    If the process is sequential, and we have restart markers,
+                     we could skip to the correct restart marker, if the library
+                     lets us.  That&apos;s an optimization to investigate later.                    
+                </comment>
+                <comment line="1102">
+                    Check for update listeners (don&apos;t call back if none)                    
+                </comment>
+                <comment line="1106">
+                    Set up progression data                    
+                </comment>
+                <comment line="1108">
+                    if we have a metadata object, we can count the scans                    
+                </comment>
+                <comment line="1109">
+                    and set knownPassCount                    
+                </comment>
+                <comment line="1110">
+                    We have metadata                    
+                </comment>
+                <comment line="1149">
+                    Finally, we are ready to read                    
+                </comment>
+                <comment line="1155">
+                    Note that getData disables acceleration on buffer, but it is                    
+                </comment>
+                <comment line="1156">
+                    just a 1-line intermediate data transfer buffer that will not                    
+                </comment>
+                <comment line="1157">
+                    affect the acceleration of the resulting image.                    
+                </comment>
+                <declaration name="imRas" type="WritableRaster" line="988"/>
+                <declaration name="numImageBands" type="int" line="989"/>
+                <scope line="991">
+                    <declaration name="imageTypes" type="Iterator" line="993"/>
+                    <scope line="994"/>
+                </scope>
+                <scope line="1014"/>
+                <declaration name="srcBands" type="int[]" line="1028"/>
+                <declaration name="numRasterBands" type="int" line="1029"/>
+                <declaration name="srcROI" type="Rectangle" line="1032"/>
+                <declaration name="periodX" type="int" line="1036"/>
+                <declaration name="periodY" type="int" line="1037"/>
+                <scope line="1042">
+                    <declaration name="sBands" type="int[]" line="1046"/>
+                    <scope line="1047"/>
+                    <scope line="1051"/>
+                    <scope line="1058">
+                        <declaration name="jparam" type="JPEGImageReadParam" line="1059"/>
+                        <scope line="1060"/>
+                    </scope>
+                </scope>
+                <declaration name="lineSize" type="int" line="1068"/>
+                <declaration name="bandOffs" type="int[]" line="1072"/>
+                <scope line="1083"/>
+                <scope line="1091"/>
+                <declaration name="bandSizes" type="int[]" line="1094"/>
+                <declaration name="callbackUpdates" type="boolean" line="1103"/>
+                <scope line="1110">
+                    <scope line="1113">
+                        <scope line="1114"/>
+                    </scope>
+                </scope>
+                <scope line="1120"/>
+                <scope line="1122"/>
+                <scope line="1126">
+                    <scope line="1134">
+                        <scope line="1135"/>
+                    </scope>
+                </scope>
+                <declaration name="aborted" type="boolean" line="1153"/>
+                <scope line="1172"/>
+                <scope line="1174"/>
+            </method>
+            <javadoc line="1182">
+                This method is called back from C when the intermediate Raster
+                  is full.  The parameter indicates the scanline in the target
+                  Raster to which the intermediate Raster should be copied.
+                  After the copy, we notify update listeners.                
+            </javadoc>
+            <method name="acceptPixels" type="void" line="1188">
+                <params>
+                    <param name="y" type="int"/>
+                    <param name="progressive" type="boolean"/>
+                </params>
+                <comment line="1207">
+                    Use the range of allowed progressive passes                    
+                </comment>
+                <comment line="1211">
+                    Assume there are a minimum of MIN_ESTIMATED_PASSES                    
+                </comment>
+                <comment line="1212">
+                    and that there is always one more pass                    
+                </comment>
+                <comment line="1213">
+                    Compute the percentage as the percentage at the end                    
+                </comment>
+                <comment line="1214">
+                    of the previous pass, plus the percentage of this                    
+                </comment>
+                <comment line="1215">
+                    pass scaled to be the percentage of the total remaining,                    
+                </comment>
+                <comment line="1216">
+                    assuming a minimum of MIN_ESTIMATED_PASSES passes and                    
+                </comment>
+                <comment line="1217">
+                    that there is always one more pass.  This is monotonic                    
+                </comment>
+                <comment line="1218">
+                    and asymptotic to 1.0, which is what we need.                    
+                </comment>
+                <comment line="1219">
+                    including this one                    
+                </comment>
+                <scope line="1189"/>
+                <scope line="1199">
+                    <declaration name="height" type="int" line="1200"/>
+                    <declaration name="percentOfPass" type="float" line="1201"/>
+                    <scope line="1202">
+                        <scope line="1203"/>
+                        <scope line="1206"/>
+                        <scope line="1210">
+                            <declaration name="remainingPasses" type="int" line="1219"/>
+                            <declaration name="totalPasses" type="int" line="1221"/>
+                            <scope line="1224">
+                                <scope line="1228"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="1243"/>
+                </scope>
+            </method>
+            <method name="initProgressData" type="void" line="1249"/>
+            <method name="passStarted" type="void" line="1257">
+                <params>
+                    <param name="pass" type="int"/>
+                </params>
+            </method>
+            <method name="passComplete" type="void" line="1269"/>
+            <method name="thumbnailStarted" type="void" line="1273">
+                <params>
+                    <param name="thumbnailIndex" type="int"/>
+                </params>
+            </method>
+            <method name="thumbnailProgress" type="void" line="1278">
+                <params>
+                    <param name="percentageDone" type="float"/>
+                </params>
+            </method>
+            <method name="thumbnailComplete" type="void" line="1283"/>
+            <method name="readImage" type="boolean" line="1287"/>
+            <javadoc line="1287">
+                Returns &lt;code&gt;true&lt;/code&gt; if the read was aborted.                
+            </javadoc>
+            <method name="abort" type="void" line="1305">
+                <scope line="1307"/>
+                <scope line="1310"/>
+            </method>
+            <method name="abortRead" type="void" line="1315"/>
+            <javadoc line="1315">
+                Set the C level abort flag. Keep it atomic for thread safety.                
+            </javadoc>
+            <method name="resetLibraryState" type="void" line="1318"/>
+            <javadoc line="1318">
+                Resets library state when an exception occurred during a read.                
+            </javadoc>
+            <method name="canReadRaster" type="boolean" line="1321"/>
+            <method name="readRaster" type="Raster" line="1326">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="param" type="ImageReadParam"/>
+                </params>
+                <comment line="1330">
+                    This could be further optimized by not resetting the dest.
+                     offset and creating a translated raster in readInternal()
+                     (see bug 4994702 for more info).                    
+                </comment>
+                <comment line="1336">
+                    For Rasters, destination offset is logical, not physical, so                    
+                </comment>
+                <comment line="1337">
+                    set it to 0 before calling computeRegions, so that the destination                    
+                </comment>
+                <comment line="1338">
+                    region is not clipped.                    
+                </comment>
+                <comment line="1345">
+                    Apply the destination offset, if any, as a logical offset                    
+                </comment>
+                <declaration name="retval" type="Raster" line="1328"/>
+                <scope line="1329">
+                    <declaration name="saveDestOffset" type="Point" line="1339"/>
+                    <scope line="1340"/>
+                    <scope line="1346"/>
+                </scope>
+                <scope line="1350"/>
+                <scope line="1353"/>
+                <scope line="1356"/>
+            </method>
+            <method name="readerSupportsThumbnails" type="boolean" line="1362"/>
+            <method name="getNumThumbnails" type="int" line="1366">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                </params>
+                <comment line="1369">
+                    checks iis state for us                    
+                </comment>
+                <comment line="1370">
+                    Now check the jfif segments                    
+                </comment>
+                <scope line="1368">
+                    <declaration name="jfif" type="JFIFMarkerSegment" line="1371"/>
+                    <declaration name="retval" type="int" line="1374"/>
+                    <scope line="1375"/>
+                </scope>
+                <scope line="1380"/>
+            </method>
+            <method name="getThumbnailWidth" type="int" line="1386">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="thumbnailIndex" type="int"/>
+                </params>
+                <comment line="1393">
+                    Now we know that there is a jfif segment                    
+                </comment>
+                <scope line="1388">
+                    <scope line="1390"/>
+                    <declaration name="jfif" type="JFIFMarkerSegment" line="1394"/>
+                </scope>
+                <scope line="1398"/>
+            </method>
+            <method name="getThumbnailHeight" type="int" line="1404">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="thumbnailIndex" type="int"/>
+                </params>
+                <comment line="1411">
+                    Now we know that there is a jfif segment                    
+                </comment>
+                <scope line="1406">
+                    <scope line="1408"/>
+                    <declaration name="jfif" type="JFIFMarkerSegment" line="1412"/>
+                </scope>
+                <scope line="1416"/>
+            </method>
+            <method name="readThumbnail" type="BufferedImage" line="1423">
+                <params>
+                    <param name="imageIndex" type="int"/>
+                    <param name="thumbnailIndex" type="int"/>
+                </params>
+                <comment line="1430">
+                    Now we know that there is a jfif segment and that iis is good                    
+                </comment>
+                <scope line="1425">
+                    <scope line="1427"/>
+                    <declaration name="jfif" type="JFIFMarkerSegment" line="1431"/>
+                </scope>
+                <scope line="1435"/>
+            </method>
+            <method name="resetInternalState" type="void" line="1440">
+                <comment line="1441">
+                    reset C structures                    
+                </comment>
+                <comment line="1444">
+                    reset local Java structures                    
+                </comment>
+            </method>
+            <method name="reset" type="void" line="1463">
+                <scope line="1465"/>
+                <scope line="1467"/>
+            </method>
+            <method name="resetReader" type="void" line="1472"/>
+            <method name="dispose" type="void" line="1474">
+                <scope line="1476">
+                    <scope line="1477"/>
+                </scope>
+                <scope line="1481"/>
+            </method>
+            <method name="disposeReader" type="void" line="1486"/>
+            <class name="JPEGReaderDisposerRecord" line="1488">
+                <implements interface="DisposerRecord"/>
+                <declaration name="pData" type="long" line="1489"/>
+                <method name="JPEGReaderDisposerRecord" type="constructor" line="1491">
+                    <params>
+                        <param name="pData" type="long"/>
+                    </params>
+                </method>
+                <method name="dispose" type="void" line="1495">
+                    <scope line="1496"/>
+                </method>
+            </class>
+            <declaration name="theThread" type="Thread" line="1503"/>
+            <declaration name="theLockCount" type="int" line="1504"/>
+            <method name="setThreadLock" type="void" line="1506">
+                <comment line="1510">
+                    it looks like that this reader instance is used                    
+                </comment>
+                <comment line="1511">
+                    by multiple threads.                    
+                </comment>
+                <declaration name="currThread" type="Thread" line="1507"/>
+                <scope line="1508">
+                    <scope line="1509"/>
+                    <scope line="1516"/>
+                </scope>
+                <scope line="1519"/>
+            </method>
+            <method name="clearThreadLock" type="void" line="1525">
+                <declaration name="currThread" type="Thread" line="1526"/>
+                <scope line="1527"/>
+                <scope line="1534"/>
+            </method>
+        </class>
+        <class name="ImageTypeIterator" line="1540">
+            <comment line="97">
+                The following warnings are converted to strings when used                
+            </comment>
+            <comment line="98">
+                as keys to get localized resources from JPEGImageReaderResources                
+            </comment>
+            <comment line="99">
+                and its children.                
+            </comment>
+            <comment line="130">
+                The following is copied out from C after reading the header.                
+            </comment>
+            <comment line="131">
+                Unlike metadata, which may never be retrieved, we need this                
+            </comment>
+            <comment line="132">
+                if we are to read an image at all.                
+            </comment>
+            <comment line="202">
+                Number of passes                
+            </comment>
+            <comment line="203">
+                IJG default                
+            </comment>
+            <comment line="574">
+                Called by the native code whenever an image header has been
+                 read.  Whether we read metadata or not, we always need this
+                 information, so it is passed back independently of
+                 metadata, which may never be read.                
+            </comment>
+            <comment line="672">
+                ///////// Color Conversion and Image Types                
+            </comment>
+            <comment line="920">
+                ///// End of Color Conversion &amp; Image Types                
+            </comment>
+            <comment line="1278">
+                Provide access to protected superclass method                
+            </comment>
+            <comment line="1283">
+                Provide access to protected superclass method                
+            </comment>
+            <implements interface="Iterator">
+                <type_params>
+                    <type_param name="ImageTypeSpecifier"/>
+                </type_params>
+            </implements>
+            <javadoc line="1540">
+                An internal helper class that wraps producer&apos;s iterator
+                  and extracts specifier instances on demand.                
+            </javadoc>
+            <declaration name="producers" type="Iterator&lt;ImageTypeProducer&gt;" line="1545"/>
+            <declaration name="theNext" type="ImageTypeSpecifier" line="1546"/>
+            <method name="ImageTypeIterator" type="constructor" line="1548">
+                <params>
+                    <param name="producers" type="Iterator<ImageTypeProducer>"/>
+                </params>
+            </method>
+            <method name="hasNext" type="boolean" line="1552">
+                <scope line="1553"/>
+                <scope line="1556"/>
+                <scope line="1559"/>
+            </method>
+            <method name="next" type="ImageTypeSpecifier" line="1566">
+                <scope line="1567">
+                    <declaration name="t" type="ImageTypeSpecifier" line="1568"/>
+                </scope>
+                <scope line="1571"/>
+            </method>
+            <method name="remove" type="void" line="1576"/>
+        </class>
+        <class name="ImageTypeProducer" line="1581">
+            <comment line="97">
+                The following warnings are converted to strings when used                
+            </comment>
+            <comment line="98">
+                as keys to get localized resources from JPEGImageReaderResources                
+            </comment>
+            <comment line="99">
+                and its children.                
+            </comment>
+            <comment line="130">
+                The following is copied out from C after reading the header.                
+            </comment>
+            <comment line="131">
+                Unlike metadata, which may never be retrieved, we need this                
+            </comment>
+            <comment line="132">
+                if we are to read an image at all.                
+            </comment>
+            <comment line="202">
+                Number of passes                
+            </comment>
+            <comment line="203">
+                IJG default                
+            </comment>
+            <comment line="574">
+                Called by the native code whenever an image header has been
+                 read.  Whether we read metadata or not, we always need this
+                 information, so it is passed back independently of
+                 metadata, which may never be read.                
+            </comment>
+            <comment line="672">
+                ///////// Color Conversion and Image Types                
+            </comment>
+            <comment line="920">
+                ///// End of Color Conversion &amp; Image Types                
+            </comment>
+            <comment line="1278">
+                Provide access to protected superclass method                
+            </comment>
+            <comment line="1283">
+                Provide access to protected superclass method                
+            </comment>
+            <javadoc line="1581">
+                An internal helper class that provides means for deferred creation
+                  of ImageTypeSpecifier instance required to describe available
+                  destination types.
+                  This implementation only supports standard
+                  jpeg color spaces (defined by corresponding JCS color space code).
+                  To support other color spaces one can override produce() method to
+                  return custom instance of ImageTypeSpecifier.                
+            </javadoc>
+            <declaration name="type" type="ImageTypeSpecifier" line="1594"/>
+            <declaration name="failed" type="boolean" line="1595"/>
+            <declaration name="csCode" type="int" line="1596"/>
+            <method name="ImageTypeProducer" type="constructor" line="1598">
+                <params>
+                    <param name="csCode" type="int"/>
+                </params>
+            </method>
+            <method name="ImageTypeProducer" type="constructor" line="1602">
+                <comment line="1603">
+                    undefined                    
+                </comment>
+            </method>
+            <method name="getType" type="ImageTypeSpecifier" line="1606">
+                <scope line="1607">
+                    <scope line="1608"/>
+                    <scope line="1610"/>
+                </scope>
+            </method>
+            <declaration name="defaultTypes" type="ImageTypeProducer[]" line="1617"/>
+            <method name="getTypeProducer" type="ImageTypeProducer" line="1620">
+                <params>
+                    <param name="csCode" type="int"/>
+                </params>
+                <scope line="1621"/>
+                <scope line="1624"/>
+            </method>
+            <method name="produce" type="ImageTypeSpecifier" line="1630">
+                <scope line="1650"/>
+                <scope line="1657"/>
+                <scope line="1661"/>
+                <scope line="1668"/>
+            </method>
+        </class>
+    </source>

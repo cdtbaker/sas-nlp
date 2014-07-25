@@ -1,0 +1,1644 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.awt.windows">
+        <import package="java.awt.Color"/>
+        <import package="java.awt.Font"/>
+        <import package="java.awt.Graphics2D"/>
+        <import package="java.awt.GraphicsEnvironment"/>
+        <import package="java.awt.HeadlessException"/>
+        <import package="java.awt.KeyboardFocusManager"/>
+        <import package="java.awt.Toolkit"/>
+        <import package="java.awt.BasicStroke"/>
+        <import package="java.awt.Button"/>
+        <import package="java.awt.Component"/>
+        <import package="java.awt.Dimension"/>
+        <import package="java.awt.Event"/>
+        <import package="java.awt.event.ActionEvent"/>
+        <import package="java.awt.event.ActionListener"/>
+        <import package="java.awt.FileDialog"/>
+        <import package="java.awt.Dialog"/>
+        <import package="java.awt.Label"/>
+        <import package="java.awt.Panel"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.Window"/>
+        <import package="java.awt.image.BufferedImage"/>
+        <import package="java.awt.image.IndexColorModel"/>
+        <import package="java.awt.print.Pageable"/>
+        <import package="java.awt.print.PageFormat"/>
+        <import package="java.awt.print.Paper"/>
+        <import package="java.awt.print.Printable"/>
+        <import package="java.awt.print.PrinterJob"/>
+        <import package="java.awt.print.PrinterException"/>
+        <import package="javax.print.PrintService"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.File"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Properties"/>
+        <import package="java.util.MissingResourceException"/>
+        <import package="java.util.ResourceBundle"/>
+        <import package="sun.awt.Win32GraphicsEnvironment"/>
+        <import package="sun.print.PeekGraphics"/>
+        <import package="sun.print.PeekMetrics"/>
+        <import package="java.net.URL"/>
+        <import package="java.net.URI"/>
+        <import package="java.net.URISyntaxException"/>
+        <import package="javax.print.PrintServiceLookup"/>
+        <import package="javax.print.attribute.PrintRequestAttributeSet"/>
+        <import package="javax.print.attribute.HashPrintServiceAttributeSet"/>
+        <import package="javax.print.attribute.HashPrintRequestAttributeSet"/>
+        <import package="javax.print.attribute.Attribute"/>
+        <import package="javax.print.attribute.standard.Sides"/>
+        <import package="javax.print.attribute.standard.Chromaticity"/>
+        <import package="javax.print.attribute.standard.PrintQuality"/>
+        <import package="javax.print.attribute.standard.PrinterResolution"/>
+        <import package="javax.print.attribute.standard.SheetCollate"/>
+        <import package="javax.print.attribute.IntegerSyntax"/>
+        <import package="javax.print.attribute.standard.Copies"/>
+        <import package="javax.print.attribute.standard.Destination"/>
+        <import package="javax.print.attribute.standard.OrientationRequested"/>
+        <import package="javax.print.attribute.standard.Media"/>
+        <import package="javax.print.attribute.standard.MediaSizeName"/>
+        <import package="javax.print.attribute.standard.MediaSize"/>
+        <import package="javax.print.attribute.standard.MediaTray"/>
+        <import package="javax.print.attribute.standard.PrinterName"/>
+        <import package="javax.print.attribute.standard.JobMediaSheetsSupported"/>
+        <import package="javax.print.attribute.standard.PageRanges"/>
+        <import package="javax.print.attribute.Size2DSyntax"/>
+        <import package="javax.print.StreamPrintService"/>
+        <import package="sun.awt.Win32FontManager"/>
+        <import package="sun.print.RasterPrinterJob"/>
+        <import package="sun.print.SunAlternateMedia"/>
+        <import package="sun.print.SunPageSelection"/>
+        <import package="sun.print.SunMinMaxPage"/>
+        <import package="sun.print.Win32MediaTray"/>
+        <import package="sun.print.Win32PrintService"/>
+        <import package="sun.print.Win32PrintServiceLookup"/>
+        <import package="sun.print.ServiceDialog"/>
+        <import package="sun.print.DialogOwner"/>
+        <import package="java.awt.Frame"/>
+        <import package="java.io.FilePermission"/>
+        <import package="sun.java2d.Disposer"/>
+        <import package="sun.java2d.DisposerRecord"/>
+        <import package="sun.java2d.DisposerTarget"/>
+        <class name="WPrinterJob" line="120">
+            <extends class="RasterPrinterJob"/>
+            <comment line="128">
+                                
+            </comment>
+            <comment line="131">
+                                
+            </comment>
+            <comment line="204">
+                Collation and copy flags.
+                 The Windows PRINTDLG struct has a nCopies field which on return
+                 indicates how many copies of a print job an application must render.
+                 There is also a PD_COLLATE member of the flags field which if
+                 set on return indicates the application generated copies should be
+                 collated.
+                 Windows printer drivers typically - but not always - support
+                 generating multiple copies themselves, but uncollated is more
+                 universal than collated copies.
+                 When they do, they read the initial values from the PRINTDLG structure
+                 and set them into the driver&apos;s DEVMODE structure and intialise
+                 the printer DC based on that, so that when printed those settings
+                 will be used.
+                 For drivers supporting both these capabilities via DEVMODE, then on
+                 return from the Print Dialog, nCopies is set to 1 and the PD_COLLATE is
+                 cleared, so that the application will only render 1 copy and the
+                 driver takes care of the rest.
+                
+                 Applications which want to know what&apos;s going on have to be DEVMODE
+                 savvy and peek at that.
+                 DM_COPIES flag indicates support for multiple driver copies
+                 and dmCopies is the number of copies the driver will print
+                 DM_COLLATE flag indicates support for collated driver copies and
+                 dmCollate == DMCOLLATE_TRUE indicates the option is in effect.
+                
+                 Multiple copies from Java applications:
+                 We provide API to get &amp; set the number of copies as well as allowing the
+                 user to choose it, so we need to be savvy about DEVMODE, so that
+                 we can accurately report back the number of copies selected by
+                 the user, as well as make use of the driver to render multiple copies.
+                
+                 Collation and Java applications:
+                 We presently provide no API for specifying collation, but its
+                 present on the Windows Print Dialog, and when a user checks it
+                 they expect it to be obeyed.
+                 The best thing to do is to detect exactly the cases where the
+                 driver doesn&apos;t support this and render multiple copies ourselves.
+                 To support all this we need several flags which signal the
+                 printer&apos;s capabilities and the user&apos;s requests.
+                 Its questionable if we (yet) need to make a distinction between
+                 the user requesting collation and the driver supporting it.
+                 Since for now we only need to know whether we need to render the
+                 copies. However it allows the logic to be clearer.
+                 These fields are changed by native code which detects the driver&apos;s
+                 capabilities and the user&apos;s choices.                
+            </comment>
+            <comment line="251">
+                initialize to false because the Flags that we initialized in PRINTDLG                
+            </comment>
+            <comment line="252">
+                tells GDI that we can handle our own collation and multiple copies                
+            </comment>
+            <comment line="258">
+                The HandleRecord holds the native resources that need to be freed
+                 when this WPrinterJob is GC&apos;d.                
+            </comment>
+            <comment line="284">
+                These fields are directly set in upcalls from the values
+                 obtained from calling DeviceCapabilities()                
+            </comment>
+            <comment line="287">
+                pixels per inch in x direction                
+            </comment>
+            <comment line="289">
+                pixels per inch in y direction                
+            </comment>
+            <comment line="291">
+                x offset in pixels of printable area                
+            </comment>
+            <comment line="293">
+                y offset in pixels of printable area                
+            </comment>
+            <comment line="295">
+                width in pixels of printable area                
+            </comment>
+            <comment line="297">
+                height in pixels of printable area                
+            </comment>
+            <comment line="299">
+                width in pixels of entire page                
+            </comment>
+            <comment line="301">
+                height in pixels of entire page                
+            </comment>
+            <comment line="303">
+                The values of the following variables are pulled directly
+                 into native code (even bypassing getter methods) when starting a doc.
+                 So these need to be synced up from any resulting native changes
+                 by a user dialog.
+                 But the native changes call up to into the attributeset, and that
+                 should be sufficient, since before heading down to native either
+                 to (re-)display a dialog, or to print the doc, these are all
+                 re-populated from the AttributeSet,
+                 Nonetheless having them in sync with the attributeset and native
+                 state is probably safer.
+                 Also whereas the startDoc native code pulls the variables directly,
+                 the dialog code does use getter to pull some of these values.
+                 That&apos;s an inconsistency we should fix if it causes problems.                
+            </comment>
+            <comment line="352">
+                for AwtPrintControl::InitPrintDialog                
+            </comment>
+            <comment line="357">
+                                
+            </comment>
+            <comment line="368">
+                                
+            </comment>
+            <comment line="377">
+                Implement DisposerTarget. Weak references to an Object can delay
+                 its storage reclaimation marginally.
+                 It won&apos;t make the native resources be release any more quickly, but
+                 by pointing the reference held by Disposer at an object which becomes
+                 no longer strongly reachable when this WPrinterJob is no longer
+                 strongly reachable, we allow the WPrinterJob to be freed more promptly
+                 than if it were the referenced object.                
+            </comment>
+            <comment line="391">
+                                
+            </comment>
+            <comment line="599">
+                                
+            </comment>
+            <comment line="874">
+                                
+            </comment>
+            <comment line="947">
+                Create a Window&apos;s solid brush for the color specified
+                 by &lt;code&gt;(red, green, blue)&lt;code&gt;. Once the brush
+                 is created, select it in the current printing device
+                 context and free the old brush.                
+            </comment>
+            <comment line="1196">
+                If &apos;icm&apos; is null we expect its 24 bit (ie 3BYTE_BGR).
+                 If &apos;icm&apos; is non-null we expect its no more than 8 bpp and
+                 specifically must be a valid DIB sizes : 1, 4 or 8 bpp.
+                 Then we need to extract the colours into a byte array of the
+                 format required by GDI which is an array of &apos;RGBQUAD&apos;
+                 RGBQUAD looks like :
+                 typedef struct tagRGBQUAD {
+                    BYTE    rgbBlue;
+                    BYTE    rgbGreen;
+                    BYTE    rgbRed;
+                    BYTE    rgbReserved;  must be zero.
+                 } RGBQUAD;
+                 There&apos;s no alignment problem as GDI expects this to be packed
+                 and each struct will start on a 4 byte boundary anyway.                
+            </comment>
+            <comment line="1283">
+                                
+            </comment>
+            <comment line="1298">
+                Make sure printer DC is intialised and that info about the printer
+                 is reflected back up to Java code                
+            </comment>
+            <comment line="1523">
+                ** BEGIN Functions called by native code for querying/updating attributes                
+            </comment>
+            <comment line="1532">
+                                
+            </comment>
+            <comment line="1551">
+                                
+            </comment>
+            <comment line="1575">
+                                
+            </comment>
+            <comment line="1598">
+                returns 1-based index for &quot;From&quot; page                
+            </comment>
+            <comment line="1611">
+                returns 1-based index for &quot;To&quot; page                
+            </comment>
+            <comment line="1660">
+                                
+            </comment>
+            <comment line="1681">
+                                
+            </comment>
+            <comment line="1700">
+                                
+            </comment>
+            <comment line="1762">
+                                
+            </comment>
+            <comment line="1907">
+                                
+            </comment>
+            <implements interface="DisposerTarget"/>
+            <javadoc line="120">
+                A class which initiates and executes a Win32 printer job.                
+                <author>
+                    Richard Blanchard                    
+                </author>
+            </javadoc>
+            <declaration name="PS_ENDCAP_ROUND" type="long" line="132"/>
+            <javadoc line="132">
+                These are Windows&apos; ExtCreatePen End Cap Styles
+                  and must match the values in &lt;WINGDI.h&gt;                
+            </javadoc>
+            <declaration name="PS_ENDCAP_SQUARE" type="long" line="137"/>
+            <declaration name="PS_ENDCAP_FLAT" type="long" line="138"/>
+            <declaration name="PS_JOIN_ROUND" type="long" line="140"/>
+            <javadoc line="140">
+                These are Windows&apos; ExtCreatePen Line Join Styles
+                  and must match the values in &lt;WINGDI.h&gt;                
+            </javadoc>
+            <declaration name="PS_JOIN_BEVEL" type="long" line="145"/>
+            <declaration name="PS_JOIN_MITER" type="long" line="146"/>
+            <declaration name="POLYFILL_ALTERNATE" type="int" line="148"/>
+            <javadoc line="148">
+                This is the Window&apos;s Polygon fill rule which
+                  Selects alternate mode (fills the area between odd-numbered
+                  and even-numbered polygon sides on each scan line).
+                  It must match the value in &lt;WINGDI.h&gt; It can be passed
+                  to setPolyFillMode().                
+            </javadoc>
+            <declaration name="POLYFILL_WINDING" type="int" line="157"/>
+            <javadoc line="157">
+                This is the Window&apos;s Polygon fill rule which
+                  Selects winding mode which fills any region
+                  with a nonzero winding value). It must match
+                  the value in &lt;WINGDI.h&gt; It can be passed
+                  to setPolyFillMode().                
+            </javadoc>
+            <declaration name="MAX_WCOLOR" type="int" line="166"/>
+            <javadoc line="166">
+                The maximum value for a Window&apos;s color component
+                  as passed to selectSolidBrush.                
+            </javadoc>
+            <declaration name="SET_DUP_VERTICAL" type="int" line="172"/>
+            <javadoc line="172">
+                Flags for setting values from devmode in native code.
+                  Values must match those defined in awt_PrintControl.cpp                
+            </javadoc>
+            <declaration name="SET_DUP_HORIZONTAL" type="int" line="177"/>
+            <declaration name="SET_RES_HIGH" type="int" line="178"/>
+            <declaration name="SET_RES_LOW" type="int" line="179"/>
+            <declaration name="SET_COLOR" type="int" line="180"/>
+            <declaration name="SET_ORIENTATION" type="int" line="181"/>
+            <declaration name="PD_ALLPAGES" type="int" line="183"/>
+            <javadoc line="183">
+                Values must match those defined in wingdi.h &amp; commdlg.h                
+            </javadoc>
+            <declaration name="PD_SELECTION" type="int" line="187"/>
+            <declaration name="PD_PAGENUMS" type="int" line="188"/>
+            <declaration name="PD_NOSELECTION" type="int" line="189"/>
+            <declaration name="PD_COLLATE" type="int" line="190"/>
+            <declaration name="PD_PRINTTOFILE" type="int" line="191"/>
+            <declaration name="DM_ORIENTATION" type="int" line="192"/>
+            <declaration name="DM_PRINTQUALITY" type="int" line="193"/>
+            <declaration name="DM_COLOR" type="int" line="194"/>
+            <declaration name="DM_DUPLEX" type="int" line="195"/>
+            <declaration name="MAX_UNKNOWN_PAGES" type="int" line="197"/>
+            <javadoc line="197">
+                Pageable MAX pages                
+            </javadoc>
+            <declaration name="driverDoesMultipleCopies" type="boolean" line="252"/>
+            <declaration name="driverDoesCollation" type="boolean" line="253"/>
+            <declaration name="userRequestedCollation" type="boolean" line="254"/>
+            <declaration name="noDefaultPrinter" type="boolean" line="255"/>
+            <class name="HandleRecord" line="260">
+                <implements interface="DisposerRecord"/>
+                <declaration name="mPrintDC" type="long" line="261"/>
+                <javadoc line="261">
+                    The Windows device context we will print into.
+                      This variable is set after the Print dialog
+                      is okayed by the user. If the user cancels
+                      the print dialog, then this variable is 0.
+                      Much of the configuration information for a printer is
+                      obtained through printer device specific handles.
+                      We need to associate these with, and free with, the mPrintDC.                    
+                </javadoc>
+                <declaration name="mPrintHDevMode" type="long" line="271"/>
+                <declaration name="mPrintHDevNames" type="long" line="272"/>
+                <method name="dispose" type="void" line="274"/>
+            </class>
+            <declaration name="handleRecord" type="HandleRecord" line="279"/>
+            <declaration name="mPrintPaperSize" type="int" line="281"/>
+            <declaration name="mPrintXRes" type="int" line="286"/>
+            <declaration name="mPrintYRes" type="int" line="288"/>
+            <declaration name="mPrintPhysX" type="int" line="290"/>
+            <declaration name="mPrintPhysY" type="int" line="292"/>
+            <declaration name="mPrintWidth" type="int" line="294"/>
+            <declaration name="mPrintHeight" type="int" line="296"/>
+            <declaration name="mPageWidth" type="int" line="298"/>
+            <declaration name="mPageHeight" type="int" line="300"/>
+            <declaration name="mAttSides" type="int" line="316"/>
+            <declaration name="mAttChromaticity" type="int" line="317"/>
+            <declaration name="mAttXRes" type="int" line="318"/>
+            <declaration name="mAttYRes" type="int" line="319"/>
+            <declaration name="mAttQuality" type="int" line="320"/>
+            <declaration name="mAttCollate" type="int" line="321"/>
+            <declaration name="mAttCopies" type="int" line="322"/>
+            <declaration name="mAttMediaSizeName" type="int" line="323"/>
+            <declaration name="mAttMediaTray" type="int" line="324"/>
+            <declaration name="mDestination" type="String" line="326"/>
+            <declaration name="mLastColor" type="Color" line="328"/>
+            <javadoc line="328">
+                The last color set into the print device context or
+                  &lt;code&gt;null&lt;/code&gt; if no color has been set.                
+            </javadoc>
+            <declaration name="mLastTextColor" type="Color" line="334"/>
+            <javadoc line="334">
+                The last text color set into the print device context or
+                  &lt;code&gt;null&lt;/code&gt; if no color has been set.                
+            </javadoc>
+            <declaration name="mLastFontFamily" type="String" line="340"/>
+            <javadoc line="340">
+                Define the most recent java font set as a GDI font in the printer
+                  device context. mLastFontFamily will be NULL if no
+                  GDI font has been set.                
+            </javadoc>
+            <declaration name="mLastFontSize" type="float" line="346"/>
+            <declaration name="mLastFontStyle" type="int" line="347"/>
+            <declaration name="mLastRotation" type="int" line="348"/>
+            <declaration name="mLastAwScale" type="float" line="349"/>
+            <declaration name="pjob" type="PrinterJob" line="352"/>
+            <declaration name="dialogOwnerPeer" type="java.awt.peer.ComponentPeer" line="354"/>
+            <scope line="358"/>
+            <method name="WPrinterJob" type="constructor" line="370"/>
+            <declaration name="disposerReferent" type="Object" line="384"/>
+            <method name="getDisposerReferent" type="Object" line="386"/>
+            <javadoc line="392">
+                Display a dialog to the user allowing the modification of a
+                  PageFormat instance.
+                  The &lt;code&gt;page&lt;/code&gt; argument is used to initialize controls
+                  in the page setup dialog.
+                  If the user cancels the dialog, then the method returns the
+                  original &lt;code&gt;page&lt;/code&gt; object unmodified.
+                  If the user okays the dialog then the method returns a new
+                  PageFormat object with the indicated changes.
+                  In either case the original &lt;code&gt;page&lt;/code&gt; object will
+                  not be modified.                
+                <param>
+                    page    the default PageFormat presented to the user
+                      for modification                    
+                </param>
+                <return>
+                    the original <code>page</code> object if the dialog
+                      is cancelled, or a new PageFormat object containing
+                      the format indicated by the user if the dialog is
+                      acknowledged                    
+                </return>
+                <exception>
+                    HeadlessException if GraphicsEnvironment.isHeadless()
+                      returns true.                    
+                </exception>
+                <see>
+                    java.awt.GraphicsEnvironment#isHeadless                    
+                </see>
+                <since>
+                    JDK1.2                    
+                </since>
+            </javadoc>
+            <method name="pageDialog" type="PageFormat" line="414">
+                <params>
+                    <param name="page" type="PageFormat"/>
+                </params>
+                <comment line="426">
+                    Fix for 4507585: show the native modal dialog the same way printDialog() does so
+                     that it won&apos;t block event dispatching when called on EventDispatchThread.                    
+                </comment>
+                <comment line="437">
+                    myService =&gt; current PrintService                    
+                </comment>
+                <comment line="439">
+                    It&apos;s possible that current printer is changed through                    
+                </comment>
+                <comment line="440">
+                    the &quot;Printer...&quot; button so we query again from native.                    
+                </comment>
+                <comment line="443">
+                    native printer is different !                    
+                </comment>
+                <comment line="444">
+                    we update the current PrintService                    
+                </comment>
+                <comment line="452">
+                    Update attributes, this will preserve the page settings.                    
+                </comment>
+                <comment line="453">
+                    - same code as in RasterPrinterJob.java                    
+                </comment>
+                <scope line="415"/>
+                <scope line="419"/>
+                <declaration name="pageClone" type="PageFormat" line="423"/>
+                <declaration name="result" type="boolean" line="424"/>
+                <declaration name="dialog" type="WPageDialog" line="430"/>
+                <scope line="438">
+                    <declaration name="printerName" type="String" line="441"/>
+                    <scope line="442">
+                        <scope line="445"/>
+                        <scope line="449"/>
+                    </scope>
+                </scope>
+                <scope line="457"/>
+            </method>
+            <method name="displayNativeDialog" type="boolean" line="463">
+                <comment line="464">
+                    &quot;attributes&quot; is required for getting the updated attributes                    
+                </comment>
+                <comment line="494">
+                    Old code destURI.getPath() would return null for &quot;file:out.prn&quot;                    
+                </comment>
+                <comment line="495">
+                    so we use getSchemeSpecificPart instead.                    
+                </comment>
+                <scope line="465"/>
+                <declaration name="dlgOwner" type="DialogOwner" line="469"/>
+                <declaration name="ownerFrame" type="Frame" line="470"/>
+                <declaration name="dialog" type="WPrintDialog" line="472"/>
+                <declaration name="prv" type="boolean" line="475"/>
+                <declaration name="dest" type="Destination" line="478"/>
+                <scope line="480"/>
+                <scope line="482">
+                    <declaration name="title" type="String" line="483"/>
+                    <declaration name="strBundle" type="String" line="484"/>
+                    <declaration name="rb" type="ResourceBundle" line="485"/>
+                    <scope line="486"/>
+                    <scope line="488"/>
+                    <declaration name="fileDialog" type="FileDialog" line="490"/>
+                    <declaration name="destURI" type="URI" line="493"/>
+                    <declaration name="pathName" type="String" line="496"/>
+                    <scope line="498">
+                        <declaration name="file" type="File" line="499"/>
+                        <declaration name="parent" type="File" line="501"/>
+                        <scope line="502"/>
+                    </scope>
+                    <scope line="505"/>
+                    <declaration name="fileName" type="String" line="510"/>
+                    <scope line="511"/>
+                    <declaration name="fullName" type="String" line="515"/>
+                    <declaration name="f" type="File" line="516"/>
+                    <declaration name="pFile" type="File" line="517"/>
+                    <scope line="521">
+                        <scope line="530"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="545">
+                Presents the user a dialog for changing properties of the
+                  print job interactively.                
+                <returns>
+                    false if the user cancels the dialog and
+                      true otherwise.                    
+                </returns>
+                <exception>
+                    HeadlessException if GraphicsEnvironment.isHeadless()
+                      returns true.                    
+                </exception>
+                <see>
+                    java.awt.GraphicsEnvironment#isHeadless                    
+                </see>
+            </javadoc>
+            <method name="printDialog" type="boolean" line="554">
+                <comment line="559">
+                    current request attribute set should be reflected to the print dialog.                    
+                </comment>
+                <comment line="560">
+                    If null, create new instance of HashPrintRequestAttributeSet.                    
+                </comment>
+                <scope line="556"/>
+                <scope line="561"/>
+                <scope line="565"/>
+                <scope line="569"/>
+                <scope line="571"/>
+            </method>
+            <javadoc line="576">
+                Associate this PrinterJob with a new PrintService.
+                  Throws &lt;code&gt;PrinterException&lt;/code&gt; if the specified service
+                  cannot support the &lt;code&gt;Pageable&lt;/code&gt; and
+                  &lt;/code&gt;Printable&lt;/code&gt; interfaces necessary to support 2D printing.                
+                <param>
+                    a print service which supports 2D printing.                    
+                </param>
+                <throws>
+                    PrinterException if the specified service does not support
+                      2D printing.                    
+                </throws>
+            </javadoc>
+            <method name="setPrintService" type="void" line="588">
+                <params>
+                    <param name="service" type="PrintService"/>
+                </params>
+                <scope line="590"/>
+            </method>
+            <method name="setNativePrintService" type="void" line="599"/>
+            <method name="getPrintService" type="PrintService" line="602">
+                <comment line="609">
+                    no need to call setNativePrintService as this name is                    
+                </comment>
+                <comment line="610">
+                    currently set in native                    
+                </comment>
+                <scope line="603">
+                    <declaration name="printerName" type="String" line="604"/>
+                    <scope line="606">
+                        <scope line="611"/>
+                    </scope>
+                    <scope line="617">
+                        <scope line="618"/>
+                        <scope line="620"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getNativePrintService" type="String" line="629"/>
+            <method name="initAttributeMembers" type="void" line="631"/>
+            <javadoc line="645">
+                copy the attributes to the native print job
+                  Note that this method, and hence the re-initialisation
+                  of the GDI values is done on each entry to the print dialog since
+                  an app could redisplay the print dialog for the same job and
+                  1) the application may have changed attribute settings
+                  2) the application may have changed the printer.
+                  In the event that the user changes the printer using the
+                  dialog, then it is up to GDI to report back all changed values.                
+            </javadoc>
+            <method name="setAttributes" type="void" line="656">
+                <params>
+                    <param name="attributes" type="PrintRequestAttributeSet"/>
+                </params>
+                <comment line="658">
+                    initialize attribute values                    
+                </comment>
+                <comment line="666">
+                    now always use attributes, so this shouldn&apos;t happen.                    
+                </comment>
+                <comment line="688">
+                    SunAlternateMedia is used if its a tray, and
+                     any Media that is specified is not a tray.                    
+                </comment>
+                <scope line="665"/>
+                <declaration name="attrs" type="Attribute[]" line="668"/>
+                <scope line="669">
+                    <declaration name="attr" type="Attribute" line="670"/>
+                    <scope line="671">
+                        <scope line="672"/>
+                        <scope line="675"/>
+                        <scope line="678"/>
+                        <scope line="681"/>
+                        <scope line="684"/>
+                        <scope line="687">
+                            <scope line="691">
+                                <declaration name="media" type="Media" line="692"/>
+                                <scope line="694"/>
+                            </scope>
+                            <scope line="698"/>
+                            <scope line="701"/>
+                        </scope>
+                    </scope>
+                    <scope line="706"/>
+                </scope>
+            </method>
+            <method name="getDefaultPage" type="void" line="711"/>
+            <javadoc line="711">
+                Alters the orientation and Paper to match defaults obtained
+                  from a printer.                
+            </javadoc>
+            <javadoc line="717">
+                The passed in PageFormat will be copied and altered to describe
+                  the default page size and orientation of the PrinterJob&apos;s
+                  current printer.
+                  Note: PageFormat.getPaper() returns a clone and getDefaultPage()
+                  gets that clone so it won&apos;t overwrite the original paper.                
+            </javadoc>
+            <method name="defaultPage" type="PageFormat" line="724">
+                <params>
+                    <param name="page" type="PageFormat"/>
+                </params>
+                <declaration name="newPage" type="PageFormat" line="725"/>
+            </method>
+            <method name="validatePaper" type="void" line="730"/>
+            <javadoc line="730">
+                validate the paper size against the current printer.                
+            </javadoc>
+            <javadoc line="735">
+                Examine the metrics captured by the
+                  &lt;code&gt;PeekGraphics&lt;/code&gt; instance and
+                  if capable of directly converting this
+                  print job to the printer&apos;s control language
+                  or the native OS&apos;s graphics primitives, then
+                  return a &lt;code&gt;PathGraphics&lt;/code&gt; to perform
+                  that conversion. If there is not an object
+                  capable of the conversion then return
+                  &lt;code&gt;null&lt;/code&gt;. Returning &lt;code&gt;null&lt;/code&gt;
+                  causes the print job to be rasterized.                
+            </javadoc>
+            <method name="createPathGraphics" type="Graphics2D" line="752">
+                <params>
+                    <param name="peekGraphics" type="PeekGraphics"/>
+                    <param name="printerJob" type="PrinterJob"/>
+                    <param name="painter" type="Printable"/>
+                    <param name="pageFormat" type="PageFormat"/>
+                    <param name="pageIndex" type="int"/>
+                </params>
+                <comment line="757">
+                    If the application has drawn anything that
+                     out PathGraphics class can not handle then
+                     return a null PathGraphics. If the property
+                     to force the raster pipeline has been set then
+                     we also want to avoid the path (pdl) pipeline
+                     and return null.                    
+                </comment>
+                <declaration name="pathGraphics" type="WPathGraphics" line="754"/>
+                <declaration name="metrics" type="PeekMetrics" line="755"/>
+                <scope line="767"/>
+                <scope line="769">
+                    <declaration name="bufferedImage" type="BufferedImage" line="770"/>
+                    <declaration name="bufferedGraphics" type="Graphics2D" line="772"/>
+                    <declaration name="canRedraw" type="boolean" line="774"/>
+                </scope>
+            </method>
+            <method name="getXRes" type="double" line="784">
+                <scope line="785"/>
+                <scope line="787"/>
+            </method>
+            <method name="getYRes" type="double" line="792">
+                <scope line="793"/>
+                <scope line="795"/>
+            </method>
+            <method name="getPhysicalPrintableX" type="double" line="800">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <method name="getPhysicalPrintableY" type="double" line="804">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <method name="getPhysicalPrintableWidth" type="double" line="808">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <method name="getPhysicalPrintableHeight" type="double" line="812">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <method name="getPhysicalPageWidth" type="double" line="816">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <method name="getPhysicalPageHeight" type="double" line="820">
+                <params>
+                    <param name="p" type="Paper"/>
+                </params>
+            </method>
+            <javadoc line="824">
+                We don&apos;t (yet) provide API to support collation, and
+                  when we do the logic here will require adjustment, but
+                  this method is currently necessary to honour user-originated
+                  collation requests - which can only originate from the print dialog.
+                  REMIND: check if this can be deleted already.                
+            </javadoc>
+            <method name="isCollated" type="boolean" line="831"/>
+            <javadoc line="835">
+                Returns how many times the entire book should
+                  be printed by the PrintJob. If the printer
+                  itself supports collation then this method
+                  should return 1 indicating that the entire
+                  book need only be printed once and the copies
+                  will be collated and made in the printer.                
+            </javadoc>
+            <method name="getCollatedCopies" type="int" line="843">
+                <comment line="847">
+                    we will do our own collation so we need to                    
+                </comment>
+                <comment line="848">
+                    tell the printer to not collate                    
+                </comment>
+                <scope line="846"/>
+            </method>
+            <javadoc line="857">
+                Returns how many times each page in the book
+                  should be consecutively printed by PrinterJob.
+                  If the underlying Window&apos;s driver will
+                  generate the copies, rather than having RasterPrinterJob
+                  iterate over the number of copies, this method always returns
+                  1.                
+            </javadoc>
+            <method name="getNoncollatedCopies" type="int" line="865">
+                <scope line="866"/>
+                <scope line="868"/>
+            </method>
+            <javadoc line="875">
+                Return the Window&apos;s device context that we are printing
+                  into.                
+            </javadoc>
+            <method name="getPrintDC" type="long" line="879"/>
+            <method name="setPrintDC" type="void" line="883">
+                <params>
+                    <param name="mPrintDC" type="long"/>
+                </params>
+            </method>
+            <method name="getDevMode" type="long" line="887"/>
+            <method name="setDevMode" type="void" line="891">
+                <params>
+                    <param name="mPrintHDevMode" type="long"/>
+                </params>
+            </method>
+            <method name="getDevNames" type="long" line="895"/>
+            <method name="setDevNames" type="void" line="899">
+                <params>
+                    <param name="mPrintHDevNames" type="long"/>
+                </params>
+            </method>
+            <method name="beginPath" type="void" line="903"/>
+            <method name="endPath" type="void" line="907"/>
+            <method name="closeFigure" type="void" line="911"/>
+            <method name="fillPath" type="void" line="915"/>
+            <method name="moveTo" type="void" line="919">
+                <params>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="lineTo" type="void" line="923">
+                <params>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="polyBezierTo" type="void" line="929">
+                <params>
+                    <param name="control1x" type="float"/>
+                    <param name="control1y" type="float"/>
+                    <param name="control2x" type="float"/>
+                    <param name="control2y" type="float"/>
+                    <param name="endX" type="float"/>
+                    <param name="endY" type="float"/>
+                </params>
+            </method>
+            <javadoc line="936">
+                Set the current polgon fill rule into the printer device context.
+                  The &lt;code&gt;fillRule&lt;/code&gt; should
+                  be one of the following Windows constants:
+                  &lt;code&gt;ALTERNATE&lt;/code&gt; or &lt;code&gt;WINDING&lt;/code&gt;.                
+            </javadoc>
+            <method name="setPolyFillMode" type="void" line="942">
+                <params>
+                    <param name="fillRule" type="int"/>
+                </params>
+            </method>
+            <method name="selectSolidBrush" type="void" line="952">
+                <params>
+                    <param name="color" type="Color"/>
+                </params>
+                <comment line="954">
+                    We only need to select a brush if the color has changed.                    
+                </comment>
+                <scope line="956">
+                    <declaration name="rgb" type="float[]" line="958"/>
+                </scope>
+            </method>
+            <javadoc line="967">
+                Return the x coordinate of the current pen
+                  position in the print device context.                
+            </javadoc>
+            <method name="getPenX" type="int" line="971"/>
+            <javadoc line="977">
+                Return the y coordinate of the current pen
+                  position in the print device context.                
+            </javadoc>
+            <method name="getPenY" type="int" line="981"/>
+            <javadoc line="986">
+                Set the current path in the printer device&apos;s
+                  context to be clipping path.                
+            </javadoc>
+            <method name="selectClipPath" type="void" line="990"/>
+            <method name="frameRect" type="void" line="995">
+                <params>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="width" type="float"/>
+                    <param name="height" type="float"/>
+                </params>
+            </method>
+            <method name="fillRect" type="void" line="1000">
+                <params>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="width" type="float"/>
+                    <param name="height" type="float"/>
+                    <param name="color" type="Color"/>
+                </params>
+                <declaration name="rgb" type="float[]" line="1001"/>
+            </method>
+            <method name="selectPen" type="void" line="1010">
+                <params>
+                    <param name="width" type="float"/>
+                    <param name="color" type="Color"/>
+                </params>
+                <declaration name="rgb" type="float[]" line="1012"/>
+            </method>
+            <method name="selectStylePen" type="boolean" line="1022">
+                <params>
+                    <param name="cap" type="int"/>
+                    <param name="join" type="int"/>
+                    <param name="width" type="float"/>
+                    <param name="color" type="Color"/>
+                </params>
+                <declaration name="endCap" type="long" line="1024"/>
+                <declaration name="lineJoin" type="long" line="1025"/>
+                <declaration name="rgb" type="float[]" line="1027"/>
+            </method>
+            <javadoc line="1049">
+                Set a GDI font capable of drawing the java Font
+                  passed in.                
+            </javadoc>
+            <method name="setFont" type="boolean" line="1054">
+                <params>
+                    <param name="family" type="String"/>
+                    <param name="size" type="float"/>
+                    <param name="style" type="int"/>
+                    <param name="rotation" type="int"/>
+                    <param name="awScale" type="float"/>
+                </params>
+                <declaration name="didSetFont" type="boolean" line="1056"/>
+                <scope line="1062">
+                    <scope line="1070"/>
+                </scope>
+            </method>
+            <javadoc line="1081">
+                Set the GDI color for text drawing.                
+            </javadoc>
+            <method name="setTextColor" type="void" line="1084">
+                <params>
+                    <param name="color" type="Color"/>
+                </params>
+                <comment line="1086">
+                    We only need to select a brush if the color has changed.                    
+                </comment>
+                <scope line="1088">
+                    <declaration name="rgb" type="float[]" line="1090"/>
+                </scope>
+            </method>
+            <javadoc line="1099">
+                Remove control characters.                
+            </javadoc>
+            <method name="removeControlChars" type="String" line="1102">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <javadoc line="1106">
+                Draw the string &lt;code&gt;text&lt;/code&gt; to the printer&apos;s
+                  device context at the specified position.                
+            </javadoc>
+            <method name="textOut" type="void" line="1111">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="positions" type="float[]"/>
+                </params>
+                <comment line="1112">
+                    Don&apos;t leave handling of control chars to GDI.
+                     If control chars are removed,  &apos;positions&apos; isn&apos;t valid.
+                     This means the caller needs to be aware of this and remove
+                     control chars up front if supplying positions. Since the
+                     caller is tightly integrated here, that&apos;s acceptable.                    
+                </comment>
+                <declaration name="text" type="String" line="1118"/>
+                <scope line="1120"/>
+            </method>
+            <javadoc line="1126">
+                Draw the glyphs &lt;code&gt;glyphs&lt;/code&gt; to the printer&apos;s
+                  device context at the specified position.                
+            </javadoc>
+            <method name="glyphsOut" type="void" line="1131">
+                <params>
+                    <param name="glyphs" type="int[]"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="positions" type="float[]"/>
+                </params>
+                <comment line="1133">
+                    TrueType glyph codes are 16 bit values, so can be packed
+                     in a unicode string, and that&apos;s how GDI expects them.
+                     A flag bit is set to indicate to GDI that these are glyphs,
+                     not characters. The positions array must always be non-null
+                     here for our purposes, although if not supplied, GDI should
+                     just use the default advances for the glyphs.
+                     Mask out upper 16 bits to remove any slot from a composite.                    
+                </comment>
+                <declaration name="glyphCharArray" type="char[]" line="1141"/>
+                <scope line="1142"/>
+                <declaration name="glyphStr" type="String" line="1145"/>
+            </method>
+            <javadoc line="1150">
+                Get the advance of this text that GDI returns for the
+                  font currently selected into the GDI device context for
+                  this job. Note that the removed control characters are
+                  interpreted as zero-width by JDK and we remove them for
+                  rendering so also remove them for measurement so that
+                  this measurement can be properly compared with JDK measurement.                
+            </javadoc>
+            <method name="getGDIAdvance" type="int" line="1158">
+                <params>
+                    <param name="text" type="String"/>
+                </params>
+                <comment line="1159">
+                                        
+                </comment>
+                <scope line="1161"/>
+            </method>
+            <javadoc line="1167">
+                Draw the 24 bit BGR image buffer represented by
+                  &lt;code&gt;image&lt;/code&gt; to the GDI device context
+                  &lt;code&gt;printDC&lt;/code&gt;. The image is drawn at
+                  &lt;code&gt;(destX, destY)&lt;/code&gt; in device coordinates.
+                  The image is scaled into a square of size
+                  specified by &lt;code&gt;destWidth&lt;/code&gt; and
+                  &lt;code&gt;destHeight&lt;/code&gt;. The portion of the
+                  source image copied into that square is specified
+                  by &lt;code&gt;srcX&lt;/code&gt;, &lt;code&gt;srcY&lt;/code&gt;,
+                  &lt;code&gt;srcWidth&lt;/code&gt;, and srcHeight.                
+            </javadoc>
+            <method name="drawImage3ByteBGR" type="void" line="1183">
+                <params>
+                    <param name="image" type="byte[]"/>
+                    <param name="destX" type="float"/>
+                    <param name="destY" type="float"/>
+                    <param name="destWidth" type="float"/>
+                    <param name="destHeight" type="float"/>
+                    <param name="srcX" type="float"/>
+                    <param name="srcY" type="float"/>
+                    <param name="srcWidth" type="float"/>
+                    <param name="srcHeight" type="float"/>
+                </params>
+            </method>
+            <method name="drawDIBImage" type="void" line="1216">
+                <params>
+                    <param name="image" type="byte[]"/>
+                    <param name="destX" type="float"/>
+                    <param name="destY" type="float"/>
+                    <param name="destWidth" type="float"/>
+                    <param name="destHeight" type="float"/>
+                    <param name="srcX" type="float"/>
+                    <param name="srcY" type="float"/>
+                    <param name="srcWidth" type="float"/>
+                    <param name="srcHeight" type="float"/>
+                    <param name="sampleBitsPerPixel" type="int"/>
+                    <param name="icm" type="IndexColorModel"/>
+                </params>
+                <declaration name="bitCount" type="int" line="1217"/>
+                <declaration name="bmiColors" type="byte[]" line="1218"/>
+                <scope line="1220">
+                    <scope line="1223"/>
+                </scope>
+            </method>
+            <javadoc line="1238">
+                Begin a new page.                
+            </javadoc>
+            <method name="startPage" type="void" line="1242">
+                <params>
+                    <param name="format" type="PageFormat"/>
+                    <param name="painter" type="Printable"/>
+                    <param name="index" type="int"/>
+                    <param name="paperChanged" type="boolean"/>
+                </params>
+                <comment line="1244">
+                    Invalidate any device state caches we are
+                     maintaining. Win9598 resets the device
+                     context attributes to default values at
+                     the start of each page.                    
+                </comment>
+            </method>
+            <javadoc line="1254">
+                End a page.                
+            </javadoc>
+            <method name="endPage" type="void" line="1258">
+                <params>
+                    <param name="format" type="PageFormat"/>
+                    <param name="painter" type="Printable"/>
+                    <param name="index" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1263">
+                Forget any device state we may have cached.                
+            </javadoc>
+            <method name="invalidateCachedState" type="void" line="1266"/>
+            <javadoc line="1272">
+                Set the number of copies to be printed.                
+            </javadoc>
+            <method name="setCopies" type="void" line="1275">
+                <params>
+                    <param name="copies" type="int"/>
+                </params>
+            </method>
+            <method name="setNativeCopies" type="void" line="1284"/>
+            <javadoc line="1284">
+                Set copies in device.                
+            </javadoc>
+            <method name="jobSetup" type="boolean" line="1289"/>
+            <javadoc line="1289">
+                Displays the print dialog and records the user&apos;s settings
+                  into this object. Return false if the user cancels the
+                  dialog.
+                  If the dialog is to use a set of attributes, useAttributes is true.                
+            </javadoc>
+            <method name="initPrinter" type="void" line="1300"/>
+            <method name="_startDoc" type="boolean" line="1302"/>
+            <javadoc line="1302">
+                Call Window&apos;s StartDoc routine to begin a
+                  print job. The DC from the print dialog is
+                  used. If the print dialog was not displayed
+                  then a DC for the default printer is created.
+                  The native StartDoc returns false if the end-user cancelled
+                  printing. This is possible if the printer is connected to FILE:
+                  in which case windows queries the user for a destination and the
+                  user may cancel out of it. Note that the implementation of
+                  cancel() throws PrinterAbortException to indicate the user cancelled.                
+            </javadoc>
+            <method name="startDoc" type="void" line="1315">
+                <scope line="1316"/>
+            </method>
+            <method name="endDoc" type="void" line="1321"/>
+            <javadoc line="1321">
+                Call Window&apos;s EndDoc routine to end a
+                  print job.                
+            </javadoc>
+            <method name="abortDoc" type="void" line="1327"/>
+            <javadoc line="1327">
+                Call Window&apos;s AbortDoc routine to abort a
+                  print job.                
+            </javadoc>
+            <method name="deleteDC" type="void" line="1333"/>
+            <javadoc line="1333">
+                Call Windows native resource freeing APIs                
+            </javadoc>
+            <method name="deviceStartPage" type="void" line="1338"/>
+            <javadoc line="1338">
+                Begin a new page. This call&apos;s Window&apos;s
+                  StartPage routine.                
+            </javadoc>
+            <method name="deviceEndPage" type="void" line="1344"/>
+            <javadoc line="1344">
+                End a page. This call&apos;s Window&apos;s EndPage
+                  routine.                
+            </javadoc>
+            <method name="printBand" type="void" line="1351"/>
+            <javadoc line="1351">
+                Prints the contents of the array of ints, &apos;data&apos;
+                  to the current page. The band is placed at the
+                  location (x, y) in device coordinates on the
+                  page. The width and height of the band is
+                  specified by the caller.                
+            </javadoc>
+            <method name="beginPath" type="void" line="1361"/>
+            <javadoc line="1361">
+                Begin a Window&apos;s rendering path in the device
+                  context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="endPath" type="void" line="1367"/>
+            <javadoc line="1367">
+                End a Window&apos;s rendering path in the device
+                  context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="closeFigure" type="void" line="1373"/>
+            <javadoc line="1373">
+                Close a subpath in a Window&apos;s rendering path in the device
+                  context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="fillPath" type="void" line="1379"/>
+            <javadoc line="1379">
+                Fill a defined Window&apos;s rendering path in the device
+                  context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="moveTo" type="void" line="1385"/>
+            <javadoc line="1385">
+                Move the Window&apos;s pen position to &lt;code&gt;(x,y)&lt;/code&gt;
+                  in the device context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="lineTo" type="void" line="1391"/>
+            <javadoc line="1391">
+                Draw a line from the current pen position to
+                  &lt;code&gt;(x,y)&lt;/code&gt; in the device context &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="polyBezierTo" type="void" line="1397"/>
+            <method name="setPolyFillMode" type="void" line="1402"/>
+            <javadoc line="1402">
+                Set the current polgon fill rule into the device context
+                  &lt;code&gt;printDC&lt;/code&gt;. The &lt;code&gt;fillRule&lt;/code&gt; should
+                  be one of the following Windows constants:
+                  &lt;code&gt;ALTERNATE&lt;/code&gt; or &lt;code&gt;WINDING&lt;/code&gt;.                
+            </javadoc>
+            <method name="selectSolidBrush" type="void" line="1410"/>
+            <javadoc line="1410">
+                Create a Window&apos;s solid brush for the color specified
+                  by &lt;code&gt;(red, green, blue)&lt;/code&gt;. Once the brush
+                  is created, select it in the device
+                  context &lt;code&gt;printDC&lt;/code&gt; and free the old brush.                
+            </javadoc>
+            <method name="getPenX" type="int" line="1419"/>
+            <javadoc line="1419">
+                Return the x coordinate of the current pen
+                  position in the device context
+                  &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="getPenY" type="int" line="1426"/>
+            <javadoc line="1426">
+                Return the y coordinate of the current pen
+                  position in the device context
+                  &lt;code&gt;printDC&lt;/code&gt;.                
+            </javadoc>
+            <method name="selectClipPath" type="void" line="1433"/>
+            <javadoc line="1433">
+                Select the device context&apos;s current path
+                  to be the clipping path.                
+            </javadoc>
+            <method name="frameRect" type="void" line="1439"/>
+            <javadoc line="1439">
+                Draw a rectangle using specified brush.                
+            </javadoc>
+            <method name="fillRect" type="void" line="1445"/>
+            <javadoc line="1445">
+                Fill a rectangle specified by the coordinates using
+                  specified brush.                
+            </javadoc>
+            <method name="selectPen" type="void" line="1453"/>
+            <javadoc line="1453">
+                Create a solid brush using the RG &amp; B colors and width.
+                  Select this brush and delete the old one.                
+            </javadoc>
+            <method name="selectStylePen" type="boolean" line="1460"/>
+            <javadoc line="1460">
+                Create a solid brush using the RG &amp; B colors and specified
+                  pen styles.  Select this created brush and delete the old one.                
+            </javadoc>
+            <method name="setFont" type="boolean" line="1468"/>
+            <javadoc line="1468">
+                Set a GDI font capable of drawing the java Font
+                  passed in.                
+            </javadoc>
+            <method name="setTextColor" type="void" line="1480"/>
+            <javadoc line="1480">
+                Set the GDI color for text drawing.                
+            </javadoc>
+            <method name="textOut" type="void" line="1487"/>
+            <javadoc line="1487">
+                Draw the string &lt;code&gt;text&lt;/code&gt; into the device
+                  context &lt;code&gt;printDC&lt;/code&gt; at the specified
+                  position.                
+            </javadoc>
+            <method name="getGDIAdvance" type="int" line="1497"/>
+            <method name="drawDIBImage" type="void" line="1499"/>
+            <javadoc line="1499">
+                Draw the DIB compatible image buffer represented by
+                  &lt;code&gt;image&lt;/code&gt; to the GDI device context
+                  &lt;code&gt;printDC&lt;/code&gt;. The image is drawn at
+                  &lt;code&gt;(destX, destY)&lt;/code&gt; in device coordinates.
+                  The image is scaled into a square of size
+                  specified by &lt;code&gt;destWidth&lt;/code&gt; and
+                  &lt;code&gt;destHeight&lt;/code&gt;. The portion of the
+                  source image copied into that square is specified
+                  by &lt;code&gt;srcX&lt;/code&gt;, &lt;code&gt;srcY&lt;/code&gt;,
+                  &lt;code&gt;srcWidth&lt;/code&gt;, and srcHeight.
+                  Note that the image isn&apos;t completely compatible with DIB format.
+                  At the very least it needs to be padded so each scanline is
+                  DWORD aligned. Also we &quot;flip&quot; the image to make it a bottom-up DIB.                
+            </javadoc>
+            <method name="getPrinterAttrib" type="String" line="1524">
+                <comment line="1525">
+                    getPrintService will get current print service or default if none                    
+                </comment>
+                <declaration name="service" type="PrintService" line="1526"/>
+                <declaration name="name" type="String" line="1527"/>
+            </method>
+            <method name="getCollateAttrib" type="boolean" line="1532"/>
+            <method name="setCollateAttrib" type="void" line="1536">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <comment line="1538">
+                    DMCOLLATE_TRUE                    
+                </comment>
+                <comment line="1540">
+                    DMCOLLATE_FALSE                    
+                </comment>
+                <scope line="1537"/>
+                <scope line="1539"/>
+            </method>
+            <method name="setCollateAttrib" type="void" line="1545">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                    <param name="set" type="PrintRequestAttributeSet"/>
+                </params>
+            </method>
+            <method name="getOrientAttrib" type="int" line="1552">
+                <declaration name="orient" type="int" line="1553"/>
+                <declaration name="orientReq" type="OrientationRequested" line="1554"/>
+                <scope line="1556">
+                    <scope line="1557"/>
+                    <scope line="1559"/>
+                </scope>
+            </method>
+            <method name="setOrientAttrib" type="void" line="1568">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                    <param name="set" type="PrintRequestAttributeSet"/>
+                </params>
+                <scope line="1569"/>
+            </method>
+            <method name="getCopiesAttrib" type="int" line="1575"/>
+            <method name="setRangeCopiesAttribute" type="void" line="1581">
+                <params>
+                    <param name="from" type="int"/>
+                    <param name="to" type="int"/>
+                    <param name="isRangeSet" type="boolean"/>
+                    <param name="copies" type="int"/>
+                </params>
+                <comment line="1588">
+                    Since this is called from native to tell Java to sync
+                     up with native, we don&apos;t call this class&apos;s own setCopies()
+                     method which is mainly to send the value down to native                    
+                </comment>
+                <scope line="1582">
+                    <scope line="1583"/>
+                </scope>
+            </method>
+            <method name="getFromPageAttrib" type="int" line="1598">
+                <scope line="1599">
+                    <declaration name="pageRangesAttr" type="PageRanges" line="1600"/>
+                    <scope line="1602">
+                        <declaration name="range" type="int[][]" line="1603"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getToPageAttrib" type="int" line="1611">
+                <scope line="1612">
+                    <declaration name="pageRangesAttr" type="PageRanges" line="1613"/>
+                    <scope line="1615">
+                        <declaration name="range" type="int[][]" line="1616"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getMinPageAttrib" type="int" line="1623">
+                <scope line="1624">
+                    <declaration name="s" type="SunMinMaxPage" line="1625"/>
+                    <scope line="1627"/>
+                </scope>
+            </method>
+            <method name="getMaxPageAttrib" type="int" line="1634">
+                <scope line="1635">
+                    <declaration name="s" type="SunMinMaxPage" line="1636"/>
+                    <scope line="1638"/>
+                </scope>
+                <declaration name="pageable" type="Pageable" line="1643"/>
+                <scope line="1644">
+                    <declaration name="numPages" type="int" line="1645"/>
+                    <scope line="1646"/>
+                </scope>
+            </method>
+            <method name="getDestAttrib" type="boolean" line="1655"/>
+            <method name="getQualityAttrib" type="int" line="1660"/>
+            <method name="setQualityAttrib" type="void" line="1664">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <comment line="1666">
+                    DMRES_HIGH                    
+                </comment>
+                <comment line="1668">
+                    DMRES_MEDIUM                    
+                </comment>
+                <comment line="1670">
+                    DMRES_LOW                    
+                </comment>
+                <scope line="1665"/>
+                <scope line="1667"/>
+                <scope line="1669"/>
+            </method>
+            <method name="setQualityAttrib" type="void" line="1675">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                    <param name="set" type="PrintRequestAttributeSet"/>
+                </params>
+            </method>
+            <method name="getColorAttrib" type="int" line="1681"/>
+            <method name="setColorAttrib" type="void" line="1685">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <comment line="1687">
+                    DMCOLOR_COLOR                    
+                </comment>
+                <comment line="1689">
+                    DMCOLOR_MONOCHROME                    
+                </comment>
+                <scope line="1686"/>
+                <scope line="1688"/>
+            </method>
+            <method name="setColorAttrib" type="void" line="1694">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                    <param name="set" type="PrintRequestAttributeSet"/>
+                </params>
+            </method>
+            <method name="getSidesAttrib" type="int" line="1700"/>
+            <method name="setSidesAttrib" type="void" line="1704">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <comment line="1706">
+                    DMDUP_VERTICAL                    
+                </comment>
+                <comment line="1708">
+                    DMDUP_HORIZONTAL                    
+                </comment>
+                <comment line="1709">
+                    Sides.ONE_SIDED                    
+                </comment>
+                <scope line="1705"/>
+                <scope line="1707"/>
+                <scope line="1709"/>
+            </method>
+            <method name="setSidesAttrib" type="void" line="1715">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                    <param name="set" type="PrintRequestAttributeSet"/>
+                </params>
+            </method>
+            <javadoc line="1720">
+                MediaSizeName / dmPaper                
+            </javadoc>
+            <method name="getWin32MediaAttrib" type="int[]" line="1721">
+                <declaration name="wid_ht" type="int" line="1722"/>
+                <scope line="1723">
+                    <declaration name="media" type="Media" line="1724"/>
+                    <scope line="1725">
+                        <declaration name="msn" type="MediaSizeName" line="1726"/>
+                        <declaration name="ms" type="MediaSize" line="1727"/>
+                        <scope line="1728"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="setWin32MediaAttrib" type="void" line="1737">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <scope line="1738"/>
+                <declaration name="msn" type="MediaSizeName" line="1741"/>
+            </method>
+            <method name="setWin32MediaAttrib" type="void" line="1745">
+                <params>
+                    <param name="dmIndex" type="int"/>
+                    <param name="width" type="int"/>
+                    <param name="length" type="int"/>
+                </params>
+                <declaration name="msn" type="MediaSizeName" line="1746"/>
+                <scope line="1748"/>
+                <scope line="1753">
+                    <scope line="1754"/>
+                </scope>
+            </method>
+            <method name="setMediaTrayAttrib" type="void" line="1762">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <comment line="1764">
+                    DMBIN_LOWER                    
+                </comment>
+                <comment line="1766">
+                    DMBIN_ENVELOPE                    
+                </comment>
+                <comment line="1768">
+                    DMBIN_LARGECAPACITY                    
+                </comment>
+                <comment line="1770">
+                    DMBIN_UPPER                    
+                </comment>
+                <comment line="1772">
+                    DMBIN_MANUAL                    
+                </comment>
+                <comment line="1774">
+                    DMBIN_MIDDLE                    
+                </comment>
+                <comment line="1776">
+                    no equivalent predefined value                    
+                </comment>
+                <comment line="1777">
+                    DMBIN_AUTO                    
+                </comment>
+                <comment line="1779">
+                    DMBIN_UPPER                    
+                </comment>
+                <comment line="1784">
+                    default                    
+                </comment>
+                <scope line="1763"/>
+                <scope line="1765"/>
+                <scope line="1767"/>
+                <scope line="1769"/>
+                <scope line="1771"/>
+                <scope line="1773"/>
+                <scope line="1775"/>
+                <scope line="1778"/>
+                <scope line="1780">
+                    <scope line="1781"/>
+                    <scope line="1783"/>
+                </scope>
+            </method>
+            <method name="setMediaTrayAttrib" type="void" line="1789">
+                <params>
+                    <param name="dmBinID" type="int"/>
+                </params>
+                <declaration name="tray" type="MediaTray" line="1791"/>
+            </method>
+            <method name="getMediaTrayAttrib" type="int" line="1794"/>
+            <method name="getSelectAttrib" type="int" line="1798">
+                <scope line="1799">
+                    <declaration name="pages" type="SunPageSelection" line="1800"/>
+                    <scope line="1802"/>
+                    <scope line="1804"/>
+                    <scope line="1806"/>
+                </scope>
+            </method>
+            <method name="getPrintToFileEnabled" type="boolean" line="1813">
+                <declaration name="security" type="SecurityManager" line="1814"/>
+                <scope line="1815">
+                    <declaration name="printToFilePermission" type="FilePermission" line="1816"/>
+                    <scope line="1818"/>
+                    <scope line="1820"/>
+                </scope>
+            </method>
+            <method name="setNativeAttributes" type="void" line="1827">
+                <params>
+                    <param name="flags" type="int"/>
+                    <param name="fields" type="int"/>
+                    <param name="values" type="int"/>
+                </params>
+                <scope line="1828"/>
+                <scope line="1831">
+                    <declaration name="destPrn" type="Destination" line="1832"/>
+                    <scope line="1834">
+                        <scope line="1835"/>
+                        <scope line="1838">
+                            <scope line="1839"/>
+                            <scope line="1842"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="1846"/>
+                <scope line="1850"/>
+                <scope line="1852"/>
+                <scope line="1856"/>
+                <scope line="1858"/>
+                <scope line="1860"/>
+                <scope line="1864">
+                    <scope line="1865"/>
+                    <scope line="1867"/>
+                </scope>
+                <scope line="1872">
+                    <scope line="1873"/>
+                    <scope line="1875"/>
+                </scope>
+                <scope line="1880">
+                    <declaration name="quality" type="PrintQuality" line="1881"/>
+                    <scope line="1882"/>
+                    <scope line="1884"/>
+                    <scope line="1886"/>
+                </scope>
+                <scope line="1892">
+                    <declaration name="sides" type="Sides" line="1893"/>
+                    <scope line="1894"/>
+                    <scope line="1896"/>
+                    <scope line="1898"/>
+                </scope>
+            </method>
+            <method name="setResolutionDPI" type="void" line="1907">
+                <params>
+                    <param name="xres" type="int"/>
+                    <param name="yres" type="int"/>
+                </params>
+                <scope line="1908">
+                    <declaration name="res" type="PrinterResolution" line="1909"/>
+                </scope>
+            </method>
+            <method name="setResolutionAttrib" type="void" line="1917">
+                <params>
+                    <param name="attr" type="Attribute"/>
+                </params>
+                <declaration name="pr" type="PrinterResolution" line="1918"/>
+            </method>
+            <method name="setPrinterNameAttrib" type="void" line="1923">
+                <params>
+                    <param name="printerName" type="String"/>
+                </params>
+                <comment line="1945">
+                    ** END Functions called by native code for querying/updating attributes                    
+                </comment>
+                <declaration name="service" type="PrintService" line="1924"/>
+                <scope line="1926"/>
+                <scope line="1930"/>
+                <scope line="1932">
+                    <declaration name="services" type="PrintService[]" line="1933"/>
+                    <scope line="1934">
+                        <scope line="1935">
+                            <scope line="1937"/>
+                            <scope line="1939"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <class name="PrintToFileErrorDialog" line="1949">
+                <extends class="Dialog"/>
+                <implements interface="ActionListener"/>
+                <method name="PrintToFileErrorDialog" type="constructor" line="1951">
+                    <params>
+                        <param name="parent" type="Frame"/>
+                        <param name="title" type="String"/>
+                        <param name="message" type="String"/>
+                        <param name="buttonText" type="String"/>
+                    </params>
+                </method>
+                <method name="PrintToFileErrorDialog" type="constructor" line="1957">
+                    <params>
+                        <param name="parent" type="Dialog"/>
+                        <param name="title" type="String"/>
+                        <param name="message" type="String"/>
+                        <param name="buttonText" type="String"/>
+                    </params>
+                </method>
+                <method name="init" type="void" line="1963">
+                    <params>
+                        <param name="parent" type="Component"/>
+                        <param name="title" type="String"/>
+                        <param name="message" type="String"/>
+                        <param name="buttonText" type="String"/>
+                    </params>
+                    <declaration name="p" type="Panel" line="1964"/>
+                    <declaration name="btn" type="Button" line="1966"/>
+                    <declaration name="dDim" type="Dimension" line="1972"/>
+                    <scope line="1973">
+                        <declaration name="fRect" type="Rectangle" line="1974"/>
+                    </scope>
+                </method>
+                <method name="actionPerformed" type="void" line="1980">
+                    <params>
+                        <param name="event" type="ActionEvent"/>
+                    </params>
+                </method>
+            </class>
+            <method name="initIDs" type="void" line="1990"/>
+            <javadoc line="1990">
+                Initialize JNI field and method ids                
+            </javadoc>
+        </class>
+    </source>

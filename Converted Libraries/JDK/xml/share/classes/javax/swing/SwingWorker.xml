@@ -1,0 +1,696 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.swing">
+        <import package="java.lang.ref.WeakReference"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.beans.PropertyChangeListener"/>
+        <import package="java.beans.PropertyChangeSupport"/>
+        <import package="java.beans.PropertyChangeEvent"/>
+        <import package="java.util.List"/>
+        <import package="java.util.concurrent"/>
+        <import package="java.util.concurrent.locks"/>
+        <import package="java.awt.event"/>
+        <import package="javax.swing.SwingUtilities"/>
+        <import package="sun.awt.AppContext"/>
+        <import package="sun.swing.AccumulativeRunnable"/>
+        <class name="SwingWorker" line="44">
+            <type_params>
+                <type_param name="T"/>
+                <type_param name="V"/>
+            </type_params>
+            <comment line="542">
+                Future methods START                
+            </comment>
+            <comment line="616">
+                Future methods END                
+            </comment>
+            <comment line="618">
+                PropertyChangeSupports methods START                
+            </comment>
+            <comment line="702">
+                PropertyChangeSupports methods END                
+            </comment>
+            <implements interface="RunnableFuture">
+                <type_params>
+                    <type_param name="T"/>
+                </type_params>
+            </implements>
+            <javadoc line="44">
+                An abstract class to perform lengthy GUI-interaction tasks in a
+                  background thread. Several background threads can be used to execute such
+                  tasks. However, the exact strategy of choosing a thread for any particular{@code SwingWorker} is unspecified and should not be relied on.
+                  &lt;p&gt;
+                  When writing a multi-threaded application using Swing, there are
+                  two constraints to keep in mind:
+                  (refer to
+                  &lt;a href=&quot;http://java.sun.com/docs/books/tutorial/uiswing/misc/threads.html&quot;&gt;
+                  How to Use Threads
+                  &lt;/a&gt; for more details):
+                  &lt;ul&gt;
+                  &lt;li&gt; Time-consuming tasks should not be run on the &lt;i&gt;Event
+                  Dispatch Thread&lt;/i&gt;. Otherwise the application becomes unresponsive.
+                  &lt;/li&gt;
+                  &lt;li&gt; Swing components should be accessed  on the &lt;i&gt;Event
+                  Dispatch Thread&lt;/i&gt; only.
+                  &lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  &lt;p&gt;
+                  These constraints mean that a GUI application with time intensive
+                  computing needs at least two threads:  1) a thread to perform the lengthy
+                  task and 2) the &lt;i&gt;Event Dispatch Thread&lt;/i&gt; (EDT) for all GUI-related
+                  activities.  This involves inter-thread communication which can be
+                  tricky to implement.
+                  &lt;p&gt;{@code SwingWorker} is designed for situations where you need to have a long
+                  running task run in a background thread and provide updates to the UI
+                  either when done, or while processing.
+                  Subclasses of {@code SwingWorker} must implement
+                  the {@link #doInBackground} method to perform the background computation.
+                  &lt;p&gt;
+                  &lt;b&gt;Workflow&lt;/b&gt;
+                  &lt;p&gt;
+                  There are three threads involved in the life cycle of a{@code SwingWorker} :
+                  &lt;ul&gt;
+                  &lt;li&gt;
+                  &lt;p&gt;
+                  &lt;i&gt;Current&lt;/i&gt; thread: The {@link #execute} method is
+                  called on this thread. It schedules {@code SwingWorker} for the execution on a
+                  &lt;i&gt;worker&lt;/i&gt;
+                  thread and returns immediately. One can wait for the {@code SwingWorker} to
+                  complete using the {@link #get get} methods.
+                  &lt;li&gt;
+                  &lt;p&gt;
+                  &lt;i&gt;Worker&lt;/i&gt; thread: The {@link #doInBackground}method is called on this thread.
+                  This is where all background activities should happen. To notify{@code PropertyChangeListeners} about bound properties changes use the{@link #firePropertyChange firePropertyChange} and{@link #getPropertyChangeSupport} methods. By default there are two bound
+                  properties available: {@code state} and {@code progress}.
+                  &lt;li&gt;
+                  &lt;p&gt;
+                  &lt;i&gt;Event Dispatch Thread&lt;/i&gt;:  All Swing related activities occur
+                  on this thread. {@code SwingWorker} invokes the{@link #process process} and {@link #done} methods and notifies
+                  any {@code PropertyChangeListeners} on this thread.
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  Often, the &lt;i&gt;Current&lt;/i&gt; thread is the &lt;i&gt;Event Dispatch
+                  Thread&lt;/i&gt;.
+                  &lt;p&gt;
+                  Before the {@code doInBackground} method is invoked on a &lt;i&gt;worker&lt;/i&gt; thread,{@code SwingWorker} notifies any {@code PropertyChangeListeners} about the{@code state} property change to {@code StateValue.STARTED}.  After the{@code doInBackground} method is finished the {@code done} method is
+                  executed.  Then {@code SwingWorker} notifies any {@code PropertyChangeListeners}about the {@code state} property change to {@code StateValue.DONE}.
+                  &lt;p&gt;{@code SwingWorker} is only designed to be executed once.  Executing a{@code SwingWorker} more than once will not result in invoking the{@code doInBackground} method twice.
+                  &lt;p&gt;
+                  &lt;b&gt;Sample Usage&lt;/b&gt;
+                  &lt;p&gt;
+                  The following example illustrates the simplest use case.  Some
+                  processing is done in the background and when done you update a Swing
+                  component.
+                  &lt;p&gt;
+                  Say we want to find the &quot;Meaning of Life&quot; and display the result in
+                  a {@code JLabel}.
+                  &lt;pre&gt;
+                  final JLabel label;
+                  class MeaningOfLifeFinder extends SwingWorker&amp;lt;String, Object&amp;gt; {{@code @Override}public String doInBackground() {
+                  return findTheMeaningOfLife();
+                  }{@code @Override}protected void done() {
+                  try {
+                  label.setText(get());
+                  } catch (Exception ignore) {
+                  }
+                  }
+                  }
+                  (new MeaningOfLifeFinder()).execute();
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  The next example is useful in situations where you wish to process data
+                  as it is ready on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;.
+                  &lt;p&gt;
+                  Now we want to find the first N prime numbers and display the results in a{@code JTextArea}.  While this is computing, we want to update our
+                  progress in a {@code JProgressBar}.  Finally, we also want to print
+                  the prime numbers to {@code System.out}.
+                  &lt;pre&gt;
+                  class PrimeNumbersTask extends
+                  SwingWorker&amp;lt;List&amp;lt;Integer&amp;gt;, Integer&amp;gt; {
+                  PrimeNumbersTask(JTextArea textArea, int numbersToFind) {
+                  //initialize
+                  }{@code @Override}public List&amp;lt;Integer&amp;gt; doInBackground() {
+                  while (! enough &amp;amp;&amp;amp; ! isCancelled()) {
+                  number = nextPrimeNumber();
+                  publish(number);
+                  setProgress(100  numbers.size() / numbersToFind);
+                  }
+                  }
+                  return numbers;
+                  }{@code @Override}protected void process(List&amp;lt;Integer&amp;gt; chunks) {
+                  for (int number : chunks) {
+                  textArea.append(number + &amp;quot;\n&amp;quot;);
+                  }
+                  }
+                  }
+                  JTextArea textArea = new JTextArea();
+                  final JProgressBar progressBar = new JProgressBar(0, 100);
+                  PrimeNumbersTask task = new PrimeNumbersTask(textArea, N);
+                  task.addPropertyChangeListener(
+                  new PropertyChangeListener() {
+                  public  void propertyChange(PropertyChangeEvent evt) {
+                  if (&amp;quot;progress&amp;quot;.equals(evt.getPropertyName())) {
+                  progressBar.setValue((Integer)evt.getNewValue());
+                  }
+                  }
+                  });
+                  task.execute();
+                  System.out.println(task.get()); //prints all prime numbers we have got
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  Because {@code SwingWorker} implements {@code Runnable}, a{@code SwingWorker} can be submitted to an{@link java.util.concurrent.Executor} for execution.                
+                <author>
+                    Igor Kushnirskiy                    
+                </author>
+                <param>
+                    <T>
+                       the result type returned by this {@code SwingWorker's}{@code doInBackground} and {@code get} methods                    
+                </param>
+                <param>
+                    <V>
+                       the type used for carrying out intermediate results by this{@code SwingWorker's} {@code publish} and {@code process} methods                    
+                </param>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="MAX_WORKER_THREADS" type="int" line="227"/>
+            <javadoc line="227">
+                number of worker threads.                
+            </javadoc>
+            <declaration name="progress" type="int" line="232"/>
+            <javadoc line="232">
+                current progress.                
+            </javadoc>
+            <declaration name="state" type="StateValue" line="237"/>
+            <javadoc line="237">
+                current state.                
+            </javadoc>
+            <declaration name="future" type="FutureTask&lt;T&gt;" line="242"/>
+            <javadoc line="242">
+                everything is run inside this FutureTask. Also it is used as
+                  a delegatee for the Future API.                
+            </javadoc>
+            <declaration name="propertyChangeSupport" type="PropertyChangeSupport" line="248"/>
+            <javadoc line="248">
+                all propertyChangeSupport goes through this.                
+            </javadoc>
+            <declaration name="doProcess" type="AccumulativeRunnable&lt;V&gt;" line="253"/>
+            <javadoc line="253">
+                handler for {@code process} mehtod.                
+            </javadoc>
+            <declaration name="doNotifyProgressChange" type="AccumulativeRunnable&lt;Integer&gt;" line="258"/>
+            <javadoc line="258">
+                handler for progress property change notifications.                
+            </javadoc>
+            <declaration name="doSubmit" type="AccumulativeRunnable&lt;Runnable&gt;" line="263"/>
+            <javadoc line="265">
+                Values for the {@code state} bound property.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <javadoc line="270">
+                Initial {@code SwingWorker} state.                
+            </javadoc>
+            <javadoc line="274">
+                {@code SwingWorker} is {@code STARTED}before invoking {@code doInBackground}.                
+            </javadoc>
+            <javadoc line="280">
+                {@code SwingWorker} is {@code DONE}after {@code doInBackground} method
+                  is finished.                
+            </javadoc>
+            <javadoc line="288">
+                Constructs this {@code SwingWorker}.                
+            </javadoc>
+            <method name="SwingWorker" type="constructor" line="291">
+                <anonymous_class line="293">
+                    <method name="call" type="T" line="294"/>
+                </anonymous_class>
+                <declaration name="callable" type="Callable&lt;T&gt;" line="292"/>
+                <anonymous_class line="300">
+                    <method name="done" type="void" line="302"/>
+                </anonymous_class>
+            </method>
+            <method name="doInBackground" type="T" line="314"/>
+            <javadoc line="314">
+                Computes a result, or throws an exception if unable to do so.
+                  &lt;p&gt;
+                  Note that this method is executed only once.
+                  &lt;p&gt;
+                  Note: this method is executed in a background thread.                
+                <return>
+                    the computed result                    
+                </return>
+                <throws>
+                    Exception if unable to compute a result                    
+                </throws>
+            </javadoc>
+            <javadoc line="330">
+                Sets this {@code Future} to the result of computation unless
+                  it has been cancelled.                
+            </javadoc>
+            <method name="run" type="void" line="334"/>
+            <javadoc line="338">
+                Sends data chunks to the {@link #process} method. This method is to be
+                  used from inside the {@code doInBackground} method to deliver
+                  intermediate results
+                  for processing on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt; inside the{@code process} method.
+                  &lt;p&gt;
+                  Because the {@code process} method is invoked asynchronously on
+                  the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;
+                  multiple invocations to the {@code publish} method
+                  might occur before the {@code process} method is executed. For
+                  performance purposes all these invocations are coalesced into one
+                  invocation with concatenated arguments.
+                  &lt;p&gt;
+                  For example:
+                  &lt;pre&gt;
+                  publish(&amp;quot;1&amp;quot;);
+                  publish(&amp;quot;2&amp;quot;, &amp;quot;3&amp;quot;);
+                  publish(&amp;quot;4&amp;quot;, &amp;quot;5&amp;quot;, &amp;quot;6&amp;quot;);
+                  &lt;/pre&gt;
+                  might result in:
+                  &lt;pre&gt;
+                  process(&amp;quot;1&amp;quot;, &amp;quot;2&amp;quot;, &amp;quot;3&amp;quot;, &amp;quot;4&amp;quot;, &amp;quot;5&amp;quot;, &amp;quot;6&amp;quot;)
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  &lt;b&gt;Sample Usage&lt;/b&gt;. This code snippet loads some tabular data and
+                  updates {@code DefaultTableModel} with it. Note that it safe to mutate
+                  the tableModel from inside the {@code process} method because it is
+                  invoked on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;.
+                  &lt;pre&gt;
+                  class TableSwingWorker extends
+                  SwingWorker&amp;lt;DefaultTableModel, Object[]&amp;gt; {
+                  private final DefaultTableModel tableModel;
+                  public TableSwingWorker(DefaultTableModel tableModel) {
+                  this.tableModel = tableModel;
+                  }{@code @Override}protected DefaultTableModel doInBackground() throws Exception {
+                  for (Object[] row = loadData();
+                  ! isCancelled() &amp;amp;&amp;amp; row != null;
+                  row = loadData()) {
+                  publish((Object[]) row);
+                  }
+                  return tableModel;
+                  }{@code @Override}protected void process(List&amp;lt;Object[]&amp;gt; chunks) {
+                  for (Object[] row : chunks) {
+                  tableModel.addRow(row);
+                  }
+                  }
+                  }
+                  &lt;/pre&gt;                
+                <param>
+                    chunks intermediate results to process                    
+                </param>
+                <see>
+                    #process                    
+                </see>
+            </javadoc>
+            <method name="publish" type="void" line="408">
+                <params>
+                    <param name="chunks" type="V"/>
+                </params>
+                <scope line="409">
+                    <scope line="410">
+                        <anonymous_class line="411">
+                            <method name="run" type="void" line="413">
+                                <params>
+                                    <param name="args" type="List<V>"/>
+                                </params>
+                            </method>
+                            <method name="submit" type="void" line="417"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="426">
+                Receives data chunks from the {@code publish} method asynchronously on the
+                  &lt;i&gt;Event Dispatch Thread&lt;/i&gt;.
+                  &lt;p&gt;
+                  Please refer to the {@link #publish} method for more details.                
+                <param>
+                    chunks intermediate results to process                    
+                </param>
+                <see>
+                    #publish                    
+                </see>
+            </javadoc>
+            <method name="process" type="void" line="438">
+                <params>
+                    <param name="chunks" type="List<V>"/>
+                </params>
+            </method>
+            <javadoc line="441">
+                Executed on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt; after the {@code doInBackground}method is finished. The default
+                  implementation does nothing. Subclasses may override this method to
+                  perform completion actions on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;. Note
+                  that you can query status inside the implementation of this method to
+                  determine the result of this task or whether this task has been cancelled.                
+                <see>
+                    #doInBackground                    
+                </see>
+                <see>
+                    #isCancelled()                    
+                </see>
+                <see>
+                    #get                    
+                </see>
+            </javadoc>
+            <method name="done" type="void" line="453"/>
+            <javadoc line="456">
+                Sets the {@code progress} bound property.
+                  The value should be from 0 to 100.
+                  &lt;p&gt;
+                  Because {@code PropertyChangeListener}s are notified asynchronously on
+                  the &lt;i&gt;Event Dispatch Thread&lt;/i&gt; multiple invocations to the{@code setProgress} method might occur before any{@code PropertyChangeListeners} are invoked. For performance purposes
+                  all these invocations are coalesced into one invocation with the last
+                  invocation argument only.
+                  &lt;p&gt;
+                  For example, the following invokations:
+                  &lt;pre&gt;
+                  setProgress(1);
+                  setProgress(2);
+                  setProgress(3);
+                  &lt;/pre&gt;
+                  might result in a single {@code PropertyChangeListener} notification with
+                  the value {@code 3}.                
+                <param>
+                    progress the progress value to set                    
+                </param>
+                <throws>
+                    IllegalArgumentException is value not from 0 to 100                    
+                </throws>
+            </javadoc>
+            <method name="setProgress" type="void" line="483">
+                <params>
+                    <param name="progress" type="int"/>
+                </params>
+                <scope line="484"/>
+                <scope line="487"/>
+                <declaration name="oldProgress" type="int" line="490"/>
+                <scope line="492"/>
+                <scope line="495">
+                    <scope line="496">
+                        <anonymous_class line="498">
+                            <method name="run" type="void" line="500">
+                                <params>
+                                    <param name="args" type="List<Integer>"/>
+                                </params>
+                            </method>
+                            <method name="submit" type="void" line="506"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="515">
+                Returns the {@code progress} bound property.                
+                <return>
+                    the progress bound property.                    
+                </return>
+            </javadoc>
+            <method name="getProgress" type="int" line="520"/>
+            <javadoc line="524">
+                Schedules this {@code SwingWorker} for execution on a &lt;i&gt;worker&lt;/i&gt;
+                  thread. There are a number of &lt;i&gt;worker&lt;/i&gt; threads available. In the
+                  event all &lt;i&gt;worker&lt;/i&gt; threads are busy handling other{@code SwingWorkers} this {@code SwingWorker} is placed in a waiting
+                  queue.
+                  &lt;p&gt;
+                  Note:{@code SwingWorker} is only designed to be executed once.  Executing a{@code SwingWorker} more than once will not result in invoking the{@code doInBackground} method twice.                
+            </javadoc>
+            <method name="execute" type="void" line="537"/>
+            <javadoc line="542">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="cancel" type="boolean" line="545">
+                <params>
+                    <param name="mayInterruptIfRunning" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="549">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="isCancelled" type="boolean" line="552"/>
+            <javadoc line="556">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="isDone" type="boolean" line="559"/>
+            <javadoc line="563">
+                {@inheritDoc}&lt;p&gt;
+                  Note: calling {@code get} on the &lt;i&gt;Event Dispatch Thread&lt;/i&gt; blocks
+                  &lt;i&gt;all&lt;/i&gt; events, including repaints, from being processed until this{@code SwingWorker} is complete.
+                  &lt;p&gt;
+                  When you want the {@code SwingWorker} to block on the &lt;i&gt;Event
+                  Dispatch Thread&lt;/i&gt; we recommend that you use a &lt;i&gt;modal dialog&lt;/i&gt;.
+                  &lt;p&gt;
+                  For example:
+                  &lt;pre&gt;
+                  class SwingWorkerCompletionWaiter extends PropertyChangeListener {
+                  private JDialog dialog;
+                  public SwingWorkerCompletionWaiter(JDialog dialog) {
+                  this.dialog = dialog;
+                  }
+                  public void propertyChange(PropertyChangeEvent event) {
+                  if (&amp;quot;state&amp;quot;.equals(event.getPropertyName())
+                  &amp;amp;&amp;amp; SwingWorker.StateValue.DONE == event.getNewValue()) {
+                  dialog.setVisible(false);
+                  dialog.dispose();
+                  }
+                  }
+                  }
+                  JDialog dialog = new JDialog(owner, true);
+                  swingWorker.addPropertyChangeListener(
+                  new SwingWorkerCompletionWaiter(dialog));
+                  swingWorker.execute();
+                  //the dialog will be visible until the SwingWorker is done
+                  dialog.setVisible(true);
+                  &lt;/pre&gt;                
+            </javadoc>
+            <method name="get" type="T" line="601"/>
+            <javadoc line="605">
+                {@inheritDoc}&lt;p&gt;
+                  Please refer to {@link #get} for more details.                
+            </javadoc>
+            <method name="get" type="T" line="611">
+                <params>
+                    <param name="timeout" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+            </method>
+            <javadoc line="618">
+                Adds a {@code PropertyChangeListener} to the listener list. The listener
+                  is registered for all properties. The same listener object may be added
+                  more than once, and will be called as many times as it is added. If{@code listener} is {@code null}, no exception is thrown and no action is taken.
+                  &lt;p&gt;
+                  Note: This is merely a convenience wrapper. All work is delegated to{@code PropertyChangeSupport} from {@link #getPropertyChangeSupport}.                
+                <param>
+                    listener the {@code PropertyChangeListener} to be added                    
+                </param>
+            </javadoc>
+            <method name="addPropertyChangeListener" type="void" line="630">
+                <params>
+                    <param name="listener" type="PropertyChangeListener"/>
+                </params>
+            </method>
+            <javadoc line="634">
+                Removes a {@code PropertyChangeListener} from the listener list. This
+                  removes a {@code PropertyChangeListener} that was registered for all
+                  properties. If {@code listener} was added more than once to the same
+                  event source, it will be notified one less time after being removed. If{@code listener} is {@code null}, or was never added, no exception is
+                  thrown and no action is taken.
+                  &lt;p&gt;
+                  Note: This is merely a convenience wrapper. All work is delegated to{@code PropertyChangeSupport} from {@link #getPropertyChangeSupport}.                
+                <param>
+                    listener the {@code PropertyChangeListener} to be removed                    
+                </param>
+            </javadoc>
+            <method name="removePropertyChangeListener" type="void" line="648">
+                <params>
+                    <param name="listener" type="PropertyChangeListener"/>
+                </params>
+            </method>
+            <javadoc line="652">
+                Reports a bound property update to any registered listeners. No event is
+                  fired if {@code old} and {@code new} are equal and non-null.
+                  &lt;p&gt;
+                  This {@code SwingWorker} will be the source for
+                  any generated events.
+                  &lt;p&gt;
+                  When called off the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;{@code PropertyChangeListeners} are notified asynchronously on
+                  the &lt;i&gt;Event Dispatch Thread&lt;/i&gt;.
+                  &lt;p&gt;
+                  Note: This is merely a convenience wrapper. All work is delegated to{@code PropertyChangeSupport} from {@link #getPropertyChangeSupport}.                
+                <param>
+                    propertyName the programmatic name of the property that was
+                      changed                    
+                </param>
+                <param>
+                    oldValue the old value of the property                    
+                </param>
+                <param>
+                    newValue the new value of the property                    
+                </param>
+            </javadoc>
+            <method name="firePropertyChange" type="void" line="675">
+                <params>
+                    <param name="propertyName" type="String"/>
+                    <param name="oldValue" type="Object"/>
+                    <param name="newValue" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="680">
+                Returns the {@code PropertyChangeSupport} for this {@code SwingWorker}.
+                  This method is used when flexible access to bound properties support is
+                  needed.
+                  &lt;p&gt;
+                  This {@code SwingWorker} will be the source for
+                  any generated events.
+                  &lt;p&gt;
+                  Note: The returned {@code PropertyChangeSupport} notifies any{@code PropertyChangeListener}s asynchronously on the &lt;i&gt;Event Dispatch
+                  Thread&lt;/i&gt; in the event that {@code firePropertyChange} or{@code fireIndexedPropertyChange} are called off the &lt;i&gt;Event Dispatch
+                  Thread&lt;/i&gt;.                
+                <return>
+                    {@code PropertyChangeSupport} for this {@code SwingWorker}                    
+                </return>
+            </javadoc>
+            <method name="getPropertyChangeSupport" type="PropertyChangeSupport" line="697"/>
+            <javadoc line="703">
+                Returns the {@code SwingWorker} state bound property.                
+                <return>
+                    the current state                    
+                </return>
+            </javadoc>
+            <method name="getState" type="StateValue" line="708">
+                <comment line="709">
+                    DONE is a speacial case
+                     to keep getState and isDone is sync                    
+                </comment>
+                <scope line="713"/>
+                <scope line="715"/>
+            </method>
+            <javadoc line="720">
+                Sets this {@code SwingWorker} state bound property.                
+                <param>
+                    state the state to set                    
+                </param>
+            </javadoc>
+            <method name="setState" type="void" line="724">
+                <params>
+                    <param name="state" type="StateValue"/>
+                </params>
+                <declaration name="old" type="StateValue" line="725"/>
+            </method>
+            <javadoc line="730">
+                Invokes {@code done} on the EDT.                
+            </javadoc>
+            <method name="doneEDT" type="void" line="733">
+                <anonymous_class line="735">
+                    <method name="run" type="void" line="736"/>
+                </anonymous_class>
+                <declaration name="doDone" type="Runnable" line="734"/>
+                <scope line="740"/>
+                <scope line="742"/>
+            </method>
+            <javadoc line="748">
+                returns workersExecutorService.
+                  returns the service stored in the appContext or creates it if
+                  necessary.                
+                <return>
+                    ExecutorService for the {@code SwingWorkers}                    
+                </return>
+            </javadoc>
+            <method name="getWorkersExecutorService" type="ExecutorService" line="756">
+                <comment line="761">
+                    this creates daemon threads.                    
+                </comment>
+                <comment line="783">
+                    Don&apos;t use ShutdownHook here as it&apos;s not enough. We should track                    
+                </comment>
+                <comment line="784">
+                    AppContext disposal instead of JVM shutdown, see 6799345 for details                    
+                </comment>
+                <declaration name="appContext" type="AppContext" line="757"/>
+                <declaration name="executorService" type="ExecutorService" line="758"/>
+                <scope line="760">
+                    <anonymous_class line="763">
+                        <declaration name="defaultFactory" type="ThreadFactory" line="764"/>
+                        <method name="newThread" type="Thread" line="766">
+                            <params>
+                                <param name="r" type="Runnable"/>
+                            </params>
+                            <declaration name="thread" type="Thread" line="767"/>
+                        </method>
+                    </anonymous_class>
+                    <declaration name="threadFactory" type="ThreadFactory" line="762"/>
+                    <declaration name="es" type="ExecutorService" line="785"/>
+                    <anonymous_class line="787">
+                        <method name="propertyChange" type="void" line="789">
+                            <params>
+                                <param name="pce" type="PropertyChangeEvent"/>
+                            </params>
+                            <declaration name="disposed" type="boolean" line="790"/>
+                            <scope line="791">
+                                <declaration name="executorServiceRef" type="WeakReference&lt;ExecutorService&gt;" line="792"/>
+                                <declaration name="executorService" type="ExecutorService" line="794"/>
+                                <scope line="796">
+                                    <anonymous_class line="798">
+                                        <method name="run" type="Void" line="799"/>
+                                    </anonymous_class>
+                                </scope>
+                            </scope>
+                        </method>
+                    </anonymous_class>
+                </scope>
+            </method>
+            <declaration name="DO_SUBMIT_KEY" type="Object" line="814"/>
+            <method name="getDoSubmit" type="AccumulativeRunnable<Runnable>" line="815">
+                <scope line="816">
+                    <declaration name="appContext" type="AppContext" line="817"/>
+                    <declaration name="doSubmit" type="Object" line="818"/>
+                    <scope line="819"/>
+                </scope>
+            </method>
+            <class name="DoSubmitAccumulativeRunnable" line="826">
+                <extends class="AccumulativeRunnable">
+                    <type_params>
+                        <type_param name="Runnable"/>
+                    </type_params>
+                </extends>
+                <implements interface="ActionListener"/>
+                <declaration name="DELAY" type="int" line="828"/>
+                <method name="run" type="void" line="830">
+                    <params>
+                        <param name="args" type="List<Runnable>"/>
+                    </params>
+                    <scope line="831"/>
+                </method>
+                <method name="submit" type="void" line="836">
+                    <declaration name="timer" type="Timer" line="837"/>
+                </method>
+                <method name="actionPerformed" type="void" line="841">
+                    <params>
+                        <param name="event" type="ActionEvent"/>
+                    </params>
+                </method>
+            </class>
+            <class name="SwingWorkerPropertyChangeSupport" line="846">
+                <extends class="PropertyChangeSupport"/>
+                <method name="SwingWorkerPropertyChangeSupport" type="constructor" line="848">
+                    <params>
+                        <param name="source" type="Object"/>
+                    </params>
+                </method>
+                <method name="firePropertyChange" type="void" line="852">
+                    <params>
+                        <param name="evt" type="PropertyChangeEvent"/>
+                    </params>
+                    <scope line="853"/>
+                    <scope line="855">
+                        <anonymous_class line="857">
+                            <method name="run" type="void" line="858"/>
+                        </anonymous_class>
+                    </scope>
+                </method>
+            </class>
+        </class>
+    </source>

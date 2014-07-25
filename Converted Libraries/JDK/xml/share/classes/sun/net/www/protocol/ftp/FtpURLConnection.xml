@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="
+ * FTP stream opener.
+ */
+package sun.net.www.protocol.ftp">
+        <import package="java.io.IOException"/>
+        <import package="java.io.InputStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.io.BufferedInputStream"/>
+        <import package="java.io.FilterInputStream"/>
+        <import package="java.io.FilterOutputStream"/>
+        <import package="java.io.FileNotFoundException"/>
+        <import package="java.net.URL"/>
+        <import package="java.net.SocketPermission"/>
+        <import package="java.net.UnknownHostException"/>
+        <import package="java.net.InetSocketAddress"/>
+        <import package="java.net.URI"/>
+        <import package="java.net.Proxy"/>
+        <import package="java.net.ProxySelector"/>
+        <import package="java.util.StringTokenizer"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.security.Permission"/>
+        <import package="sun.net.NetworkClient"/>
+        <import package="sun.net.www.MessageHeader"/>
+        <import package="sun.net.www.MeteredStream"/>
+        <import package="sun.net.www.URLConnection"/>
+        <import package="sun.net.www.protocol.http.HttpURLConnection"/>
+        <import package="sun.net.ftp.FtpClient"/>
+        <import package="sun.net.ftp.FtpProtocolException"/>
+        <import package="sun.net.ProgressSource"/>
+        <import package="sun.net.ProgressMonitor"/>
+        <import package="sun.net.www.ParseUtil"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <javadoc line="26">
+            FTP stream opener.            
+        </javadoc>
+        <class name="FtpURLConnection" line="62">
+            <extends class="URLConnection"/>
+            <comment line="84">
+                In case we have to use proxies, we use HttpURLConnection                
+            </comment>
+            <comment line="107">
+                Redefine timeouts from java.net.URLConnection as we need -1 to mean
+                 not set. This is to ensure backward compatibility.                
+            </comment>
+            <comment line="315">
+                Decodes the path as per the RFC-1738 specifications.                
+            </comment>
+            <comment line="361">
+                As part of RFC-1738 it is specified that the path should be
+                 interpreted as a series of FTP CWD commands.
+                 This is because, &apos;&apos; is not necessarly the directory delimiter
+                 on every systems.                
+            </comment>
+            <javadoc line="62">
+                This class Opens an FTP input (or output) stream given a URL.
+                  It works as a one shot FTP transfer :
+                  &lt;UL&gt;
+                  &lt;LI&gt;Login&lt;/LI&gt;
+                  &lt;LI&gt;Get (or Put) the file&lt;/LI&gt;
+                  &lt;LI&gt;Disconnect&lt;/LI&gt;
+                  &lt;/UL&gt;
+                  You should not have to use it directly in most cases because all will be handled
+                  in a abstract layer. Here is an example of how to use the class :
+                  &lt;P&gt;
+                  &lt;code&gt;URL url = new URL(&quot;ftp://ftp.sun.com/pub/test.txt&quot;);&lt;p&gt;
+                  UrlConnection con = url.openConnection();&lt;p&gt;
+                  InputStream is = con.getInputStream();&lt;p&gt;
+                  ...&lt;p&gt;
+                  is.close();&lt;/code&gt;                
+                <see>
+                    sun.net.ftp.FtpClient                    
+                </see>
+            </javadoc>
+            <declaration name="http" type="HttpURLConnection" line="84"/>
+            <declaration name="instProxy" type="Proxy" line="85"/>
+            <declaration name="is" type="InputStream" line="87"/>
+            <declaration name="os" type="OutputStream" line="88"/>
+            <declaration name="ftp" type="FtpClient" line="90"/>
+            <declaration name="permission" type="Permission" line="91"/>
+            <declaration name="password" type="String" line="93"/>
+            <declaration name="user" type="String" line="94"/>
+            <declaration name="host" type="String" line="96"/>
+            <declaration name="pathname" type="String" line="97"/>
+            <declaration name="filename" type="String" line="98"/>
+            <declaration name="fullpath" type="String" line="99"/>
+            <declaration name="port" type="int" line="100"/>
+            <declaration name="NONE" type="int" line="101"/>
+            <declaration name="ASCII" type="int" line="102"/>
+            <declaration name="BIN" type="int" line="103"/>
+            <declaration name="DIR" type="int" line="104"/>
+            <declaration name="type" type="int" line="105"/>
+            <declaration name="connectTimeout" type="int" line="109"/>
+            <declaration name="readTimeout" type="int" line="110"/>
+            <class name="FtpInputStream" line="112">
+                <extends class="FilterInputStream"/>
+                <javadoc line="112">
+                    For FTP URLs we need to have a special InputStream because we
+                      need to close 2 sockets after we&apos;re done with it :
+                      - The Data socket (for the file).
+                      - The command socket (FtpClient).
+                      Since that&apos;s the only class that needs to see that, it is an inner class.                    
+                </javadoc>
+                <declaration name="ftp" type="FtpClient" line="120"/>
+                <method name="FtpInputStream" type="constructor" line="121">
+                    <params>
+                        <param name="cl" type="FtpClient"/>
+                        <param name="fd" type="InputStream"/>
+                    </params>
+                </method>
+                <method name="close" type="void" line="127">
+                    <scope line="129"/>
+                </method>
+            </class>
+            <class name="FtpOutputStream" line="135">
+                <extends class="FilterOutputStream"/>
+                <javadoc line="135">
+                    For FTP URLs we need to have a special OutputStream because we
+                      need to close 2 sockets after we&apos;re done with it :
+                      - The Data socket (for the file).
+                      - The command socket (FtpClient).
+                      Since that&apos;s the only class that needs to see that, it is an inner class.                    
+                </javadoc>
+                <declaration name="ftp" type="FtpClient" line="143"/>
+                <method name="FtpOutputStream" type="constructor" line="144">
+                    <params>
+                        <param name="cl" type="FtpClient"/>
+                        <param name="fd" type="OutputStream"/>
+                    </params>
+                </method>
+                <method name="close" type="void" line="150">
+                    <scope line="152"/>
+                </method>
+            </class>
+            <javadoc line="158">
+                Creates an FtpURLConnection from a URL.                
+                <param>
+                    url     The <code>URL</code> to retrieve or store.                    
+                </param>
+            </javadoc>
+            <method name="FtpURLConnection" type="constructor" line="163">
+                <params>
+                    <param name="url" type="URL"/>
+                </params>
+            </method>
+            <javadoc line="167">
+                Same as FtpURLconnection(URL) with a per connection proxy specified                
+            </javadoc>
+            <method name="FtpURLConnection" type="constructor" line="170">
+                <params>
+                    <param name="url" type="URL"/>
+                    <param name="p" type="Proxy"/>
+                </params>
+                <comment line="177">
+                    get the user and password                    
+                </comment>
+                <declaration name="userInfo" type="String" line="175"/>
+                <scope line="177">
+                    <declaration name="delimiter" type="int" line="178"/>
+                    <scope line="179"/>
+                    <scope line="182"/>
+                </scope>
+            </method>
+            <method name="setTimeouts" type="void" line="189">
+                <scope line="190">
+                    <scope line="191"/>
+                    <scope line="194"/>
+                </scope>
+            </method>
+            <javadoc line="200">
+                Connects to the FTP server and logs in.                
+                <throws>
+                    FtpLoginException if the login is unsuccessful                    
+                </throws>
+                <throws>
+                    FtpProtocolException if an error occurs                    
+                </throws>
+                <throws>
+                    UnknownHostException if trying to connect to an unknown host                    
+                </throws>
+            </javadoc>
+            <method name="connect" type="void" line="208">
+                <comment line="214">
+                    no per connection proxy specified                    
+                </comment>
+                <comment line="215">
+                    Do we have to use a proxy?                    
+                </comment>
+                <comment line="238">
+                    OK, we have an http proxy                    
+                </comment>
+                <comment line="259">
+                    per connection proxy specified                    
+                </comment>
+                <comment line="297">
+                    Maybe do something smart here, like use a proxy like iftp.                    
+                </comment>
+                <comment line="298">
+                    Just keep throwing for now.                    
+                </comment>
+                <comment line="307">
+                    Backward compatibility                    
+                </comment>
+                <scope line="209"/>
+                <declaration name="p" type="Proxy" line="213"/>
+                <scope line="214">
+                    <anonymous_class line="219">
+                        <method name="run" type="ProxySelector" line="220"/>
+                    </anonymous_class>
+                    <declaration name="sel" type="ProxySelector" line="218"/>
+                    <scope line="224">
+                        <declaration name="uri" type="URI" line="225"/>
+                        <declaration name="it" type="Iterator&lt;Proxy&gt;" line="226"/>
+                        <scope line="227">
+                            <scope line="230"/>
+                            <scope line="234"/>
+                            <declaration name="paddr" type="InetSocketAddress" line="239"/>
+                            <scope line="240">
+                                <scope line="244"/>
+                                <scope line="247"/>
+                            </scope>
+                            <scope line="253"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="259">
+                    <scope line="261">
+                        <scope line="265"/>
+                        <scope line="268"/>
+                    </scope>
+                </scope>
+                <scope line="277">
+                    <declaration name="vers" type="String" line="279"/>
+                </scope>
+                <scope line="285">
+                    <scope line="287"/>
+                    <scope line="291"/>
+                    <scope line="293"/>
+                </scope>
+                <scope line="296"/>
+                <scope line="300"/>
+                <scope line="303"/>
+                <scope line="305"/>
+            </method>
+            <method name="decodePath" type="void" line="317">
+                <params>
+                    <param name="path" type="String"/>
+                </params>
+                <declaration name="i" type="int" line="318"/>
+                <scope line="319">
+                    <declaration name="s1" type="String" line="320"/>
+                    <scope line="321"/>
+                    <scope line="324"/>
+                    <scope line="327"/>
+                </scope>
+                <scope line="333"/>
+                <scope line="336"/>
+                <scope line="339">
+                    <scope line="341"/>
+                    <scope line="345"/>
+                </scope>
+                <scope line="349"/>
+                <scope line="353"/>
+                <scope line="355"/>
+            </method>
+            <method name="cd" type="void" line="366">
+                <params>
+                    <param name="path" type="String"/>
+                </params>
+                <scope line="367"/>
+                <scope line="370"/>
+                <declaration name="token" type="StringTokenizer" line="375"/>
+                <scope line="376"/>
+            </method>
+            <javadoc line="381">
+                Get the InputStream to retreive the remote file. It will issue the
+                  &quot;get&quot; (or &quot;dir&quot;) command to the ftp server.                
+                <return>
+                    the <code>InputStream</code> to the connection.                    
+                </return>
+                <throws>
+                    IOException if already opened for output                    
+                </throws>
+                <throws>
+                    FtpProtocolException if errors occur during the transfert.                    
+                </throws>
+            </javadoc>
+            <method name="getInputStream" type="InputStream" line="391">
+                <comment line="431">
+                    Try to get the size of the file in bytes.  If that is                    
+                </comment>
+                <comment line="438">
+                    Wrap input stream with MeteredStream to ensure read() will always return -1                    
+                </comment>
+                <comment line="439">
+                    at expected length.                    
+                </comment>
+                <comment line="441">
+                    Check if URL should be metered                    
+                </comment>
+                <comment line="454">
+                    do nothing, since all we were doing was trying to                    
+                </comment>
+                <comment line="474">
+                    if that worked, then make a directory listing
+                    and build an html stream with all the files in                    
+                </comment>
+                <scope line="392"/>
+                <scope line="396"/>
+                <scope line="400"/>
+                <scope line="404"/>
+                <declaration name="msgh" type="MessageHeader" line="408"/>
+                <declaration name="isAdir" type="boolean" line="410"/>
+                <scope line="411">
+                    <scope line="413">
+                        <scope line="416"/>
+                        <scope line="418"/>
+                    </scope>
+                    <scope line="421">
+                        <scope line="422"/>
+                        <scope line="424"/>
+                    </scope>
+                    <scope line="433">
+                        <declaration name="l" type="long" line="434"/>
+                        <scope line="436">
+                            <declaration name="meteredInput" type="boolean" line="442"/>
+                            <declaration name="pi" type="ProgressSource" line="443"/>
+                            <scope line="445"/>
+                        </scope>
+                    </scope>
+                    <scope line="452"/>
+                    <scope line="458"/>
+                    <scope line="461">
+                        <declaration name="ftype" type="String" line="463"/>
+                        <scope line="464"/>
+                        <scope line="467"/>
+                    </scope>
+                </scope>
+                <scope line="471">
+                    <scope line="472"/>
+                    <scope line="482"/>
+                    <scope line="484"/>
+                </scope>
+                <scope line="487"/>
+            </method>
+            <javadoc line="494">
+                Get the OutputStream to store the remote file. It will issue the
+                  &quot;put&quot; command to the ftp server.                
+                <return>
+                    the <code>OutputStream</code> to the connection.                    
+                </return>
+                <throws>
+                    IOException if already opened for input or the URL
+                      points to a directory                    
+                </throws>
+                <throws>
+                    FtpProtocolException if errors occur during the transfert.                    
+                </throws>
+            </javadoc>
+            <method name="getOutputStream" type="OutputStream" line="505">
+                <comment line="512">
+                    getInputStream() is neccessary to force a writeRequests()                    
+                </comment>
+                <comment line="513">
+                    on the http client.                    
+                </comment>
+                <scope line="506"/>
+                <scope line="510">
+                    <declaration name="out" type="OutputStream" line="511"/>
+                </scope>
+                <scope line="518"/>
+                <scope line="522"/>
+                <scope line="527"/>
+                <scope line="530">
+                    <scope line="531"/>
+                    <scope line="534"/>
+                    <scope line="536"/>
+                </scope>
+                <scope line="540"/>
+            </method>
+            <method name="guessContentTypeFromFilename" type="String" line="546">
+                <params>
+                    <param name="fname" type="String"/>
+                </params>
+            </method>
+            <javadoc line="550">
+                Gets the &lt;code&gt;Permission&lt;/code&gt; associated with the host &amp; port.                
+                <return>
+                    The <code>Permission</code> object.                    
+                </return>
+            </javadoc>
+            <method name="getPermission" type="Permission" line="556">
+                <scope line="557">
+                    <declaration name="urlport" type="int" line="558"/>
+                    <declaration name="urlhost" type="String" line="560"/>
+                </scope>
+            </method>
+            <javadoc line="566">
+                Sets the general request property. If a property with the key already
+                  exists, overwrite its value with the new value.                
+                <param>
+                    key     the keyword by which the request is known
+                      (e.g., "<code>accept</code>").                    
+                </param>
+                <param>
+                    value   the value associated with it.                    
+                </param>
+                <throws>
+                    IllegalStateException if already connected                    
+                </throws>
+                <see>
+                    #getRequestProperty(java.lang.String)                    
+                </see>
+            </javadoc>
+            <method name="setRequestProperty" type="void" line="577">
+                <params>
+                    <param name="key" type="String"/>
+                    <param name="value" type="String"/>
+                </params>
+                <scope line="579">
+                    <scope line="580"/>
+                    <scope line="582"/>
+                    <scope line="584"/>
+                    <scope line="586"/>
+                </scope>
+            </method>
+            <javadoc line="595">
+                Returns the value of the named general request property for this
+                  connection.                
+                <param>
+                    key the keyword by which the request is known (e.g., "accept").                    
+                </param>
+                <return>
+                    the value of the named general request property for this
+                      connection.                    
+                </return>
+                <throws>
+                    IllegalStateException if already connected                    
+                </throws>
+                <see>
+                    #setRequestProperty(java.lang.String,java.lang.String)                    
+                </see>
+            </javadoc>
+            <method name="getRequestProperty" type="String" line="606">
+                <params>
+                    <param name="key" type="String"/>
+                </params>
+                <declaration name="value" type="String" line="607"/>
+                <scope line="609">
+                    <scope line="610"/>
+                </scope>
+            </method>
+            <method name="setConnectTimeout" type="void" line="619">
+                <params>
+                    <param name="timeout" type="int"/>
+                </params>
+                <scope line="620"/>
+            </method>
+            <method name="getConnectTimeout" type="int" line="627"/>
+            <method name="setReadTimeout" type="void" line="632">
+                <params>
+                    <param name="timeout" type="int"/>
+                </params>
+                <scope line="633"/>
+            </method>
+            <method name="getReadTimeout" type="int" line="640"/>
+        </class>
+    </source>

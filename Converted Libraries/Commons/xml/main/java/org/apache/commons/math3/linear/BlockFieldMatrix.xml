@@ -1,0 +1,1532 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.linear">
+        <import package="java.io.Serializable"/>
+        <import package="org.apache.commons.math3.Field"/>
+        <import package="org.apache.commons.math3.FieldElement"/>
+        <import package="org.apache.commons.math3.exception.NoDataException"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.NotStrictlyPositiveException"/>
+        <import package="org.apache.commons.math3.exception.NullArgumentException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooSmallException"/>
+        <import package="org.apache.commons.math3.exception.OutOfRangeException"/>
+        <import package="org.apache.commons.math3.exception.util.LocalizedFormats"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <import package="org.apache.commons.math3.util.MathArrays"/>
+        <import package="org.apache.commons.math3.util.MathUtils"/>
+        <class name="BlockFieldMatrix" line="35">
+            <type_params>
+                <type_param name="T"/>
+            </type_params>
+            <extends class="AbstractFieldMatrix">
+                <type_params>
+                    <type_param name="T"/>
+                </type_params>
+            </extends>
+            <implements interface="Serializable"/>
+            <javadoc line="35">
+                Cache-friendly implementation of FieldMatrix using a flat arrays to store
+                  square blocks of the matrix.
+                  &lt;p&gt;
+                  This implementation is specially designed to be cache-friendly. Square blocks are
+                  stored as small arrays and allow efficient traversal of data both in row major direction
+                  and columns major direction, one block at a time. This greatly increases performances
+                  for algorithms that use crossed directions loops like multiplication or transposition.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The size of square blocks is a static parameter. It may be tuned according to the cache
+                  size of the target computer processor. As a rule of thumbs, it should be the largest
+                  value that allows three blocks to be simultaneously cached (this is necessary for example
+                  for matrix multiplication). The default value is to use 36x36 blocks.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The regular blocks represent {@link #BLOCK_SIZE} x {@link #BLOCK_SIZE} squares. Blocks
+                  at right hand side and bottom side which may be smaller to fit matrix dimensions. The square
+                  blocks are flattened in row major order in single dimension arrays which are therefore{@link #BLOCK_SIZE}&lt;sup&gt;2&lt;/sup&gt; elements long for regular blocks. The blocks are themselves
+                  organized in row major order.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  As an example, for a block size of 36x36, a 100x60 matrix would be stored in 6 blocks.
+                  Block 0 would be a Field[1296] array holding the upper left 36x36 square, block 1 would be
+                  a Field[1296] array holding the upper center 36x36 square, block 2 would be a Field[1008]
+                  array holding the upper right 36x28 rectangle, block 3 would be a Field[864] array holding
+                  the lower left 24x36 rectangle, block 4 would be a Field[864] array holding the lower center
+                  24x36 rectangle and block 5 would be a Field[672] array holding the lower right 24x28
+                  rectangle.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The layout complexity overhead versus simple mapping of matrices to java
+                  arrays is negligible for small matrices (about 1%). The gain from cache efficiency leads
+                  to up to 3-fold improvements for matrices of moderate to large size.
+                  &lt;/p&gt;                
+                <param>
+                    <T>
+                       the type of the field elements                    
+                </param>
+                <version>
+                    $Id: BlockFieldMatrix.java 1449528 2013-02-24 19:06:20Z luc $                    
+                </version>
+                <since>
+                    2.0                    
+                </since>
+            </javadoc>
+            <declaration name="BLOCK_SIZE" type="int" line="76"/>
+            <javadoc line="76">
+                Block size.                
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="78"/>
+            <javadoc line="78">
+                Serializable version identifier.                
+            </javadoc>
+            <declaration name="blocks" type="T" line="80"/>
+            <javadoc line="80">
+                Blocks of matrix entries.                
+            </javadoc>
+            <declaration name="rows" type="int" line="82"/>
+            <javadoc line="82">
+                Number of rows of the matrix.                
+            </javadoc>
+            <declaration name="columns" type="int" line="84"/>
+            <javadoc line="84">
+                Number of columns of the matrix.                
+            </javadoc>
+            <declaration name="blockRows" type="int" line="86"/>
+            <javadoc line="86">
+                Number of block rows of the matrix.                
+            </javadoc>
+            <declaration name="blockColumns" type="int" line="88"/>
+            <javadoc line="88">
+                Number of block columns of the matrix.                
+            </javadoc>
+            <javadoc line="91">
+                Create a new matrix with the supplied row and column dimensions.                
+                <param>
+                    field Field to which the elements belong.                    
+                </param>
+                <param>
+                    rows Number of rows in the new matrix.                    
+                </param>
+                <param>
+                    columns Number of columns in the new matrix.                    
+                </param>
+                <throws>
+                    NotStrictlyPositiveException if row or column dimension is not
+                      positive.                    
+                </throws>
+            </javadoc>
+            <method name="BlockFieldMatrix" type="constructor" line="102">
+                <params>
+                    <param name="field" type="Field<T>"/>
+                    <param name="rows" type="int"/>
+                    <param name="columns" type="int"/>
+                </params>
+                <comment line="107">
+                    number of blocks                    
+                </comment>
+                <comment line="111">
+                    allocate storage blocks, taking care of smaller ones at right and bottom                    
+                </comment>
+            </method>
+            <javadoc line="115">
+                Create a new dense matrix copying entries from raw layout data.
+                  &lt;p&gt;The input array &lt;em&gt;must&lt;/em&gt; already be in raw layout.&lt;/p&gt;
+                  &lt;p&gt;Calling this constructor is equivalent to call:
+                  &lt;pre&gt;matrix = new BlockFieldMatrix&lt;T&gt;(getField(), rawData.length, rawData[0].length,
+                  toBlocksLayout(rawData), false);&lt;/pre&gt;
+                  &lt;/p&gt;                
+                <param>
+                    rawData Data for the new matrix, in raw layout.                    
+                </param>
+                <throws>
+                    DimensionMismatchException if the {@code blockData} shape is
+                      inconsistent with block layout.                    
+                </throws>
+                <see>
+                    #BlockFieldMatrix(int,int,FieldElement[][],boolean)                    
+                </see>
+            </javadoc>
+            <method name="BlockFieldMatrix" type="constructor" line="129">
+                <params>
+                    <param name="rawData" type="T[][]"/>
+                </params>
+            </method>
+            <javadoc line="133">
+                Create a new dense matrix copying entries from block layout data.
+                  &lt;p&gt;The input array &lt;em&gt;must&lt;/em&gt; already be in blocks layout.&lt;/p&gt;                
+                <param>
+                    rows  the number of rows in the new matrix                    
+                </param>
+                <param>
+                    columns  the number of columns in the new matrix                    
+                </param>
+                <param>
+                    blockData data for new matrix                    
+                </param>
+                <param>
+                    copyArray if true, the input array will be copied, otherwise
+                      it will be referenced                    
+                </param>
+                <throws>
+                    DimensionMismatchException if the {@code blockData} shape is
+                      inconsistent with block layout.                    
+                </throws>
+                <throws>
+                    NotStrictlyPositiveException if row or column dimension is not
+                      positive.                    
+                </throws>
+                <see>
+                    #createBlocksLayout(Field,int,int)                    
+                </see>
+                <see>
+                    #toBlocksLayout(FieldElement[][])                    
+                </see>
+                <see>
+                    #BlockFieldMatrix(FieldElement[][])                    
+                </see>
+            </javadoc>
+            <method name="BlockFieldMatrix" type="constructor" line="152">
+                <params>
+                    <param name="rows" type="int"/>
+                    <param name="columns" type="int"/>
+                    <param name="blockData" type="T[][]"/>
+                    <param name="copyArray" type="boolean"/>
+                </params>
+                <comment line="157">
+                    number of blocks                    
+                </comment>
+                <comment line="162">
+                    allocate storage blocks, taking care of smaller ones at right and bottom                    
+                </comment>
+                <comment line="165">
+                    reference existing array                    
+                </comment>
+                <scope line="161"/>
+                <scope line="164"/>
+                <declaration name="index" type="int" line="169"/>
+                <scope line="170">
+                    <declaration name="iHeight" type="int" line="171"/>
+                    <scope line="172">
+                        <scope line="173"/>
+                        <scope line="177"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="184">
+                Convert a data array from raw layout to blocks layout.
+                  &lt;p&gt;
+                  Raw layout is the straightforward layout where element at row i and
+                  column j is in array element &lt;code&gt;rawData[i][j]&lt;/code&gt;. Blocks layout
+                  is the layout used in {@link BlockFieldMatrix} instances, where the matrix
+                  is split in square blocks (except at right and bottom side where blocks may
+                  be rectangular to fit matrix size) and each block is stored in a flattened
+                  one-dimensional array.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  This method creates an array in blocks layout from an input array in raw layout.
+                  It can be used to provide the array argument of the {@link #BlockFieldMatrix(int,int,FieldElement[][],boolean)}constructor.
+                  &lt;/p&gt;                
+                <param>
+                    <T>
+                       Type of the field elements.                    
+                </param>
+                <param>
+                    rawData Data array in raw layout.                    
+                </param>
+                <return>
+                    a new data array containing the same entries but in blocks layout                    
+                </return>
+                <throws>
+                    DimensionMismatchException if {@code rawData} is not rectangular
+                      (not all rows have the same length).                    
+                </throws>
+                <see>
+                    #createBlocksLayout(Field,int,int)                    
+                </see>
+                <see>
+                    #BlockFieldMatrix(int,int,FieldElement[][],boolean)                    
+                </see>
+            </javadoc>
+            <method name="toBlocksLayout" type="T[][]" line="209">
+                <params>
+                    <param name="rawData" type="T[][]"/>
+                </params>
+                <comment line="216">
+                    safety checks                    
+                </comment>
+                <comment line="224">
+                    convert array                    
+                </comment>
+                <comment line="237">
+                    allocate new block                    
+                </comment>
+                <comment line="241">
+                    copy data                    
+                </comment>
+                <declaration name="rows" type="int" line="211"/>
+                <declaration name="columns" type="int" line="212"/>
+                <declaration name="blockRows" type="int" line="213"/>
+                <declaration name="blockColumns" type="int" line="214"/>
+                <scope line="217">
+                    <declaration name="length" type="int" line="218"/>
+                    <scope line="219"/>
+                </scope>
+                <declaration name="field" type="Field&lt;T&gt;" line="225"/>
+                <declaration name="blocks" type="T[][]" line="226"/>
+                <declaration name="blockIndex" type="int" line="227"/>
+                <scope line="228">
+                    <declaration name="pStart" type="int" line="229"/>
+                    <declaration name="pEnd" type="int" line="230"/>
+                    <declaration name="iHeight" type="int" line="231"/>
+                    <scope line="232">
+                        <declaration name="qStart" type="int" line="233"/>
+                        <declaration name="qEnd" type="int" line="234"/>
+                        <declaration name="jWidth" type="int" line="235"/>
+                        <declaration name="block" type="T[]" line="238"/>
+                        <declaration name="index" type="int" line="242"/>
+                        <scope line="243"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="255">
+                Create a data array in blocks layout.
+                  &lt;p&gt;
+                  This method can be used to create the array argument of the {@link #BlockFieldMatrix(int,int,FieldElement[][],boolean)}constructor.
+                  &lt;/p&gt;                
+                <param>
+                    <T>
+                       Type of the field elements.                    
+                </param>
+                <param>
+                    field Field to which the elements belong.                    
+                </param>
+                <param>
+                    rows Number of rows in the new matrix.                    
+                </param>
+                <param>
+                    columns Number of columns in the new matrix.                    
+                </param>
+                <return>
+                    a new data array in blocks layout.                    
+                </return>
+                <see>
+                    #toBlocksLayout(FieldElement[][])                    
+                </see>
+                <see>
+                    #BlockFieldMatrix(int,int,FieldElement[][],boolean)                    
+                </see>
+            </javadoc>
+            <method name="createBlocksLayout" type="T[][]" line="271">
+                <params>
+                    <param name="field" type="Field<T>"/>
+                    <param name="rows" type="int"/>
+                    <param name="columns" type="int"/>
+                </params>
+                <declaration name="blockRows" type="int" line="272"/>
+                <declaration name="blockColumns" type="int" line="273"/>
+                <declaration name="blocks" type="T[][]" line="275"/>
+                <declaration name="blockIndex" type="int" line="276"/>
+                <scope line="277">
+                    <declaration name="pStart" type="int" line="278"/>
+                    <declaration name="pEnd" type="int" line="279"/>
+                    <declaration name="iHeight" type="int" line="280"/>
+                    <scope line="281">
+                        <declaration name="qStart" type="int" line="282"/>
+                        <declaration name="qEnd" type="int" line="283"/>
+                        <declaration name="jWidth" type="int" line="284"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="293">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="createMatrix" type="FieldMatrix<T>" line="297">
+                <params>
+                    <param name="rowDimension" type="int"/>
+                    <param name="columnDimension" type="int"/>
+                </params>
+            </method>
+            <javadoc line="302">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="copy" type="FieldMatrix<T>" line="304">
+                <comment line="306">
+                    create an empty matrix                    
+                </comment>
+                <comment line="309">
+                    copy the blocks                    
+                </comment>
+                <declaration name="copied" type="BlockFieldMatrix&lt;T&gt;" line="307"/>
+                <scope line="310"/>
+            </method>
+            <javadoc line="317">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="add" type="FieldMatrix<T>" line="320">
+                <params>
+                    <param name="m" type="FieldMatrix<T>"/>
+                </params>
+                <comment line="325">
+                    safety check                    
+                </comment>
+                <comment line="330">
+                    perform addition block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="335">
+                    perform addition on the current block                    
+                </comment>
+                <comment line="350">
+                    go to next block                    
+                </comment>
+                <scope line="321"/>
+                <scope line="323">
+                    <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="328"/>
+                    <declaration name="blockIndex" type="int" line="331"/>
+                    <scope line="332">
+                        <scope line="333">
+                            <declaration name="outBlock" type="T[]" line="336"/>
+                            <declaration name="tBlock" type="T[]" line="337"/>
+                            <declaration name="pStart" type="int" line="338"/>
+                            <declaration name="pEnd" type="int" line="339"/>
+                            <declaration name="qStart" type="int" line="340"/>
+                            <declaration name="qEnd" type="int" line="341"/>
+                            <declaration name="k" type="int" line="342"/>
+                            <scope line="343">
+                                <scope line="344"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="360">
+                Compute the sum of {@code this} and {@code m}.                
+                <param>
+                    m matrix to be added                    
+                </param>
+                <return>
+                    {@code this + m}                    
+                </return>
+                <throws>
+                    MatrixDimensionMismatchException if {@code m} is not the same
+                      size as {@code this}                    
+                </throws>
+            </javadoc>
+            <method name="add" type="BlockFieldMatrix<T>" line="369">
+                <params>
+                    <param name="m" type="BlockFieldMatrix<T>"/>
+                </params>
+                <comment line="371">
+                    safety check                    
+                </comment>
+                <comment line="376">
+                    perform addition block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="374"/>
+                <scope line="377">
+                    <declaration name="outBlock" type="T[]" line="378"/>
+                    <declaration name="tBlock" type="T[]" line="379"/>
+                    <declaration name="mBlock" type="T[]" line="380"/>
+                    <scope line="381"/>
+                </scope>
+            </method>
+            <javadoc line="389">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="subtract" type="FieldMatrix<T>" line="392">
+                <params>
+                    <param name="m" type="FieldMatrix<T>"/>
+                </params>
+                <comment line="397">
+                    safety check                    
+                </comment>
+                <comment line="402">
+                    perform subtraction block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="407">
+                    perform subtraction on the current block                    
+                </comment>
+                <comment line="422">
+                    go to next block                    
+                </comment>
+                <scope line="393"/>
+                <scope line="395">
+                    <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="400"/>
+                    <declaration name="blockIndex" type="int" line="403"/>
+                    <scope line="404">
+                        <scope line="405">
+                            <declaration name="outBlock" type="T[]" line="408"/>
+                            <declaration name="tBlock" type="T[]" line="409"/>
+                            <declaration name="pStart" type="int" line="410"/>
+                            <declaration name="pEnd" type="int" line="411"/>
+                            <declaration name="qStart" type="int" line="412"/>
+                            <declaration name="qEnd" type="int" line="413"/>
+                            <declaration name="k" type="int" line="414"/>
+                            <scope line="415">
+                                <scope line="416"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="432">
+                Compute {@code this - m}.                
+                <param>
+                    m matrix to be subtracted                    
+                </param>
+                <return>
+                    {@code this - m}                    
+                </return>
+                <throws>
+                    MatrixDimensionMismatchException if {@code m} is not the same
+                      size as {@code this}                    
+                </throws>
+            </javadoc>
+            <method name="subtract" type="BlockFieldMatrix<T>" line="440">
+                <params>
+                    <param name="m" type="BlockFieldMatrix<T>"/>
+                </params>
+                <comment line="441">
+                    safety check                    
+                </comment>
+                <comment line="446">
+                    perform subtraction block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="444"/>
+                <scope line="447">
+                    <declaration name="outBlock" type="T[]" line="448"/>
+                    <declaration name="tBlock" type="T[]" line="449"/>
+                    <declaration name="mBlock" type="T[]" line="450"/>
+                    <scope line="451"/>
+                </scope>
+            </method>
+            <javadoc line="459">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="scalarAdd" type="FieldMatrix<T>" line="461">
+                <params>
+                    <param name="d" type="T"/>
+                </params>
+                <comment line="464">
+                    perform subtraction block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="462"/>
+                <scope line="465">
+                    <declaration name="outBlock" type="T[]" line="466"/>
+                    <declaration name="tBlock" type="T[]" line="467"/>
+                    <scope line="468"/>
+                </scope>
+            </method>
+            <javadoc line="476">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="scalarMultiply" type="FieldMatrix<T>" line="478">
+                <params>
+                    <param name="d" type="T"/>
+                </params>
+                <comment line="482">
+                    perform subtraction block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="480"/>
+                <scope line="483">
+                    <declaration name="outBlock" type="T[]" line="484"/>
+                    <declaration name="tBlock" type="T[]" line="485"/>
+                    <scope line="486"/>
+                </scope>
+            </method>
+            <javadoc line="494">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="multiply" type="FieldMatrix<T>" line="497">
+                <params>
+                    <param name="m" type="FieldMatrix<T>"/>
+                </params>
+                <comment line="502">
+                    safety check                    
+                </comment>
+                <comment line="508">
+                    perform multiplication block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="520">
+                    select current block                    
+                </comment>
+                <comment line="523">
+                    perform multiplication on current block                    
+                </comment>
+                <comment line="545">
+                    go to next block                    
+                </comment>
+                <scope line="498"/>
+                <scope line="500">
+                    <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="505"/>
+                    <declaration name="zero" type="T" line="506"/>
+                    <declaration name="blockIndex" type="int" line="509"/>
+                    <scope line="510">
+                        <declaration name="pStart" type="int" line="512"/>
+                        <declaration name="pEnd" type="int" line="513"/>
+                        <scope line="515">
+                            <declaration name="qStart" type="int" line="517"/>
+                            <declaration name="qEnd" type="int" line="518"/>
+                            <declaration name="outBlock" type="T[]" line="521"/>
+                            <scope line="524">
+                                <declaration name="kWidth" type="int" line="525"/>
+                                <declaration name="tBlock" type="T[]" line="526"/>
+                                <declaration name="rStart" type="int" line="527"/>
+                                <declaration name="k" type="int" line="528"/>
+                                <scope line="529">
+                                    <declaration name="lStart" type="int" line="530"/>
+                                    <declaration name="lEnd" type="int" line="531"/>
+                                    <scope line="532">
+                                        <declaration name="sum" type="T" line="533"/>
+                                        <declaration name="r" type="int" line="534"/>
+                                        <scope line="535"/>
+                                    </scope>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="555">
+                Returns the result of postmultiplying {@code this} by {@code m}.                
+                <param>
+                    m matrix to postmultiply by                    
+                </param>
+                <return>
+                    {@code this  m}                    
+                </return>
+                <throws>
+                    DimensionMismatchException if the matrices are not compatible.                    
+                </throws>
+            </javadoc>
+            <method name="multiply" type="BlockFieldMatrix<T>" line="563">
+                <params>
+                    <param name="m" type="BlockFieldMatrix<T>"/>
+                </params>
+                <comment line="565">
+                    safety check                    
+                </comment>
+                <comment line="571">
+                    perform multiplication block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="584">
+                    select current block                    
+                </comment>
+                <comment line="587">
+                    perform multiplication on current block                    
+                </comment>
+                <comment line="619">
+                    go to next block                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="568"/>
+                <declaration name="zero" type="T" line="569"/>
+                <declaration name="blockIndex" type="int" line="572"/>
+                <scope line="573">
+                    <declaration name="pStart" type="int" line="575"/>
+                    <declaration name="pEnd" type="int" line="576"/>
+                    <scope line="578">
+                        <declaration name="jWidth" type="int" line="579"/>
+                        <declaration name="jWidth2" type="int" line="580"/>
+                        <declaration name="jWidth3" type="int" line="581"/>
+                        <declaration name="jWidth4" type="int" line="582"/>
+                        <declaration name="outBlock" type="T[]" line="585"/>
+                        <scope line="588">
+                            <declaration name="kWidth" type="int" line="589"/>
+                            <declaration name="tBlock" type="T[]" line="590"/>
+                            <declaration name="mBlock" type="T[]" line="591"/>
+                            <declaration name="k" type="int" line="592"/>
+                            <scope line="593">
+                                <declaration name="lStart" type="int" line="594"/>
+                                <declaration name="lEnd" type="int" line="595"/>
+                                <scope line="596">
+                                    <declaration name="sum" type="T" line="597"/>
+                                    <declaration name="l" type="int" line="598"/>
+                                    <declaration name="n" type="int" line="599"/>
+                                    <scope line="600"/>
+                                    <scope line="609"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="627">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getData" type="T[][]" line="629">
+                <declaration name="data" type="T[][]" line="631"/>
+                <declaration name="lastColumns" type="int" line="632"/>
+                <scope line="634">
+                    <declaration name="pStart" type="int" line="635"/>
+                    <declaration name="pEnd" type="int" line="636"/>
+                    <declaration name="regularPos" type="int" line="637"/>
+                    <declaration name="lastPos" type="int" line="638"/>
+                    <scope line="639">
+                        <declaration name="dataP" type="T[]" line="640"/>
+                        <declaration name="blockIndex" type="int" line="641"/>
+                        <declaration name="dataPos" type="int" line="642"/>
+                        <scope line="643"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="656">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getSubMatrix" type="FieldMatrix<T>" line="661">
+                <params>
+                    <param name="startRow" type="int"/>
+                    <param name="endRow" type="int"/>
+                    <param name="startColumn" type="int"/>
+                    <param name="endColumn" type="int"/>
+                </params>
+                <comment line="662">
+                    safety checks                    
+                </comment>
+                <comment line="665">
+                    create the output matrix                    
+                </comment>
+                <comment line="669">
+                    compute blocks shifts                    
+                </comment>
+                <comment line="675">
+                    perform extraction block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="683">
+                    handle one block of the output matrix                    
+                </comment>
+                <comment line="692">
+                    the submatrix block spans on two blocks rows from the original matrix                    
+                </comment>
+                <comment line="694">
+                    the submatrix block spans on two blocks columns from the original matrix                    
+                </comment>
+                <comment line="713">
+                    the submatrix block spans on one block column from the original matrix                    
+                </comment>
+                <comment line="724">
+                    the submatrix block spans on one block row from the original matrix                    
+                </comment>
+                <comment line="726">
+                    the submatrix block spans on two blocks columns from the original matrix                    
+                </comment>
+                <comment line="737">
+                    the submatrix block spans on one block column from the original matrix                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="666"/>
+                <declaration name="blockStartRow" type="int" line="670"/>
+                <declaration name="rowsShift" type="int" line="671"/>
+                <declaration name="blockStartColumn" type="int" line="672"/>
+                <declaration name="columnsShift" type="int" line="673"/>
+                <declaration name="pBlock" type="int" line="676"/>
+                <scope line="677">
+                    <declaration name="iHeight" type="int" line="678"/>
+                    <declaration name="qBlock" type="int" line="679"/>
+                    <scope line="680">
+                        <declaration name="jWidth" type="int" line="681"/>
+                        <declaration name="outIndex" type="int" line="684"/>
+                        <declaration name="outBlock" type="T[]" line="685"/>
+                        <declaration name="index" type="int" line="686"/>
+                        <declaration name="width" type="int" line="687"/>
+                        <declaration name="heightExcess" type="int" line="689"/>
+                        <declaration name="widthExcess" type="int" line="690"/>
+                        <scope line="691">
+                            <scope line="693">
+                                <declaration name="width2" type="int" line="695"/>
+                            </scope>
+                            <scope line="712"/>
+                        </scope>
+                        <scope line="723">
+                            <scope line="725">
+                                <declaration name="width2" type="int" line="727"/>
+                            </scope>
+                            <scope line="736"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="752">
+                Copy a part of a block into another one
+                  &lt;p&gt;This method can be called only when the specified part fits in both
+                  blocks, no verification is done here.&lt;/p&gt;                
+                <param>
+                    srcBlock source block                    
+                </param>
+                <param>
+                    srcWidth source block width ({@link #BLOCK_SIZE} or smaller)                    
+                </param>
+                <param>
+                    srcStartRow start row in the source block                    
+                </param>
+                <param>
+                    srcEndRow end row (exclusive) in the source block                    
+                </param>
+                <param>
+                    srcStartColumn start column in the source block                    
+                </param>
+                <param>
+                    srcEndColumn end column (exclusive) in the source block                    
+                </param>
+                <param>
+                    dstBlock destination block                    
+                </param>
+                <param>
+                    dstWidth destination block width ({@link #BLOCK_SIZE} or smaller)                    
+                </param>
+                <param>
+                    dstStartRow start row in the destination block                    
+                </param>
+                <param>
+                    dstStartColumn start column in the destination block                    
+                </param>
+            </javadoc>
+            <method name="copyBlockPart" type="void" line="771">
+                <params>
+                    <param name="srcBlock" type="T[]"/>
+                    <param name="srcWidth" type="int"/>
+                    <param name="srcStartRow" type="int"/>
+                    <param name="srcEndRow" type="int"/>
+                    <param name="srcStartColumn" type="int"/>
+                    <param name="srcEndColumn" type="int"/>
+                    <param name="dstBlock" type="T[]"/>
+                    <param name="dstWidth" type="int"/>
+                    <param name="dstStartRow" type="int"/>
+                    <param name="dstStartColumn" type="int"/>
+                </params>
+                <declaration name="length" type="int" line="772"/>
+                <declaration name="srcPos" type="int" line="773"/>
+                <declaration name="dstPos" type="int" line="774"/>
+                <scope line="775"/>
+            </method>
+            <javadoc line="782">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setSubMatrix" type="void" line="787">
+                <params>
+                    <param name="subMatrix" type="T[][]"/>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                </params>
+                <comment line="788">
+                    safety checks                    
+                </comment>
+                <comment line="803">
+                    compute blocks bounds                    
+                </comment>
+                <comment line="809">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="823">
+                    handle one block, row by row                    
+                </comment>
+                <declaration name="refLength" type="int" line="790"/>
+                <scope line="791"/>
+                <declaration name="endRow" type="int" line="794"/>
+                <declaration name="endColumn" type="int" line="795"/>
+                <scope line="797">
+                    <scope line="798"/>
+                </scope>
+                <declaration name="blockStartRow" type="int" line="804"/>
+                <declaration name="blockEndRow" type="int" line="805"/>
+                <declaration name="blockStartColumn" type="int" line="806"/>
+                <declaration name="blockEndColumn" type="int" line="807"/>
+                <scope line="810">
+                    <declaration name="iHeight" type="int" line="811"/>
+                    <declaration name="firstRow" type="int" line="812"/>
+                    <declaration name="iStart" type="int" line="813"/>
+                    <declaration name="iEnd" type="int" line="814"/>
+                    <scope line="816">
+                        <declaration name="jWidth" type="int" line="817"/>
+                        <declaration name="firstColumn" type="int" line="818"/>
+                        <declaration name="jStart" type="int" line="819"/>
+                        <declaration name="jEnd" type="int" line="820"/>
+                        <declaration name="jLength" type="int" line="821"/>
+                        <declaration name="block" type="T[]" line="824"/>
+                        <scope line="825"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="835">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getRowMatrix" type="FieldMatrix<T>" line="838">
+                <params>
+                    <param name="row" type="int"/>
+                </params>
+                <comment line="842">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="840"/>
+                <declaration name="iBlock" type="int" line="843"/>
+                <declaration name="iRow" type="int" line="844"/>
+                <declaration name="outBlockIndex" type="int" line="845"/>
+                <declaration name="outIndex" type="int" line="846"/>
+                <declaration name="outBlock" type="T[]" line="847"/>
+                <scope line="848">
+                    <declaration name="jWidth" type="int" line="849"/>
+                    <declaration name="block" type="T[]" line="850"/>
+                    <declaration name="available" type="int" line="851"/>
+                    <scope line="852"/>
+                    <scope line="857"/>
+                </scope>
+            </method>
+            <javadoc line="866">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setRowMatrix" type="void" line="869">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="matrix" type="FieldMatrix<T>"/>
+                </params>
+                <scope line="870"/>
+                <scope line="872"/>
+            </method>
+            <javadoc line="877">
+                Sets the entries in row number &lt;code&gt;row&lt;/code&gt;
+                  as a row matrix.  Row indices start at 0.                
+                <param>
+                    row the row to be set                    
+                </param>
+                <param>
+                    matrix row matrix (must have one row and the same number of columns
+                      as the instance)                    
+                </param>
+                <throws>
+                    MatrixDimensionMismatchException if the matrix dimensions do
+                      not match one instance row.                    
+                </throws>
+                <throws>
+                    OutOfRangeException if the specified row index is invalid.                    
+                </throws>
+            </javadoc>
+            <method name="setRowMatrix" type="void" line="889">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="matrix" type="BlockFieldMatrix<T>"/>
+                </params>
+                <comment line="899">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="nCols" type="int" line="891"/>
+                <scope line="893"/>
+                <declaration name="iBlock" type="int" line="900"/>
+                <declaration name="iRow" type="int" line="901"/>
+                <declaration name="mBlockIndex" type="int" line="902"/>
+                <declaration name="mIndex" type="int" line="903"/>
+                <declaration name="mBlock" type="T[]" line="904"/>
+                <scope line="905">
+                    <declaration name="jWidth" type="int" line="906"/>
+                    <declaration name="block" type="T[]" line="907"/>
+                    <declaration name="available" type="int" line="908"/>
+                    <scope line="909"/>
+                    <scope line="914"/>
+                </scope>
+            </method>
+            <javadoc line="921">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getColumnMatrix" type="FieldMatrix<T>" line="924">
+                <params>
+                    <param name="column" type="int"/>
+                </params>
+                <comment line="928">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="926"/>
+                <declaration name="jBlock" type="int" line="929"/>
+                <declaration name="jColumn" type="int" line="930"/>
+                <declaration name="jWidth" type="int" line="931"/>
+                <declaration name="outBlockIndex" type="int" line="932"/>
+                <declaration name="outIndex" type="int" line="933"/>
+                <declaration name="outBlock" type="T[]" line="934"/>
+                <scope line="935">
+                    <declaration name="iHeight" type="int" line="936"/>
+                    <declaration name="block" type="T[]" line="937"/>
+                    <scope line="938">
+                        <scope line="939"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="950">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setColumnMatrix" type="void" line="953">
+                <params>
+                    <param name="column" type="int"/>
+                    <param name="matrix" type="FieldMatrix<T>"/>
+                </params>
+                <scope line="954"/>
+                <scope line="956"/>
+            </method>
+            <javadoc line="961">
+                Sets the entries in column number {@code column}as a column matrix.  Column indices start at 0.                
+                <param>
+                    column Column to be set.                    
+                </param>
+                <param>
+                    matrix Column matrix (must have one column and the same number of rows
+                      as the instance).                    
+                </param>
+                <throws>
+                    MatrixDimensionMismatchException if the matrix dimensions do
+                      not match one instance column.                    
+                </throws>
+                <throws>
+                    OutOfRangeException if the specified column index is invalid.                    
+                </throws>
+            </javadoc>
+            <method name="setColumnMatrix" type="void" line="973">
+                <params>
+                    <param name="column" type="int"/>
+                    <param name="matrix" type="BlockFieldMatrix<T>"/>
+                </params>
+                <comment line="983">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="nRows" type="int" line="975"/>
+                <scope line="977"/>
+                <declaration name="jBlock" type="int" line="984"/>
+                <declaration name="jColumn" type="int" line="985"/>
+                <declaration name="jWidth" type="int" line="986"/>
+                <declaration name="mBlockIndex" type="int" line="987"/>
+                <declaration name="mIndex" type="int" line="988"/>
+                <declaration name="mBlock" type="T[]" line="989"/>
+                <scope line="990">
+                    <declaration name="iHeight" type="int" line="991"/>
+                    <declaration name="block" type="T[]" line="992"/>
+                    <scope line="993">
+                        <scope line="994"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1003">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getRowVector" type="FieldVector<T>" line="1006">
+                <params>
+                    <param name="row" type="int"/>
+                </params>
+                <comment line="1010">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="outData" type="T[]" line="1008"/>
+                <declaration name="iBlock" type="int" line="1011"/>
+                <declaration name="iRow" type="int" line="1012"/>
+                <declaration name="outIndex" type="int" line="1013"/>
+                <scope line="1014">
+                    <declaration name="jWidth" type="int" line="1015"/>
+                    <declaration name="block" type="T[]" line="1016"/>
+                </scope>
+            </method>
+            <javadoc line="1024">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setRowVector" type="void" line="1027">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="vector" type="FieldVector<T>"/>
+                </params>
+                <scope line="1028"/>
+                <scope line="1030"/>
+            </method>
+            <javadoc line="1035">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getColumnVector" type="FieldVector<T>" line="1038">
+                <params>
+                    <param name="column" type="int"/>
+                </params>
+                <comment line="1042">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="outData" type="T[]" line="1040"/>
+                <declaration name="jBlock" type="int" line="1043"/>
+                <declaration name="jColumn" type="int" line="1044"/>
+                <declaration name="jWidth" type="int" line="1045"/>
+                <declaration name="outIndex" type="int" line="1046"/>
+                <scope line="1047">
+                    <declaration name="iHeight" type="int" line="1048"/>
+                    <declaration name="block" type="T[]" line="1049"/>
+                    <scope line="1050"/>
+                </scope>
+            </method>
+            <javadoc line="1058">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setColumnVector" type="void" line="1061">
+                <params>
+                    <param name="column" type="int"/>
+                    <param name="vector" type="FieldVector<T>"/>
+                </params>
+                <scope line="1062"/>
+                <scope line="1064"/>
+            </method>
+            <javadoc line="1069">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getRow" type="T[]" line="1071">
+                <params>
+                    <param name="row" type="int"/>
+                </params>
+                <comment line="1075">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="T[]" line="1073"/>
+                <declaration name="iBlock" type="int" line="1076"/>
+                <declaration name="iRow" type="int" line="1077"/>
+                <declaration name="outIndex" type="int" line="1078"/>
+                <scope line="1079">
+                    <declaration name="jWidth" type="int" line="1080"/>
+                    <declaration name="block" type="T[]" line="1081"/>
+                </scope>
+            </method>
+            <javadoc line="1089">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setRow" type="void" line="1092">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="array" type="T[]"/>
+                </params>
+                <comment line="1099">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="nCols" type="int" line="1094"/>
+                <scope line="1095"/>
+                <declaration name="iBlock" type="int" line="1100"/>
+                <declaration name="iRow" type="int" line="1101"/>
+                <declaration name="outIndex" type="int" line="1102"/>
+                <scope line="1103">
+                    <declaration name="jWidth" type="int" line="1104"/>
+                    <declaration name="block" type="T[]" line="1105"/>
+                </scope>
+            </method>
+            <javadoc line="1111">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getColumn" type="T[]" line="1113">
+                <params>
+                    <param name="column" type="int"/>
+                </params>
+                <comment line="1117">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="out" type="T[]" line="1115"/>
+                <declaration name="jBlock" type="int" line="1118"/>
+                <declaration name="jColumn" type="int" line="1119"/>
+                <declaration name="jWidth" type="int" line="1120"/>
+                <declaration name="outIndex" type="int" line="1121"/>
+                <scope line="1122">
+                    <declaration name="iHeight" type="int" line="1123"/>
+                    <declaration name="block" type="T[]" line="1124"/>
+                    <scope line="1125"/>
+                </scope>
+            </method>
+            <javadoc line="1133">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setColumn" type="void" line="1136">
+                <params>
+                    <param name="column" type="int"/>
+                    <param name="array" type="T[]"/>
+                </params>
+                <comment line="1143">
+                    perform copy block-wise, to ensure good cache behavior                    
+                </comment>
+                <declaration name="nRows" type="int" line="1138"/>
+                <scope line="1139"/>
+                <declaration name="jBlock" type="int" line="1144"/>
+                <declaration name="jColumn" type="int" line="1145"/>
+                <declaration name="jWidth" type="int" line="1146"/>
+                <declaration name="outIndex" type="int" line="1147"/>
+                <scope line="1148">
+                    <declaration name="iHeight" type="int" line="1149"/>
+                    <declaration name="block" type="T[]" line="1150"/>
+                    <scope line="1151"/>
+                </scope>
+            </method>
+            <javadoc line="1157">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getEntry" type="T" line="1160">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                </params>
+                <declaration name="iBlock" type="int" line="1164"/>
+                <declaration name="jBlock" type="int" line="1165"/>
+                <declaration name="k" type="int" line="1166"/>
+            </method>
+            <javadoc line="1172">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="setEntry" type="void" line="1175">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                    <param name="value" type="T"/>
+                </params>
+                <declaration name="iBlock" type="int" line="1179"/>
+                <declaration name="jBlock" type="int" line="1180"/>
+                <declaration name="k" type="int" line="1181"/>
+            </method>
+            <javadoc line="1187">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="addToEntry" type="void" line="1190">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                    <param name="increment" type="T"/>
+                </params>
+                <declaration name="iBlock" type="int" line="1194"/>
+                <declaration name="jBlock" type="int" line="1195"/>
+                <declaration name="k" type="int" line="1196"/>
+                <declaration name="blockIJ" type="T[]" line="1198"/>
+            </method>
+            <javadoc line="1203">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="multiplyEntry" type="void" line="1206">
+                <params>
+                    <param name="row" type="int"/>
+                    <param name="column" type="int"/>
+                    <param name="factor" type="T"/>
+                </params>
+                <declaration name="iBlock" type="int" line="1210"/>
+                <declaration name="jBlock" type="int" line="1211"/>
+                <declaration name="k" type="int" line="1212"/>
+                <declaration name="blockIJ" type="T[]" line="1214"/>
+            </method>
+            <javadoc line="1219">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="transpose" type="FieldMatrix<T>" line="1221">
+                <comment line="1226">
+                    perform transpose block-wise, to ensure good cache behavior                    
+                </comment>
+                <comment line="1231">
+                    transpose current block                    
+                </comment>
+                <comment line="1249">
+                    go to next block                    
+                </comment>
+                <declaration name="nRows" type="int" line="1222"/>
+                <declaration name="nCols" type="int" line="1223"/>
+                <declaration name="out" type="BlockFieldMatrix&lt;T&gt;" line="1224"/>
+                <declaration name="blockIndex" type="int" line="1227"/>
+                <scope line="1228">
+                    <scope line="1229">
+                        <declaration name="outBlock" type="T[]" line="1232"/>
+                        <declaration name="tBlock" type="T[]" line="1233"/>
+                        <declaration name="pStart" type="int" line="1234"/>
+                        <declaration name="pEnd" type="int" line="1235"/>
+                        <declaration name="qStart" type="int" line="1236"/>
+                        <declaration name="qEnd" type="int" line="1237"/>
+                        <declaration name="k" type="int" line="1238"/>
+                        <scope line="1239">
+                            <declaration name="lInc" type="int" line="1240"/>
+                            <declaration name="l" type="int" line="1241"/>
+                            <scope line="1242"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1258">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getRowDimension" type="int" line="1260"/>
+            <javadoc line="1264">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="getColumnDimension" type="int" line="1266"/>
+            <javadoc line="1270">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="operate" type="T[]" line="1272">
+                <params>
+                    <param name="v" type="T[]"/>
+                </params>
+                <comment line="1279">
+                    perform multiplication block-wise, to ensure good cache behavior                    
+                </comment>
+                <scope line="1273"/>
+                <declaration name="out" type="T[]" line="1276"/>
+                <declaration name="zero" type="T" line="1277"/>
+                <scope line="1280">
+                    <declaration name="pStart" type="int" line="1281"/>
+                    <declaration name="pEnd" type="int" line="1282"/>
+                    <scope line="1283">
+                        <declaration name="block" type="T[]" line="1284"/>
+                        <declaration name="qStart" type="int" line="1285"/>
+                        <declaration name="qEnd" type="int" line="1286"/>
+                        <declaration name="k" type="int" line="1287"/>
+                        <scope line="1288">
+                            <declaration name="sum" type="T" line="1289"/>
+                            <declaration name="q" type="int" line="1290"/>
+                            <scope line="1291"/>
+                            <scope line="1300"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1311">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="preMultiply" type="T[]" line="1313">
+                <params>
+                    <param name="v" type="T[]"/>
+                </params>
+                <comment line="1321">
+                    perform multiplication block-wise, to ensure good cache behavior                    
+                </comment>
+                <scope line="1315"/>
+                <declaration name="out" type="T[]" line="1318"/>
+                <declaration name="zero" type="T" line="1319"/>
+                <scope line="1322">
+                    <declaration name="jWidth" type="int" line="1323"/>
+                    <declaration name="jWidth2" type="int" line="1324"/>
+                    <declaration name="jWidth3" type="int" line="1325"/>
+                    <declaration name="jWidth4" type="int" line="1326"/>
+                    <declaration name="qStart" type="int" line="1327"/>
+                    <declaration name="qEnd" type="int" line="1328"/>
+                    <scope line="1329">
+                        <declaration name="block" type="T[]" line="1330"/>
+                        <declaration name="pStart" type="int" line="1331"/>
+                        <declaration name="pEnd" type="int" line="1332"/>
+                        <scope line="1333">
+                            <declaration name="k" type="int" line="1334"/>
+                            <declaration name="sum" type="T" line="1335"/>
+                            <declaration name="p" type="int" line="1336"/>
+                            <scope line="1337"/>
+                            <scope line="1346"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1358">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInRowOrder" type="T" line="1360">
+                <params>
+                    <param name="visitor" type="FieldMatrixChangingVisitor<T>"/>
+                </params>
+                <scope line="1362">
+                    <declaration name="pStart" type="int" line="1363"/>
+                    <declaration name="pEnd" type="int" line="1364"/>
+                    <scope line="1365">
+                        <scope line="1366">
+                            <declaration name="jWidth" type="int" line="1367"/>
+                            <declaration name="qStart" type="int" line="1368"/>
+                            <declaration name="qEnd" type="int" line="1369"/>
+                            <declaration name="block" type="T[]" line="1370"/>
+                            <declaration name="k" type="int" line="1371"/>
+                            <scope line="1372"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1382">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInRowOrder" type="T" line="1384">
+                <params>
+                    <param name="visitor" type="FieldMatrixPreservingVisitor<T>"/>
+                </params>
+                <scope line="1386">
+                    <declaration name="pStart" type="int" line="1387"/>
+                    <declaration name="pEnd" type="int" line="1388"/>
+                    <scope line="1389">
+                        <scope line="1390">
+                            <declaration name="jWidth" type="int" line="1391"/>
+                            <declaration name="qStart" type="int" line="1392"/>
+                            <declaration name="qEnd" type="int" line="1393"/>
+                            <declaration name="block" type="T[]" line="1394"/>
+                            <declaration name="k" type="int" line="1395"/>
+                            <scope line="1396"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1406">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInRowOrder" type="T" line="1411">
+                <params>
+                    <param name="visitor" type="FieldMatrixChangingVisitor<T>"/>
+                    <param name="startRow" type="int"/>
+                    <param name="endRow" type="int"/>
+                    <param name="startColumn" type="int"/>
+                    <param name="endColumn" type="int"/>
+                </params>
+                <scope line="1414">
+                    <declaration name="p0" type="int" line="1415"/>
+                    <declaration name="pStart" type="int" line="1416"/>
+                    <declaration name="pEnd" type="int" line="1417"/>
+                    <scope line="1418">
+                        <scope line="1419">
+                            <declaration name="jWidth" type="int" line="1420"/>
+                            <declaration name="q0" type="int" line="1421"/>
+                            <declaration name="qStart" type="int" line="1422"/>
+                            <declaration name="qEnd" type="int" line="1423"/>
+                            <declaration name="block" type="T[]" line="1424"/>
+                            <declaration name="k" type="int" line="1425"/>
+                            <scope line="1426"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1436">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInRowOrder" type="T" line="1441">
+                <params>
+                    <param name="visitor" type="FieldMatrixPreservingVisitor<T>"/>
+                    <param name="startRow" type="int"/>
+                    <param name="endRow" type="int"/>
+                    <param name="startColumn" type="int"/>
+                    <param name="endColumn" type="int"/>
+                </params>
+                <scope line="1444">
+                    <declaration name="p0" type="int" line="1445"/>
+                    <declaration name="pStart" type="int" line="1446"/>
+                    <declaration name="pEnd" type="int" line="1447"/>
+                    <scope line="1448">
+                        <scope line="1449">
+                            <declaration name="jWidth" type="int" line="1450"/>
+                            <declaration name="q0" type="int" line="1451"/>
+                            <declaration name="qStart" type="int" line="1452"/>
+                            <declaration name="qEnd" type="int" line="1453"/>
+                            <declaration name="block" type="T[]" line="1454"/>
+                            <declaration name="k" type="int" line="1455"/>
+                            <scope line="1456"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1466">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInOptimizedOrder" type="T" line="1468">
+                <params>
+                    <param name="visitor" type="FieldMatrixChangingVisitor<T>"/>
+                </params>
+                <declaration name="blockIndex" type="int" line="1470"/>
+                <scope line="1471">
+                    <declaration name="pStart" type="int" line="1472"/>
+                    <declaration name="pEnd" type="int" line="1473"/>
+                    <scope line="1474">
+                        <declaration name="qStart" type="int" line="1475"/>
+                        <declaration name="qEnd" type="int" line="1476"/>
+                        <declaration name="block" type="T[]" line="1477"/>
+                        <declaration name="k" type="int" line="1478"/>
+                        <scope line="1479">
+                            <scope line="1480"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1491">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInOptimizedOrder" type="T" line="1493">
+                <params>
+                    <param name="visitor" type="FieldMatrixPreservingVisitor<T>"/>
+                </params>
+                <declaration name="blockIndex" type="int" line="1495"/>
+                <scope line="1496">
+                    <declaration name="pStart" type="int" line="1497"/>
+                    <declaration name="pEnd" type="int" line="1498"/>
+                    <scope line="1499">
+                        <declaration name="qStart" type="int" line="1500"/>
+                        <declaration name="qEnd" type="int" line="1501"/>
+                        <declaration name="block" type="T[]" line="1502"/>
+                        <declaration name="k" type="int" line="1503"/>
+                        <scope line="1504">
+                            <scope line="1505"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1516">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInOptimizedOrder" type="T" line="1521">
+                <params>
+                    <param name="visitor" type="FieldMatrixChangingVisitor<T>"/>
+                    <param name="startRow" type="int"/>
+                    <param name="endRow" type="int"/>
+                    <param name="startColumn" type="int"/>
+                    <param name="endColumn" type="int"/>
+                </params>
+                <scope line="1524">
+                    <declaration name="p0" type="int" line="1525"/>
+                    <declaration name="pStart" type="int" line="1526"/>
+                    <declaration name="pEnd" type="int" line="1527"/>
+                    <scope line="1528">
+                        <declaration name="jWidth" type="int" line="1529"/>
+                        <declaration name="q0" type="int" line="1530"/>
+                        <declaration name="qStart" type="int" line="1531"/>
+                        <declaration name="qEnd" type="int" line="1532"/>
+                        <declaration name="block" type="T[]" line="1533"/>
+                        <scope line="1534">
+                            <declaration name="k" type="int" line="1535"/>
+                            <scope line="1536"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1546">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="walkInOptimizedOrder" type="T" line="1551">
+                <params>
+                    <param name="visitor" type="FieldMatrixPreservingVisitor<T>"/>
+                    <param name="startRow" type="int"/>
+                    <param name="endRow" type="int"/>
+                    <param name="startColumn" type="int"/>
+                    <param name="endColumn" type="int"/>
+                </params>
+                <scope line="1554">
+                    <declaration name="p0" type="int" line="1555"/>
+                    <declaration name="pStart" type="int" line="1556"/>
+                    <declaration name="pEnd" type="int" line="1557"/>
+                    <scope line="1558">
+                        <declaration name="jWidth" type="int" line="1559"/>
+                        <declaration name="q0" type="int" line="1560"/>
+                        <declaration name="qStart" type="int" line="1561"/>
+                        <declaration name="qEnd" type="int" line="1562"/>
+                        <declaration name="block" type="T[]" line="1563"/>
+                        <scope line="1564">
+                            <declaration name="k" type="int" line="1565"/>
+                            <scope line="1566"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1576">
+                Get the height of a block.                
+                <param>
+                    blockRow row index (in block sense) of the block                    
+                </param>
+                <return>
+                    height (number of rows) of the block                    
+                </return>
+            </javadoc>
+            <method name="blockHeight" type="int" line="1581">
+                <params>
+                    <param name="blockRow" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1585">
+                Get the width of a block.                
+                <param>
+                    blockColumn column index (in block sense) of the block                    
+                </param>
+                <return>
+                    width (number of columns) of the block                    
+                </return>
+            </javadoc>
+            <method name="blockWidth" type="int" line="1590">
+                <params>
+                    <param name="blockColumn" type="int"/>
+                </params>
+            </method>
+        </class>
+    </source>

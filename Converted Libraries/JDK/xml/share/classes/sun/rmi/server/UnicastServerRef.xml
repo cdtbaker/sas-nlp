@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.server">
+        <import package="java.io.IOException"/>
+        <import package="java.io.ObjectInput"/>
+        <import package="java.io.ObjectOutput"/>
+        <import package="java.io.PrintStream"/>
+        <import package="java.lang.reflect.InvocationTargetException"/>
+        <import package="java.lang.reflect.Method"/>
+        <import package="java.rmi.MarshalException"/>
+        <import package="java.rmi.Remote"/>
+        <import package="java.rmi.RemoteException"/>
+        <import package="java.rmi.ServerError"/>
+        <import package="java.rmi.ServerException"/>
+        <import package="java.rmi.UnmarshalException"/>
+        <import package="java.rmi.server.ExportException"/>
+        <import package="java.rmi.server.RemoteCall"/>
+        <import package="java.rmi.server.RemoteRef"/>
+        <import package="java.rmi.server.RemoteStub"/>
+        <import package="java.rmi.server.ServerNotActiveException"/>
+        <import package="java.rmi.server.ServerRef"/>
+        <import package="java.rmi.server.Skeleton"/>
+        <import package="java.rmi.server.SkeletonNotFoundException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Date"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="sun.rmi.runtime.Log"/>
+        <import package="sun.rmi.transport.LiveRef"/>
+        <import package="sun.rmi.transport.Target"/>
+        <import package="sun.rmi.transport.tcp.TCPTransport"/>
+        <import package="sun.security.action.GetBooleanAction"/>
+        <class name="UnicastServerRef" line="61">
+            <extends class="UnicastRef"/>
+            <comment line="82">
+                use serialVersionUID from JDK 1.2.2 for interoperability                
+            </comment>
+            <implements interface="ServerRef"/>
+            <implements interface="Dispatcher"/>
+            <javadoc line="61">
+                UnicastServerRef implements the remote reference layer server-side
+                  behavior for remote objects exported with the &quot;UnicastRef&quot; reference
+                  type.                
+                <author>
+                    Ann Wollrath                    
+                </author>
+                <author>
+                    Roger Riggs                    
+                </author>
+                <author>
+                    Peter Jones                    
+                </author>
+            </javadoc>
+            <declaration name="logCalls" type="boolean" line="73"/>
+            <javadoc line="73">
+                value of server call log property                
+            </javadoc>
+            <declaration name="callLog" type="Log" line="77"/>
+            <javadoc line="77">
+                server call log                
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="82"/>
+            <declaration name="wantExceptionLog" type="boolean" line="84"/>
+            <javadoc line="84">
+                flag to enable writing exceptions to System.err                
+            </javadoc>
+            <declaration name="forceStubUse" type="boolean" line="89"/>
+            <declaration name="suppressStackTraces" type="boolean" line="91"/>
+            <javadoc line="91">
+                flag to remove server-side stack traces before marshalling
+                  exceptions thrown by remote invocations to this VM                
+            </javadoc>
+            <declaration name="skel" type="Skeleton" line="100"/>
+            <javadoc line="100">
+                skeleton to dispatch remote calls through, for 1.1 stub protocol
+                  (may be null if stub class only uses 1.2 stub protocol)                
+            </javadoc>
+            <declaration name="hashToMethod_Map" type="Map&lt;Long,Method&gt;" line="106"/>
+            <javadoc line="106">
+                maps method hash to Method object for each remote method                
+            </javadoc>
+            <declaration name="hashToMethod_Maps" type="WeakClassHashMap&lt;Map&lt;Long,Method&gt;&gt;" line="109"/>
+            <javadoc line="109">
+                A weak hash map, mapping classes to hash maps that map method
+                  hashes to method objects.                
+            </javadoc>
+            <declaration name="withoutSkeletons" type="Map&lt;Class&lt;?&gt;,?&gt;" line="116"/>
+            <javadoc line="116">
+                cache of impl classes that have no corresponding skeleton class                
+            </javadoc>
+            <javadoc line="120">
+                Create a new (empty) Unicast server remote reference.                
+            </javadoc>
+            <method name="UnicastServerRef" type="constructor" line="123"/>
+            <javadoc line="126">
+                Construct a Unicast server remote reference for a specified
+                  liveRef.                
+            </javadoc>
+            <method name="UnicastServerRef" type="constructor" line="130">
+                <params>
+                    <param name="ref" type="LiveRef"/>
+                </params>
+            </method>
+            <javadoc line="134">
+                Construct a Unicast server remote reference to be exported
+                  on the specified port.                
+            </javadoc>
+            <method name="UnicastServerRef" type="constructor" line="138">
+                <params>
+                    <param name="port" type="int"/>
+                </params>
+            </method>
+            <javadoc line="142">
+                Constructs a UnicastServerRef to be exported on an
+                  anonymous port (i.e., 0) and that uses a pregenerated stub class
+                  (NOT a dynamic proxy instance) if &apos;forceStubUse&apos; is &apos;true&apos;.
+                  This constructor is only called by the method
+                  UnicastRemoteObject.exportObject(Remote) passing &apos;true&apos; for
+                  &apos;forceStubUse&apos;.  The UnicastRemoteObject.exportObject(Remote) method
+                  returns RemoteStub, so it must ensure that the stub for the
+                  exported object is an instance of a pregenerated stub class that
+                  extends RemoteStub (instead of an instance of a dynamic proxy class
+                  which is not an instance of RemoteStub).                
+            </javadoc>
+            <method name="UnicastServerRef" type="constructor" line="155">
+                <params>
+                    <param name="forceStubUse" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="160">
+                With the addition of support for dynamic proxies as stubs, this
+                  method is obsolete because it returns RemoteStub instead of the more
+                  general Remote.  It should not be called.  It sets the
+                  &apos;forceStubUse&apos; flag to true so that the stub for the exported object
+                  is forced to be an instance of the pregenerated stub class, which
+                  extends RemoteStub.
+                  Export this object, create the skeleton and stubs for this
+                  dispatcher.  Create a stub based on the type of the impl,
+                  initialize it with the appropriate remote reference. Create the
+                  target defined by the impl, dispatcher (this) and stub.
+                  Export that target via the Ref.                
+            </javadoc>
+            <method name="exportObject" type="RemoteStub" line="176">
+                <params>
+                    <param name="impl" type="Remote"/>
+                    <param name="data" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="181">
+                Export this object, create the skeleton and stubs for this
+                  dispatcher.  Create a stub based on the type of the impl,
+                  initialize it with the appropriate remote reference. Create the
+                  target defined by the impl, dispatcher (this) and stub.
+                  Export that target via the Ref.                
+            </javadoc>
+            <method name="exportObject" type="Remote" line="191">
+                <params>
+                    <param name="impl" type="Remote"/>
+                    <param name="data" type="Object"/>
+                    <param name="permanent" type="boolean"/>
+                </params>
+                <declaration name="implClass" type="Class" line="192"/>
+                <declaration name="stub" type="Remote" line="193"/>
+                <scope line="195"/>
+                <scope line="197"/>
+                <scope line="201"/>
+                <declaration name="target" type="Target" line="205"/>
+            </method>
+            <javadoc line="212">
+                Return the hostname of the current client.  When called from a
+                  thread actively handling a remote method invocation the
+                  hostname of the client is returned.                
+                <exception>
+                    ServerNotActiveException If called outside of servicing
+                      a remote method invocation.                    
+                </exception>
+            </javadoc>
+            <method name="getClientHost" type="String" line="219"/>
+            <javadoc line="223">
+                Discovers and sets the appropriate skeleton for the impl.                
+            </javadoc>
+            <method name="setSkeleton" type="void" line="226">
+                <params>
+                    <param name="impl" type="Remote"/>
+                </params>
+                <comment line="231">
+                    Ignore exception for skeleton class not found, because a
+                     skeleton class is not necessary with the 1.2 stub protocol.
+                     Remember that this impl&apos;s class does not have a skeleton
+                     class so we don&apos;t waste time searching for it again.                    
+                </comment>
+                <scope line="227">
+                    <scope line="228"/>
+                    <scope line="230"/>
+                </scope>
+            </method>
+            <javadoc line="242">
+                Call to dispatch to the remote object (on the server side).
+                  The up-call to the server and the marshalling of return result
+                  (or exception) should be handled before returning from this
+                  method.                
+                <param>
+                    obj the target remote object for the call                    
+                </param>
+                <param>
+                    call the "remote call" from which operation and
+                      method arguments can be obtained.                    
+                </param>
+                <exception>
+                    IOException If unable to marshal return result or
+                      release input or output streams                    
+                </exception>
+            </javadoc>
+            <method name="dispatch" type="void" line="253">
+                <params>
+                    <param name="obj" type="Remote"/>
+                    <param name="call" type="RemoteCall"/>
+                </params>
+                <comment line="254">
+                    positive operation number in 1.1 stubs;                    
+                </comment>
+                <comment line="255">
+                    negative version number in 1.2 stubs and beyond...                    
+                </comment>
+                <comment line="260">
+                    read remote call header                    
+                </comment>
+                <comment line="281">
+                    Since only system classes (with null class loaders) will be on
+                     the execution stack during parameter unmarshalling for the 1.2
+                     stub protocol, tell the MarshalInputStream not to bother trying
+                     to resolve classes using its superclasses&apos;s default method of
+                     consulting the first non-null class loader on the stack.                    
+                </comment>
+                <comment line="297">
+                    if calls are being logged, write out object id and operation                    
+                </comment>
+                <comment line="300">
+                    unmarshal parameters                    
+                </comment>
+                <comment line="319">
+                    make upcall on remote object                    
+                </comment>
+                <comment line="327">
+                    marshal return value                    
+                </comment>
+                <comment line="336">
+                    This throw is problematic because when it is caught below,
+                     we attempt to marshal it back to the client, but at this
+                     point, a &quot;normal return&quot; has already been indicated,
+                     so marshalling an exception will corrupt the stream.
+                     This was the case with skeletons as well; there is no
+                     immediately obvious solution without a protocol change.                    
+                </comment>
+                <comment line="362">
+                    in case skeleton doesn&apos;t                    
+                </comment>
+                <declaration name="num" type="int" line="256"/>
+                <declaration name="op" type="long" line="257"/>
+                <scope line="259">
+                    <declaration name="in" type="ObjectInput" line="261"/>
+                    <scope line="262">
+                        <scope line="265">
+                            <scope line="266"/>
+                            <scope line="269"/>
+                        </scope>
+                    </scope>
+                    <scope line="276"/>
+                    <declaration name="marshalStream" type="MarshalInputStream" line="288"/>
+                    <declaration name="method" type="Method" line="291"/>
+                    <scope line="292"/>
+                    <declaration name="types" type="Class[]" line="301"/>
+                    <declaration name="params" type="Object[]" line="302"/>
+                    <scope line="304">
+                        <scope line="306"/>
+                    </scope>
+                    <scope line="309"/>
+                    <scope line="312"/>
+                    <scope line="315"/>
+                    <declaration name="result" type="Object" line="320"/>
+                    <scope line="321"/>
+                    <scope line="323"/>
+                    <scope line="328">
+                        <declaration name="out" type="ObjectOutput" line="329"/>
+                        <declaration name="rtype" type="Class" line="330"/>
+                        <scope line="331"/>
+                    </scope>
+                    <scope line="334"/>
+                </scope>
+                <scope line="345">
+                    <declaration name="out" type="ObjectOutput" line="348"/>
+                    <scope line="349"/>
+                    <scope line="352"/>
+                    <scope line="357"/>
+                </scope>
+                <scope line="361"/>
+            </method>
+            <method name="unmarshalCustomCallData" type="void" line="369">
+                <params>
+                    <param name="in" type="ObjectInput"/>
+                </params>
+            </method>
+            <javadoc line="371">
+                Handle server-side dispatch using the RMI 1.1 stub/skeleton
+                  protocol, given a non-negative operation number that has
+                  already been read from the call stream.                
+                <param>
+                    obj the target remote object for the call                    
+                </param>
+                <param>
+                    call the "remote call" from which operation and
+                      method arguments can be obtained.                    
+                </param>
+                <param>
+                    op the operation number                    
+                </param>
+                <exception>
+                    IOException if unable to marshal return result or
+                      release input or output streams                    
+                </exception>
+            </javadoc>
+            <method name="oldDispatch" type="void" line="385">
+                <params>
+                    <param name="obj" type="Remote"/>
+                    <param name="call" type="RemoteCall"/>
+                    <param name="op" type="int"/>
+                </params>
+                <comment line="386">
+                    hash for matching stub with skeleton                    
+                </comment>
+                <comment line="389">
+                    read remote call header                    
+                </comment>
+                <comment line="399">
+                    if calls are being logged, write out object id and operation                    
+                </comment>
+                <comment line="402">
+                    dispatch to skeleton for remote object                    
+                </comment>
+                <comment line="422">
+                    in case skeleton doesn&apos;t                    
+                </comment>
+                <declaration name="hash" type="long" line="386"/>
+                <scope line="388">
+                    <declaration name="in" type="ObjectInput" line="390"/>
+                    <scope line="391"/>
+                    <scope line="394"/>
+                </scope>
+                <scope line="405">
+                    <declaration name="out" type="ObjectOutput" line="408"/>
+                    <scope line="409"/>
+                    <scope line="412"/>
+                    <scope line="417"/>
+                </scope>
+                <scope line="421"/>
+            </method>
+            <javadoc line="427">
+                Clear the stack trace of the given Throwable by replacing it with
+                  an empty StackTraceElement array, and do the same for all of its
+                  chained causative exceptions.                
+            </javadoc>
+            <method name="clearStackTraces" type="void" line="432">
+                <params>
+                    <param name="t" type="Throwable"/>
+                </params>
+                <declaration name="empty" type="StackTraceElement[]" line="433"/>
+                <scope line="434"/>
+            </method>
+            <javadoc line="440">
+                Log the details of an incoming call.  The method parameter is either of
+                  type java.lang.reflect.Method or java.rmi.server.Operation.                
+            </javadoc>
+            <method name="logCall" type="void" line="444">
+                <params>
+                    <param name="obj" type="Remote"/>
+                    <param name="method" type="Object"/>
+                </params>
+                <comment line="450">
+                    shouldn&apos;t happen                    
+                </comment>
+                <scope line="445">
+                    <declaration name="clientHost" type="String" line="446"/>
+                    <scope line="447"/>
+                    <scope line="449"/>
+                </scope>
+            </method>
+            <javadoc line="459">
+                Log the exception detail of an incoming call.                
+            </javadoc>
+            <method name="logCallException" type="void" line="462">
+                <params>
+                    <param name="e" type="Throwable"/>
+                </params>
+                <comment line="463">
+                    if calls are being logged, log them                    
+                </comment>
+                <comment line="473">
+                    write exceptions (only) to System.err if desired                    
+                </comment>
+                <scope line="464">
+                    <declaration name="clientHost" type="String" line="465"/>
+                    <scope line="466"/>
+                    <scope line="468"/>
+                </scope>
+                <scope line="474">
+                    <declaration name="log" type="java.io.PrintStream" line="475"/>
+                    <scope line="476"/>
+                </scope>
+            </method>
+            <javadoc line="487">
+                Returns the class of the ref type to be serialized.                
+            </javadoc>
+            <method name="getRefClass" type="String" line="490">
+                <params>
+                    <param name="out" type="ObjectOutput"/>
+                </params>
+            </method>
+            <javadoc line="494">
+                Return the client remote reference for this remoteRef.
+                  In the case of a client RemoteRef &quot;this&quot; is the answer.
+                  For a server remote reference, a client side one will have to
+                  found or created.                
+            </javadoc>
+            <method name="getClientRef" type="RemoteRef" line="500"/>
+            <javadoc line="504">
+                Write out external representation for remote ref.                
+            </javadoc>
+            <method name="writeExternal" type="void" line="507">
+                <params>
+                    <param name="out" type="ObjectOutput"/>
+                </params>
+            </method>
+            <javadoc line="510">
+                Read in external representation for remote ref.                
+                <exception>
+                    ClassNotFoundException If the class for an object
+                      being restored cannot be found.                    
+                </exception>
+            </javadoc>
+            <method name="readExternal" type="void" line="517">
+                <params>
+                    <param name="in" type="ObjectInput"/>
+                </params>
+                <comment line="518">
+                    object is re-exported elsewhere (e.g., by UnicastRemoteObject)                    
+                </comment>
+            </method>
+            <class name="HashToMethod_Maps" line="524">
+                <extends class="WeakClassHashMap">
+                    <type_params>
+                        <type_param name="Map<Long,Method>"/>
+                    </type_params>
+                </extends>
+                <javadoc line="524">
+                    A weak hash map, mapping classes to hash maps that map method
+                      hashes to method objects.                    
+                </javadoc>
+                <method name="HashToMethod_Maps" type="constructor" line="531"/>
+                <method name="computeValue" type="Map<Long,Method>" line="533">
+                    <params>
+                        <param name="remoteClass" type="Class<?>"/>
+                    </params>
+                    <comment line="543">
+                        Set this Method object to override language
+                         access checks so that the dispatcher can invoke
+                         methods from non-public remote interfaces.                        
+                    </comment>
+                    <declaration name="map" type="Map&lt;Long,Method&gt;" line="534"/>
+                    <scope line="538">
+                        <scope line="539">
+                            <scope line="540">
+                                <scope line="541">
+                                    <declaration name="m" type="Method" line="542"/>
+                                    <anonymous_class line="549">
+                                        <method name="run" type="Void" line="550"/>
+                                    </anonymous_class>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+        </class>
+    </source>

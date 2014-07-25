@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.ssl.krb5">
+        <import package="java.io.IOException"/>
+        <import package="java.io.PrintStream"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.PrivilegedExceptionAction"/>
+        <import package="java.security.PrivilegedActionException"/>
+        <import package="java.security.SecureRandom"/>
+        <import package="java.net.InetAddress"/>
+        <import package="javax.crypto.SecretKey"/>
+        <import package="javax.security.auth.kerberos.KerberosTicket"/>
+        <import package="javax.security.auth.kerberos.KerberosKey"/>
+        <import package="javax.security.auth.kerberos.KerberosPrincipal"/>
+        <import package="javax.security.auth.kerberos.ServicePermission"/>
+        <import package="sun.security.jgss.GSSCaller"/>
+        <import package="sun.security.krb5.EncryptionKey"/>
+        <import package="sun.security.krb5.EncryptedData"/>
+        <import package="sun.security.krb5.PrincipalName"/>
+        <import package="sun.security.krb5.Realm"/>
+        <import package="sun.security.krb5.internal.Ticket"/>
+        <import package="sun.security.krb5.internal.EncTicketPart"/>
+        <import package="sun.security.krb5.internal.crypto.KeyUsage"/>
+        <import package="sun.security.jgss.krb5.Krb5Util"/>
+        <import package="sun.security.krb5.KrbException"/>
+        <import package="sun.security.krb5.internal.Krb5"/>
+        <import package="sun.security.ssl.Debug"/>
+        <import package="sun.security.ssl.HandshakeInStream"/>
+        <import package="sun.security.ssl.HandshakeOutStream"/>
+        <import package="sun.security.ssl.ProtocolVersion"/>
+        <class name="KerberosClientKeyExchangeImpl" line="61">
+            <extends class="sun.security.ssl.KerberosClientKeyExchange"/>
+            <comment line="276">
+                Similar to sun.security.jgss.krb5.Krb5InitCredenetial/Krb5Context                
+            </comment>
+            <javadoc line="61">
+                This is Kerberos option in the client key exchange message
+                  (CLIENT -&gt; SERVER). It holds the Kerberos ticket and the encrypted
+                  premaster secret encrypted with the session key sealed in the ticket.
+                  From RFC 2712:
+                  struct
+                  {
+                  opaque Ticket;
+                  opaque authenticator;            // optional
+                  opaque EncryptedPreMasterSecret; // encrypted with the session key
+                  // which is sealed in the ticket
+                  } KerberosWrapper;
+                  Ticket and authenticator are encrypted as per RFC 1510 (in ASN.1)
+                  Encrypted pre-master secret has the same structure as it does for RSA
+                  except for Kerberos, the encryption key is the session key instead of
+                  the RSA public key.
+                  XXX authenticator currently ignored                
+            </javadoc>
+            <declaration name="preMaster" type="KerberosPreMasterSecret" line="86"/>
+            <declaration name="encodedTicket" type="byte[]" line="87"/>
+            <declaration name="peerPrincipal" type="KerberosPrincipal" line="88"/>
+            <declaration name="localPrincipal" type="KerberosPrincipal" line="89"/>
+            <method name="KerberosClientKeyExchangeImpl" type="constructor" line="91"/>
+            <javadoc line="94">
+                Creates an instance of KerberosClientKeyExchange consisting of the
+                  Kerberos service ticket, authenticator and encrypted premaster secret.
+                  Called by client handshaker.                
+                <param>
+                    serverName name of server with which to do handshake;
+                      this is used to get the Kerberos service ticket                    
+                </param>
+                <param>
+                    protocolVersion Maximum version supported by client (i.e,
+                      version it requested in client hello)                    
+                </param>
+                <param>
+                    rand random number generator to use for generating pre-master
+                      secret                    
+                </param>
+            </javadoc>
+            <method name="init" type="void" line="109">
+                <params>
+                    <param name="serverName" type="String"/>
+                    <param name="isLoopback" type="boolean"/>
+                    <param name="acc" type="AccessControlContext"/>
+                    <param name="protocolVersion" type="ProtocolVersion"/>
+                    <param name="rand" type="SecureRandom"/>
+                </params>
+                <comment line="111">
+                    Get service ticket                    
+                </comment>
+                <comment line="115">
+                    Record the Kerberos principals                    
+                </comment>
+                <comment line="119">
+                    Optional authenticator, encrypted using session key,                    
+                </comment>
+                <comment line="120">
+                    currently ignored                    
+                </comment>
+                <comment line="122">
+                    Generate premaster secret and encrypt it using session key                    
+                </comment>
+                <declaration name="ticket" type="KerberosTicket" line="112"/>
+                <declaration name="sessionKey" type="EncryptionKey" line="123"/>
+            </method>
+            <javadoc line="131">
+                Creates an instance of KerberosClientKeyExchange from its ASN.1 encoding.
+                  Used by ServerHandshaker to verify and obtain premaster secret.                
+                <param>
+                    protocolVersion current protocol version                    
+                </param>
+                <param>
+                    clientVersion version requested by client in its ClientHello;
+                      used by premaster secret version check                    
+                </param>
+                <param>
+                    rand random number generator used for generating random
+                      premaster secret if ticket and/or premaster verification fails                    
+                </param>
+                <param>
+                    input inputstream from which to get ASN.1-encoded KerberosWrapper                    
+                </param>
+                <param>
+                    serverKey server's master secret key                    
+                </param>
+            </javadoc>
+            <method name="init" type="void" line="147">
+                <params>
+                    <param name="protocolVersion" type="ProtocolVersion"/>
+                    <param name="clientVersion" type="ProtocolVersion"/>
+                    <param name="rand" type="SecureRandom"/>
+                    <param name="input" type="HandshakeInStream"/>
+                    <param name="secretKeys" type="SecretKey[]"/>
+                </params>
+                <comment line="151">
+                    Read ticket                    
+                </comment>
+                <comment line="170">
+                    permission to access and use the secret key of the Kerberized
+                     &quot;host&quot; service is done in ServerHandshaker.getKerberosKeys()
+                     to ensure server has the permission to use the secret key
+                     before promising the client                    
+                </comment>
+                <comment line="177">
+                    Check that ticket Sname matches serverPrincipal                    
+                </comment>
+                <comment line="189">
+                    See if we have the right key to decrypt the ticket to get                    
+                </comment>
+                <comment line="190">
+                    the session key.                    
+                </comment>
+                <comment line="196">
+                    a kvno mismatch                    
+                </comment>
+                <comment line="201">
+                    %%% Should print string repr of etype                    
+                </comment>
+                <comment line="211">
+                    Decrypt encPart using server&apos;s secret key                    
+                </comment>
+                <comment line="214">
+                    Reset data stream after decryption, remove redundant bytes                    
+                </comment>
+                <comment line="218">
+                    Record the Kerberos Principals                    
+                </comment>
+                <comment line="240">
+                    XXX Read and ignore authenticator                    
+                </comment>
+                <comment line="246">
+                    Generate bogus premaster secret                    
+                </comment>
+                <declaration name="serverKeys" type="KerberosKey[]" line="149"/>
+                <scope line="154"/>
+                <declaration name="sessionKey" type="EncryptionKey" line="159"/>
+                <scope line="161">
+                    <declaration name="t" type="Ticket" line="162"/>
+                    <declaration name="encPart" type="EncryptedData" line="164"/>
+                    <declaration name="ticketSname" type="PrincipalName" line="165"/>
+                    <declaration name="ticketRealm" type="Realm" line="166"/>
+                    <declaration name="serverPrincipal" type="String" line="168"/>
+                    <declaration name="ticketPrinc" type="String" line="178"/>
+                    <scope line="180"/>
+                    <declaration name="encPartKeyType" type="int" line="191"/>
+                    <declaration name="encPartKeyVersion" type="Integer" line="192"/>
+                    <declaration name="dkey" type="KerberosKey" line="193"/>
+                    <scope line="194"/>
+                    <scope line="196"/>
+                    <scope line="200"/>
+                    <declaration name="secretKey" type="EncryptionKey" line="207"/>
+                    <declaration name="bytes" type="byte[]" line="212"/>
+                    <declaration name="temp" type="byte[]" line="215"/>
+                    <declaration name="encTicketPart" type="EncTicketPart" line="216"/>
+                    <scope line="225"/>
+                </scope>
+                <scope line="230"/>
+                <scope line="232">
+                    <scope line="233"/>
+                </scope>
+                <scope line="242"/>
+                <scope line="245"/>
+            </method>
+            <method name="messageLength" type="int" line="252"/>
+            <method name="send" type="void" line="257">
+                <params>
+                    <param name="s" type="HandshakeOutStream"/>
+                </params>
+                <comment line="259">
+                    XXX no authenticator                    
+                </comment>
+            </method>
+            <method name="print" type="void" line="264">
+                <params>
+                    <param name="s" type="PrintStream"/>
+                </params>
+                <scope line="267"/>
+            </method>
+            <method name="getServiceTicket" type="KerberosTicket" line="277">
+                <params>
+                    <param name="srvName" type="String"/>
+                    <param name="isLoopback" type="boolean"/>
+                    <param name="acc" type="AccessControlContext"/>
+                </params>
+                <comment line="279">
+                    get the local hostname if srvName is loopback address                    
+                </comment>
+                <comment line="297">
+                    Resolve serverName (possibly in IP addr form) to Kerberos principal                    
+                </comment>
+                <comment line="298">
+                    name for service with hostname                    
+                </comment>
+                <comment line="316">
+                    use default                    
+                </comment>
+                <comment line="319">
+                    check permission to obtain a service ticket to initiate a                    
+                </comment>
+                <comment line="320">
+                    context with the &quot;host&quot; service                    
+                </comment>
+                <declaration name="serverName" type="String" line="280"/>
+                <scope line="281">
+                    <anonymous_class line="283">
+                        <method name="run" type="String" line="284">
+                            <declaration name="hostname" type="String" line="285"/>
+                            <scope line="286"/>
+                            <scope line="288"/>
+                        </method>
+                    </anonymous_class>
+                    <declaration name="localHost" type="String" line="282"/>
+                </scope>
+                <declaration name="serviceName" type="String" line="299"/>
+                <declaration name="principal" type="PrincipalName" line="300"/>
+                <scope line="301"/>
+                <scope line="304"/>
+                <scope line="306">
+                    <declaration name="ioe" type="IOException" line="307"/>
+                </scope>
+                <declaration name="realm" type="String" line="312"/>
+                <declaration name="serverPrincipal" type="String" line="314"/>
+                <declaration name="tgsPrincipal" type="String" line="315"/>
+                <declaration name="clientPrincipal" type="String" line="316"/>
+                <declaration name="sm" type="SecurityManager" line="321"/>
+                <scope line="322"/>
+                <scope line="327">
+                    <anonymous_class line="329">
+                        <method name="run" type="KerberosTicket" line="330"/>
+                    </anonymous_class>
+                    <declaration name="ticket" type="KerberosTicket" line="328"/>
+                    <scope line="337"/>
+                </scope>
+                <scope line="342">
+                    <declaration name="ioe" type="IOException" line="343"/>
+                </scope>
+            </method>
+            <method name="getUnencryptedPreMasterSecret" type="byte[]" line="352"/>
+            <method name="getPeerPrincipal" type="KerberosPrincipal" line="357"/>
+            <method name="getLocalPrincipal" type="KerberosPrincipal" line="362"/>
+            <javadoc line="366">
+                Determines if a kvno matches another kvno. Used in the method
+                  findKey(etype, version, keys). Always returns true if either input
+                  is null or zero, in case any side does not have kvno info available.
+                  Note: zero is included because N/A is not a legal value for kvno
+                  in javax.security.auth.kerberos.KerberosKey. Therefore, the info
+                  that the kvno is N/A might be lost when converting between
+                  EncryptionKey and KerberosKey.                
+            </javadoc>
+            <method name="versionMatches" type="boolean" line="376">
+                <params>
+                    <param name="v1" type="Integer"/>
+                    <param name="v2" type="int"/>
+                </params>
+                <scope line="377"/>
+            </method>
+            <method name="findKey" type="KerberosKey" line="384">
+                <params>
+                    <param name="etype" type="int"/>
+                    <param name="version" type="Integer"/>
+                    <param name="keys" type="KerberosKey[]"/>
+                </params>
+                <comment line="396">
+                    Key not found.                    
+                </comment>
+                <comment line="397">
+                    %%% kludge to allow DES keys to be used for diff etypes                    
+                </comment>
+                <declaration name="ktype" type="int" line="385"/>
+                <declaration name="etypeFound" type="boolean" line="386"/>
+                <scope line="387">
+                    <scope line="389">
+                        <scope line="391"/>
+                    </scope>
+                </scope>
+                <scope line="399">
+                    <scope line="400">
+                        <scope line="403">
+                            <scope line="405"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="414"/>
+            </method>
+        </class>
+    </source>

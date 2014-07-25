@@ -1,0 +1,1422 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent">
+        <import package="java.util.AbstractCollection"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Deque"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.NoSuchElementException"/>
+        <import package="java.util.Queue"/>
+        <class name="ConcurrentLinkedDeque" line="46">
+            <type_params>
+                <type_param name="E"/>
+            </type_params>
+            <extends class="AbstractCollection">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+            </extends>
+            <comment line="99">
+                This is an implementation of a concurrent lock-free deque
+                 supporting interior removes but not interior insertions, as
+                 required to support the entire Deque interface.
+                
+                 We extend the techniques developed for ConcurrentLinkedQueue and
+                 LinkedTransferQueue (see the internal docs for those classes).
+                 Understanding the ConcurrentLinkedQueue implementation is a
+                 prerequisite for understanding the implementation of this class.
+                
+                 The data structure is a symmetrical doubly-linked &quot;GC-robust&quot;
+                 linked list of nodes.  We minimize the number of volatile writes
+                 using two techniques: advancing multiple hops with a single CAS
+                 and mixing volatile and non-volatile writes of the same memory
+                 locations.
+                
+                 A node contains the expected E (&quot;item&quot;) and links to predecessor
+                 (&quot;prev&quot;) and successor (&quot;next&quot;) nodes:
+                
+                 class Node&lt;E&gt; { volatile Node&lt;E&gt; prev, next; volatile E item; }
+                
+                 A node p is considered &quot;live&quot; if it contains a non-null item
+                 (p.item != null).  When an item is CASed to null, the item is
+                 atomically logically deleted from the collection.
+                
+                 At any time, there is precisely one &quot;first&quot; node with a null
+                 prev reference that terminates any chain of prev references
+                 starting at a live node.  Similarly there is precisely one
+                 &quot;last&quot; node terminating any chain of next references starting at
+                 a live node.  The &quot;first&quot; and &quot;last&quot; nodes may or may not be live.
+                 The &quot;first&quot; and &quot;last&quot; nodes are always mutually reachable.
+                
+                 A new element is added atomically by CASing the null prev or
+                 next reference in the first or last node to a fresh node
+                 containing the element.  The element&apos;s node atomically becomes
+                 &quot;live&quot; at that point.
+                
+                 A node is considered &quot;active&quot; if it is a live node, or the
+                 first or last node.  Active nodes cannot be unlinked.
+                
+                 A &quot;self-link&quot; is a next or prev reference that is the same node:
+                   p.prev == p  or  p.next == p
+                 Self-links are used in the node unlinking process.  Active nodes
+                 never have self-links.
+                
+                 A node p is active if and only if:
+                
+                 p.item != null ||
+                 (p.prev == null &amp;&amp; p.next != p) ||
+                 (p.next == null &amp;&amp; p.prev != p)
+                
+                 The deque object has two node references, &quot;head&quot; and &quot;tail&quot;.
+                 The head and tail are only approximations to the first and last
+                 nodes of the deque.  The first node can always be found by
+                 following prev pointers from head; likewise for tail.  However,
+                 it is permissible for head and tail to be referring to deleted
+                 nodes that have been unlinked and so may not be reachable from
+                 any live node.
+                
+                 There are 3 stages of node deletion;
+                 &quot;logical deletion&quot;, &quot;unlinking&quot;, and &quot;gc-unlinking&quot;.
+                
+                 1. &quot;logical deletion&quot; by CASing item to null atomically removes
+                 the element from the collection, and makes the containing node
+                 eligible for unlinking.
+                
+                 2. &quot;unlinking&quot; makes a deleted node unreachable from active
+                 nodes, and thus eventually reclaimable by GC.  Unlinked nodes
+                 may remain reachable indefinitely from an iterator.
+                
+                 Physical node unlinking is merely an optimization (albeit a
+                 critical one), and so can be performed at our convenience.  At
+                 any time, the set of live nodes maintained by prev and next
+                 links are identical, that is, the live nodes found via next
+                 links from the first node is equal to the elements found via
+                 prev links from the last node.  However, this is not true for
+                 nodes that have already been logically deleted - such nodes may
+                 be reachable in one direction only.
+                
+                 3. &quot;gc-unlinking&quot; takes unlinking further by making active
+                 nodes unreachable from deleted nodes, making it easier for the
+                 GC to reclaim future deleted nodes.  This step makes the data
+                 structure &quot;gc-robust&quot;, as first described in detail by Boehm
+                 (http:portal.acm.orgcitation.cfm?doid=503272.503282).
+                
+                 GC-unlinked nodes may remain reachable indefinitely from an
+                 iterator, but unlike unlinked nodes, are never reachable from
+                 head or tail.
+                
+                 Making the data structure GC-robust will eliminate the risk of
+                 unbounded memory retention with conservative GCs and is likely
+                 to improve performance with generational GCs.
+                
+                 When a node is dequeued at either end, e.g. via poll(), we would
+                 like to break any references from the node to active nodes.  We
+                 develop further the use of self-links that was very effective in
+                 other concurrent collection classes.  The idea is to replace
+                 prev and next pointers with special values that are interpreted
+                 to mean off-the-list-at-one-end.  These are approximations, but
+                 good enough to preserve the properties we want in our
+                 traversals, e.g. we guarantee that a traversal will never visit
+                 the same element twice, but we don&apos;t guarantee whether a
+                 traversal that runs out of elements will be able to see more
+                 elements later after enqueues at that end.  Doing gc-unlinking
+                 safely is particularly tricky, since any node can be in use
+                 indefinitely (for example by an iterator).  We must ensure that
+                 the nodes pointed at by headtail never get gc-unlinked, since
+                 headtail are needed to get &quot;back on track&quot; by other nodes that
+                 are gc-unlinked.  gc-unlinking accounts for much of the
+                 implementation complexity.
+                
+                 Since neither unlinking nor gc-unlinking are necessary for
+                 correctness, there are many implementation choices regarding
+                 frequency (eagerness) of these operations.  Since volatile
+                 reads are likely to be much cheaper than CASes, saving CASes by
+                 unlinking multiple adjacent nodes at a time may be a win.
+                 gc-unlinking can be performed rarely and still be effective,
+                 since it is most important that long chains of deleted nodes
+                 are occasionally broken.
+                
+                 The actual representation we use is that p.next == p means to
+                 goto the first node (which in turn is reached by following prev
+                 pointers from head), and p.next == null &amp;&amp; p.prev == p means
+                 that the iteration is at an end and that p is a (static final)
+                 dummy node, NEXT_TERMINATOR, and not the last active node.
+                 Finishing the iteration when encountering such a TERMINATOR is
+                 good enough for read-only traversals, so such traversals can use
+                 p.next == null as the termination condition.  When we need to
+                 find the last (active) node, for enqueueing a new node, we need
+                 to check whether we have reached a TERMINATOR node; if so,
+                 restart traversal from tail.
+                
+                 The implementation is completely directionally symmetrical,
+                 except that most public methods that iterate through the list
+                 follow next pointers (&quot;forward&quot; direction).
+                
+                 We believe (without full proof) that all single-element deque
+                 operations (e.g., addFirst, peekLast, pollLast) are linearizable
+                 (see Herlihy and Shavit&apos;s book).  However, some combinations of
+                 operations are known not to be linearizable.  In particular,
+                 when an addFirst(A) is racing with pollFirst() removing B, it is
+                 possible for an observer iterating over the elements to observe
+                 A B C and subsequently observe A C, even though no interior
+                 removes are ever performed.  Nevertheless, iterators behave
+                 reasonably, providing the &quot;weakly consistent&quot; guarantees.
+                
+                 Empirically, microbenchmarks suggest that this class adds about
+                 40% overhead relative to ConcurrentLinkedQueue, which feels as
+                 good as we can hope for.                
+            </comment>
+            <comment line="792">
+                Minor convenience utilities                
+            </comment>
+            <comment line="1003">
+                *** Queue and stack methods ***                
+            </comment>
+            <comment line="1449">
+                Unsafe mechanics                
+            </comment>
+            <implements interface="Deque">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+            </implements>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="46">
+                An unbounded concurrent {@linkplain Deque deque} based on linked nodes.
+                  Concurrent insertion, removal, and access operations execute safely
+                  across multiple threads.
+                  A {@code ConcurrentLinkedDeque} is an appropriate choice when
+                  many threads will share access to a common collection.
+                  Like most other concurrent collection implementations, this class
+                  does not permit the use of {@code null} elements.
+                  &lt;p&gt;Iterators are &lt;i&gt;weakly consistent&lt;/i&gt;, returning elements
+                  reflecting the state of the deque at some point at or since the
+                  creation of the iterator.  They do &lt;em&gt;not&lt;/em&gt; throw {@link java.util.ConcurrentModificationExceptionConcurrentModificationException}, and may proceed concurrently with
+                  other operations.
+                  &lt;p&gt;Beware that, unlike in most collections, the {@code size} method
+                  is &lt;em&gt;NOT&lt;/em&gt; a constant-time operation. Because of the
+                  asynchronous nature of these deques, determining the current number
+                  of elements requires a traversal of the elements, and so may report
+                  inaccurate results if this collection is modified during traversal.
+                  Additionally, the bulk operations {@code addAll},{@code removeAll}, {@code retainAll}, {@code containsAll},{@code equals}, and {@code toArray} are &lt;em&gt;not&lt;/em&gt; guaranteed
+                  to be performed atomically. For example, an iterator operating
+                  concurrently with an {@code addAll} operation might view only some
+                  of the added elements.
+                  &lt;p&gt;This class and its iterator implement all of the &lt;em&gt;optional&lt;/em&gt;
+                  methods of the {@link Deque} and {@link Iterator} interfaces.
+                  &lt;p&gt;Memory consistency effects: As with other concurrent collections,
+                  actions in a thread prior to placing an object into a{@code ConcurrentLinkedDeque}&lt;a href=&quot;package-summary.html#MemoryVisibility&quot;&gt;&lt;i&gt;happen-before&lt;/i&gt;&lt;/a&gt;
+                  actions subsequent to the access or removal of that element from
+                  the {@code ConcurrentLinkedDeque} in another thread.
+                  &lt;p&gt;This class is a member of the
+                  &lt;a href=&quot;{@docRoot}/../technotes/guides/collections/index.html&quot;&gt;
+                  Java Collections Framework&lt;/a&gt;.                
+                <since>
+                    1.7                    
+                </since>
+                <author>
+                    Doug Lea                    
+                </author>
+                <author>
+                    Martin Buchholz                    
+                </author>
+                <param>
+                    <E>
+                       the type of elements held in this collection                    
+                </param>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="249"/>
+            <declaration name="head" type="Node&lt;E&gt;" line="251"/>
+            <javadoc line="251">
+                A node from which the first node on list (that is, the unique node p
+                  with p.prev == null &amp;&amp; p.next != p) can be reached in O(1) time.
+                  Invariants:
+                  - the first node is always O(1) reachable from head via prev links
+                  - all live nodes are reachable from the first node via succ()
+                  - head != null
+                  - (tmp = head).next != tmp || tmp != head
+                  - head is never gc-unlinked (but may be unlinked)
+                  Non-invariants:
+                  - head.item may or may not be null
+                  - head may not be reachable from the first or last node, or from tail                
+            </javadoc>
+            <declaration name="tail" type="Node&lt;E&gt;" line="266"/>
+            <javadoc line="266">
+                A node from which the last node on list (that is, the unique node p
+                  with p.next == null &amp;&amp; p.prev != p) can be reached in O(1) time.
+                  Invariants:
+                  - the last node is always O(1) reachable from tail via next links
+                  - all live nodes are reachable from the last node via pred()
+                  - tail != null
+                  - tail is never gc-unlinked (but may be unlinked)
+                  Non-invariants:
+                  - tail.item may or may not be null
+                  - tail may not be reachable from the first or last node, or from head                
+            </javadoc>
+            <declaration name="PREV_TERMINATOR" type="Node&lt;Object&gt;" line="280"/>
+            <method name="prevTerminator" type="Node<E>" line="283"/>
+            <method name="nextTerminator" type="Node<E>" line="288"/>
+            <class name="Node" line="292">
+                <type_params>
+                    <type_param name="E"/>
+                </type_params>
+                <comment line="329">
+                    Unsafe mechanics                    
+                </comment>
+                <declaration name="prev" type="Node&lt;E&gt;" line="293"/>
+                <declaration name="item" type="E" line="294"/>
+                <declaration name="next" type="Node&lt;E&gt;" line="295"/>
+                <method name="Node" type="constructor" line="297"/>
+                <javadoc line="300">
+                    Constructs a new node.  Uses relaxed write because item can
+                      only be seen after publication via casNext or casPrev.                    
+                </javadoc>
+                <method name="Node" type="constructor" line="304">
+                    <params>
+                        <param name="item" type="E"/>
+                    </params>
+                </method>
+                <method name="casItem" type="boolean" line="308">
+                    <params>
+                        <param name="cmp" type="E"/>
+                        <param name="val" type="E"/>
+                    </params>
+                </method>
+                <method name="lazySetNext" type="void" line="312">
+                    <params>
+                        <param name="val" type="Node<E>"/>
+                    </params>
+                </method>
+                <method name="casNext" type="boolean" line="316">
+                    <params>
+                        <param name="cmp" type="Node<E>"/>
+                        <param name="val" type="Node<E>"/>
+                    </params>
+                </method>
+                <method name="lazySetPrev" type="void" line="320">
+                    <params>
+                        <param name="val" type="Node<E>"/>
+                    </params>
+                </method>
+                <method name="casPrev" type="boolean" line="324">
+                    <params>
+                        <param name="cmp" type="Node<E>"/>
+                        <param name="val" type="Node<E>"/>
+                    </params>
+                </method>
+                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="330"/>
+                <declaration name="prevOffset" type="long" line="331"/>
+                <declaration name="itemOffset" type="long" line="332"/>
+                <declaration name="nextOffset" type="long" line="333"/>
+                <scope line="335">
+                    <scope line="336">
+                        <declaration name="k" type="Class" line="338"/>
+                    </scope>
+                    <scope line="345"/>
+                </scope>
+            </class>
+            <javadoc line="351">
+                Links e as first element.                
+            </javadoc>
+            <method name="linkFirst" type="void" line="354">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <comment line="363">
+                    Check for head updates every other hop.                    
+                </comment>
+                <comment line="364">
+                    If p == q, we are sure to follow head instead.                    
+                </comment>
+                <comment line="366">
+                    PREV_TERMINATOR                    
+                </comment>
+                <comment line="369">
+                    p is first node                    
+                </comment>
+                <comment line="370">
+                    CAS piggyback                    
+                </comment>
+                <comment line="372">
+                    Successful CAS is the linearization point                    
+                </comment>
+                <comment line="373">
+                    for e to become an element of this deque,                    
+                </comment>
+                <comment line="374">
+                    and for newNode to become &quot;live&quot;.                    
+                </comment>
+                <comment line="375">
+                    hop two nodes at a time                    
+                </comment>
+                <comment line="376">
+                    Failure is OK.                    
+                </comment>
+                <comment line="379">
+                    Lost CAS race to another thread; re-read prev                    
+                </comment>
+                <declaration name="newNode" type="Node&lt;E&gt;" line="356"/>
+                <scope line="360">
+                    <scope line="368">
+                        <scope line="371"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="384">
+                Links e as last element.                
+            </javadoc>
+            <method name="linkLast" type="void" line="387">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <comment line="396">
+                    Check for tail updates every other hop.                    
+                </comment>
+                <comment line="397">
+                    If p == q, we are sure to follow tail instead.                    
+                </comment>
+                <comment line="399">
+                    NEXT_TERMINATOR                    
+                </comment>
+                <comment line="402">
+                    p is last node                    
+                </comment>
+                <comment line="403">
+                    CAS piggyback                    
+                </comment>
+                <comment line="405">
+                    Successful CAS is the linearization point                    
+                </comment>
+                <comment line="406">
+                    for e to become an element of this deque,                    
+                </comment>
+                <comment line="407">
+                    and for newNode to become &quot;live&quot;.                    
+                </comment>
+                <comment line="408">
+                    hop two nodes at a time                    
+                </comment>
+                <comment line="409">
+                    Failure is OK.                    
+                </comment>
+                <comment line="412">
+                    Lost CAS race to another thread; re-read next                    
+                </comment>
+                <declaration name="newNode" type="Node&lt;E&gt;" line="389"/>
+                <scope line="393">
+                    <scope line="401">
+                        <scope line="404"/>
+                    </scope>
+                </scope>
+            </method>
+            <declaration name="HOPS" type="int" line="417"/>
+            <javadoc line="419">
+                Unlinks non-null node x.                
+            </javadoc>
+            <method name="unlink" type="void" line="422">
+                <params>
+                    <param name="x" type="Node<E>"/>
+                </params>
+                <comment line="423">
+                    assert x != null;                    
+                </comment>
+                <comment line="424">
+                    assert x.item == null;                    
+                </comment>
+                <comment line="425">
+                    assert x != PREV_TERMINATOR;                    
+                </comment>
+                <comment line="426">
+                    assert x != NEXT_TERMINATOR;                    
+                </comment>
+                <comment line="435">
+                    Unlink interior node.                    
+                </comment>
+                <comment line="436">
+                                        
+                </comment>
+                <comment line="437">
+                    This is the common case, since a series of polls at the                    
+                </comment>
+                <comment line="438">
+                    same end will be &quot;interior&quot; removes, except perhaps for                    
+                </comment>
+                <comment line="439">
+                    the first one, since end nodes cannot be unlinked.                    
+                </comment>
+                <comment line="440">
+                                        
+                </comment>
+                <comment line="441">
+                    At any time, all active nodes are mutually reachable by                    
+                </comment>
+                <comment line="442">
+                    following a sequence of either next or prev pointers.                    
+                </comment>
+                <comment line="443">
+                                        
+                </comment>
+                <comment line="444">
+                    Our strategy is to find the unique active predecessor                    
+                </comment>
+                <comment line="445">
+                    and successor of x.  Try to fix up their links so that                    
+                </comment>
+                <comment line="446">
+                    they point to each other, leaving x unreachable from                    
+                </comment>
+                <comment line="447">
+                    active nodes.  If successful, and if x has no live                    
+                </comment>
+                <comment line="448">
+                    predecessor/successor, we additionally try to gc-unlink,                    
+                </comment>
+                <comment line="449">
+                    leaving active nodes unreachable from x, by rechecking                    
+                </comment>
+                <comment line="450">
+                    that the status of predecessor and successor are                    
+                </comment>
+                <comment line="451">
+                    unchanged and ensuring that x is not reachable from                    
+                </comment>
+                <comment line="452">
+                    tail/head, before setting x&apos;s prev/next links to their                    
+                </comment>
+                <comment line="453">
+                    logical approximate replacements, self/TERMINATOR.                    
+                </comment>
+                <comment line="458">
+                    Find active predecessor                    
+                </comment>
+                <comment line="479">
+                    Find active successor                    
+                </comment>
+                <comment line="500">
+                    TODO: better HOP heuristics                    
+                </comment>
+                <comment line="502">
+                    always squeeze out interior deleted nodes                    
+                </comment>
+                <comment line="506">
+                    Squeeze out deleted nodes between activePred and                    
+                </comment>
+                <comment line="507">
+                    activeSucc, including x.                    
+                </comment>
+                <comment line="511">
+                    Try to gc-unlink, if possible                    
+                </comment>
+                <comment line="514">
+                    Recheck expected state of predecessor and successor                    
+                </comment>
+                <comment line="520">
+                    Ensure x is not reachable from head                    
+                </comment>
+                <comment line="521">
+                    Ensure x is not reachable from tail                    
+                </comment>
+                <comment line="523">
+                    Finally, actually gc-unlink                    
+                </comment>
+                <declaration name="prev" type="Node&lt;E&gt;" line="428"/>
+                <declaration name="next" type="Node&lt;E&gt;" line="429"/>
+                <scope line="430"/>
+                <scope line="432"/>
+                <scope line="434">
+                    <declaration name="activePred" type="Node&lt;E&gt;" line="454"/>
+                    <declaration name="isFirst" type="boolean" line="455"/>
+                    <declaration name="hops" type="int" line="456"/>
+                    <scope line="459">
+                        <scope line="460"/>
+                        <declaration name="q" type="Node&lt;E&gt;" line="465"/>
+                        <scope line="466"/>
+                    </scope>
+                    <scope line="480">
+                        <scope line="481"/>
+                        <declaration name="q" type="Node&lt;E&gt;" line="486"/>
+                        <scope line="487"/>
+                    </scope>
+                    <scope line="518"/>
+                </scope>
+            </method>
+            <javadoc line="530">
+                Unlinks non-null first node.                
+            </javadoc>
+            <method name="unlinkFirst" type="void" line="533">
+                <params>
+                    <param name="first" type="Node<E>"/>
+                    <param name="next" type="Node<E>"/>
+                </params>
+                <comment line="534">
+                    assert first != null;                    
+                </comment>
+                <comment line="535">
+                    assert next != null;                    
+                </comment>
+                <comment line="536">
+                    assert first.item == null;                    
+                </comment>
+                <comment line="545">
+                    Ensure o is not reachable from head                    
+                </comment>
+                <comment line="546">
+                    Ensure o is not reachable from tail                    
+                </comment>
+                <comment line="548">
+                    Finally, actually gc-unlink                    
+                </comment>
+                <scope line="537">
+                    <scope line="538">
+                        <scope line="539">
+                            <scope line="543"/>
+                        </scope>
+                    </scope>
+                    <scope line="557"/>
+                </scope>
+            </method>
+            <javadoc line="564">
+                Unlinks non-null last node.                
+            </javadoc>
+            <method name="unlinkLast" type="void" line="567">
+                <params>
+                    <param name="last" type="Node<E>"/>
+                    <param name="prev" type="Node<E>"/>
+                </params>
+                <comment line="568">
+                    assert last != null;                    
+                </comment>
+                <comment line="569">
+                    assert prev != null;                    
+                </comment>
+                <comment line="570">
+                    assert last.item == null;                    
+                </comment>
+                <comment line="579">
+                    Ensure o is not reachable from head                    
+                </comment>
+                <comment line="580">
+                    Ensure o is not reachable from tail                    
+                </comment>
+                <comment line="582">
+                    Finally, actually gc-unlink                    
+                </comment>
+                <scope line="571">
+                    <scope line="572">
+                        <scope line="573">
+                            <scope line="577"/>
+                        </scope>
+                    </scope>
+                    <scope line="591"/>
+                </scope>
+            </method>
+            <javadoc line="598">
+                Guarantees that any node which was unlinked before a call to
+                  this method will be unreachable from head after it returns.
+                  Does not guarantee to eliminate slack, only that head will
+                  point to a node that was active while this method was running.                
+            </javadoc>
+            <method name="updateHead" type="void" line="604">
+                <comment line="605">
+                    Either head already points to an active node, or we keep                    
+                </comment>
+                <comment line="606">
+                    trying to cas it to the first node until it does.                    
+                </comment>
+                <comment line="613">
+                    It is possible that p is PREV_TERMINATOR,                    
+                </comment>
+                <comment line="614">
+                    but if so, the CAS is guaranteed to fail.                    
+                </comment>
+                <declaration name="h" type="Node&lt;E&gt;" line="607"/>
+                <scope line="609">
+                    <scope line="610">
+                        <scope line="612"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="628">
+                Guarantees that any node which was unlinked before a call to
+                  this method will be unreachable from tail after it returns.
+                  Does not guarantee to eliminate slack, only that tail will
+                  point to a node that was active while this method was running.                
+            </javadoc>
+            <method name="updateTail" type="void" line="634">
+                <comment line="635">
+                    Either tail already points to an active node, or we keep                    
+                </comment>
+                <comment line="636">
+                    trying to cas it to the last node until it does.                    
+                </comment>
+                <comment line="643">
+                    It is possible that p is NEXT_TERMINATOR,                    
+                </comment>
+                <comment line="644">
+                    but if so, the CAS is guaranteed to fail.                    
+                </comment>
+                <declaration name="t" type="Node&lt;E&gt;" line="637"/>
+                <scope line="639">
+                    <scope line="640">
+                        <scope line="642"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="skipDeletedPredecessors" type="void" line="658">
+                <params>
+                    <param name="x" type="Node<E>"/>
+                </params>
+                <comment line="662">
+                    assert prev != null;                    
+                </comment>
+                <comment line="663">
+                    assert x != NEXT_TERMINATOR;                    
+                </comment>
+                <comment line="664">
+                    assert x != PREV_TERMINATOR;                    
+                </comment>
+                <comment line="682">
+                    found active CAS target                    
+                </comment>
+                <scope line="660">
+                    <declaration name="prev" type="Node&lt;E&gt;" line="661"/>
+                    <declaration name="p" type="Node&lt;E&gt;" line="665"/>
+                    <scope line="667">
+                        <declaration name="q" type="Node&lt;E&gt;" line="670"/>
+                        <scope line="671"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="skipDeletedSuccessors" type="void" line="689">
+                <params>
+                    <param name="x" type="Node<E>"/>
+                </params>
+                <comment line="693">
+                    assert next != null;                    
+                </comment>
+                <comment line="694">
+                    assert x != NEXT_TERMINATOR;                    
+                </comment>
+                <comment line="695">
+                    assert x != PREV_TERMINATOR;                    
+                </comment>
+                <comment line="713">
+                    found active CAS target                    
+                </comment>
+                <scope line="691">
+                    <declaration name="next" type="Node&lt;E&gt;" line="692"/>
+                    <declaration name="p" type="Node&lt;E&gt;" line="696"/>
+                    <scope line="698">
+                        <declaration name="q" type="Node&lt;E&gt;" line="701"/>
+                        <scope line="702"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="720">
+                Returns the successor of p, or the first node if p.next has been
+                  linked to self, which will only be true if traversing with a
+                  stale pointer that is now off the list.                
+            </javadoc>
+            <method name="succ" type="Node<E>" line="725">
+                <params>
+                    <param name="p" type="Node<E>"/>
+                </params>
+                <comment line="726">
+                    TODO: should we skip deleted nodes here?                    
+                </comment>
+                <declaration name="q" type="Node&lt;E&gt;" line="727"/>
+            </method>
+            <javadoc line="731">
+                Returns the predecessor of p, or the last node if p.prev has been
+                  linked to self, which will only be true if traversing with a
+                  stale pointer that is now off the list.                
+            </javadoc>
+            <method name="pred" type="Node<E>" line="736">
+                <params>
+                    <param name="p" type="Node<E>"/>
+                </params>
+                <declaration name="q" type="Node&lt;E&gt;" line="737"/>
+            </method>
+            <javadoc line="741">
+                Returns the first node, the unique node p for which:
+                  p.prev == null &amp;&amp; p.next != p
+                  The returned node may or may not be logically deleted.
+                  Guarantees that head is set to the returned node.                
+            </javadoc>
+            <method name="first" type="Node<E>" line="747">
+                <comment line="753">
+                    Check for head updates every other hop.                    
+                </comment>
+                <comment line="754">
+                    If p == q, we are sure to follow head instead.                    
+                </comment>
+                <comment line="757">
+                    It is possible that p is PREV_TERMINATOR,                    
+                </comment>
+                <comment line="758">
+                    but if so, the CAS is guaranteed to fail.                    
+                </comment>
+                <scope line="750"/>
+            </method>
+            <javadoc line="766">
+                Returns the last node, the unique node p for which:
+                  p.next == null &amp;&amp; p.prev != p
+                  The returned node may or may not be logically deleted.
+                  Guarantees that tail is set to the returned node.                
+            </javadoc>
+            <method name="last" type="Node<E>" line="772">
+                <comment line="778">
+                    Check for tail updates every other hop.                    
+                </comment>
+                <comment line="779">
+                    If p == q, we are sure to follow tail instead.                    
+                </comment>
+                <comment line="782">
+                    It is possible that p is NEXT_TERMINATOR,                    
+                </comment>
+                <comment line="783">
+                    but if so, the CAS is guaranteed to fail.                    
+                </comment>
+                <scope line="775"/>
+            </method>
+            <javadoc line="793">
+                Throws NullPointerException if argument is null.                
+                <param>
+                    v the element                    
+                </param>
+            </javadoc>
+            <method name="checkNotNull" type="void" line="798">
+                <params>
+                    <param name="v" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="803">
+                Returns element unless it is null, in which case throws
+                  NoSuchElementException.                
+                <param>
+                    v the element                    
+                </param>
+                <return>
+                    the element                    
+                </return>
+            </javadoc>
+            <method name="screenNullResult" type="E" line="810">
+                <params>
+                    <param name="v" type="E"/>
+                </params>
+            </method>
+            <javadoc line="816">
+                Creates an array list and fills it with elements of this list.
+                  Used by toArray.                
+                <return>
+                    the arrayList                    
+                </return>
+            </javadoc>
+            <method name="toArrayList" type="ArrayList<E>" line="822">
+                <declaration name="list" type="ArrayList&lt;E&gt;" line="823"/>
+                <scope line="824">
+                    <declaration name="item" type="E" line="825"/>
+                </scope>
+            </method>
+            <javadoc line="832">
+                Constructs an empty deque.                
+            </javadoc>
+            <method name="ConcurrentLinkedDeque" type="constructor" line="835"/>
+            <javadoc line="839">
+                Constructs a deque initially containing the elements of
+                  the given collection, added in traversal order of the
+                  collection&apos;s iterator.                
+                <param>
+                    c the collection of elements to initially contain                    
+                </param>
+                <throws>
+                    NullPointerException if the specified collection or any
+                      of its elements are null                    
+                </throws>
+            </javadoc>
+            <method name="ConcurrentLinkedDeque" type="constructor" line="848">
+                <params>
+                    <param name="c" type="Collection<? extends E>"/>
+                </params>
+                <comment line="849">
+                    Copy c into a private chain of Nodes                    
+                </comment>
+                <declaration name="h" type="Node&lt;E&gt;" line="850"/>
+                <scope line="851">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="853"/>
+                    <scope line="856"/>
+                </scope>
+            </method>
+            <javadoc line="865">
+                Initializes head and tail, ensuring invariants hold.                
+            </javadoc>
+            <method name="initHeadTail" type="void" line="868">
+                <params>
+                    <param name="h" type="Node<E>"/>
+                    <param name="t" type="Node<E>"/>
+                </params>
+                <comment line="873">
+                    Avoid edge case of a single Node with non-null item.                    
+                </comment>
+                <scope line="869">
+                    <scope line="872">
+                        <declaration name="newNode" type="Node&lt;E&gt;" line="874"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="884">
+                Inserts the specified element at the front of this deque.
+                  As the deque is unbounded, this method will never throw{@link IllegalStateException}.                
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="addFirst" type="void" line="891">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <javadoc line="895">
+                Inserts the specified element at the end of this deque.
+                  As the deque is unbounded, this method will never throw{@link IllegalStateException}.
+                  &lt;p&gt;This method is equivalent to {@link #add}.                
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="addLast" type="void" line="904">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <javadoc line="908">
+                Inserts the specified element at the front of this deque.
+                  As the deque is unbounded, this method will never return {@code false}.                
+                <return>
+                    {@code true} (as specified by {@link Deque#offerFirst})                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="offerFirst" type="boolean" line="915">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <javadoc line="920">
+                Inserts the specified element at the end of this deque.
+                  As the deque is unbounded, this method will never return {@code false}.
+                  &lt;p&gt;This method is equivalent to {@link #add}.                
+                <return>
+                    {@code true} (as specified by {@link Deque#offerLast})                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="offerLast" type="boolean" line="929">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <method name="peekFirst" type="E" line="934">
+                <scope line="935">
+                    <declaration name="item" type="E" line="936"/>
+                </scope>
+            </method>
+            <method name="peekLast" type="E" line="943">
+                <scope line="944">
+                    <declaration name="item" type="E" line="945"/>
+                </scope>
+            </method>
+            <javadoc line="952">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="getFirst" type="E" line="955"/>
+            <javadoc line="959">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="getLast" type="E" line="962"/>
+            <method name="pollFirst" type="E" line="966">
+                <scope line="967">
+                    <declaration name="item" type="E" line="968"/>
+                    <scope line="969"/>
+                </scope>
+            </method>
+            <method name="pollLast" type="E" line="977">
+                <scope line="978">
+                    <declaration name="item" type="E" line="979"/>
+                    <scope line="980"/>
+                </scope>
+            </method>
+            <javadoc line="988">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="removeFirst" type="E" line="991"/>
+            <javadoc line="995">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="removeLast" type="E" line="998"/>
+            <javadoc line="1004">
+                Inserts the specified element at the tail of this deque.
+                  As the deque is unbounded, this method will never return {@code false}.                
+                <return>
+                    {@code true} (as specified by {@link Queue#offer})                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="offer" type="boolean" line="1011">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <javadoc line="1015">
+                Inserts the specified element at the tail of this deque.
+                  As the deque is unbounded, this method will never throw{@link IllegalStateException} or return {@code false}.                
+                <return>
+                    {@code true} (as specified by {@link Collection#add})                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="add" type="boolean" line="1023">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <method name="poll" type="E" line="1027"/>
+            <method name="remove" type="E" line="1028"/>
+            <method name="peek" type="E" line="1029"/>
+            <method name="element" type="E" line="1030"/>
+            <method name="push" type="void" line="1031">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+            </method>
+            <method name="pop" type="E" line="1032"/>
+            <javadoc line="1034">
+                Removes the first element {@code e} such that{@code o.equals(e)}, if such an element exists in this deque.
+                  If the deque does not contain the element, it is unchanged.                
+                <param>
+                    o element to be removed from this deque, if present                    
+                </param>
+                <return>
+                    {@code true} if the deque contained the specified element                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="removeFirstOccurrence" type="boolean" line="1043">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="1045">
+                    <declaration name="item" type="E" line="1046"/>
+                    <scope line="1047"/>
+                </scope>
+            </method>
+            <javadoc line="1055">
+                Removes the last element {@code e} such that{@code o.equals(e)}, if such an element exists in this deque.
+                  If the deque does not contain the element, it is unchanged.                
+                <param>
+                    o element to be removed from this deque, if present                    
+                </param>
+                <return>
+                    {@code true} if the deque contained the specified element                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="removeLastOccurrence" type="boolean" line="1064">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="1066">
+                    <declaration name="item" type="E" line="1067"/>
+                    <scope line="1068"/>
+                </scope>
+            </method>
+            <javadoc line="1076">
+                Returns {@code true} if this deque contains at least one
+                  element {@code e} such that {@code o.equals(e)}.                
+                <param>
+                    o element whose presence in this deque is to be tested                    
+                </param>
+                <return>
+                    {@code true} if this deque contains the specified element                    
+                </return>
+            </javadoc>
+            <method name="contains" type="boolean" line="1083">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+                <scope line="1085">
+                    <declaration name="item" type="E" line="1086"/>
+                </scope>
+            </method>
+            <javadoc line="1093">
+                Returns {@code true} if this collection contains no elements.                
+                <return>
+                    {@code true} if this collection contains no elements                    
+                </return>
+            </javadoc>
+            <method name="isEmpty" type="boolean" line="1098"/>
+            <javadoc line="1102">
+                Returns the number of elements in this deque.  If this deque
+                  contains more than {@code Integer.MAX_VALUE} elements, it
+                  returns {@code Integer.MAX_VALUE}.
+                  &lt;p&gt;Beware that, unlike in most collections, this method is
+                  &lt;em&gt;NOT&lt;/em&gt; a constant-time operation. Because of the
+                  asynchronous nature of these deques, determining the current
+                  number of elements requires traversing them all to count them.
+                  Additionally, it is possible for the size to change during
+                  execution of this method, in which case the returned result
+                  will be inaccurate. Thus, this method is typically not very
+                  useful in concurrent applications.                
+                <return>
+                    the number of elements in this deque                    
+                </return>
+            </javadoc>
+            <method name="size" type="int" line="1118">
+                <comment line="1122">
+                    Collection.size() spec says to max out                    
+                </comment>
+                <declaration name="count" type="int" line="1119"/>
+            </method>
+            <javadoc line="1128">
+                Removes the first element {@code e} such that{@code o.equals(e)}, if such an element exists in this deque.
+                  If the deque does not contain the element, it is unchanged.                
+                <param>
+                    o element to be removed from this deque, if present                    
+                </param>
+                <return>
+                    {@code true} if the deque contained the specified element                    
+                </return>
+                <throws>
+                    NullPointerException if the specified element is null                    
+                </throws>
+            </javadoc>
+            <method name="remove" type="boolean" line="1137">
+                <params>
+                    <param name="o" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="1141">
+                Appends all of the elements in the specified collection to the end of
+                  this deque, in the order that they are returned by the specified
+                  collection&apos;s iterator.  Attempts to {@code addAll} of a deque to
+                  itself result in {@code IllegalArgumentException}.                
+                <param>
+                    c the elements to be inserted into this deque                    
+                </param>
+                <return>
+                    {@code true} if this deque changed as a result of the call                    
+                </return>
+                <throws>
+                    NullPointerException if the specified collection or any
+                      of its elements are null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the collection is this deque                    
+                </throws>
+            </javadoc>
+            <method name="addAll" type="boolean" line="1153">
+                <params>
+                    <param name="c" type="Collection<? extends E>"/>
+                </params>
+                <comment line="1155">
+                    As historically specified in AbstractQueue#addAll                    
+                </comment>
+                <comment line="1158">
+                    Copy c into a private chain of Nodes                    
+                </comment>
+                <comment line="1174">
+                    Atomically append the chain at the tail of this collection                    
+                </comment>
+                <comment line="1180">
+                    Check for tail updates every other hop.                    
+                </comment>
+                <comment line="1181">
+                    If p == q, we are sure to follow tail instead.                    
+                </comment>
+                <comment line="1183">
+                    NEXT_TERMINATOR                    
+                </comment>
+                <comment line="1186">
+                    p is last node                    
+                </comment>
+                <comment line="1187">
+                    CAS piggyback                    
+                </comment>
+                <comment line="1189">
+                    Successful CAS is the linearization point                    
+                </comment>
+                <comment line="1190">
+                    for all elements to be added to this deque.                    
+                </comment>
+                <comment line="1192">
+                    Try a little harder to update tail,                    
+                </comment>
+                <comment line="1193">
+                    since we may be adding many elements.                    
+                </comment>
+                <comment line="1200">
+                    Lost CAS race to another thread; re-read next                    
+                </comment>
+                <declaration name="beginningOfTheEnd" type="Node&lt;E&gt;" line="1159"/>
+                <scope line="1160">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="1162"/>
+                    <scope line="1165"/>
+                </scope>
+                <scope line="1177">
+                    <scope line="1185">
+                        <scope line="1188">
+                            <scope line="1191"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1205">
+                Removes all of the elements from this deque.                
+            </javadoc>
+            <method name="clear" type="void" line="1208"/>
+            <javadoc line="1213">
+                Returns an array containing all of the elements in this deque, in
+                  proper sequence (from first to last element).
+                  &lt;p&gt;The returned array will be &quot;safe&quot; in that no references to it are
+                  maintained by this deque.  (In other words, this method must allocate
+                  a new array).  The caller is thus free to modify the returned array.
+                  &lt;p&gt;This method acts as bridge between array-based and collection-based
+                  APIs.                
+                <return>
+                    an array containing all of the elements in this deque                    
+                </return>
+            </javadoc>
+            <method name="toArray" type="Object[]" line="1226"/>
+            <javadoc line="1230">
+                Returns an array containing all of the elements in this deque,
+                  in proper sequence (from first to last element); the runtime
+                  type of the returned array is that of the specified array.  If
+                  the deque fits in the specified array, it is returned therein.
+                  Otherwise, a new array is allocated with the runtime type of
+                  the specified array and the size of this deque.
+                  &lt;p&gt;If this deque fits in the specified array with room to spare
+                  (i.e., the array has more elements than this deque), the element in
+                  the array immediately following the end of the deque is set to{@code null}.
+                  &lt;p&gt;Like the {@link #toArray()} method, this method acts as
+                  bridge between array-based and collection-based APIs.  Further,
+                  this method allows precise control over the runtime type of the
+                  output array, and may, under certain circumstances, be used to
+                  save allocation costs.
+                  &lt;p&gt;Suppose {@code x} is a deque known to contain only strings.
+                  The following code can be used to dump the deque into a newly
+                  allocated array of {@code String}:
+                  &lt;pre&gt;
+                  String[] y = x.toArray(new String[0]);&lt;/pre&gt;
+                  Note that {@code toArray(new Object[0])} is identical in function to{@code toArray()}.                
+                <param>
+                    a the array into which the elements of the deque are to
+                      be stored, if it is big enough; otherwise, a new array of the
+                      same runtime type is allocated for this purpose                    
+                </param>
+                <return>
+                    an array containing all of the elements in this deque                    
+                </return>
+                <throws>
+                    ArrayStoreException if the runtime type of the specified array
+                      is not a supertype of the runtime type of every element in
+                      this deque                    
+                </throws>
+                <throws>
+                    NullPointerException if the specified array is null                    
+                </throws>
+            </javadoc>
+            <method name="toArray" type="T[]" line="1268">
+                <params>
+                    <param name="a" type="T[]"/>
+                </params>
+            </method>
+            <javadoc line="1272">
+                Returns an iterator over the elements in this deque in proper sequence.
+                  The elements will be returned in order from first (head) to last (tail).
+                  &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
+                  will never throw {@link java.util.ConcurrentModificationExceptionConcurrentModificationException}, and guarantees to traverse
+                  elements as they existed upon construction of the iterator, and
+                  may (but is not guaranteed to) reflect any modifications
+                  subsequent to construction.                
+                <return>
+                    an iterator over the elements in this deque in proper sequence                    
+                </return>
+            </javadoc>
+            <method name="iterator" type="Iterator<E>" line="1285"/>
+            <javadoc line="1289">
+                Returns an iterator over the elements in this deque in reverse
+                  sequential order.  The elements will be returned in order from
+                  last (tail) to first (head).
+                  &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
+                  will never throw {@link java.util.ConcurrentModificationExceptionConcurrentModificationException}, and guarantees to traverse
+                  elements as they existed upon construction of the iterator, and
+                  may (but is not guaranteed to) reflect any modifications
+                  subsequent to construction.                
+                <return>
+                    an iterator over the elements in this deque in reverse order                    
+                </return>
+            </javadoc>
+            <method name="descendingIterator" type="Iterator<E>" line="1303"/>
+            <class name="AbstractItr" line="1307">
+                <comment line="329">
+                    Unsafe mechanics                    
+                </comment>
+                <implements interface="Iterator">
+                    <type_params>
+                        <type_param name="E"/>
+                    </type_params>
+                </implements>
+                <declaration name="nextNode" type="Node&lt;E&gt;" line="1308"/>
+                <javadoc line="1308">
+                    Next node to return item for.                    
+                </javadoc>
+                <declaration name="nextItem" type="E" line="1313"/>
+                <javadoc line="1313">
+                    nextItem holds on to item fields because once we claim
+                      that an element exists in hasNext(), we must return it in
+                      the following next() call even if it was in the process of
+                      being removed when hasNext() was called.                    
+                </javadoc>
+                <declaration name="lastRet" type="Node&lt;E&gt;" line="1321"/>
+                <javadoc line="1321">
+                    Node returned by most recent call to next. Needed by remove.
+                      Reset to null if this element is deleted by a call to remove.                    
+                </javadoc>
+                <method name="startNode" type="Node<E>" line="1327"/>
+                <method name="nextNode" type="Node<E>" line="1328"/>
+                <method name="AbstractItr" type="constructor" line="1330"/>
+                <javadoc line="1334">
+                    Sets nextNode and nextItem to next valid node, or to null
+                      if no such.                    
+                </javadoc>
+                <method name="advance" type="void" line="1338">
+                    <comment line="1344">
+                        p might be active end or TERMINATOR node; both are OK                        
+                    </comment>
+                    <declaration name="p" type="Node&lt;E&gt;" line="1341"/>
+                    <scope line="1342">
+                        <scope line="1343"/>
+                        <declaration name="item" type="E" line="1349"/>
+                        <scope line="1350"/>
+                    </scope>
+                </method>
+                <method name="hasNext" type="boolean" line="1358"/>
+                <method name="next" type="E" line="1362">
+                    <declaration name="item" type="E" line="1363"/>
+                </method>
+                <method name="remove" type="void" line="1369">
+                    <declaration name="l" type="Node&lt;E&gt;" line="1370"/>
+                </method>
+            </class>
+            <class name="Itr" line="1378">
+                <extends class="AbstractItr"/>
+                <comment line="329">
+                    Unsafe mechanics                    
+                </comment>
+                <javadoc line="1378">
+                    Forward iterator                    
+                </javadoc>
+                <method name="startNode" type="Node<E>" line="1380"/>
+                <method name="nextNode" type="Node<E>" line="1381">
+                    <params>
+                        <param name="p" type="Node<E>"/>
+                    </params>
+                </method>
+            </class>
+            <class name="DescendingItr" line="1384">
+                <extends class="AbstractItr"/>
+                <comment line="329">
+                    Unsafe mechanics                    
+                </comment>
+                <javadoc line="1384">
+                    Descending iterator                    
+                </javadoc>
+                <method name="startNode" type="Node<E>" line="1386"/>
+                <method name="nextNode" type="Node<E>" line="1387">
+                    <params>
+                        <param name="p" type="Node<E>"/>
+                    </params>
+                </method>
+            </class>
+            <javadoc line="1390">
+                Saves the state to a stream (that is, serializes it).                
+                <serialData>
+                    All of the elements (each an {@code E}) in
+                      the proper order, followed by a null                    
+                </serialData>
+                <param>
+                    s the stream                    
+                </param>
+            </javadoc>
+            <method name="writeObject" type="void" line="1398">
+                <params>
+                    <param name="s" type="java.io.ObjectOutputStream"/>
+                </params>
+                <comment line="1400">
+                    Write out any hidden stuff                    
+                </comment>
+                <comment line="1403">
+                    Write out all elements in the proper order.                    
+                </comment>
+                <comment line="1410">
+                    Use trailing null as sentinel                    
+                </comment>
+                <scope line="1404">
+                    <declaration name="item" type="E" line="1405"/>
+                </scope>
+            </method>
+            <javadoc line="1414">
+                Reconstitutes the instance from a stream (that is, deserializes it).                
+                <param>
+                    s the stream                    
+                </param>
+            </javadoc>
+            <method name="readObject" type="void" line="1419">
+                <params>
+                    <param name="s" type="java.io.ObjectInputStream"/>
+                </params>
+                <comment line="1422">
+                    Read in elements until trailing null sentinel found                    
+                </comment>
+                <declaration name="h" type="Node&lt;E&gt;" line="1423"/>
+                <declaration name="item" type="Object" line="1424"/>
+                <scope line="1425">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="1426"/>
+                    <scope line="1430"/>
+                </scope>
+            </method>
+            <method name="casHead" type="boolean" line="1440">
+                <params>
+                    <param name="cmp" type="Node<E>"/>
+                    <param name="val" type="Node<E>"/>
+                </params>
+            </method>
+            <method name="casTail" type="boolean" line="1444">
+                <params>
+                    <param name="cmp" type="Node<E>"/>
+                    <param name="val" type="Node<E>"/>
+                </params>
+            </method>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="1450"/>
+            <declaration name="headOffset" type="long" line="1451"/>
+            <declaration name="tailOffset" type="long" line="1452"/>
+            <scope line="1453">
+                <scope line="1458">
+                    <declaration name="k" type="Class" line="1460"/>
+                </scope>
+                <scope line="1465"/>
+            </scope>
+        </class>
+    </source>

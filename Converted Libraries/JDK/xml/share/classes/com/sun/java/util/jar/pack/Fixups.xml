@@ -1,0 +1,606 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.java.util.jar.pack">
+        <import package="com.sun.java.util.jar.pack.ConstantPool.Entry"/>
+        <import package="java.util.AbstractCollection"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Iterator"/>
+        <class name="Fixups" line="34">
+            <extends class="AbstractCollection"/>
+            <comment line="47">
+                the subject of the relocations                
+            </comment>
+            <comment line="48">
+                desc locating first reloc                
+            </comment>
+            <comment line="49">
+                desc locating last reloc                
+            </comment>
+            <comment line="50">
+                number of relocations                
+            </comment>
+            <comment line="51">
+                [0..size-1] relocations                
+            </comment>
+            <comment line="52">
+                descs which cannot be stored in the bytes                
+            </comment>
+            <comment line="54">
+                A &quot;desc&quot; (descriptor) is a bit-encoded pair of a location                
+            </comment>
+            <comment line="55">
+                and format.  Every fixup occurs at a &quot;desc&quot;.  Until final                
+            </comment>
+            <comment line="56">
+                patching, bytes addressed by descs may also be used to                
+            </comment>
+            <comment line="57">
+                link this data structure together.  If the bytes are missing,                
+            </comment>
+            <comment line="58">
+                or if the &quot;desc&quot; is too large to encode in the bytes,                
+            </comment>
+            <comment line="59">
+                it is kept in the bigDescs array.                
+            </comment>
+            <comment line="80">
+                cleverly share empty bigDescs:                
+            </comment>
+            <comment line="151">
+                fill pointer of bigDescs array is in element [0]                
+            </comment>
+            <comment line="154">
+                Format values:                
+            </comment>
+            <comment line="158">
+                Special values for the static methods.                
+            </comment>
+            <comment line="333">
+                Here is how things get added:                
+            </comment>
+            <comment line="378">
+                / Static methods that optimize the use of this class.                
+            </comment>
+            <comment line="424">
+                Iterate over all the references in this set of fixups.                
+            </comment>
+            <comment line="437">
+                Clear out this set of fixups by replacing each reference                
+            </comment>
+            <comment line="438">
+                by a hardcoded coding of its reference, drawn from ix.                
+            </comment>
+            <comment line="472">
+                Testing.
+                public static void main(String[] av) {
+                byte[] bytes = new byte[1 &lt;&lt; 20];
+                ConstantPool cp = new ConstantPool();
+                Fixups f = new Fixups(bytes);
+                boolean isU1 = false;
+                int span = 3;
+                int nextLoc = 0;
+                int[] locs = new int[100];
+                final int[] indexes = new int[100];
+                int iptr = 1;
+                for (int loc = 0; loc &lt; bytes.length; loc++) {
+                if (loc == nextLoc &amp;&amp; loc+1 &lt; bytes.length) {
+                int fmt = (isU1 ? U1_FORMAT : U2_FORMAT);
+                Entry e = ConstantPool.getUtf8Entry(&quot;L&quot;+loc);
+                f.add(loc, fmt, e);
+                isU1 ^= true;
+                if (iptr &lt; 10) {
+                 Make it close in.
+                nextLoc += fmtLen(fmt) + (iptr &lt; 5 ? 0 : 1);
+                } else {
+                nextLoc += span;
+                span = (int)(span  1.77);
+                }
+                 Here are the bytes that would have gone here:
+                locs[iptr] = loc;
+                if (fmt == U1_FORMAT) {
+                indexes[iptr++] = (loc &amp; 0xFF);
+                } else {
+                indexes[iptr++] = ((loc &amp; 0xFF) &lt;&lt; 8) | ((loc+1) &amp; 0xFF);
+                ++loc;   skip a byte
+                }
+                continue;
+                }
+                bytes[loc] = (byte)loc;
+                }
+                System.out.println(&quot;size=&quot;+f.size()
+                +&quot; overflow=&quot;+(f.bigDescs[BIGSIZE]-1));
+                System.out.println(&quot;Fixups: &quot;+f);
+                 Test collection contents.
+                assert(iptr == 1+f.size());
+                List l = new ArrayList(f);
+                Collections.sort(l);   should not change the order
+                if (!l.equals(new ArrayList(f)))  System.out.println(&quot; disordered&quot;);
+                f.setBytes(null);
+                if (!l.equals(new ArrayList(f)))  System.out.println(&quot; bad set 1&quot;);
+                f.setBytes(bytes);
+                if (!l.equals(new ArrayList(f)))  System.out.println(&quot; bad set 2&quot;);
+                Fixups f3 = new Fixups(f);
+                if (!l.equals(new ArrayList(f3))) System.out.println(&quot; bad set 3&quot;);
+                Iterator fi = f.iterator();
+                for (int i = 1; i &lt; iptr; i++) {
+                Fixup fx = (Fixup) fi.next();
+                if (fx.location() != locs[i]) {
+                System.out.println(&quot; &quot;+fx+&quot; != &quot;+locs[i]);
+                }
+                if (fx.format() == U1_FORMAT)
+                System.out.println(fx+&quot; -&gt; &quot;+bytes[locs[i]]);
+                else
+                System.out.println(fx+&quot; -&gt; &quot;+bytes[locs[i]]+&quot; &quot;+bytes[locs[i]+1]);
+                }
+                assert(!fi.hasNext());
+                indexes[0] = 1;   like iptr
+                Index ix = new Index(&quot;ix&quot;) {
+                public int indexOf(Entry e) {
+                return indexes[indexes[0]++];
+                }
+                };
+                f.finishRefs(ix);
+                for (int loc = 0; loc &lt; bytes.length; loc++) {
+                if (bytes[loc] != (byte)loc) {
+                System.out.println(&quot; [&quot;+loc+&quot;] = &quot;+bytes[loc]+&quot; != &quot;+(byte)loc);
+                }
+                }
+                }                
+            </comment>
+            <javadoc line="34">
+                Collection of relocatable constant pool references.
+                  It operates with respect to a particular byte array,
+                  and stores some of its state in the bytes themselves.
+                  &lt;p&gt;
+                  As a Collection, it can be iterated over, but it is not a List,
+                  since it does not natively support indexed access.
+                  &lt;p&gt;                
+                <author>
+                    John Rose                    
+                </author>
+            </javadoc>
+            <declaration name="bytes" type="byte[]" line="46"/>
+            <declaration name="head" type="int" line="47"/>
+            <declaration name="tail" type="int" line="48"/>
+            <declaration name="size" type="int" line="49"/>
+            <declaration name="entries" type="Entry[]" line="50"/>
+            <declaration name="bigDescs" type="int[]" line="51"/>
+            <method name="Fixups" type="constructor" line="60">
+                <params>
+                    <param name="bytes" type="byte[]"/>
+                </params>
+            </method>
+            <method name="Fixups" type="constructor" line="65">
+                <comment line="66">
+                    If there are no bytes, all descs are kept in bigDescs.                    
+                </comment>
+            </method>
+            <method name="Fixups" type="constructor" line="69">
+                <params>
+                    <param name="bytes" type="byte[]"/>
+                    <param name="fixups" type="Collection"/>
+                </params>
+            </method>
+            <method name="Fixups" type="constructor" line="73">
+                <params>
+                    <param name="fixups" type="Collection"/>
+                </params>
+            </method>
+            <declaration name="MINBIGSIZE" type="int" line="78"/>
+            <declaration name="noBigDescs" type="int[]" line="80"/>
+            <method name="size" type="int" line="82"/>
+            <method name="trimToSize" type="void" line="86">
+                <scope line="87">
+                    <declaration name="oldEntries" type="Entry[]" line="88"/>
+                </scope>
+                <declaration name="bigSize" type="int" line="92"/>
+                <scope line="93"/>
+                <scope line="95">
+                    <declaration name="oldBigDescs" type="int[]" line="96"/>
+                </scope>
+            </method>
+            <method name="visitRefs" type="void" line="102">
+                <params>
+                    <param name="refs" type="Collection<Entry>"/>
+                </params>
+                <scope line="103"/>
+            </method>
+            <method name="clear" type="void" line="108">
+                <comment line="110">
+                    Clean the bytes:                    
+                </comment>
+                <comment line="113">
+                    System.out.println(&quot;clean &quot;+fx);                    
+                </comment>
+                <comment line="120">
+                    do not trim to size, however                    
+                </comment>
+                <scope line="109">
+                    <scope line="111">
+                        <declaration name="fx" type="Fixup" line="112"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getBytes" type="byte[]" line="123"/>
+            <method name="setBytes" type="void" line="128">
+                <params>
+                    <param name="newBytes" type="byte[]"/>
+                </params>
+                <comment line="133">
+                    One or the other representations is deficient.                    
+                </comment>
+                <comment line="134">
+                    Construct a checkpoint.                    
+                </comment>
+                <comment line="140">
+                    assume newBytes is some sort of bitwise copy of the old bytes                    
+                </comment>
+                <declaration name="old" type="ArrayList" line="130"/>
+                <scope line="132">
+                    <declaration name="save" type="ArrayList" line="135"/>
+                </scope>
+                <scope line="139"/>
+            </method>
+            <declaration name="LOC_SHIFT" type="int" line="146"/>
+            <declaration name="FMT_MASK" type="int" line="147"/>
+            <declaration name="UNUSED_BYTE" type="byte" line="148"/>
+            <declaration name="OVERFLOW_BYTE" type="byte" line="149"/>
+            <declaration name="BIGSIZE" type="int" line="151"/>
+            <declaration name="U2_FORMAT" type="int" line="154"/>
+            <declaration name="U1_FORMAT" type="int" line="155"/>
+            <declaration name="SPECIAL_LOC" type="int" line="158"/>
+            <declaration name="SPECIAL_FMT" type="int" line="159"/>
+            <method name="fmtLen" type="int" line="161">
+                <params>
+                    <param name="fmt" type="int"/>
+                </params>
+            </method>
+            <method name="descLoc" type="int" line="162">
+                <params>
+                    <param name="desc" type="int"/>
+                </params>
+            </method>
+            <method name="descFmt" type="int" line="163">
+                <params>
+                    <param name="desc" type="int"/>
+                </params>
+            </method>
+            <method name="descEnd" type="int" line="164">
+                <params>
+                    <param name="desc" type="int"/>
+                </params>
+            </method>
+            <method name="makeDesc" type="int" line="165">
+                <params>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                </params>
+                <declaration name="desc" type="int" line="166"/>
+            </method>
+            <method name="fetchDesc" type="int" line="171">
+                <params>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                </params>
+                <comment line="181">
+                    Stored loc field is difference between its own loc and next loc.                    
+                </comment>
+                <declaration name="b1" type="byte" line="172"/>
+                <declaration name="value" type="int" line="174"/>
+                <scope line="175">
+                    <declaration name="b2" type="byte" line="176"/>
+                </scope>
+                <scope line="178"/>
+            </method>
+            <method name="storeDesc" type="boolean" line="184">
+                <params>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                    <param name="desc" type="int"/>
+                </params>
+                <comment line="213">
+                    Failure.  Caller must allocate a bigDesc.                    
+                </comment>
+                <declaration name="value" type="int" line="187"/>
+                <declaration name="b1" type="byte" line="188"/>
+                <scope line="195"/>
+                <scope line="205"/>
+            </method>
+            <method name="storeIndex" type="void" line="218">
+                <params>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+            </method>
+            <method name="storeIndex" type="void" line="222">
+                <params>
+                    <param name="bytes" type="byte[]"/>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                    <param name="value" type="int"/>
+                </params>
+            </method>
+            <class name="Fixup" line="237">
+                <comment line="241">
+                    location and format of reloc                    
+                </comment>
+                <comment line="242">
+                    which entry to plug into the bytes                    
+                </comment>
+                <comment line="273">
+                    index into entries                    
+                </comment>
+                <comment line="274">
+                    index into bigDescs                    
+                </comment>
+                <comment line="275">
+                    desc pointing to next fixup                    
+                </comment>
+                <implements interface="Comparable"/>
+                <javadoc line="237">
+                    Simple and necessary tuple to present each fixup.                    
+                </javadoc>
+                <declaration name="desc" type="int" line="240"/>
+                <declaration name="entry" type="Entry" line="241"/>
+                <method name="Fixup" type="constructor" line="242">
+                    <params>
+                        <param name="desc" type="int"/>
+                        <param name="entry" type="Entry"/>
+                    </params>
+                </method>
+                <method name="Fixup" type="constructor" line="246">
+                    <params>
+                        <param name="loc" type="int"/>
+                        <param name="fmt" type="int"/>
+                        <param name="entry" type="Entry"/>
+                    </params>
+                </method>
+                <method name="location" type="int" line="250"/>
+                <method name="format" type="int" line="251"/>
+                <method name="entry" type="Entry" line="252"/>
+                <method name="compareTo" type="int" line="253">
+                    <params>
+                        <param name="that" type="Fixup"/>
+                    </params>
+                    <comment line="254">
+                        Ordering depends only on location.                        
+                    </comment>
+                </method>
+                <method name="compareTo" type="int" line="257">
+                    <params>
+                        <param name="that" type="Object"/>
+                    </params>
+                </method>
+                <method name="equals" type="boolean" line="260">
+                    <params>
+                        <param name="x" type="Object"/>
+                    </params>
+                    <declaration name="that" type="Fixup" line="262"/>
+                </method>
+                <method name="toString" type="String" line="265"/>
+            </class>
+            <class name="Itr" line="270">
+                <comment line="241">
+                    location and format of reloc                    
+                </comment>
+                <comment line="242">
+                    which entry to plug into the bytes                    
+                </comment>
+                <comment line="273">
+                    index into entries                    
+                </comment>
+                <comment line="274">
+                    index into bigDescs                    
+                </comment>
+                <comment line="275">
+                    desc pointing to next fixup                    
+                </comment>
+                <implements interface="Iterator"/>
+                <declaration name="index" type="int" line="272"/>
+                <declaration name="bigIndex" type="int" line="273"/>
+                <declaration name="next" type="int" line="274"/>
+                <method name="hasNext" type="boolean" line="275"/>
+                <method name="remove" type="void" line="276"/>
+                <method name="next" type="Object" line="277">
+                    <declaration name="thisIndex" type="int" line="278"/>
+                </method>
+                <method name="nextDesc" type="int" line="281">
+                    <comment line="285">
+                        Fetch next desc eagerly, in case this fixup gets finalized.                        
+                    </comment>
+                    <comment line="291">
+                        The unused extra byte is &quot;asserted&quot; to be equal to BI.                        
+                    </comment>
+                    <comment line="292">
+                        This helps keep the overflow descs in sync.                        
+                    </comment>
+                    <declaration name="thisDesc" type="int" line="283"/>
+                    <scope line="284">
+                        <declaration name="loc" type="int" line="286"/>
+                        <declaration name="fmt" type="int" line="287"/>
+                        <scope line="288"/>
+                        <scope line="290"/>
+                    </scope>
+                </method>
+            </class>
+            <method name="iterator" type="Iterator" line="301"/>
+            <method name="add" type="void" line="304">
+                <params>
+                    <param name="location" type="int"/>
+                    <param name="format" type="int"/>
+                    <param name="entry" type="Entry"/>
+                </params>
+            </method>
+            <method name="add" type="boolean" line="307">
+                <params>
+                    <param name="f" type="Fixup"/>
+                </params>
+            </method>
+            <method name="add" type="boolean" line="311">
+                <params>
+                    <param name="fixup" type="Object"/>
+                </params>
+            </method>
+            <method name="addAll" type="boolean" line="315">
+                <params>
+                    <param name="c" type="Collection"/>
+                </params>
+                <comment line="317">
+                    Use knowledge of Itr structure to avoid building little structs.                    
+                </comment>
+                <comment line="321">
+                    presize exactly                    
+                </comment>
+                <scope line="316">
+                    <declaration name="that" type="Fixups" line="318"/>
+                    <declaration name="thatEntries" type="Entry[]" line="322"/>
+                    <scope line="323">
+                        <declaration name="ni" type="int" line="324"/>
+                    </scope>
+                </scope>
+                <scope line="328"/>
+            </method>
+            <method name="addDesc" type="void" line="333">
+                <params>
+                    <param name="thisDesc" type="int"/>
+                    <param name="entry" type="Entry"/>
+                </params>
+                <comment line="341">
+                    Store new desc in previous tail.                    
+                </comment>
+                <comment line="346">
+                    The collection must go in ascending order, and not overlap.                    
+                </comment>
+                <comment line="351">
+                    overflow                    
+                </comment>
+                <comment line="355">
+                    System.out.println(&quot;bigDescs[&quot;+bigSize+&quot;] = &quot;+thisDesc);                    
+                </comment>
+                <scope line="337"/>
+                <scope line="339">
+                    <declaration name="prevDesc" type="int" line="340"/>
+                    <declaration name="prevLoc" type="int" line="342"/>
+                    <declaration name="prevFmt" type="int" line="343"/>
+                    <declaration name="prevLen" type="int" line="344"/>
+                    <declaration name="thisLoc" type="int" line="345"/>
+                    <scope line="350">
+                        <declaration name="bigSize" type="int" line="352"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="badOverlap" type="void" line="362">
+                <params>
+                    <param name="thisLoc" type="int"/>
+                </params>
+            </method>
+            <method name="growEntries" type="void" line="366">
+                <params>
+                    <param name="newSize" type="int"/>
+                </params>
+                <declaration name="oldEntries" type="Entry[]" line="367"/>
+            </method>
+            <method name="growBigDescs" type="void" line="371">
+                <declaration name="oldBigDescs" type="int[]" line="372"/>
+            </method>
+            <method name="add" type="Object" line="381">
+                <params>
+                    <param name="prevFixups" type="Object"/>
+                    <param name="bytes" type="byte[]"/>
+                    <param name="loc" type="int"/>
+                    <param name="fmt" type="int"/>
+                    <param name="e" type="Entry"/>
+                </params>
+                <comment line="385">
+                    Special convention:  If the attribute has a                    
+                </comment>
+                <comment line="386">
+                    U2 relocation at position zero, store the Entry                    
+                </comment>
+                <comment line="387">
+                    rather than building a Fixups structure.                    
+                </comment>
+                <comment line="392">
+                    Recognize the special convention:                    
+                </comment>
+                <declaration name="f" type="Fixups" line="382"/>
+                <scope line="383">
+                    <scope line="384"/>
+                </scope>
+                <scope line="391">
+                    <declaration name="firstEntry" type="Entry" line="393"/>
+                </scope>
+                <scope line="396"/>
+            </method>
+            <method name="setBytes" type="void" line="405">
+                <params>
+                    <param name="fixups" type="Object"/>
+                    <param name="bytes" type="byte[]"/>
+                </params>
+                <scope line="406">
+                    <declaration name="f" type="Fixups" line="407"/>
+                </scope>
+            </method>
+            <method name="trimToSize" type="Object" line="413">
+                <params>
+                    <param name="fixups" type="Object"/>
+                </params>
+                <scope line="414">
+                    <declaration name="f" type="Fixups" line="415"/>
+                </scope>
+            </method>
+            <method name="visitRefs" type="void" line="425">
+                <params>
+                    <param name="fixups" type="Object"/>
+                    <param name="refs" type="Collection<Entry>"/>
+                </params>
+                <comment line="428">
+                    Special convention; see above.                    
+                </comment>
+                <scope line="426"/>
+                <scope line="427"/>
+                <scope line="430">
+                    <declaration name="f" type="Fixups" line="431"/>
+                </scope>
+            </method>
+            <method name="finishRefs" type="void" line="439">
+                <params>
+                    <param name="fixups" type="Object"/>
+                    <param name="bytes" type="byte[]"/>
+                    <param name="ix" type="ConstantPool.Index"/>
+                </params>
+                <comment line="443">
+                    Special convention; see above.                    
+                </comment>
+                <scope line="442">
+                    <declaration name="index" type="int" line="444"/>
+                </scope>
+                <declaration name="f" type="Fixups" line="448"/>
+            </method>
+            <method name="finishRefs" type="void" line="455">
+                <params>
+                    <param name="ix" type="ConstantPool.Index"/>
+                </params>
+                <comment line="461">
+                    System.out.println(&quot;finish &quot;+fx+&quot; = &quot;+index);                    
+                </comment>
+                <comment line="462">
+                    Note that the iterator has already fetched the                    
+                </comment>
+                <comment line="463">
+                    bytes we are about to overwrite.                    
+                </comment>
+                <comment line="466">
+                    Further iterations should do nothing:                    
+                </comment>
+                <comment line="467">
+                    do not clean them                    
+                </comment>
+                <scope line="458">
+                    <declaration name="fx" type="Fixup" line="459"/>
+                    <declaration name="index" type="int" line="460"/>
+                </scope>
+            </method>
+        </class>
+    </source>

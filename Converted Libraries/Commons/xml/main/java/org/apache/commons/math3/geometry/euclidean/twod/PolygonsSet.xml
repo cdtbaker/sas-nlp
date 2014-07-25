@@ -1,0 +1,914 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.geometry.euclidean.twod">
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.List"/>
+        <import package="org.apache.commons.math3.exception.MathInternalError"/>
+        <import package="org.apache.commons.math3.geometry.euclidean.oned.Euclidean1D"/>
+        <import package="org.apache.commons.math3.geometry.euclidean.oned.Interval"/>
+        <import package="org.apache.commons.math3.geometry.euclidean.oned.IntervalsSet"/>
+        <import package="org.apache.commons.math3.geometry.euclidean.oned.Vector1D"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.AbstractRegion"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.AbstractSubHyperplane"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.BSPTree"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.BSPTreeVisitor"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.BoundaryAttribute"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.Side"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.SubHyperplane"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.utilities.AVLTree"/>
+        <import package="org.apache.commons.math3.geometry.partitioning.utilities.OrderedTuple"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <class name="PolygonsSet" line="39">
+            <extends class="AbstractRegion">
+                <type_params>
+                    <type_param name="Euclidean2D"/>
+                    <type_param name="Euclidean1D"/>
+                </type_params>
+            </extends>
+            <javadoc line="39">
+                This class represents a 2D region: a set of polygons.                
+                <version>
+                    $Id: PolygonsSet.java 1422195 2012-12-15 06:45:18Z psteitz $                    
+                </version>
+                <since>
+                    3.0                    
+                </since>
+            </javadoc>
+            <declaration name="vertices" type="Vector2D[][]" line="45"/>
+            <javadoc line="45">
+                Vertices organized as boundary loops.                
+            </javadoc>
+            <javadoc line="48">
+                Build a polygons set representing the whole real line.                
+            </javadoc>
+            <method name="PolygonsSet" type="constructor" line="50"/>
+            <javadoc line="54">
+                Build a polygons set from a BSP tree.
+                  &lt;p&gt;The leaf nodes of the BSP tree &lt;em&gt;must&lt;/em&gt; have a{@code Boolean} attribute representing the inside status of
+                  the corresponding cell (true for inside cells, false for outside
+                  cells). In order to avoid building too many small objects, it is
+                  recommended to use the predefined constants{@code Boolean.TRUE} and {@code Boolean.FALSE}&lt;/p&gt;                
+                <param>
+                    tree inside/outside BSP tree representing the region                    
+                </param>
+            </javadoc>
+            <method name="PolygonsSet" type="constructor" line="63">
+                <params>
+                    <param name="tree" type="BSPTree<Euclidean2D>"/>
+                </params>
+            </method>
+            <javadoc line="67">
+                Build a polygons set from a Boundary REPresentation (B-rep).
+                  &lt;p&gt;The boundary is provided as a collection of {@link SubHyperplane sub-hyperplanes}. Each sub-hyperplane has the
+                  interior part of the region on its minus side and the exterior on
+                  its plus side.&lt;/p&gt;
+                  &lt;p&gt;The boundary elements can be in any order, and can form
+                  several non-connected sets (like for example polygons with holes
+                  or a set of disjoint polyhedrons considered as a whole). In
+                  fact, the elements do not even need to be connected together
+                  (their topological connections are not used here). However, if the
+                  boundary does not really separate an inside open from an outside
+                  open (open having here its topological meaning), then subsequent
+                  calls to the {@link org.apache.commons.math3.geometry.partitioning.Region#checkPoint(org.apache.commons.math3.geometry.Vector)checkPoint} method will not be meaningful anymore.&lt;/p&gt;
+                  &lt;p&gt;If the boundary is empty, the region will represent the whole
+                  space.&lt;/p&gt;                
+                <param>
+                    boundary collection of boundary elements, as a
+                      collection of {@link SubHyperplane SubHyperplane} objects                    
+                </param>
+            </javadoc>
+            <method name="PolygonsSet" type="constructor" line="87">
+                <params>
+                    <param name="boundary" type="Collection<SubHyperplane<Euclidean2D>>"/>
+                </params>
+            </method>
+            <javadoc line="91">
+                Build a parallellepipedic box.                
+                <param>
+                    xMin low bound along the x direction                    
+                </param>
+                <param>
+                    xMax high bound along the x direction                    
+                </param>
+                <param>
+                    yMin low bound along the y direction                    
+                </param>
+                <param>
+                    yMax high bound along the y direction                    
+                </param>
+            </javadoc>
+            <method name="PolygonsSet" type="constructor" line="98">
+                <params>
+                    <param name="xMin" type="double"/>
+                    <param name="xMax" type="double"/>
+                    <param name="yMin" type="double"/>
+                    <param name="yMax" type="double"/>
+                </params>
+            </method>
+            <javadoc line="102">
+                Build a polygon from a simple list of vertices.
+                  &lt;p&gt;The boundary is provided as a list of points considering to
+                  represent the vertices of a simple loop. The interior part of the
+                  region is on the left side of this path and the exterior is on its
+                  right side.&lt;/p&gt;
+                  &lt;p&gt;This constructor does not handle polygons with a boundary
+                  forming several disconnected paths (such as polygons with holes).&lt;/p&gt;
+                  &lt;p&gt;For cases where this simple constructor applies, it is expected to
+                  be numerically more robust than the {@link #PolygonsSet(Collection) general
+                  constructor} using {@link SubHyperplane subhyperplanes}.&lt;/p&gt;
+                  &lt;p&gt;If the list is empty, the region will represent the whole
+                  space.&lt;/p&gt;
+                  &lt;p&gt;
+                  Polygons with thin pikes or dents are inherently difficult to handle because
+                  they involve lines with almost opposite directions at some vertices. Polygons
+                  whose vertices come from some physical measurement with noise are also
+                  difficult because an edge that should be straight may be broken in lots of
+                  different pieces with almost equal directions. In both cases, computing the
+                  lines intersections is not numerically robust due to the almost 0 or almost
+                  &amp;pi; angle. Such cases need to carefully adjust the {@code hyperplaneThickness}parameter. A too small value would often lead to completely wrong polygons
+                  with large area wrongly identified as inside or outside. Large values are
+                  often much safer. As a rule of thumb, a value slightly below the size of the
+                  most accurate detail needed is a good value for the {@code hyperplaneThickness}parameter.
+                  &lt;/p&gt;                
+                <param>
+                    hyperplaneThickness tolerance below which points are considered to
+                      belong to the hyperplane (which is therefore more a slab)                    
+                </param>
+                <param>
+                    vertices vertices of the simple loop boundary                    
+                </param>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <method name="PolygonsSet" type="constructor" line="133">
+                <params>
+                    <param name="hyperplaneThickness" type="double"/>
+                    <param name="vertices" type="Vector2D"/>
+                </params>
+            </method>
+            <javadoc line="137">
+                Create a list of hyperplanes representing the boundary of a box.                
+                <param>
+                    xMin low bound along the x direction                    
+                </param>
+                <param>
+                    xMax high bound along the x direction                    
+                </param>
+                <param>
+                    yMin low bound along the y direction                    
+                </param>
+                <param>
+                    yMax high bound along the y direction                    
+                </param>
+                <return>
+                    boundary of the box                    
+                </return>
+            </javadoc>
+            <method name="boxBoundary" type="Line[]" line="145">
+                <params>
+                    <param name="xMin" type="double"/>
+                    <param name="xMax" type="double"/>
+                    <param name="yMin" type="double"/>
+                    <param name="yMax" type="double"/>
+                </params>
+                <declaration name="minMin" type="Vector2D" line="146"/>
+                <declaration name="minMax" type="Vector2D" line="147"/>
+                <declaration name="maxMin" type="Vector2D" line="148"/>
+                <declaration name="maxMax" type="Vector2D" line="149"/>
+            </method>
+            <javadoc line="158">
+                Build the BSP tree of a polygons set from a simple list of vertices.
+                  &lt;p&gt;The boundary is provided as a list of points considering to
+                  represent the vertices of a simple loop. The interior part of the
+                  region is on the left side of this path and the exterior is on its
+                  right side.&lt;/p&gt;
+                  &lt;p&gt;This constructor does not handle polygons with a boundary
+                  forming several disconnected paths (such as polygons with holes).&lt;/p&gt;
+                  &lt;p&gt;For cases where this simple constructor applies, it is expected to
+                  be numerically more robust than the {@link #PolygonsSet(Collection) general
+                  constructor} using {@link SubHyperplane subhyperplanes}.&lt;/p&gt;                
+                <param>
+                    hyperplaneThickness tolerance below which points are consider to
+                      belong to the hyperplane (which is therefore more a slab)                    
+                </param>
+                <param>
+                    vertices vertices of the simple loop boundary                    
+                </param>
+                <return>
+                    the BSP tree of the input vertices                    
+                </return>
+            </javadoc>
+            <method name="verticesToTree" type="BSPTree<Euclidean2D>" line="174">
+                <params>
+                    <param name="hyperplaneThickness" type="double"/>
+                    <param name="vertices" type="Vector2D"/>
+                </params>
+                <comment line="178">
+                    the tree represents the whole space                    
+                </comment>
+                <comment line="182">
+                    build the vertices                    
+                </comment>
+                <comment line="188">
+                    build the edges                    
+                </comment>
+                <comment line="192">
+                    get the endpoints of the edge                    
+                </comment>
+                <comment line="196">
+                    get the line supporting the edge, taking care not to recreate it                    
+                </comment>
+                <comment line="197">
+                    if it was already created earlier due to another edge being aligned                    
+                </comment>
+                <comment line="198">
+                    with the current one                    
+                </comment>
+                <comment line="204">
+                    create the edge and store it                    
+                </comment>
+                <comment line="207">
+                    check if another vertex also happens to be on this line                    
+                </comment>
+                <comment line="217">
+                    build the tree top-down                    
+                </comment>
+                <declaration name="n" type="int" line="176"/>
+                <scope line="177"/>
+                <declaration name="vArray" type="Vertex[]" line="183"/>
+                <scope line="184"/>
+                <declaration name="edges" type="List&lt;Edge&gt;" line="189"/>
+                <scope line="190">
+                    <declaration name="start" type="Vertex" line="193"/>
+                    <declaration name="end" type="Vertex" line="194"/>
+                    <declaration name="line" type="Line" line="199"/>
+                    <scope line="200"/>
+                    <scope line="208">
+                        <scope line="210"/>
+                    </scope>
+                </scope>
+                <declaration name="tree" type="BSPTree&lt;Euclidean2D&gt;" line="218"/>
+            </method>
+            <javadoc line="225">
+                Recursively build a tree by inserting cut sub-hyperplanes.                
+                <param>
+                    hyperplaneThickness tolerance below which points are consider to
+                      belong to the hyperplane (which is therefore more a slab)                    
+                </param>
+                <param>
+                    node current tree node (it is a leaf node at the beginning
+                      of the call)                    
+                </param>
+                <param>
+                    edges list of edges to insert in the cell defined by this node
+                      (excluding edges not belonging to the cell defined by this node)                    
+                </param>
+            </javadoc>
+            <method name="insertEdges" type="void" line="235">
+                <params>
+                    <param name="hyperplaneThickness" type="double"/>
+                    <param name="node" type="BSPTree<Euclidean2D>"/>
+                    <param name="edges" type="List<Edge>"/>
+                </params>
+                <comment line="237">
+                    find an edge with an hyperplane that can be inserted in the node                    
+                </comment>
+                <comment line="254">
+                    no suitable edge was found, the node remains a leaf node                    
+                </comment>
+                <comment line="255">
+                    we need to set its inside/outside boolean indicator                    
+                </comment>
+                <comment line="265">
+                    we have split the node by inserted an edge as a cut sub-hyperplane                    
+                </comment>
+                <comment line="266">
+                    distribute the remaining edges in the two sub-trees                    
+                </comment>
+                <comment line="280">
+                    we need to insert a split point on the hyperplane                    
+                </comment>
+                <comment line="290">
+                    we need to insert a split point on the hyperplane                    
+                </comment>
+                <comment line="309">
+                    recurse through lower levels                    
+                </comment>
+                <declaration name="index" type="int" line="238"/>
+                <declaration name="inserted" type="Edge" line="239"/>
+                <scope line="240">
+                    <scope line="242">
+                        <scope line="243"/>
+                        <scope line="245"/>
+                    </scope>
+                    <scope line="248"/>
+                </scope>
+                <scope line="253">
+                    <declaration name="parent" type="BSPTree&lt;Euclidean2D&gt;" line="256"/>
+                    <scope line="257"/>
+                    <scope line="259"/>
+                </scope>
+                <declaration name="plusList" type="List&lt;Edge&gt;" line="267"/>
+                <declaration name="minusList" type="List&lt;Edge&gt;" line="268"/>
+                <scope line="269">
+                    <scope line="270">
+                        <declaration name="startOffset" type="double" line="271"/>
+                        <declaration name="endOffset" type="double" line="272"/>
+                        <declaration name="startSide" type="Side" line="273"/>
+                        <declaration name="endSide" type="Side" line="275"/>
+                        <scope line="279">
+                            <declaration name="splitPoint" type="Vertex" line="281"/>
+                        </scope>
+                        <scope line="284"/>
+                        <scope line="289">
+                            <declaration name="splitPoint" type="Vertex" line="291"/>
+                        </scope>
+                        <scope line="294"/>
+                        <scope line="299"/>
+                        <scope line="301"/>
+                    </scope>
+                </scope>
+                <scope line="310"/>
+                <scope line="312"/>
+                <scope line="315"/>
+                <scope line="317"/>
+            </method>
+            <class name="Vertex" line="323">
+                <javadoc line="323">
+                    Internal class for holding vertices while they are processed to build a BSP tree.                    
+                </javadoc>
+                <declaration name="location" type="Vector2D" line="326"/>
+                <javadoc line="326">
+                    Vertex location.                    
+                </javadoc>
+                <declaration name="incoming" type="Edge" line="329"/>
+                <javadoc line="329">
+                    Incoming edge.                    
+                </javadoc>
+                <declaration name="outgoing" type="Edge" line="332"/>
+                <javadoc line="332">
+                    Outgoing edge.                    
+                </javadoc>
+                <declaration name="lines" type="List&lt;Line&gt;" line="335"/>
+                <javadoc line="335">
+                    Lines bound with this vertex.                    
+                </javadoc>
+                <javadoc line="338">
+                    Build a non-processed vertex not owned by any node yet.                    
+                    <param>
+                        location vertex location                        
+                    </param>
+                </javadoc>
+                <method name="Vertex" type="constructor" line="341">
+                    <params>
+                        <param name="location" type="Vector2D"/>
+                    </params>
+                </method>
+                <javadoc line="348">
+                    Get Vertex location.                    
+                    <return>
+                        vertex location                        
+                    </return>
+                </javadoc>
+                <method name="getLocation" type="Vector2D" line="351"/>
+                <javadoc line="355">
+                    Bind a line considered to contain this vertex.                    
+                    <param>
+                        line line to bind with this vertex                        
+                    </param>
+                </javadoc>
+                <method name="bindWith" type="void" line="358">
+                    <params>
+                        <param name="line" type="Line"/>
+                    </params>
+                </method>
+                <javadoc line="362">
+                    Get the common line bound with both the instance and another vertex, if any.
+                      &lt;p&gt;
+                      When two vertices are both bound to the same line, this means they are
+                      already handled by node associated with this line, so there is no need
+                      to create a cut hyperplane for them.
+                      &lt;/p&gt;                    
+                    <param>
+                        vertex other vertex to check instance against                        
+                    </param>
+                    <return>
+                        line bound with both the instance and another vertex, or null if the
+                          two vertices do not share a line yet                        
+                    </return>
+                </javadoc>
+                <method name="sharedLineWith" type="Line" line="372">
+                    <params>
+                        <param name="vertex" type="Vertex"/>
+                    </params>
+                    <scope line="373">
+                        <scope line="374">
+                            <scope line="375"/>
+                        </scope>
+                    </scope>
+                </method>
+                <javadoc line="383">
+                    Set incoming edge.
+                      &lt;p&gt;
+                      The line supporting the incoming edge is automatically bound
+                      with the instance.
+                      &lt;/p&gt;                    
+                    <param>
+                        incoming incoming edge                        
+                    </param>
+                </javadoc>
+                <method name="setIncoming" type="void" line="390">
+                    <params>
+                        <param name="incoming" type="Edge"/>
+                    </params>
+                </method>
+                <javadoc line="395">
+                    Get incoming edge.                    
+                    <return>
+                        incoming edge                        
+                    </return>
+                </javadoc>
+                <method name="getIncoming" type="Edge" line="398"/>
+                <javadoc line="402">
+                    Set outgoing edge.
+                      &lt;p&gt;
+                      The line supporting the outgoing edge is automatically bound
+                      with the instance.
+                      &lt;/p&gt;                    
+                    <param>
+                        outgoing outgoing edge                        
+                    </param>
+                </javadoc>
+                <method name="setOutgoing" type="void" line="409">
+                    <params>
+                        <param name="outgoing" type="Edge"/>
+                    </params>
+                </method>
+                <javadoc line="414">
+                    Get outgoing edge.                    
+                    <return>
+                        outgoing edge                        
+                    </return>
+                </javadoc>
+                <method name="getOutgoing" type="Edge" line="417"/>
+            </class>
+            <class name="Edge" line="423">
+                <javadoc line="423">
+                    Internal class for holding edges while they are processed to build a BSP tree.                    
+                </javadoc>
+                <declaration name="start" type="Vertex" line="426"/>
+                <javadoc line="426">
+                    Start vertex.                    
+                </javadoc>
+                <declaration name="end" type="Vertex" line="429"/>
+                <javadoc line="429">
+                    End vertex.                    
+                </javadoc>
+                <declaration name="line" type="Line" line="432"/>
+                <javadoc line="432">
+                    Line supporting the edge.                    
+                </javadoc>
+                <declaration name="node" type="BSPTree&lt;Euclidean2D&gt;" line="435"/>
+                <javadoc line="435">
+                    Node whose cut hyperplane contains this edge.                    
+                </javadoc>
+                <javadoc line="438">
+                    Build an edge not contained in any node yet.                    
+                    <param>
+                        start start vertex                        
+                    </param>
+                    <param>
+                        end end vertex                        
+                    </param>
+                    <param>
+                        line line supporting the edge                        
+                    </param>
+                </javadoc>
+                <method name="Edge" type="constructor" line="443">
+                    <params>
+                        <param name="start" type="Vertex"/>
+                        <param name="end" type="Vertex"/>
+                        <param name="line" type="Line"/>
+                    </params>
+                    <comment line="450">
+                        connect the vertices back to the edge                        
+                    </comment>
+                </method>
+                <javadoc line="456">
+                    Get start vertex.                    
+                    <return>
+                        start vertex                        
+                    </return>
+                </javadoc>
+                <method name="getStart" type="Vertex" line="459"/>
+                <javadoc line="463">
+                    Get end vertex.                    
+                    <return>
+                        end vertex                        
+                    </return>
+                </javadoc>
+                <method name="getEnd" type="Vertex" line="466"/>
+                <javadoc line="470">
+                    Get the line supporting this edge.                    
+                    <return>
+                        line supporting this edge                        
+                    </return>
+                </javadoc>
+                <method name="getLine" type="Line" line="473"/>
+                <javadoc line="477">
+                    Set the node whose cut hyperplane contains this edge.                    
+                    <param>
+                        node node whose cut hyperplane contains this edge                        
+                    </param>
+                </javadoc>
+                <method name="setNode" type="void" line="480">
+                    <params>
+                        <param name="node" type="BSPTree<Euclidean2D>"/>
+                    </params>
+                </method>
+                <javadoc line="484">
+                    Get the node whose cut hyperplane contains this edge.                    
+                    <return>
+                        node whose cut hyperplane contains this edge
+                          (null if edge has not yet been inserted into the BSP tree)                        
+                    </return>
+                </javadoc>
+                <method name="getNode" type="BSPTree<Euclidean2D>" line="488"/>
+                <javadoc line="492">
+                    Split the edge.
+                      &lt;p&gt;
+                      Once split, this edge is not referenced anymore by the vertices,
+                      it is replaced by the two half-edges and an intermediate splitting
+                      vertex is introduced to connect these two halves.
+                      &lt;/p&gt;                    
+                    <param>
+                        splitLine line splitting the edge in two halves                        
+                    </param>
+                    <return>
+                        split vertex (its incoming and outgoing edges are the two halves)                        
+                    </return>
+                </javadoc>
+                <method name="split" type="Vertex" line="501">
+                    <params>
+                        <param name="splitLine" type="Line"/>
+                    </params>
+                    <declaration name="splitVertex" type="Vertex" line="502"/>
+                    <declaration name="startHalf" type="Edge" line="504"/>
+                    <declaration name="endHalf" type="Edge" line="505"/>
+                </method>
+            </class>
+            <javadoc line="513">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="buildNew" type="PolygonsSet" line="515">
+                <params>
+                    <param name="tree" type="BSPTree<Euclidean2D>"/>
+                </params>
+            </method>
+            <javadoc line="519">
+                {@inheritDoc}                
+            </javadoc>
+            <method name="computeGeometricalProperties" type="void" line="521">
+                <comment line="528">
+                    the instance covers the whole space                    
+                </comment>
+                <comment line="536">
+                    there is at least one open-loop: the polygon is infinite                    
+                </comment>
+                <comment line="540">
+                    all loops are closed, we compute some integrals around the shape                    
+                </comment>
+                <comment line="562">
+                    the polygon as a finite outside surrounded by an infinite inside                    
+                </comment>
+                <declaration name="v" type="Vector2D[][]" line="523"/>
+                <scope line="525">
+                    <declaration name="tree" type="BSPTree&lt;Euclidean2D&gt;" line="526"/>
+                    <scope line="527"/>
+                    <scope line="531"/>
+                </scope>
+                <scope line="535"/>
+                <scope line="539">
+                    <declaration name="sum" type="double" line="542"/>
+                    <declaration name="sumX" type="double" line="543"/>
+                    <declaration name="sumY" type="double" line="544"/>
+                    <scope line="546">
+                        <declaration name="x1" type="double" line="547"/>
+                        <declaration name="y1" type="double" line="548"/>
+                        <scope line="549">
+                            <declaration name="x0" type="double" line="550"/>
+                            <declaration name="y0" type="double" line="551"/>
+                            <declaration name="factor" type="double" line="554"/>
+                        </scope>
+                    </scope>
+                    <scope line="561"/>
+                    <scope line="565"/>
+                </scope>
+            </method>
+            <javadoc line="574">
+                Get the vertices of the polygon.
+                  &lt;p&gt;The polygon boundary can be represented as an array of loops,
+                  each loop being itself an array of vertices.&lt;/p&gt;
+                  &lt;p&gt;In order to identify open loops which start and end by
+                  infinite edges, the open loops arrays start with a null point. In
+                  this case, the first non null point and the last point of the
+                  array do not represent real vertices, they are dummy points
+                  intended only to get the direction of the first and last edge. An
+                  open loop consisting of a single infinite line will therefore be
+                  represented by a three elements array with one null point
+                  followed by two dummy points. The open loops are always the first
+                  ones in the loops array.&lt;/p&gt;
+                  &lt;p&gt;If the polygon has no boundary at all, a zero length loop
+                  array will be returned.&lt;/p&gt;
+                  &lt;p&gt;All line segments in the various loops have the inside of the
+                  region on their left side and the outside on their right side
+                  when moving in the underlying line direction. This means that
+                  closed loops surrounding finite areas obey the direct
+                  trigonometric orientation.&lt;/p&gt;                
+                <return>
+                    vertices of the polygon, organized as oriented boundary
+                      loops with the open loops first (the returned value is guaranteed
+                      to be non-null)                    
+                </return>
+            </javadoc>
+            <method name="getVertices" type="Vector2D[][]" line="597">
+                <comment line="603">
+                    sort the segments according to their start point                    
+                </comment>
+                <comment line="608">
+                    identify the loops, starting from the open ones                    
+                </comment>
+                <comment line="609">
+                    (their start segments are naturally at the sorted set beginning)                    
+                </comment>
+                <comment line="619">
+                    tranform the loops in an array of arrays of points                    
+                </comment>
+                <comment line="625">
+                    single infinite line                    
+                </comment>
+                <comment line="633">
+                    open loop with at least one real point                    
+                </comment>
+                <comment line="639">
+                    null point and first dummy point                    
+                </comment>
+                <comment line="647">
+                    current point                    
+                </comment>
+                <comment line="652">
+                    last dummy point                    
+                </comment>
+                <scope line="598">
+                    <scope line="599"/>
+                    <scope line="601">
+                        <declaration name="visitor" type="SegmentsBuilder" line="604"/>
+                        <declaration name="sorted" type="AVLTree&lt;ComparableSegment&gt;" line="606"/>
+                        <declaration name="loops" type="ArrayList&lt;List&lt;ComparableSegment&gt;&gt;" line="610"/>
+                        <scope line="611">
+                            <declaration name="node" type="AVLTree&lt;ComparableSegment&gt;.Node" line="612"/>
+                            <declaration name="loop" type="List&lt;ComparableSegment&gt;" line="613"/>
+                            <scope line="614"/>
+                        </scope>
+                        <declaration name="i" type="int" line="621"/>
+                        <scope line="623">
+                            <scope line="624">
+                                <declaration name="line" type="Line" line="626"/>
+                            </scope>
+                            <scope line="632">
+                                <declaration name="array" type="Vector2D[]" line="634"/>
+                                <declaration name="j" type="int" line="635"/>
+                                <scope line="636">
+                                    <scope line="638">
+                                        <declaration name="x" type="double" line="640"/>
+                                    </scope>
+                                    <scope line="646"/>
+                                    <scope line="651">
+                                        <declaration name="x" type="double" line="653"/>
+                                    </scope>
+                                </scope>
+                            </scope>
+                            <scope line="660">
+                                <declaration name="array" type="Vector2D[]" line="661"/>
+                                <declaration name="j" type="int" line="662"/>
+                                <scope line="663"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="677">
+                Follow a boundary loop.                
+                <param>
+                    node node containing the segment starting the loop                    
+                </param>
+                <param>
+                    sorted set of segments belonging to the boundary, sorted by
+                      start points (contains {@code node})                    
+                </param>
+                <return>
+                    a list of connected sub-hyperplanes starting at{@code node}                    
+                </return>
+            </javadoc>
+            <method name="followLoop" type="List<ComparableSegment>" line="685">
+                <params>
+                    <param name="node" type="AVLTree<ComparableSegment>.Node"/>
+                    <param name="sorted" type="AVLTree<ComparableSegment>"/>
+                </params>
+                <comment line="694">
+                    is this an open or a closed loop ?                    
+                </comment>
+                <comment line="699">
+                    search the sub-hyperplane starting where the previous one ended                    
+                </comment>
+                <comment line="718">
+                    this is a degenerated loop, it probably comes from a very                    
+                </comment>
+                <comment line="719">
+                    tiny region with some segments smaller than the threshold, we                    
+                </comment>
+                <comment line="720">
+                    simply ignore it                    
+                </comment>
+                <comment line="731">
+                    this is a degenerated infinitely thin loop, we simply ignore it                    
+                </comment>
+                <declaration name="loop" type="ArrayList&lt;ComparableSegment&gt;" line="687"/>
+                <declaration name="segment" type="ComparableSegment" line="688"/>
+                <declaration name="globalStart" type="Vector2D" line="690"/>
+                <declaration name="end" type="Vector2D" line="691"/>
+                <declaration name="open" type="boolean" line="695"/>
+                <scope line="697">
+                    <declaration name="selectedNode" type="AVLTree&lt;ComparableSegment&gt;.Node" line="700"/>
+                    <declaration name="selectedSegment" type="ComparableSegment" line="701"/>
+                    <declaration name="selectedDistance" type="double" line="702"/>
+                    <declaration name="lowerLeft" type="ComparableSegment" line="703"/>
+                    <declaration name="upperRight" type="ComparableSegment" line="704"/>
+                    <scope line="707">
+                        <declaration name="distance" type="double" line="709"/>
+                        <scope line="710"/>
+                    </scope>
+                    <scope line="717"/>
+                </scope>
+                <scope line="730"/>
+                <scope line="735"/>
+            </method>
+            <class name="ComparableSegment" line="743">
+                <extends class="Segment"/>
+                <implements interface="Comparable">
+                    <type_params>
+                        <type_param name="ComparableSegment"/>
+                    </type_params>
+                </implements>
+                <javadoc line="743">
+                    Private extension of Segment allowing comparison.                    
+                </javadoc>
+                <declaration name="sortingKey" type="OrderedTuple" line="746"/>
+                <javadoc line="746">
+                    Sorting key.                    
+                </javadoc>
+                <javadoc line="749">
+                    Build a segment.                    
+                    <param>
+                        start start point of the segment                        
+                    </param>
+                    <param>
+                        end end point of the segment                        
+                    </param>
+                    <param>
+                        line line containing the segment                        
+                    </param>
+                </javadoc>
+                <method name="ComparableSegment" type="constructor" line="754">
+                    <params>
+                        <param name="start" type="Vector2D"/>
+                        <param name="end" type="Vector2D"/>
+                        <param name="line" type="Line"/>
+                    </params>
+                </method>
+                <javadoc line="761">
+                    Build a dummy segment.
+                      &lt;p&gt;
+                      The object built is not a real segment, only the sorting key is used to
+                      allow searching in the neighborhood of a point. This is an horrible hack ...
+                      &lt;/p&gt;                    
+                    <param>
+                        start start point of the segment                        
+                    </param>
+                    <param>
+                        dx abscissa offset from the start point                        
+                    </param>
+                    <param>
+                        dy ordinate offset from the start point                        
+                    </param>
+                </javadoc>
+                <method name="ComparableSegment" type="constructor" line="770">
+                    <params>
+                        <param name="start" type="Vector2D"/>
+                        <param name="dx" type="double"/>
+                        <param name="dy" type="double"/>
+                    </params>
+                </method>
+                <javadoc line="775">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="compareTo" type="int" line="776">
+                    <params>
+                        <param name="o" type="ComparableSegment"/>
+                    </params>
+                </method>
+                <javadoc line="780">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="equals" type="boolean" line="782">
+                    <params>
+                        <param name="other" type="Object"/>
+                    </params>
+                    <scope line="783"/>
+                    <scope line="785"/>
+                    <scope line="787"/>
+                </method>
+                <javadoc line="792">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="hashCode" type="int" line="794"/>
+            </class>
+            <class name="SegmentsBuilder" line="801">
+                <implements interface="BSPTreeVisitor">
+                    <type_params>
+                        <type_param name="Euclidean2D"/>
+                    </type_params>
+                </implements>
+                <javadoc line="801">
+                    Visitor building segments.                    
+                </javadoc>
+                <declaration name="sorted" type="AVLTree&lt;ComparableSegment&gt;" line="804"/>
+                <javadoc line="804">
+                    Sorted segments.                    
+                </javadoc>
+                <javadoc line="807">
+                    Simple constructor.                    
+                </javadoc>
+                <method name="SegmentsBuilder" type="constructor" line="808"/>
+                <javadoc line="812">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="visitOrder" type="Order" line="813">
+                    <params>
+                        <param name="node" type="BSPTree<Euclidean2D>"/>
+                    </params>
+                </method>
+                <javadoc line="817">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="visitInternalNode" type="void" line="818">
+                    <params>
+                        <param name="node" type="BSPTree<Euclidean2D>"/>
+                    </params>
+                    <declaration name="attribute" type="BoundaryAttribute&lt;Euclidean2D&gt;" line="819"/>
+                    <scope line="821"/>
+                    <scope line="824"/>
+                </method>
+                <javadoc line="829">
+                    {@inheritDoc}                    
+                </javadoc>
+                <method name="visitLeafNode" type="void" line="830">
+                    <params>
+                        <param name="node" type="BSPTree<Euclidean2D>"/>
+                    </params>
+                </method>
+                <javadoc line="833">
+                    Add he contribution of a boundary facet.                    
+                    <param>
+                        sub boundary facet                        
+                    </param>
+                    <param>
+                        reversed if true, the facet has the inside on its plus side                        
+                    </param>
+                </javadoc>
+                <method name="addContribution" type="void" line="837">
+                    <params>
+                        <param name="sub" type="SubHyperplane<Euclidean2D>"/>
+                        <param name="reversed" type="boolean"/>
+                    </params>
+                    <declaration name="absSub" type="AbstractSubHyperplane&lt;Euclidean2D,Euclidean1D&gt;" line="838"/>
+                    <declaration name="line" type="Line" line="841"/>
+                    <declaration name="intervals" type="List&lt;Interval&gt;" line="842"/>
+                    <scope line="843">
+                        <declaration name="start" type="Vector2D" line="844"/>
+                        <declaration name="end" type="Vector2D" line="846"/>
+                        <scope line="848"/>
+                        <scope line="850"/>
+                    </scope>
+                </method>
+                <javadoc line="856">
+                    Get the sorted segments.                    
+                    <return>
+                        sorted segments                        
+                    </return>
+                </javadoc>
+                <method name="getSorted" type="AVLTree<ComparableSegment>" line="859"/>
+            </class>
+        </class>
+    </source>

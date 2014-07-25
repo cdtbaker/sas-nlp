@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.net.spi">
+        <import package="java.net.InetSocketAddress"/>
+        <import package="java.net.Proxy"/>
+        <import package="java.net.ProxySelector"/>
+        <import package="java.net.SocketAddress"/>
+        <import package="java.net.URI"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.List"/>
+        <import package="java.util.StringTokenizer"/>
+        <import package="java.io.IOException"/>
+        <import package="sun.misc.RegexpPool"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="sun.net.NetProperties"/>
+        <import package="sun.net.SocksProxy"/>
+        <class name="DefaultProxySelector" line="43">
+            <extends class="ProxySelector"/>
+            <javadoc line="43">
+                Supports proxy settings using system properties This proxy selector
+                  provides backward compatibility with the old http protocol handler
+                  as far as how proxy is set
+                  Most of the implementation copied from the old http protocol handler
+                  Supports http/https/ftp.proxyHost, http/https/ftp.proxyPort,
+                  proxyHost, proxyPort, and http/https/ftp.nonProxyHost, and socks.
+                  NOTE: need to do gopher as well                
+            </javadoc>
+            <declaration name="props" type="String[][]" line="56"/>
+            <javadoc line="56">
+                This is where we define all the valid System Properties we have to
+                  support for each given protocol.
+                  The format of this 2 dimensional array is :
+                  - 1 row per protocol (http, ftp, ...)
+                  - 1st element of each row is the protocol name
+                  - subsequent elements are prefixes for Host &amp; Port properties
+                  listed in order of priority.
+                  Example:
+                  {&quot;ftp&quot;, &quot;ftp.proxy&quot;, &quot;ftpProxy&quot;, &quot;proxy&quot;, &quot;socksProxy&quot;},
+                  means for FTP we try in that oder:
+                  + ftp.proxyHost &amp; ftp.proxyPort
+                  + ftpProxyHost &amp; ftpProxyPort
+                  + proxyHost &amp; proxyPort
+                  + socksProxyHost &amp; socksProxyPort
+                  Note that the socksProxy should always be the last on the list                
+            </javadoc>
+            <declaration name="SOCKS_PROXY_VERSION" type="String" line="85"/>
+            <declaration name="hasSystemProxies" type="boolean" line="87"/>
+            <scope line="89">
+                <declaration name="key" type="String" line="90"/>
+                <anonymous_class line="92">
+                    <method name="run" type="Boolean" line="93"/>
+                </anonymous_class>
+                <declaration name="b" type="Boolean" line="91"/>
+                <scope line="96"/>
+            </scope>
+            <class name="NonProxyInfo" line="103">
+                <comment line="113">
+                    Default value for nonProxyHosts, this provides backward compatibility                    
+                </comment>
+                <comment line="114">
+                    by excluding localhost and its litteral notations.                    
+                </comment>
+                <javadoc line="103">
+                    How to deal with &quot;non proxy hosts&quot;:
+                      since we do have to generate a RegexpPool we don&apos;t want to do that if
+                      it&apos;s not necessary. Therefore we do cache the result, on a per-protocol
+                      basis, and change it only when the &quot;source&quot;, i.e. the system property,
+                      did change.                    
+                </javadoc>
+                <declaration name="defStringVal" type="String" line="114"/>
+                <declaration name="hostsSource" type="String" line="116"/>
+                <declaration name="hostsPool" type="RegexpPool" line="117"/>
+                <declaration name="property" type="String" line="118"/>
+                <declaration name="defaultVal" type="String" line="119"/>
+                <declaration name="ftpNonProxyInfo" type="NonProxyInfo" line="120"/>
+                <declaration name="httpNonProxyInfo" type="NonProxyInfo" line="121"/>
+                <method name="NonProxyInfo" type="constructor" line="123">
+                    <params>
+                        <param name="p" type="String"/>
+                        <param name="s" type="String"/>
+                        <param name="pool" type="RegexpPool"/>
+                        <param name="d" type="String"/>
+                    </params>
+                </method>
+            </class>
+            <javadoc line="132">
+                select() method. Where all the hard work is done.
+                  Build a list of proxies depending on URI.
+                  Since we&apos;re only providing compatibility with the system properties
+                  from previous releases (see list above), that list will always
+                  contain 1 single proxy, default being NO_PROXY.                
+            </javadoc>
+            <method name="select" type="java.util.List<Proxy>" line="139">
+                <params>
+                    <param name="uri" type="URI"/>
+                </params>
+                <comment line="147">
+                    This is a hack to ensure backward compatibility in two                    
+                </comment>
+                <comment line="148">
+                    cases: 1. hostnames contain non-ascii characters,                    
+                </comment>
+                <comment line="149">
+                    internationalized domain names. in which case, URI will                    
+                </comment>
+                <comment line="150">
+                    return null, see BugID 4957669; 2. Some hostnames can                    
+                </comment>
+                <comment line="151">
+                    contain &apos;_&apos; chars even though it&apos;s not supposed to be                    
+                </comment>
+                <comment line="152">
+                    legal, in which case URI will return null for getHost,                    
+                </comment>
+                <comment line="153">
+                    but not for getAuthority() See BugID 4913253                    
+                </comment>
+                <comment line="179">
+                    HTTPS uses the same property as HTTP, for backward                    
+                </comment>
+                <comment line="180">
+                    compatibility                    
+                </comment>
+                <comment line="186">
+                    Let&apos;s check the System properties for that protocol                    
+                </comment>
+                <comment line="193">
+                    This is one big doPrivileged call, but we&apos;re trying to optimize
+                     the code as much as possible. Since we&apos;re checking quite a few
+                     System properties it does help having only 1 call to doPrivileged.
+                     Be mindful what you do in here though!                    
+                </comment>
+                <comment line="208">
+                    Then let&apos;s walk the list of protocols in our array                    
+                </comment>
+                <comment line="212">
+                    System.getProp() will give us an empty
+                     String, &quot;&quot; for a defined but &quot;empty&quot;
+                     property.                    
+                </comment>
+                <comment line="221">
+                    No system property defined for that
+                     protocol. Let&apos;s check System Proxy
+                     settings (Gnome &amp; Windows) if we were
+                     instructed to.                    
+                </comment>
+                <comment line="240">
+                    If a Proxy Host is defined for that protocol                    
+                </comment>
+                <comment line="241">
+                    Let&apos;s get the NonProxyHosts property                    
+                </comment>
+                <comment line="273">
+                    We got a host, let&apos;s check for port                    
+                </comment>
+                <comment line="277">
+                    Can&apos;t find a port with same prefix as Host                    
+                </comment>
+                <comment line="278">
+                    AND it&apos;s not a SOCKS proxy                    
+                </comment>
+                <comment line="279">
+                    Let&apos;s try the other prefixes for that proto                    
+                </comment>
+                <comment line="286">
+                    Still couldn&apos;t find a port, let&apos;s use default                    
+                </comment>
+                <comment line="288">
+                    SOCKS                    
+                </comment>
+                <comment line="293">
+                    We did find a proxy definition.                    
+                </comment>
+                <comment line="294">
+                    Let&apos;s create the address, but don&apos;t resolve it                    
+                </comment>
+                <comment line="295">
+                    as this will be done at connection time                    
+                </comment>
+                <comment line="297">
+                    Socks is *always* the last on the list.                    
+                </comment>
+                <comment line="311">
+                    If no specific property was set for that URI, we should be
+                     returning an iterator to an empty List.                    
+                </comment>
+                <scope line="140"/>
+                <declaration name="protocol" type="String" line="143"/>
+                <declaration name="host" type="String" line="144"/>
+                <scope line="146">
+                    <declaration name="auth" type="String" line="154"/>
+                    <scope line="155">
+                        <declaration name="i" type="int" line="156"/>
+                        <scope line="158"/>
+                        <scope line="162"/>
+                    </scope>
+                </scope>
+                <scope line="169"/>
+                <declaration name="proxyl" type="List&lt;Proxy&gt;" line="172"/>
+                <declaration name="pinfo" type="NonProxyInfo" line="174"/>
+                <scope line="176"/>
+                <scope line="178"/>
+                <scope line="182"/>
+                <declaration name="proto" type="String" line="186"/>
+                <declaration name="nprop" type="NonProxyInfo" line="190"/>
+                <declaration name="urlhost" type="String" line="191"/>
+                <anonymous_class line="200">
+                    <method name="run" type="Proxy" line="201">
+                        <comment line="208">
+                            Then let&apos;s walk the list of protocols in our array                            
+                        </comment>
+                        <comment line="212">
+                            System.getProp() will give us an empty
+                             String, &quot;&quot; for a defined but &quot;empty&quot;
+                             property.                            
+                        </comment>
+                        <comment line="221">
+                            No system property defined for that
+                             protocol. Let&apos;s check System Proxy
+                             settings (Gnome &amp; Windows) if we were
+                             instructed to.                            
+                        </comment>
+                        <comment line="240">
+                            If a Proxy Host is defined for that protocol                            
+                        </comment>
+                        <comment line="241">
+                            Let&apos;s get the NonProxyHosts property                            
+                        </comment>
+                        <comment line="273">
+                            We got a host, let&apos;s check for port                            
+                        </comment>
+                        <comment line="277">
+                            Can&apos;t find a port with same prefix as Host                            
+                        </comment>
+                        <comment line="278">
+                            AND it&apos;s not a SOCKS proxy                            
+                        </comment>
+                        <comment line="279">
+                            Let&apos;s try the other prefixes for that proto                            
+                        </comment>
+                        <comment line="286">
+                            Still couldn&apos;t find a port, let&apos;s use default                            
+                        </comment>
+                        <comment line="288">
+                            SOCKS                            
+                        </comment>
+                        <comment line="293">
+                            We did find a proxy definition.                            
+                        </comment>
+                        <comment line="294">
+                            Let&apos;s create the address, but don&apos;t resolve it                            
+                        </comment>
+                        <comment line="295">
+                            as this will be done at connection time                            
+                        </comment>
+                        <comment line="297">
+                            Socks is *always* the last on the list.                            
+                        </comment>
+                        <declaration name="i" type="int" line="202"/>
+                        <declaration name="phost" type="String" line="203"/>
+                        <declaration name="pport" type="int" line="204"/>
+                        <declaration name="nphosts" type="String" line="205"/>
+                        <declaration name="saddr" type="InetSocketAddress" line="206"/>
+                        <scope line="209">
+                            <scope line="210">
+                                <scope line="211"/>
+                                <scope line="220">
+                                    <scope line="227">
+                                        <declaration name="sproto" type="String" line="228"/>
+                                        <declaration name="sproxy" type="Proxy" line="233"/>
+                                        <scope line="234"/>
+                                    </scope>
+                                </scope>
+                                <scope line="242">
+                                    <scope line="244">
+                                        <scope line="245">
+                                            <scope line="246"/>
+                                            <scope line="248"/>
+                                        </scope>
+                                        <scope line="253">
+                                            <scope line="254">
+                                                <declaration name="pool" type="RegexpPool" line="255"/>
+                                                <declaration name="st" type="StringTokenizer" line="256"/>
+                                                <scope line="257">
+                                                    <scope line="258"/>
+                                                </scope>
+                                                <scope line="261"/>
+                                            </scope>
+                                        </scope>
+                                        <scope line="268"/>
+                                    </scope>
+                                </scope>
+                                <scope line="276">
+                                    <scope line="280"/>
+                                </scope>
+                                <scope line="287"/>
+                                <scope line="298">
+                                    <declaration name="version" type="int" line="299"/>
+                                </scope>
+                                <scope line="301"/>
+                            </scope>
+                        </scope>
+                    </method>
+                </anonymous_class>
+                <declaration name="p" type="Proxy" line="199"/>
+            </method>
+            <method name="connectFailed" type="void" line="318">
+                <params>
+                    <param name="uri" type="URI"/>
+                    <param name="sa" type="SocketAddress"/>
+                    <param name="ioe" type="IOException"/>
+                </params>
+                <comment line="322">
+                    ignored                    
+                </comment>
+                <scope line="319"/>
+            </method>
+            <method name="defaultPort" type="int" line="326">
+                <params>
+                    <param name="protocol" type="String"/>
+                </params>
+                <scope line="327"/>
+                <scope line="329"/>
+                <scope line="331"/>
+                <scope line="333"/>
+                <scope line="335"/>
+                <scope line="337"/>
+            </method>
+            <method name="init" type="boolean" line="342"/>
+            <method name="getSystemProxy" type="Proxy" line="343"/>
+        </class>
+    </source>

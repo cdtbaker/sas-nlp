@@ -1,0 +1,1160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.security.x509">
+        <import package="java.io.InputStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.io.IOException"/>
+        <import package="java.math.BigInteger"/>
+        <import package="java.security.Principal"/>
+        <import package="java.security.PublicKey"/>
+        <import package="java.security.PrivateKey"/>
+        <import package="java.security.Security"/>
+        <import package="java.security.Signature"/>
+        <import package="java.security.NoSuchAlgorithmException"/>
+        <import package="java.security.InvalidKeyException"/>
+        <import package="java.security.NoSuchProviderException"/>
+        <import package="java.security.SignatureException"/>
+        <import package="java.security.cert.Certificate"/>
+        <import package="java.security.cert.X509CRL"/>
+        <import package="java.security.cert.X509Certificate"/>
+        <import package="java.security.cert.X509CRLEntry"/>
+        <import package="java.security.cert.CRLException"/>
+        <import package="java.util"/>
+        <import package="javax.security.auth.x500.X500Principal"/>
+        <import package="sun.security.provider.X509Factory"/>
+        <import package="sun.security.util"/>
+        <import package="sun.misc.HexDumpEncoder"/>
+        <class name="X509CRLImpl" line="54">
+            <extends class="X509CRL"/>
+            <comment line="95">
+                CRL data, and its envelope                
+            </comment>
+            <comment line="96">
+                DER encoded crl                
+            </comment>
+            <comment line="97">
+                raw signature bits                
+            </comment>
+            <comment line="98">
+                DER encoded &quot;to-be-signed&quot; CRL                
+            </comment>
+            <comment line="99">
+                sig alg in CRL                
+            </comment>
+            <comment line="101">
+                crl information                
+            </comment>
+            <comment line="103">
+                sig alg in &quot;to-be-signed&quot; crl                
+            </comment>
+            <comment line="1000">
+                Parses an X.509 CRL, should be used only by constructors.                
+            </comment>
+            <implements interface="DerEncoder"/>
+            <javadoc line="54">
+                &lt;p&gt;
+                  An implmentation for X509 CRL (Certificate Revocation List).
+                  &lt;p&gt;
+                  The X.509 v2 CRL format is described below in ASN.1:
+                  &lt;pre&gt;
+                  CertificateList  ::=  SEQUENCE  {
+                  tbsCertList          TBSCertList,
+                  signatureAlgorithm   AlgorithmIdentifier,
+                  signature            BIT STRING  }
+                  &lt;/pre&gt;
+                  More information can be found in
+                  &lt;a href=&quot;http://www.ietf.org/rfc/rfc3280.txt&quot;&gt;RFC 3280: Internet X.509
+                  Public Key Infrastructure Certificate and CRL Profile&lt;/a&gt;.
+                  &lt;p&gt;
+                  The ASN.1 definition of &lt;code&gt;tbsCertList&lt;/code&gt; is:
+                  &lt;pre&gt;
+                  TBSCertList  ::=  SEQUENCE  {
+                  version                 Version OPTIONAL,
+                  -- if present, must be v2
+                  signature               AlgorithmIdentifier,
+                  issuer                  Name,
+                  thisUpdate              ChoiceOfTime,
+                  nextUpdate              ChoiceOfTime OPTIONAL,
+                  revokedCertificates     SEQUENCE OF SEQUENCE  {
+                  userCertificate         CertificateSerialNumber,
+                  revocationDate          ChoiceOfTime,
+                  crlEntryExtensions      Extensions OPTIONAL
+                  -- if present, must be v2
+                  }  OPTIONAL,
+                  crlExtensions           [0]  EXPLICIT Extensions OPTIONAL
+                  -- if present, must be v2
+                  }
+                  &lt;/pre&gt;                
+                <author>
+                    Hemma Prafullchandra                    
+                </author>
+                <see>
+                    X509CRL                    
+                </see>
+            </javadoc>
+            <declaration name="signedCRL" type="byte[]" line="95"/>
+            <declaration name="signature" type="byte[]" line="96"/>
+            <declaration name="tbsCertList" type="byte[]" line="97"/>
+            <declaration name="sigAlgId" type="AlgorithmId" line="98"/>
+            <declaration name="version" type="int" line="101"/>
+            <declaration name="infoSigAlgId" type="AlgorithmId" line="102"/>
+            <declaration name="issuer" type="X500Name" line="103"/>
+            <declaration name="issuerPrincipal" type="X500Principal" line="104"/>
+            <declaration name="thisUpdate" type="Date" line="105"/>
+            <declaration name="nextUpdate" type="Date" line="106"/>
+            <declaration name="revokedCerts" type="Map&lt;X509IssuerSerial,X509CRLEntry&gt;" line="107"/>
+            <declaration name="extensions" type="CRLExtensions" line="108"/>
+            <declaration name="isExplicit" type="boolean" line="109"/>
+            <declaration name="YR_2050" type="long" line="110"/>
+            <declaration name="readOnly" type="boolean" line="112"/>
+            <declaration name="verifiedPublicKey" type="PublicKey" line="114"/>
+            <javadoc line="114">
+                PublicKey that has previously been used to successfully verify
+                  the signature of this CRL. Null if the CRL has not
+                  yet been verified (successfully).                
+            </javadoc>
+            <declaration name="verifiedProvider" type="String" line="120"/>
+            <javadoc line="120">
+                If verifiedPublicKey is not null, name of the provider used to
+                  successfully verify the signature of this CRL, or the
+                  empty String if no provider was explicitly specified.                
+            </javadoc>
+            <javadoc line="127">
+                Not to be used. As it would lead to cases of uninitialized
+                  CRL objects.                
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="131"/>
+            <javadoc line="133">
+                Unmarshals an X.509 CRL from its encoded form, parsing the encoded
+                  bytes.  This form of constructor is used by agents which
+                  need to examine and use CRL contents. Note that the buffer
+                  must include only one CRL, and no &quot;garbage&quot; may be left at
+                  the end.                
+                <param>
+                    crlData the encoded bytes, with no trailing padding.                    
+                </param>
+                <exception>
+                    CRLException on parsing errors.                    
+                </exception>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="143">
+                <params>
+                    <param name="crlData" type="byte[]"/>
+                </params>
+                <scope line="144"/>
+                <scope line="146"/>
+            </method>
+            <javadoc line="152">
+                Unmarshals an X.509 CRL from an DER value.                
+                <param>
+                    val a DER value holding at least one CRL                    
+                </param>
+                <exception>
+                    CRLException on parsing errors.                    
+                </exception>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="158">
+                <params>
+                    <param name="val" type="DerValue"/>
+                </params>
+                <scope line="159"/>
+                <scope line="161"/>
+            </method>
+            <javadoc line="167">
+                Unmarshals an X.509 CRL from an input stream. Only one CRL
+                  is expected at the end of the input stream.                
+                <param>
+                    inStrm an input stream holding at least one CRL                    
+                </param>
+                <exception>
+                    CRLException on parsing errors.                    
+                </exception>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="174">
+                <params>
+                    <param name="inStrm" type="InputStream"/>
+                </params>
+                <scope line="175"/>
+                <scope line="177"/>
+            </method>
+            <javadoc line="183">
+                Initial CRL constructor, no revoked certs, and no extensions.                
+                <param>
+                    issuer the name of the CA issuing this CRL.                    
+                </param>
+                <param>
+                    thisUpdate the Date of this issue.                    
+                </param>
+                <param>
+                    nextUpdate the Date of the next CRL.                    
+                </param>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="190">
+                <params>
+                    <param name="issuer" type="X500Name"/>
+                    <param name="thisDate" type="Date"/>
+                    <param name="nextDate" type="Date"/>
+                </params>
+            </method>
+            <javadoc line="196">
+                CRL constructor, revoked certs, no extensions.                
+                <param>
+                    issuer the name of the CA issuing this CRL.                    
+                </param>
+                <param>
+                    thisUpdate the Date of this issue.                    
+                </param>
+                <param>
+                    nextUpdate the Date of the next CRL.                    
+                </param>
+                <param>
+                    badCerts the array of CRL entries.                    
+                </param>
+                <exception>
+                    CRLException on parsing/construction errors.                    
+                </exception>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="209">
+                <params>
+                    <param name="issuer" type="X500Name"/>
+                    <param name="thisDate" type="Date"/>
+                    <param name="nextDate" type="Date"/>
+                    <param name="badCerts" type="X509CRLEntry[]"/>
+                </params>
+                <scope line="213">
+                    <declaration name="crlIssuer" type="X500Principal" line="214"/>
+                    <declaration name="badCertIssuer" type="X500Principal" line="215"/>
+                    <scope line="216">
+                        <declaration name="badCert" type="X509CRLEntryImpl" line="217"/>
+                        <scope line="218"/>
+                        <scope line="220"/>
+                        <declaration name="issuerSerial" type="X509IssuerSerial" line="224"/>
+                        <scope line="227"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="234">
+                CRL constructor, revoked certs and extensions.                
+                <param>
+                    issuer the name of the CA issuing this CRL.                    
+                </param>
+                <param>
+                    thisUpdate the Date of this issue.                    
+                </param>
+                <param>
+                    nextUpdate the Date of the next CRL.                    
+                </param>
+                <param>
+                    badCerts the array of CRL entries.                    
+                </param>
+                <param>
+                    crlExts the CRL extensions.                    
+                </param>
+                <exception>
+                    CRLException on parsing/construction errors.                    
+                </exception>
+            </javadoc>
+            <method name="X509CRLImpl" type="constructor" line="248">
+                <params>
+                    <param name="issuer" type="X500Name"/>
+                    <param name="thisDate" type="Date"/>
+                    <param name="nextDate" type="Date"/>
+                    <param name="badCerts" type="X509CRLEntry[]"/>
+                    <param name="crlExts" type="CRLExtensions"/>
+                </params>
+                <scope line="250"/>
+            </method>
+            <javadoc line="256">
+                Returned the encoding as an uncloned byte array. Callers must
+                  guarantee that they neither modify it nor expose it to untrusted
+                  code.                
+            </javadoc>
+            <method name="getEncodedInternal" type="byte[]" line="261">
+                <scope line="262"/>
+            </method>
+            <javadoc line="268">
+                Returns the ASN.1 DER encoded form of this CRL.                
+                <exception>
+                    CRLException if an encoding error occurs.                    
+                </exception>
+            </javadoc>
+            <method name="getEncoded" type="byte[]" line="273"/>
+            <javadoc line="277">
+                Encodes the &quot;to-be-signed&quot; CRL to the OutputStream.                
+                <param>
+                    out the OutputStream to write to.                    
+                </param>
+                <exception>
+                    CRLException on encoding errors.                    
+                </exception>
+            </javadoc>
+            <method name="encodeInfo" type="void" line="283">
+                <params>
+                    <param name="out" type="OutputStream"/>
+                </params>
+                <comment line="289">
+                    v2 crl encode version                    
+                </comment>
+                <scope line="284">
+                    <declaration name="tmp" type="DerOutputStream" line="285"/>
+                    <declaration name="rCerts" type="DerOutputStream" line="286"/>
+                    <declaration name="seq" type="DerOutputStream" line="287"/>
+                    <scope line="301"/>
+                    <scope line="308">
+                        <scope line="309"/>
+                    </scope>
+                </scope>
+                <scope line="322"/>
+            </method>
+            <javadoc line="327">
+                Verifies that this CRL was signed using the
+                  private key that corresponds to the given public key.                
+                <param>
+                    key the PublicKey used to carry out the verification.                    
+                </param>
+                <exception>
+                    NoSuchAlgorithmException on unsupported signature
+                      algorithms.                    
+                </exception>
+                <exception>
+                    InvalidKeyException on incorrect key.                    
+                </exception>
+                <exception>
+                    NoSuchProviderException if there's no default provider.                    
+                </exception>
+                <exception>
+                    SignatureException on signature errors.                    
+                </exception>
+                <exception>
+                    CRLException on encoding errors.                    
+                </exception>
+            </javadoc>
+            <method name="verify" type="void" line="342">
+                <params>
+                    <param name="key" type="PublicKey"/>
+                </params>
+            </method>
+            <javadoc line="346">
+                Verifies that this CRL was signed using the
+                  private key that corresponds to the given public key,
+                  and that the signature verification was computed by
+                  the given provider.                
+                <param>
+                    key the PublicKey used to carry out the verification.                    
+                </param>
+                <param>
+                    sigProvider the name of the signature provider.                    
+                </param>
+                <exception>
+                    NoSuchAlgorithmException on unsupported signature
+                      algorithms.                    
+                </exception>
+                <exception>
+                    InvalidKeyException on incorrect key.                    
+                </exception>
+                <exception>
+                    NoSuchProviderException on incorrect provider.                    
+                </exception>
+                <exception>
+                    SignatureException on signature errors.                    
+                </exception>
+                <exception>
+                    CRLException on encoding errors.                    
+                </exception>
+            </javadoc>
+            <method name="verify" type="void" line="364">
+                <params>
+                    <param name="key" type="PublicKey"/>
+                    <param name="sigProvider" type="String"/>
+                </params>
+                <comment line="370">
+                    this CRL has already been successfully verified using                    
+                </comment>
+                <comment line="371">
+                    this public key. Make sure providers match, too.                    
+                </comment>
+                <scope line="366"/>
+                <scope line="369">
+                    <scope line="372"/>
+                </scope>
+                <scope line="376"/>
+                <declaration name="sigVerf" type="Signature" line="379"/>
+                <scope line="380"/>
+                <scope line="382"/>
+                <scope line="387"/>
+                <scope line="393"/>
+            </method>
+            <javadoc line="400">
+                Encodes an X.509 CRL, and signs it using the given key.                
+                <param>
+                    key the private key used for signing.                    
+                </param>
+                <param>
+                    algorithm the name of the signature algorithm used.                    
+                </param>
+                <exception>
+                    NoSuchAlgorithmException on unsupported signature
+                      algorithms.                    
+                </exception>
+                <exception>
+                    InvalidKeyException on incorrect key.                    
+                </exception>
+                <exception>
+                    NoSuchProviderException on incorrect provider.                    
+                </exception>
+                <exception>
+                    SignatureException on signature errors.                    
+                </exception>
+                <exception>
+                    CRLException if any mandatory data was omitted.                    
+                </exception>
+            </javadoc>
+            <method name="sign" type="void" line="415">
+                <params>
+                    <param name="key" type="PrivateKey"/>
+                    <param name="algorithm" type="String"/>
+                </params>
+            </method>
+            <javadoc line="419">
+                Encodes an X.509 CRL, and signs it using the given key.                
+                <param>
+                    key the private key used for signing.                    
+                </param>
+                <param>
+                    algorithm the name of the signature algorithm used.                    
+                </param>
+                <param>
+                    provider the name of the provider.                    
+                </param>
+                <exception>
+                    NoSuchAlgorithmException on unsupported signature
+                      algorithms.                    
+                </exception>
+                <exception>
+                    InvalidKeyException on incorrect key.                    
+                </exception>
+                <exception>
+                    NoSuchProviderException on incorrect provider.                    
+                </exception>
+                <exception>
+                    SignatureException on signature errors.                    
+                </exception>
+                <exception>
+                    CRLException if any mandatory data was omitted.                    
+                </exception>
+            </javadoc>
+            <method name="sign" type="void" line="435">
+                <params>
+                    <param name="key" type="PrivateKey"/>
+                    <param name="algorithm" type="String"/>
+                    <param name="provider" type="String"/>
+                </params>
+                <comment line="447">
+                    in case the name is reset                    
+                </comment>
+                <comment line="454">
+                    encode crl info                    
+                </comment>
+                <comment line="457">
+                    encode algorithm identifier                    
+                </comment>
+                <comment line="460">
+                    Create and encode the signature itself.                    
+                </comment>
+                <comment line="465">
+                    Wrap the signed data in a SEQUENCE { data, algorithm, sig }                    
+                </comment>
+                <scope line="436">
+                    <declaration name="sigEngine" type="Signature" line="439"/>
+                    <declaration name="out" type="DerOutputStream" line="451"/>
+                    <declaration name="tmp" type="DerOutputStream" line="452"/>
+                </scope>
+                <scope line="470"/>
+            </method>
+            <javadoc line="476">
+                Returns a printable string of this CRL.                
+                <return>
+                    value of this CRL in a printable form.                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="481">
+                <comment line="523">
+                    sub-class exists                    
+                </comment>
+                <declaration name="sb" type="StringBuffer" line="482"/>
+                <scope line="495">
+                    <declaration name="i" type="int" line="497"/>
+                </scope>
+                <scope line="502">
+                    <declaration name="allExts" type="Collection&lt;Extension&gt;" line="503"/>
+                    <declaration name="objs" type="Object[]" line="504"/>
+                    <scope line="506">
+                        <declaration name="ext" type="Extension" line="508"/>
+                        <scope line="509">
+                            <scope line="510">
+                                <declaration name="extValue" type="byte[]" line="512"/>
+                                <scope line="513">
+                                    <declaration name="out" type="DerOutputStream" line="514"/>
+                                    <declaration name="enc" type="HexDumpEncoder" line="517"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="524"/>
+                    </scope>
+                </scope>
+                <scope line="529">
+                    <declaration name="encoder" type="HexDumpEncoder" line="530"/>
+                </scope>
+            </method>
+            <javadoc line="538">
+                Checks whether the given certificate is on this CRL.                
+                <param>
+                    cert the certificate to check for.                    
+                </param>
+                <return>
+                    true if the given certificate is on this CRL,
+                      false otherwise.                    
+                </return>
+            </javadoc>
+            <method name="isRevoked" type="boolean" line="545">
+                <params>
+                    <param name="cert" type="Certificate"/>
+                </params>
+                <scope line="546"/>
+                <declaration name="xcert" type="X509Certificate" line="549"/>
+                <declaration name="issuerSerial" type="X509IssuerSerial" line="550"/>
+            </method>
+            <javadoc line="554">
+                Gets the version number from this CRL.
+                  The ASN.1 definition for this is:
+                  &lt;pre&gt;
+                  Version  ::=  INTEGER  {  v1(0), v2(1), v3(2)  }
+                  -- v3 does not apply to CRLs but appears for consistency
+                  -- with definition of Version for certs
+                  &lt;/pre&gt;                
+                <return>
+                    the version number, i.e. 1 or 2.                    
+                </return>
+            </javadoc>
+            <method name="getVersion" type="int" line="564"/>
+            <javadoc line="568">
+                Gets the issuer distinguished name from this CRL.
+                  The issuer name identifies the entity who has signed (and
+                  issued the CRL). The issuer name field contains an
+                  X.500 distinguished name (DN).
+                  The ASN.1 definition for this is:
+                  &lt;pre&gt;
+                  issuer    Name
+                  Name ::= CHOICE { RDNSequence }
+                  RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
+                  RelativeDistinguishedName ::=
+                  SET OF AttributeValueAssertion
+                  AttributeValueAssertion ::= SEQUENCE {
+                  AttributeType,
+                  AttributeValue }
+                  AttributeType ::= OBJECT IDENTIFIER
+                  AttributeValue ::= ANY
+                  &lt;/pre&gt;
+                  The Name describes a hierarchical name composed of attributes,
+                  such as country name, and corresponding values, such as US.
+                  The type of the component AttributeValue is determined by the
+                  AttributeType; in general it will be a directoryString.
+                  A directoryString is usually one of PrintableString,
+                  TeletexString or UniversalString.                
+                <return>
+                    the issuer name.                    
+                </return>
+            </javadoc>
+            <method name="getIssuerDN" type="Principal" line="596"/>
+            <javadoc line="600">
+                Return the issuer as X500Principal. Overrides method in X509CRL
+                  to provide a slightly more efficient version.                
+            </javadoc>
+            <method name="getIssuerX500Principal" type="X500Principal" line="604">
+                <scope line="605"/>
+            </method>
+            <javadoc line="611">
+                Gets the thisUpdate date from the CRL.
+                  The ASN.1 definition for this is:                
+                <return>
+                    the thisUpdate date from the CRL.                    
+                </return>
+            </javadoc>
+            <method name="getThisUpdate" type="Date" line="617"/>
+            <javadoc line="621">
+                Gets the nextUpdate date from the CRL.                
+                <return>
+                    the nextUpdate date from the CRL, or null if
+                      not present.                    
+                </return>
+            </javadoc>
+            <method name="getNextUpdate" type="Date" line="627"/>
+            <javadoc line="633">
+                Gets the CRL entry with the given serial number from this CRL.                
+                <return>
+                    the entry with the given serial number, or <code>null</code> if
+                      no such entry exists in the CRL.                    
+                </return>
+                <see>
+                    X509CRLEntry                    
+                </see>
+            </javadoc>
+            <method name="getRevokedCertificate" type="X509CRLEntry" line="640">
+                <params>
+                    <param name="serialNumber" type="BigInteger"/>
+                </params>
+                <comment line="644">
+                    assume this is a direct CRL entry (cert and CRL issuer are the same)                    
+                </comment>
+                <scope line="641"/>
+                <declaration name="issuerSerial" type="X509IssuerSerial" line="645"/>
+            </method>
+            <javadoc line="650">
+                Gets the CRL entry for the given certificate.                
+            </javadoc>
+            <method name="getRevokedCertificate" type="X509CRLEntry" line="653">
+                <params>
+                    <param name="cert" type="X509Certificate"/>
+                </params>
+                <scope line="654"/>
+                <declaration name="issuerSerial" type="X509IssuerSerial" line="657"/>
+            </method>
+            <javadoc line="661">
+                Gets all the revoked certificates from the CRL.
+                  A Set of X509CRLEntry.                
+                <return>
+                    all the revoked certificates or <code>null</code> if there are
+                      none.                    
+                </return>
+                <see>
+                    X509CRLEntry                    
+                </see>
+            </javadoc>
+            <method name="getRevokedCertificates" type="Set<X509CRLEntry>" line="669">
+                <scope line="670"/>
+                <scope line="672"/>
+            </method>
+            <javadoc line="677">
+                Gets the DER encoded CRL information, the
+                  &lt;code&gt;tbsCertList&lt;/code&gt; from this CRL.
+                  This can be used to verify the signature independently.                
+                <return>
+                    the DER encoded CRL information.                    
+                </return>
+                <exception>
+                    CRLException on encoding errors.                    
+                </exception>
+            </javadoc>
+            <method name="getTBSCertList" type="byte[]" line="685">
+                <declaration name="dup" type="byte[]" line="688"/>
+            </method>
+            <javadoc line="693">
+                Gets the raw Signature bits from the CRL.                
+                <return>
+                    the signature.                    
+                </return>
+            </javadoc>
+            <method name="getSignature" type="byte[]" line="698">
+                <declaration name="dup" type="byte[]" line="701"/>
+            </method>
+            <javadoc line="706">
+                Gets the signature algorithm name for the CRL
+                  signature algorithm. For example, the string &quot;SHA1withDSA&quot;.
+                  The ASN.1 definition for this is:
+                  &lt;pre&gt;
+                  AlgorithmIdentifier  ::=  SEQUENCE  {
+                  algorithm               OBJECT IDENTIFIER,
+                  parameters              ANY DEFINED BY algorithm OPTIONAL  }
+                  -- contains a value of the type
+                  -- registered for use with the
+                  -- algorithm object identifier value
+                  &lt;/pre&gt;                
+                <return>
+                    the signature algorithm name.                    
+                </return>
+            </javadoc>
+            <method name="getSigAlgName" type="String" line="721"/>
+            <javadoc line="727">
+                Gets the signature algorithm OID string from the CRL.
+                  An OID is represented by a set of positive whole number separated
+                  by &quot;.&quot;, that means,&lt;br&gt;
+                  &amp;lt;positive whole number&amp;gt;.&amp;lt;positive whole number&amp;gt;.&amp;lt;...&amp;gt;
+                  For example, the string &quot;1.2.840.10040.4.3&quot; identifies the SHA-1
+                  with DSA signature algorithm defined in
+                  &lt;a href=&quot;http://www.ietf.org/rfc/rfc3279.txt&quot;&gt;RFC 3279: Algorithms and
+                  Identifiers for the Internet X.509 Public Key Infrastructure Certificate
+                  and CRL Profile&lt;/a&gt;.                
+                <return>
+                    the signature algorithm oid string.                    
+                </return>
+            </javadoc>
+            <method name="getSigAlgOID" type="String" line="740">
+                <declaration name="oid" type="ObjectIdentifier" line="743"/>
+            </method>
+            <javadoc line="747">
+                Gets the DER encoded signature algorithm parameters from this
+                  CRL&apos;s signature algorithm. In most cases, the signature
+                  algorithm parameters are null, the parameters are usually
+                  supplied with the Public Key.                
+                <return>
+                    the DER encoded signature algorithm parameters, or
+                      null if no parameters are present.                    
+                </return>
+            </javadoc>
+            <method name="getSigAlgParams" type="byte[]" line="756">
+                <scope line="759"/>
+                <scope line="761"/>
+            </method>
+            <javadoc line="766">
+                Gets the signature AlgorithmId from the CRL.                
+                <return>
+                    the signature AlgorithmId                    
+                </return>
+            </javadoc>
+            <method name="getSigAlgId" type="AlgorithmId" line="771"/>
+            <javadoc line="775">
+                return the AuthorityKeyIdentifier, if any.                
+                <returns>
+                    AuthorityKeyIdentifier or null
+                      (if no AuthorityKeyIdentifierExtension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getAuthKeyId" type="KeyIdentifier" line="782">
+                <declaration name="aki" type="AuthorityKeyIdentifierExtension" line="783"/>
+                <scope line="784">
+                    <declaration name="keyId" type="KeyIdentifier" line="785"/>
+                </scope>
+                <scope line="787"/>
+            </method>
+            <javadoc line="792">
+                return the AuthorityKeyIdentifierExtension, if any.                
+                <returns>
+                    AuthorityKeyIdentifierExtension or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getAuthKeyIdExtension" type="AuthorityKeyIdentifierExtension" line="799">
+                <declaration name="obj" type="Object" line="800"/>
+            </method>
+            <javadoc line="804">
+                return the CRLNumberExtension, if any.                
+                <returns>
+                    CRLNumberExtension or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getCRLNumberExtension" type="CRLNumberExtension" line="810">
+                <declaration name="obj" type="Object" line="811"/>
+            </method>
+            <javadoc line="815">
+                return the CRL number from the CRLNumberExtension, if any.                
+                <returns>
+                    number or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getCRLNumber" type="BigInteger" line="821">
+                <declaration name="numExt" type="CRLNumberExtension" line="822"/>
+                <scope line="823">
+                    <declaration name="num" type="BigInteger" line="824"/>
+                </scope>
+                <scope line="826"/>
+            </method>
+            <javadoc line="831">
+                return the DeltaCRLIndicatorExtension, if any.                
+                <returns>
+                    DeltaCRLIndicatorExtension or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getDeltaCRLIndicatorExtension" type="DeltaCRLIndicatorExtension" line="838">
+                <declaration name="obj" type="Object" line="840"/>
+            </method>
+            <javadoc line="844">
+                return the base CRL number from the DeltaCRLIndicatorExtension, if any.                
+                <returns>
+                    number or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getBaseCRLNumber" type="BigInteger" line="850">
+                <declaration name="dciExt" type="DeltaCRLIndicatorExtension" line="851"/>
+                <scope line="852">
+                    <declaration name="num" type="BigInteger" line="853"/>
+                </scope>
+                <scope line="855"/>
+            </method>
+            <javadoc line="860">
+                return the IssuerAlternativeNameExtension, if any.                
+                <returns>
+                    IssuerAlternativeNameExtension or null (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getIssuerAltNameExtension" type="IssuerAlternativeNameExtension" line="867">
+                <declaration name="obj" type="Object" line="868"/>
+            </method>
+            <javadoc line="872">
+                return the IssuingDistributionPointExtension, if any.                
+                <returns>
+                    IssuingDistributionPointExtension or null
+                      (if no such extension)                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getIssuingDistributionPointExtension" type="IssuingDistributionPointExtension" line="880">
+                <declaration name="obj" type="Object" line="882"/>
+            </method>
+            <javadoc line="886">
+                Return true if a critical extension is found that is
+                  not supported, otherwise return false.                
+            </javadoc>
+            <method name="hasUnsupportedCriticalExtension" type="boolean" line="890"/>
+            <javadoc line="896">
+                Gets a Set of the extension(s) marked CRITICAL in the
+                  CRL. In the returned set, each extension is represented by
+                  its OID string.                
+                <return>
+                    a set of the extension oid strings in the
+                      CRL that are marked critical.                    
+                </return>
+            </javadoc>
+            <method name="getCriticalExtensionOIDs" type="Set<String>" line="904">
+                <scope line="905"/>
+                <declaration name="extSet" type="Set&lt;String&gt;" line="908"/>
+                <scope line="909">
+                    <scope line="910"/>
+                </scope>
+            </method>
+            <javadoc line="917">
+                Gets a Set of the extension(s) marked NON-CRITICAL in the
+                  CRL. In the returned set, each extension is represented by
+                  its OID string.                
+                <return>
+                    a set of the extension oid strings in the
+                      CRL that are NOT marked critical.                    
+                </return>
+            </javadoc>
+            <method name="getNonCriticalExtensionOIDs" type="Set<String>" line="925">
+                <scope line="926"/>
+                <declaration name="extSet" type="Set&lt;String&gt;" line="929"/>
+                <scope line="930">
+                    <scope line="931"/>
+                </scope>
+            </method>
+            <javadoc line="938">
+                Gets the DER encoded OCTET string for the extension value
+                  (&lt;code&gt;extnValue&lt;/code&gt;) identified by the passed in oid String.
+                  The &lt;code&gt;oid&lt;/code&gt; string is
+                  represented by a set of positive whole number separated
+                  by &quot;.&quot;, that means,&lt;br&gt;
+                  &amp;lt;positive whole number&amp;gt;.&amp;lt;positive whole number&amp;gt;.&amp;lt;...&amp;gt;                
+                <param>
+                    oid the Object Identifier value for the extension.                    
+                </param>
+                <return>
+                    the der encoded octet string of the extension value.                    
+                </return>
+            </javadoc>
+            <method name="getExtensionValue" type="byte[]" line="949">
+                <params>
+                    <param name="oid" type="String"/>
+                </params>
+                <comment line="956">
+                    may be unknown                    
+                </comment>
+                <scope line="952">
+                    <declaration name="extAlias" type="String" line="953"/>
+                    <declaration name="crlExt" type="Extension" line="954"/>
+                    <scope line="956">
+                        <declaration name="findOID" type="ObjectIdentifier" line="957"/>
+                        <declaration name="ex" type="Extension" line="958"/>
+                        <declaration name="inCertOID" type="ObjectIdentifier" line="959"/>
+                        <scope line="961">
+                            <scope line="964"/>
+                        </scope>
+                    </scope>
+                    <declaration name="extData" type="byte[]" line="973"/>
+                    <declaration name="out" type="DerOutputStream" line="976"/>
+                </scope>
+                <scope line="979"/>
+            </method>
+            <javadoc line="984">
+                get an extension                
+                <param>
+                    oid ObjectIdentifier of extension desired                    
+                </param>
+                <returns>
+                    Object of type <extension> or null, if not found                    
+                </returns>
+                <throws>
+                    IOException on error                    
+                </throws>
+            </javadoc>
+            <method name="getExtension" type="Object" line="991">
+                <params>
+                    <param name="oid" type="ObjectIdentifier"/>
+                </params>
+                <comment line="995">
+                    XXX Consider cloning this                    
+                </comment>
+            </method>
+            <method name="parse" type="void" line="1002">
+                <params>
+                    <param name="val" type="DerValue"/>
+                </params>
+                <comment line="1003">
+                    check if can over write the certificate                    
+                </comment>
+                <comment line="1033">
+                    the tbsCertsList                    
+                </comment>
+                <comment line="1036">
+                    parse the information                    
+                </comment>
+                <comment line="1041">
+                    version (optional if v1)                    
+                </comment>
+                <comment line="1042">
+                    by default, version = v1 == 0                    
+                </comment>
+                <comment line="1046">
+                    i.e. v2                    
+                </comment>
+                <comment line="1051">
+                    signature                    
+                </comment>
+                <comment line="1054">
+                    the &quot;inner&quot; and &quot;outer&quot; signature algorithms must match                    
+                </comment>
+                <comment line="1059">
+                    issuer                    
+                </comment>
+                <comment line="1065">
+                    thisUpdate                    
+                </comment>
+                <comment line="1066">
+                    check if UTCTime encoded or GeneralizedTime                    
+                </comment>
+                <comment line="1079">
+                    done parsing no more optional fields present                    
+                </comment>
+                <comment line="1081">
+                    nextUpdate (optional)                    
+                </comment>
+                <comment line="1087">
+                    else it is not present                    
+                </comment>
+                <comment line="1090">
+                    done parsing no more optional fields present                    
+                </comment>
+                <comment line="1092">
+                    revokedCertificates (optional)                    
+                </comment>
+                <comment line="1111">
+                    done parsing no extensions                    
+                </comment>
+                <comment line="1113">
+                    crlExtensions (optional)                    
+                </comment>
+                <declaration name="seq" type="DerValue" line="1011"/>
+                <declaration name="derStrm" type="DerInputStream" line="1037"/>
+                <declaration name="tmp" type="DerValue" line="1038"/>
+                <declaration name="nextByte" type="byte" line="1039"/>
+                <scope line="1044"/>
+                <declaration name="tmpId" type="AlgorithmId" line="1052"/>
+                <scope line="1061"/>
+                <scope line="1069"/>
+                <scope line="1071"/>
+                <scope line="1073"/>
+                <scope line="1083"/>
+                <scope line="1085"/>
+                <scope line="1095">
+                    <declaration name="badCerts" type="DerValue[]" line="1096"/>
+                    <declaration name="crlIssuer" type="X500Principal" line="1098"/>
+                    <declaration name="badCertIssuer" type="X500Principal" line="1099"/>
+                    <scope line="1100">
+                        <declaration name="entry" type="X509CRLEntryImpl" line="1101"/>
+                        <declaration name="issuerSerial" type="X509IssuerSerial" line="1104"/>
+                    </scope>
+                </scope>
+                <scope line="1115"/>
+            </method>
+            <javadoc line="1121">
+                Extract the issuer X500Principal from an X509CRL. Parses the encoded
+                  form of the CRL to preserve the principal&apos;s ASN.1 encoding.
+                  Called by java.security.cert.X509CRL.getIssuerX500Principal().                
+            </javadoc>
+            <method name="getIssuerX500Principal" type="X500Principal" line="1127">
+                <params>
+                    <param name="crl" type="X509CRL"/>
+                </params>
+                <comment line="1135">
+                    skip version number if present                    
+                </comment>
+                <comment line="1141">
+                    skip signature                    
+                </comment>
+                <comment line="1142">
+                    issuer                    
+                </comment>
+                <scope line="1128">
+                    <declaration name="encoded" type="byte[]" line="1129"/>
+                    <declaration name="derIn" type="DerInputStream" line="1130"/>
+                    <declaration name="tbsCert" type="DerValue" line="1131"/>
+                    <declaration name="tbsIn" type="DerInputStream" line="1132"/>
+                    <declaration name="tmp" type="DerValue" line="1134"/>
+                    <declaration name="nextByte" type="byte" line="1136"/>
+                    <scope line="1137"/>
+                    <declaration name="principalBytes" type="byte[]" line="1143"/>
+                </scope>
+                <scope line="1145"/>
+            </method>
+            <javadoc line="1150">
+                Returned the encoding of the given certificate for internal use.
+                  Callers must guarantee that they neither modify it nor expose it
+                  to untrusted code. Uses getEncodedInternal() if the certificate
+                  is instance of X509CertImpl, getEncoded() otherwise.                
+            </javadoc>
+            <method name="getEncodedInternal" type="byte[]" line="1156">
+                <params>
+                    <param name="crl" type="X509CRL"/>
+                </params>
+                <scope line="1157"/>
+                <scope line="1159"/>
+            </method>
+            <javadoc line="1164">
+                Utility method to convert an arbitrary instance of X509CRL
+                  to a X509CRLImpl. Does a cast if possible, otherwise reparses
+                  the encoding.                
+            </javadoc>
+            <method name="toImpl" type="X509CRLImpl" line="1170">
+                <params>
+                    <param name="crl" type="X509CRL"/>
+                </params>
+                <scope line="1171"/>
+                <scope line="1173"/>
+            </method>
+            <javadoc line="1178">
+                Returns the X500 certificate issuer DN of a CRL entry.                
+                <param>
+                    entry the entry to check                    
+                </param>
+                <param>
+                    prevCertIssuer the previous entry's certificate issuer                    
+                </param>
+                <return>
+                    the X500Principal in a CertificateIssuerExtension, or
+                      prevCertIssuer if it does not exist                    
+                </return>
+            </javadoc>
+            <method name="getCertIssuer" type="X500Principal" line="1187">
+                <params>
+                    <param name="entry" type="X509CRLEntryImpl"/>
+                    <param name="prevCertIssuer" type="X500Principal"/>
+                </params>
+                <declaration name="ciExt" type="CertificateIssuerExtension" line="1189"/>
+                <scope line="1191">
+                    <declaration name="names" type="GeneralNames" line="1192"/>
+                    <declaration name="issuerDN" type="X500Name" line="1194"/>
+                </scope>
+                <scope line="1196"/>
+            </method>
+            <method name="derEncode" type="void" line="1202">
+                <params>
+                    <param name="out" type="OutputStream"/>
+                </params>
+            </method>
+            <class name="X509IssuerSerial" line="1208">
+                <javadoc line="1208">
+                    Immutable X.509 Certificate Issuer DN and serial number pair                    
+                </javadoc>
+                <declaration name="issuer" type="X500Principal" line="1212"/>
+                <declaration name="serial" type="BigInteger" line="1213"/>
+                <declaration name="hashcode" type="int" line="1214"/>
+                <javadoc line="1216">
+                    Create an X509IssuerSerial.                    
+                    <param>
+                        issuer the issuer DN                        
+                    </param>
+                    <param>
+                        serial the serial number                        
+                    </param>
+                </javadoc>
+                <method name="X509IssuerSerial" type="constructor" line="1222">
+                    <params>
+                        <param name="issuer" type="X500Principal"/>
+                        <param name="serial" type="BigInteger"/>
+                    </params>
+                </method>
+                <javadoc line="1227">
+                    Construct an X509IssuerSerial from an X509Certificate.                    
+                </javadoc>
+                <method name="X509IssuerSerial" type="constructor" line="1230">
+                    <params>
+                        <param name="cert" type="X509Certificate"/>
+                    </params>
+                </method>
+                <javadoc line="1234">
+                    Returns the issuer.                    
+                    <return>
+                        the issuer                        
+                    </return>
+                </javadoc>
+                <method name="getIssuer" type="X500Principal" line="1239"/>
+                <javadoc line="1243">
+                    Returns the serial number.                    
+                    <return>
+                        the serial number                        
+                    </return>
+                </javadoc>
+                <method name="getSerial" type="BigInteger" line="1248"/>
+                <javadoc line="1252">
+                    Compares this X509Serial with another and returns true if they
+                      are equivalent.                    
+                    <param>
+                        o the other object to compare with                        
+                    </param>
+                    <return>
+                        true if equal, false otherwise                        
+                    </return>
+                </javadoc>
+                <method name="equals" type="boolean" line="1259">
+                    <params>
+                        <param name="o" type="Object"/>
+                    </params>
+                    <scope line="1260"/>
+                    <scope line="1264"/>
+                    <declaration name="other" type="X509IssuerSerial" line="1268"/>
+                    <scope line="1270"/>
+                </method>
+                <javadoc line="1276">
+                    Returns a hash code value for this X509IssuerSerial.                    
+                    <return>
+                        the hash code value                        
+                    </return>
+                </javadoc>
+                <method name="hashCode" type="int" line="1281">
+                    <scope line="1282">
+                        <declaration name="result" type="int" line="1283"/>
+                    </scope>
+                </method>
+            </class>
+        </class>
+    </source>

@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jndi.ldap.pool">
+        <import package="java.util.Map"/>
+        <import package="java.util.WeakHashMap"/>
+        <import package="java.util.Collection"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Iterator"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.LinkedList"/>
+        <import package="java.io.PrintStream"/>
+        <import package="java.lang.ref.Reference"/>
+        <import package="java.lang.ref.ReferenceQueue"/>
+        <import package="javax.naming.NamingException"/>
+        <class name="Pool" line="41">
+            <comment line="84">
+                Used for connections cleanup                
+            </comment>
+            <comment line="91">
+                max num of identical conn per pool                
+            </comment>
+            <comment line="92">
+                preferred num of identical conn per pool                
+            </comment>
+            <comment line="93">
+                initial number of identical conn to create                
+            </comment>
+            <comment line="181">
+                Closes the connections contained in the ConnectionsRef object that
+                 is going to be reclaimed by the GC. Called by getPooledConnection()
+                 and expire() methods of this class.                
+            </comment>
+            <javadoc line="41">
+                A map of pool ids to Connections.
+                  Key is an object that uniquely identifies a PooledConnection request
+                  (typically information needed to create the connection).
+                  The definitions of the key&apos;s equals() and hashCode() methods are
+                  vital to its unique identification in a Pool.
+                  Value is a ConnectionsRef, which is a reference to Connections,
+                  a list of equivalent connections.
+                  Supports methods that
+                  - retrieves (or creates as necessary) a connection from the pool
+                  - removes expired connections from the pool
+                  Connections cleanup:
+                  A WeakHashMap is used for mapping the pool ids and Connections.
+                  A SoftReference from the value to the key is kept to hold the map
+                  entry as long as possible. This allows the GC to remove Connections
+                  from the Pool under situations of VM running out of resources.
+                  To take an appropriate action of &apos;closing the connections&apos; before the GC
+                  reclaims the ConnectionsRef objects, the ConnectionsRef objects are made
+                  weakly reachable through a list of weak references registered with
+                  a reference queue.
+                  Upon an entry gets removed from the WeakHashMap, the ConnectionsRef (value
+                  in the map) object is weakly reachable. When another sweep of
+                  clearing the weak references is made by the GC it puts the corresponding
+                  ConnectionsWeakRef object into the reference queue.
+                  The reference queue is monitored lazily for reclaimable Connections
+                  whenever a pooled connection is requested or a call to remove the expired
+                  connections is made. The monitoring is done regularly when idle connection
+                  timeout is set as the PoolCleaner removes expired connections periodically.
+                  As determined by the experiements, cleanup of resources using the
+                  ReferenceQueue mechanism is reliable and has immidiate effect than the
+                  finalizer approach.                
+                <author>
+                    Rosanna Lee                    
+                </author>
+            </javadoc>
+            <declaration name="debug" type="boolean" line="81"/>
+            <declaration name="queue" type="ReferenceQueue" line="86"/>
+            <declaration name="weakRefs" type="Collection" line="87"/>
+            <declaration name="maxSize" type="int" line="90"/>
+            <declaration name="prefSize" type="int" line="91"/>
+            <declaration name="initSize" type="int" line="92"/>
+            <declaration name="map" type="Map" line="93"/>
+            <method name="Pool" type="constructor" line="95">
+                <params>
+                    <param name="initSize" type="int"/>
+                    <param name="prefSize" type="int"/>
+                    <param name="maxSize" type="int"/>
+                </params>
+            </method>
+            <javadoc line="102">
+                Gets a pooled connection for id. The pooled connection might be
+                  newly created, as governed by the maxSize and prefSize settings.
+                  If a pooled connection is unavailable and cannot be created due
+                  to the maxSize constraint, this call blocks until the constraint
+                  is removed or until &apos;timeout&apos; ms has elapsed.                
+                <param>
+                    id identity of the connection to get                    
+                </param>
+                <param>
+                    timeout the number of milliseconds to wait before giving up                    
+                </param>
+                <param>
+                    factory the factory to use for creating the connection if
+                      creation is necessary                    
+                </param>
+                <return>
+                    a pooled connection                    
+                </return>
+                <throws>
+                    NamingException the connection could not be created due to
+                      an error.                    
+                </throws>
+            </javadoc>
+            <method name="getPooledConnection" type="PooledConnection" line="118">
+                <params>
+                    <param name="id" type="Object"/>
+                    <param name="timeout" type="long"/>
+                    <param name="factory" type="PooledConnectionFactory"/>
+                </params>
+                <comment line="131">
+                    No connections for this id so create a new list                    
+                </comment>
+                <comment line="137">
+                    Create a weak reference to ConnectionsRef                    
+                </comment>
+                <comment line="140">
+                    Keep the weak reference through the element of a linked list                    
+                </comment>
+                <comment line="147">
+                    get one connection from list                    
+                </comment>
+                <declaration name="conns" type="Connections" line="125"/>
+                <scope line="126">
+                    <scope line="128">
+                        <declaration name="connsRef" type="ConnectionsRef" line="134"/>
+                        <declaration name="weakRef" type="Reference" line="138"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getConnections" type="Connections" line="150">
+                <params>
+                    <param name="id" type="Object"/>
+                </params>
+                <declaration name="ref" type="ConnectionsRef" line="151"/>
+            </method>
+            <javadoc line="155">
+                Goes through the connections in this Pool and expires ones that
+                  have been idle before &apos;threshold&apos;. An expired connection is closed
+                  and then removed from the pool (removePooledConnection() will eventually
+                  be called, and the list of pools itself removed if it becomes empty).                
+                <param>
+                    threshold connections idle before 'threshold' should be closed
+                      and removed.                    
+                </param>
+            </javadoc>
+            <method name="expire" type="void" line="164">
+                <params>
+                    <param name="threshold" type="long"/>
+                </params>
+                <scope line="165">
+                    <declaration name="coll" type="Collection" line="166"/>
+                    <declaration name="iter" type="Iterator" line="167"/>
+                    <declaration name="conns" type="Connections" line="168"/>
+                    <scope line="169">
+                        <scope line="171"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="expungeStaleConnections" type="void" line="185">
+                <comment line="196">
+                    cleanup                    
+                </comment>
+                <declaration name="releaseRef" type="ConnectionsWeakRef" line="186"/>
+                <scope line="188">
+                    <declaration name="conns" type="Connections" line="189"/>
+                    <scope line="191"/>
+                </scope>
+            </method>
+            <method name="showStats" type="void" line="204">
+                <params>
+                    <param name="out" type="PrintStream"/>
+                </params>
+                <declaration name="entry" type="Map.Entry" line="205"/>
+                <declaration name="id" type="Object" line="206"/>
+                <declaration name="conns" type="Connections" line="207"/>
+                <declaration name="entries" type="Set" line="215"/>
+                <declaration name="iter" type="Iterator" line="216"/>
+                <scope line="218"/>
+            </method>
+            <method name="toString" type="String" line="228"/>
+            <method name="d" type="void" line="232">
+                <params>
+                    <param name="msg" type="String"/>
+                    <param name="i" type="int"/>
+                </params>
+                <scope line="233"/>
+            </method>
+            <method name="d" type="void" line="238">
+                <params>
+                    <param name="msg" type="String"/>
+                    <param name="obj" type="Object"/>
+                </params>
+                <scope line="239"/>
+            </method>
+        </class>
+    </source>

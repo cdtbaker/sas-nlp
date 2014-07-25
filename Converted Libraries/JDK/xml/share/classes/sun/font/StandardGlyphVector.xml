@@ -1,0 +1,1786 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.font">
+        <import package="java.awt.Font"/>
+        <import package="java.awt.Graphics2D"/>
+        <import package="java.awt.Point"/>
+        <import package="java.awt.Rectangle"/>
+        <import package="java.awt.RenderingHints"/>
+        <import package="java.awt.Shape"/>
+        <import package="java.awt.font.FontRenderContext"/>
+        <import package="java.awt.font.GlyphMetrics"/>
+        <import package="java.awt.font.GlyphJustificationInfo"/>
+        <import package="java.awt.font.GlyphVector"/>
+        <import package="java.awt.font.LineMetrics"/>
+        <import package="java.awt.font.TextAttribute"/>
+        <import package="java.awt.geom.AffineTransform"/>
+        <import package="java.awt.geom.GeneralPath"/>
+        <import package="java.awt.geom.NoninvertibleTransformException"/>
+        <import package="java.awt.geom.PathIterator"/>
+        <import package="java.awt.geom.Point2D"/>
+        <import package="java.awt.geom.Rectangle2D"/>
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.text.CharacterIterator"/>
+        <import package="sun.awt.SunHints"/>
+        <import package="sun.java2d.loops.FontInfo"/>
+        <class name="StandardGlyphVector" line="52">
+            <extends class="GlyphVector"/>
+            <comment line="140">
+                always                
+            </comment>
+            <comment line="141">
+                used to return glyphs to the client.                
+            </comment>
+            <comment line="142">
+                only if not default advances                
+            </comment>
+            <comment line="143">
+                only if interesting                
+            </comment>
+            <comment line="144">
+                indicates whether positions, charIndices is interesting                
+            </comment>
+            <comment line="148">
+                transforms information                
+            </comment>
+            <comment line="149">
+                information about per-glyph transforms                
+            </comment>
+            <comment line="151">
+                !!! can we get rid of any of this extra stuff?                
+            </comment>
+            <comment line="152">
+                font transform without translation                
+            </comment>
+            <comment line="153">
+                device transform used for strike calculations, no translation                
+            </comment>
+            <comment line="154">
+                inverse of dtx or null if dtx is identity                
+            </comment>
+            <comment line="155">
+                font render context transform, wish we could just share it                
+            </comment>
+            <comment line="156">
+                basic strike-independent stuff                
+            </comment>
+            <comment line="157">
+                font strike reference for glyphs with no per-glyph transform                
+            </comment>
+            <comment line="159">
+                ///////////////////////////                
+            </comment>
+            <comment line="160">
+                Constructors and Factory methods                
+            </comment>
+            <comment line="161">
+                ///////////////////////////                
+            </comment>
+            <comment line="184">
+                used by GlyphLayout to construct a glyphvector                
+            </comment>
+            <comment line="257">
+                This is called from the rendering loop. FontInfo is supplied
+                 because a GV caches a strike and glyph images suitable for its FRC.
+                 LCD text isn&apos;t currently supported on all surfaces, in which case
+                 standard AA must be used. This is most likely to occur when LCD text
+                 is requested and the surface is some non-standard type or hardward
+                 surface for which there are no accelerated loops.
+                 We can detect this as being AA==&quot;ON&quot; in the FontInfo and AA!=&quot;ON&quot;
+                 and AA!=&quot;GASP&quot; in the FRC - since this only occurs for LCD text we don&apos;t
+                 need to check any more precisely what value is in the FRC.                
+            </comment>
+            <comment line="287">
+                ///////////////////////////                
+            </comment>
+            <comment line="288">
+                GlyphVector API                
+            </comment>
+            <comment line="289">
+                ///////////////////////////                
+            </comment>
+            <comment line="376">
+                !!! not cached, assume TextLayout will cache if necessary                
+            </comment>
+            <comment line="377">
+                !!! reexamine for per-glyph-transforms                
+            </comment>
+            <comment line="378">
+                !!! revisit for text-on-a-path, vertical                
+            </comment>
+            <comment line="398">
+                !!! not cached, assume TextLayout will cache if necessary                
+            </comment>
+            <comment line="417">
+                !!! not cached, assume TextLayout will cache if necessary                
+            </comment>
+            <comment line="418">
+                !!! fontStrike needs a method for this                
+            </comment>
+            <comment line="431">
+                relative to gv origin                
+            </comment>
+            <comment line="436">
+                relative to gv origin offset by x, y                
+            </comment>
+            <comment line="746">
+                ////////////////////                
+            </comment>
+            <comment line="747">
+                StandardGlyphVector new public methods                
+            </comment>
+            <comment line="748">
+                ///////////////////                
+            </comment>
+            <comment line="750">
+                Set a multiple glyph positions at one time.  GlyphVector only
+                 provides API to set a single glyph at a time.                
+            </comment>
+            <comment line="897">
+                ////////////////////                
+            </comment>
+            <comment line="898">
+                StandardGlyphVector package private methods                
+            </comment>
+            <comment line="899">
+                ///////////////////                
+            </comment>
+            <comment line="901">
+                used by glyphlist to determine if it needs to allocate/size positions array                
+            </comment>
+            <comment line="902">
+                gti always uses positions because the gtx might have translation.  We also                
+            </comment>
+            <comment line="903">
+                need positions if the rendering dtx is different from the frctx.                
+            </comment>
+            <comment line="911">
+                used by glyphList to get strong refs to font strikes for duration of rendering call                
+            </comment>
+            <comment line="912">
+                if devTX matches current devTX, we&apos;re ready to go                
+            </comment>
+            <comment line="913">
+                if we don&apos;t have multiple transforms, we&apos;re already ok                
+            </comment>
+            <comment line="915">
+                !!! I&apos;m not sure fontInfo works so well for glyphvector, since we have to be able to handle                
+            </comment>
+            <comment line="916">
+                the multiple-strikes case                
+            </comment>
+            <comment line="918">
+                GlyphList calls this to set up its images data.  First it calls needsPositions,
+                 passing the devTX, to see if it should provide us a positions array to fill.
+                 It only doesn&apos;t need them if we&apos;re a simple glyph vector whose frctx matches the
+                 devtx.
+                 Then it calls setupGlyphImages.  If we need positions, we make sure we have our
+                 default positions based on the frctx first. Then we set the devTX, and use
+                 strikes based on it to generate the images.  Finally, we fill in the positions
+                 array.
+                 If we have transforms, we delegate to gti.  It depends on our having first
+                 initialized the positions and devTX.                
+            </comment>
+            <comment line="952">
+                ////////////////////                
+            </comment>
+            <comment line="953">
+                StandardGlyphVector private methods                
+            </comment>
+            <comment line="954">
+                ///////////////////                
+            </comment>
+            <comment line="956">
+                We keep translation in our frctx since getPixelBounds uses it.  But                
+            </comment>
+            <comment line="957">
+                GlyphList pulls out the translation and applies it separately, so                
+            </comment>
+            <comment line="958">
+                we strip it out when we set the dtx.  Basically nothing uses the                
+            </comment>
+            <comment line="959">
+                translation except getPixelBounds.                
+            </comment>
+            <comment line="961">
+                called by needsPositions, setRenderTransform                
+            </comment>
+            <comment line="970">
+                returns new tx if old one has translation, otherwise returns old one                
+            </comment>
+            <comment line="987">
+                called by setupGlyphImages (after needsPositions, so redundant match check?)                
+            </comment>
+            <comment line="995">
+                called by getGlyphsPixelBounds                
+            </comment>
+            <comment line="1002">
+                called by most functions                
+            </comment>
+            <comment line="1075">
+                Before asking the Font we see if the glyph code is
+                 FFFE or FFFF which are special values that we should be internally
+                 ready to handle as meaning invisible glyphs. The Font would report
+                 those as the missing glyph.                
+            </comment>
+            <comment line="1093">
+                utility used by constructors                
+            </comment>
+            <comment line="1253">
+                internal use only for possible future extension                
+            </comment>
+            <comment line="1346">
+                general utility methods                
+            </comment>
+            <comment line="1348">
+                encapsulate the test to check whether we have per-glyph transforms                
+            </comment>
+            <comment line="1357">
+                encapsulate access to cached default glyph strike                
+            </comment>
+            <comment line="1371">
+                ///////////////////                
+            </comment>
+            <comment line="1372">
+                Internal utility classes                
+            </comment>
+            <comment line="1373">
+                ///////////////////                
+            </comment>
+            <comment line="1375">
+                !!! I have this as a separate class instead of just inside SGV,                
+            </comment>
+            <comment line="1376">
+                but I previously didn&apos;t bother.  Now I&apos;m trying this again.                
+            </comment>
+            <comment line="1377">
+                Probably still not worth it, but I&apos;d like to keep sgv&apos;s small in the common case.                
+            </comment>
+            <comment line="1690">
+                This adjusts the metrics by the translation components of the glyph                
+            </comment>
+            <comment line="1691">
+                transform.  It is done here since the translation is not known by the                
+            </comment>
+            <comment line="1692">
+                strike.                
+            </comment>
+            <comment line="1693">
+                It adjusts the position of the image and the advance.                
+            </comment>
+            <javadoc line="52">
+                Standard implementation of GlyphVector used by Font, GlyphList, and
+                  SunGraphics2D.
+                  The main issues involve the semantics of the various transforms
+                  (font, glyph, device) and their effect on rendering and metrics.
+                  Very, very unfortunately, the translation component of the font
+                  transform affects where the text gets rendered.  It offsets the
+                  rendering origin.  None of the other metrics of the glyphvector
+                  are affected, making them inconsistent with the rendering behavior.
+                  I think the translation component of the font would be better
+                  interpreted as the translation component of a per-glyph transform,
+                  but I don&apos;t know if this is possible to change.
+                  After the font transform is applied, the glyph transform is
+                  applied.  This makes glyph transforms relative to font transforms,
+                  if the font transform changes, the glyph transform will have the
+                  same (relative) effect on the outline of the glyph.  The outline
+                  and logical bounds are passed through the glyph transform before
+                  being returned.  The glyph metrics ignore the glyph transform, but
+                  provide the outline bounds and the advance vector of the glyph (the
+                  latter will be rotated if the font is rotated).  The default layout
+                  places each glyph at the end of the advance vector of the previous
+                  glyph, and since the glyph transform translates the advance vector,
+                  this means a glyph transform affects the positions of all
+                  subsequent glyphs if defaultLayout is called after setting a glyph
+                  transform.  In the glyph info array, the bounds are the outline
+                  bounds including the glyph transform, and the positions are as
+                  computed, and the advances are the deltas between the positions.
+                  (There&apos;s a bug in the logical bounds of a rotated glyph for
+                  composite fonts, it&apos;s not to spec (in 1.4.0, 1.4.1, 1.4.2).  The
+                  problem is that the rotated composite doesn&apos;t handle the multiple
+                  ascents and descents properly in both x and y.  You end up with
+                  a rotated advance vector but an unrotated ascent and descent.)
+                  Finally, the whole thing is transformed by the device transform to
+                  position it on the page.
+                  Another bug: The glyph outline seems to ignore fractional point
+                  size information, but the images (and advances) don&apos;t ignore it.
+                  Small fonts drawn at large magnification have odd advances when
+                  fractional metrics is off-- that&apos;s because the advances depend on
+                  the frc.  When the frc is scaled appropriately, the advances are
+                  fine.  FM or a large frc (high numbers) make the advances right.
+                  The buffer aa flag doesn&apos;t affect rendering, the glyph vector
+                  renders as AA if aa is set in its frc, and as non-aa if aa is not
+                  set in its frc.
+                  font rotation, baseline, vertical etc.
+                  Font rotation and baseline Line metrics should be measured along a
+                  unit vector pi/4 cc from the baseline vector.  For &apos;horizontal&apos;
+                  fonts the baseline vector is the x vector passed through the font
+                  transform (ignoring translation), for &apos;vertical&apos; it is the y
+                  vector.  This definition makes ascent, descent, etc independent of
+                  shear, so shearing can be used to simulate italic. This means no
+                  fonts have &apos;negative ascents&apos; or &apos;zero ascents&apos; etc.
+                  Having a coordinate system with orthogonal axes where one is
+                  parallel to the baseline means we could use rectangles and interpret
+                  them in terms of this coordinate system.  Unfortunately there
+                  is support for rotated fonts in the jdk already so maintaining
+                  the semantics of existing code (getlogical bounds, etc) might
+                  be difficult.
+                  A font transform transforms both the baseline and all the glyphs
+                  in the font, so it does not rotate the glyph w.r.t the baseline.
+                  If you do want to rotate individual glyphs, you need to apply a
+                  glyph transform.  If performDefaultLayout is called after this,
+                  the transformed glyph advances will affect the glyph positions.
+                  useful additions
+                  - select vertical metrics - glyphs are rotated pi/4 cc and vertical
+                  metrics are used to align them to the baseline.
+                  - define baseline for font (glyph rotation not linked to baseline)
+                  - define extra space (delta between each glyph along baseline)
+                  - define offset (delta from &apos;true&apos; baseline, impacts ascent and
+                  descent as these are still computed from true basline and pinned
+                  to zero, used in superscript).                
+            </javadoc>
+            <declaration name="font" type="Font" line="137"/>
+            <declaration name="frc" type="FontRenderContext" line="138"/>
+            <declaration name="glyphs" type="int[]" line="139"/>
+            <declaration name="userGlyphs" type="int[]" line="140"/>
+            <declaration name="positions" type="float[]" line="141"/>
+            <declaration name="charIndices" type="int[]" line="142"/>
+            <declaration name="flags" type="int" line="143"/>
+            <declaration name="UNINITIALIZED_FLAGS" type="int" line="145"/>
+            <declaration name="gti" type="GlyphTransformInfo" line="148"/>
+            <declaration name="ftx" type="AffineTransform" line="151"/>
+            <declaration name="dtx" type="AffineTransform" line="152"/>
+            <declaration name="invdtx" type="AffineTransform" line="153"/>
+            <declaration name="frctx" type="AffineTransform" line="154"/>
+            <declaration name="font2D" type="Font2D" line="155"/>
+            <declaration name="fsref" type="SoftReference" line="156"/>
+            <method name="StandardGlyphVector" type="constructor" line="162">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="str" type="String"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+            </method>
+            <method name="StandardGlyphVector" type="constructor" line="166">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="text" type="char[]"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+            </method>
+            <method name="StandardGlyphVector" type="constructor" line="171">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+            </method>
+            <method name="getTracking" type="float" line="175">
+                <params>
+                    <param name="font" type="Font"/>
+                </params>
+                <scope line="176">
+                    <declaration name="values" type="AttributeValues" line="177"/>
+                </scope>
+            </method>
+            <method name="StandardGlyphVector" type="constructor" line="185">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="glyphs" type="int[]"/>
+                    <param name="positions" type="float[]"/>
+                    <param name="indices" type="int[]"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="188">
+                    this code should go into layout                    
+                </comment>
+                <comment line="192">
+                    advance delta                    
+                </comment>
+                <comment line="198">
+                    how do we know its a base glyph                    
+                </comment>
+                <comment line="199">
+                    for now, it is if the natural advance of the glyph is non-zero                    
+                </comment>
+                <comment line="209">
+                    might be an inadequate test                    
+                </comment>
+                <declaration name="track" type="float" line="189"/>
+                <scope line="190">
+                    <declaration name="trackPt" type="Point2D.Float" line="192"/>
+                    <scope line="193">
+                        <declaration name="at" type="AffineTransform" line="194"/>
+                    </scope>
+                    <declaration name="f2d" type="Font2D" line="200"/>
+                    <declaration name="strike" type="FontStrike" line="201"/>
+                    <declaration name="deltas" type="float[]" line="203"/>
+                    <scope line="204">
+                        <declaration name="inc" type="float" line="205"/>
+                        <scope line="206">
+                            <declaration name="delta" type="float" line="207"/>
+                            <scope line="208">
+                                <scope line="209"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="initGlyphVector" type="void" line="221">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="glyphs" type="int[]"/>
+                    <param name="positions" type="float[]"/>
+                    <param name="indices" type="int[]"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="225">
+                    no need to check                    
+                </comment>
+            </method>
+            <method name="StandardGlyphVector" type="constructor" line="233">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="iter" type="CharacterIterator"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="offset" type="int" line="234"/>
+                <declaration name="text" type="char[]" line="235"/>
+                <scope line="238"/>
+            </method>
+            <method name="StandardGlyphVector" type="constructor" line="244">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="glyphs" type="int[]"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <comment line="245">
+                    !!! find callers of this                    
+                </comment>
+                <comment line="246">
+                    should be able to fully init from raw data, e.g. charmap, flags too.                    
+                </comment>
+            </method>
+            <method name="getStandardGV" type="StandardGlyphVector" line="267">
+                <params>
+                    <param name="gv" type="GlyphVector"/>
+                    <param name="info" type="FontInfo"/>
+                </params>
+                <comment line="272">
+                                        
+                </comment>
+                <scope line="268">
+                    <declaration name="aaHint" type="Object" line="269"/>
+                    <scope line="271">
+                        <declaration name="frc" type="FontRenderContext" line="273"/>
+                    </scope>
+                </scope>
+                <scope line="280"/>
+            </method>
+            <method name="getFont" type="Font" line="290"/>
+            <method name="getFontRenderContext" type="FontRenderContext" line="294"/>
+            <method name="performDefaultLayout" type="void" line="298">
+                <scope line="300"/>
+            </method>
+            <method name="getNumGlyphs" type="int" line="305"/>
+            <method name="getGlyphCode" type="int" line="309">
+                <params>
+                    <param name="glyphIndex" type="int"/>
+                </params>
+            </method>
+            <method name="getGlyphCodes" type="int[]" line="313">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="result" type="int[]"/>
+                </params>
+                <comment line="320">
+                    watch out for overflow if index + count overlarge                    
+                </comment>
+                <comment line="328">
+                    if arraycopy were faster, we wouldn&apos;t code this                    
+                </comment>
+                <scope line="314"/>
+                <scope line="317"/>
+                <scope line="320"/>
+                <scope line="324"/>
+                <scope line="329"/>
+            </method>
+            <method name="getGlyphCharIndex" type="int" line="336">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <scope line="337"/>
+                <scope line="340">
+                    <scope line="341"/>
+                </scope>
+            </method>
+            <method name="getGlyphCharIndices" type="int[]" line="349">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="result" type="int[]"/>
+                </params>
+                <scope line="350"/>
+                <scope line="353"/>
+                <scope line="356">
+                    <scope line="357">
+                        <scope line="359"/>
+                    </scope>
+                    <scope line="362">
+                        <scope line="363"/>
+                    </scope>
+                </scope>
+                <scope line="367">
+                    <scope line="368"/>
+                </scope>
+            </method>
+            <method name="getLogicalBounds" type="Rectangle2D" line="378">
+                <comment line="385">
+                    horiz only for now...                    
+                </comment>
+                <declaration name="lm" type="LineMetrics" line="382"/>
+                <declaration name="minX" type="float" line="384"/>
+                <scope line="390"/>
+            </method>
+            <method name="getVisualBounds" type="Rectangle2D" line="398">
+                <declaration name="result" type="Rectangle2D" line="399"/>
+                <scope line="400">
+                    <declaration name="glyphVB" type="Rectangle2D" line="401"/>
+                    <scope line="402">
+                        <scope line="403"/>
+                        <scope line="405"/>
+                    </scope>
+                </scope>
+                <scope line="410"/>
+            </method>
+            <method name="getPixelBounds" type="Rectangle" line="418">
+                <params>
+                    <param name="renderFRC" type="FontRenderContext"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="getOutline" type="Shape" line="422"/>
+            <method name="getOutline" type="Shape" line="426">
+                <params>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="getGlyphOutline" type="Shape" line="431">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+            </method>
+            <method name="getGlyphOutline" type="Shape" line="436">
+                <params>
+                    <param name="ix" type="int"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="getGlyphPosition" type="Point2D" line="440">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+            </method>
+            <method name="setGlyphPosition" type="void" line="447">
+                <params>
+                    <param name="ix" type="int"/>
+                    <param name="pos" type="Point2D"/>
+                </params>
+                <declaration name="ix2" type="int" line="450"/>
+            </method>
+            <method name="getGlyphTransform" type="AffineTransform" line="458">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <comment line="465">
+                    spec&apos;d as returning null                    
+                </comment>
+                <scope line="459"/>
+                <scope line="462"/>
+            </method>
+            <method name="setGlyphTransform" type="void" line="468">
+                <params>
+                    <param name="ix" type="int"/>
+                    <param name="newTX" type="AffineTransform"/>
+                </params>
+                <comment line="479">
+                    sets flags                    
+                </comment>
+                <scope line="469"/>
+                <scope line="473">
+                    <scope line="474"/>
+                </scope>
+                <scope line="480"/>
+            </method>
+            <method name="getLayoutFlags" type="int" line="485">
+                <comment line="493">
+                    rtl index                    
+                </comment>
+                <scope line="486">
+                    <scope line="489">
+                        <declaration name="ltr" type="boolean" line="490"/>
+                        <declaration name="rtl" type="boolean" line="491"/>
+                        <declaration name="rtlix" type="int" line="493"/>
+                        <scope line="494">
+                            <declaration name="cx" type="int" line="495"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <method name="getGlyphPositions" type="float[]" line="509">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="result" type="float[]"/>
+                </params>
+                <comment line="516">
+                    watch for overflow                    
+                </comment>
+                <scope line="510"/>
+                <scope line="513"/>
+                <scope line="516"/>
+            </method>
+            <method name="getGlyphLogicalBounds" type="Shape" line="523">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <comment line="539">
+                    !!! ought to return a rectangle2d for simple cases, though the following works for all                    
+                </comment>
+                <comment line="541">
+                    get the position, the tx offset, and the x,y advance and x,y adl.  The                    
+                </comment>
+                <comment line="542">
+                    shape is the box formed by adv (width) and adl (height) offset by                    
+                </comment>
+                <comment line="543">
+                    the position plus the tx offset minus the ascent.                    
+                </comment>
+                <scope line="524"/>
+                <declaration name="lbcache" type="Shape[]" line="528"/>
+                <scope line="529"/>
+                <declaration name="result" type="Shape" line="534"/>
+                <scope line="535">
+                    <declaration name="adl" type="ADL" line="545"/>
+                    <declaration name="gs" type="GlyphStrike" line="546"/>
+                    <declaration name="adv" type="Point2D.Float" line="549"/>
+                    <declaration name="wx" type="float" line="551"/>
+                    <declaration name="wy" type="float" line="552"/>
+                    <declaration name="hx" type="float" line="553"/>
+                    <declaration name="hy" type="float" line="554"/>
+                    <declaration name="x" type="float" line="555"/>
+                    <declaration name="y" type="float" line="556"/>
+                    <declaration name="gp" type="GeneralPath" line="558"/>
+                </scope>
+            </method>
+            <declaration name="lbcacheRef" type="SoftReference" line="571"/>
+            <method name="getGlyphVisualBounds" type="Shape" line="573">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <scope line="574"/>
+                <declaration name="vbcache" type="Shape[]" line="578"/>
+                <scope line="579"/>
+                <declaration name="result" type="Shape" line="584"/>
+                <scope line="585"/>
+            </method>
+            <declaration name="vbcacheRef" type="SoftReference" line="592"/>
+            <method name="getGlyphPixelBounds" type="Rectangle" line="594">
+                <params>
+                    <param name="index" type="int"/>
+                    <param name="renderFRC" type="FontRenderContext"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+            </method>
+            <method name="getGlyphMetrics" type="GlyphMetrics" line="598">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <scope line="599"/>
+                <declaration name="vb" type="Rectangle2D" line="603"/>
+                <declaration name="pt" type="Point2D" line="604"/>
+                <declaration name="adv" type="Point2D.Float" line="609"/>
+                <declaration name="gm" type="GlyphMetrics" line="611"/>
+            </method>
+            <method name="getGlyphJustificationInfo" type="GlyphJustificationInfo" line="617">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <comment line="622">
+                    currently we don&apos;t have enough information to do this right.  should                    
+                </comment>
+                <comment line="623">
+                    get info from the font and use real OT/GX justification.  Right now                    
+                </comment>
+                <comment line="624">
+                    sun/font/ExtendedTextSourceLabel assigns one of three infos                    
+                </comment>
+                <comment line="625">
+                    based on whether the char is kanji, space, or other.                    
+                </comment>
+                <scope line="618"/>
+            </method>
+            <method name="equals" type="boolean" line="630">
+                <params>
+                    <param name="rhs" type="GlyphVector"/>
+                </params>
+                <comment line="682">
+                    assume they are different simply by virtue of the class difference                    
+                </comment>
+                <scope line="631"/>
+                <scope line="634"/>
+                <scope line="638">
+                    <declaration name="other" type="StandardGlyphVector" line="639"/>
+                    <scope line="641"/>
+                    <scope line="645">
+                        <scope line="646"/>
+                    </scope>
+                    <scope line="651"/>
+                    <scope line="655"/>
+                    <scope line="659">
+                        <scope line="660"/>
+                        <scope line="662"/>
+                    </scope>
+                    <scope line="667">
+                        <scope line="668">
+                            <scope line="669"/>
+                        </scope>
+                    </scope>
+                    <scope line="675"/>
+                    <scope line="677"/>
+                </scope>
+                <scope line="681"/>
+            </method>
+            <javadoc line="688">
+                As a concrete subclass of Object that implements equality, this must
+                  implement hashCode.                
+            </javadoc>
+            <method name="hashCode" type="int" line="692"/>
+            <javadoc line="696">
+                Since we implement equality comparisons for GlyphVector, we implement
+                  the inherited Object.equals(Object) as well.  GlyphVector should do
+                  this, and define two glyphvectors as not equal if the classes differ.                
+            </javadoc>
+            <method name="equals" type="boolean" line="701">
+                <params>
+                    <param name="rhs" type="Object"/>
+                </params>
+                <scope line="702"/>
+                <scope line="705"/>
+            </method>
+            <javadoc line="710">
+                Sometimes I wish java had covariant return types...                
+            </javadoc>
+            <method name="copy" type="StandardGlyphVector" line="713"/>
+            <javadoc line="717">
+                As a concrete subclass of GlyphVector, this must implement clone.                
+            </javadoc>
+            <method name="clone" type="Object" line="720">
+                <comment line="721">
+                    positions, gti are mutable so we have to clone them                    
+                </comment>
+                <comment line="722">
+                    font2d can be shared                    
+                </comment>
+                <comment line="723">
+                    fsref is a cache and can be shared                    
+                </comment>
+                <scope line="724">
+                    <declaration name="result" type="StandardGlyphVector" line="725"/>
+                    <scope line="729"/>
+                    <scope line="733"/>
+                </scope>
+                <scope line="739"/>
+            </method>
+            <method name="setGlyphPositions" type="void" line="754">
+                <params>
+                    <param name="srcPositions" type="float[]"/>
+                    <param name="srcStart" type="int"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <scope line="755"/>
+                <scope line="760"/>
+            </method>
+            <javadoc line="768">
+                Set all the glyph positions, including the &apos;after last glyph&apos; position.
+                  The srcPositions array must be of length (numGlyphs + 1)  2.                
+            </javadoc>
+            <method name="setGlyphPositions" type="void" line="772">
+                <params>
+                    <param name="srcPositions" type="float[]"/>
+                </params>
+                <declaration name="requiredLength" type="int" line="773"/>
+                <scope line="774"/>
+            </method>
+            <javadoc line="784">
+                This is a convenience overload that gets all the glyph positions, which
+                  is what you usually want to do if you&apos;re getting more than one.
+                  !!! should I bother taking result parameter?                
+            </javadoc>
+            <method name="getGlyphPositions" type="float[]" line="789">
+                <params>
+                    <param name="result" type="float[]"/>
+                </params>
+            </method>
+            <javadoc line="793">
+                Get transform information for the requested range of glyphs.
+                  If no glyphs have a transform, return null.
+                  If a glyph has no transform (or is the identity transform) its entry in the result array will be null.
+                  If the passed-in result is null an array will be allocated for the caller.
+                  Each transform instance in the result array will unique, and independent of the GlyphVector&apos;s transform.                
+            </javadoc>
+            <method name="getGlyphTransforms" type="AffineTransform[]" line="800">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="result" type="AffineTransform[]"/>
+                </params>
+                <scope line="801"/>
+                <scope line="805"/>
+                <scope line="809"/>
+                <scope line="813"/>
+            </method>
+            <javadoc line="820">
+                Convenience overload for getGlyphTransforms(int, int, AffineTransform[], int);                
+            </javadoc>
+            <method name="getGlyphTransforms" type="AffineTransform[]" line="823"/>
+            <javadoc line="827">
+                Set a number of glyph transforms.
+                  Original transforms are unchanged.  The array may contain nulls, and also may
+                  contain multiple references to the same transform instance.                
+            </javadoc>
+            <method name="setGlyphTransforms" type="void" line="832">
+                <params>
+                    <param name="srcTransforms" type="AffineTransform[]"/>
+                    <param name="srcStart" type="int"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <scope line="833"/>
+            </method>
+            <javadoc line="838">
+                Convenience overload of setGlyphTransforms(AffineTransform[], int, int, int).                
+            </javadoc>
+            <method name="setGlyphTransforms" type="void" line="841">
+                <params>
+                    <param name="srcTransforms" type="AffineTransform[]"/>
+                </params>
+            </method>
+            <javadoc line="845">
+                For each glyph return posx, posy, advx, advy, visx, visy, visw, vish.                
+            </javadoc>
+            <method name="getGlyphInfo" type="float[]" line="848">
+                <declaration name="result" type="float[]" line="851"/>
+                <scope line="852">
+                    <declaration name="x" type="float" line="853"/>
+                    <declaration name="y" type="float" line="854"/>
+                    <declaration name="glyphID" type="int" line="858"/>
+                    <declaration name="s" type="GlyphStrike" line="859"/>
+                    <declaration name="adv" type="Point2D.Float" line="860"/>
+                    <declaration name="vb" type="Rectangle2D" line="864"/>
+                </scope>
+            </method>
+            <javadoc line="873">
+                !!! not used currently, but might be by getPixelbounds?                
+            </javadoc>
+            <method name="pixellate" type="void" line="876">
+                <params>
+                    <param name="renderFRC" type="FontRenderContext"/>
+                    <param name="loc" type="Point2D"/>
+                    <param name="pxResult" type="Point"/>
+                </params>
+                <comment line="881">
+                    it is a total pain that you have to copy the transform.                    
+                </comment>
+                <comment line="885">
+                    but must not behave oddly around zero                    
+                </comment>
+                <scope line="877"/>
+                <declaration name="at" type="AffineTransform" line="883"/>
+                <scope line="888"/>
+                <scope line="891"/>
+            </method>
+            <method name="needsPositions" type="boolean" line="904">
+                <params>
+                    <param name="devTX" type="double[]"/>
+                </params>
+            </method>
+            <method name="setupGlyphImages" type="Object" line="929">
+                <params>
+                    <param name="images" type="long[]"/>
+                    <param name="positions" type="float[]"/>
+                    <param name="devTX" type="double[]"/>
+                </params>
+                <comment line="930">
+                    FIRST ensure we have positions based on our frctx                    
+                </comment>
+                <comment line="931">
+                    THEN make sure we are using the desired devTX                    
+                </comment>
+                <scope line="933"/>
+                <declaration name="gs" type="GlyphStrike" line="937"/>
+                <scope line="940">
+                    <scope line="941"/>
+                    <scope line="943"/>
+                </scope>
+            </method>
+            <method name="matchTX" type="boolean" line="961">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="rhs" type="AffineTransform"/>
+                </params>
+            </method>
+            <method name="getNonTranslateTX" type="AffineTransform" line="970">
+                <params>
+                    <param name="tx" type="AffineTransform"/>
+                </params>
+                <scope line="971"/>
+            </method>
+            <method name="equalNonTranslateTX" type="boolean" line="979">
+                <params>
+                    <param name="lhs" type="AffineTransform"/>
+                    <param name="rhs" type="AffineTransform"/>
+                </params>
+            </method>
+            <method name="setRenderTransform" type="void" line="987">
+                <params>
+                    <param name="devTX" type="double[]"/>
+                </params>
+                <comment line="990">
+                    no translation since devTX len == 4.                    
+                </comment>
+                <scope line="989"/>
+            </method>
+            <method name="setDTX" type="void" line="995">
+                <params>
+                    <param name="tx" type="AffineTransform"/>
+                </params>
+                <scope line="996"/>
+            </method>
+            <method name="setFRCTX" type="void" line="1002">
+                <scope line="1003"/>
+            </method>
+            <javadoc line="1008">
+                Change the dtx for the strike refs we use.  Keeps a reference to the at.  At
+                  must not contain translation.
+                  Called by setRenderTransform, setDTX, initFontData.                
+            </javadoc>
+            <method name="resetDTX" type="void" line="1013">
+                <params>
+                    <param name="at" type="AffineTransform"/>
+                </params>
+                <comment line="1022">
+                    we needn&apos;t care for rendering                    
+                </comment>
+                <scope line="1017">
+                    <scope line="1018"/>
+                    <scope line="1021"/>
+                </scope>
+                <scope line="1025"/>
+            </method>
+            <javadoc line="1030">
+                Utility used by getStandardGV.
+                  Constructs a StandardGlyphVector from a generic glyph vector.
+                  Do not call this from new contexts without considering the comment
+                  about &quot;userGlyphs&quot;.                
+            </javadoc>
+            <method name="StandardGlyphVector" type="constructor" line="1036">
+                <params>
+                    <param name="gv" type="GlyphVector"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <comment line="1044">
+                    userGlyphs will be OK because this is a private constructor
+                     and the returned instance is used only for rendering.
+                     It&apos;s not constructable by user code, nor returned to the
+                     application. So we know &quot;userGlyphs&quot; are valid as having
+                     been either already validated or are the result of layout.                    
+                </comment>
+                <comment line="1065">
+                    worst case                    
+                </comment>
+                <comment line="1067">
+                    gv doesn&apos;t have getGlyphsTransforms                    
+                </comment>
+                <declaration name="nGlyphs" type="int" line="1041"/>
+                <scope line="1043"/>
+                <scope line="1051"/>
+                <scope line="1056"/>
+                <scope line="1060"/>
+                <scope line="1064">
+                    <declaration name="txs" type="AffineTransform[]" line="1065"/>
+                    <scope line="1066"/>
+                </scope>
+            </method>
+            <method name="getValidatedGlyphs" type="int[]" line="1079">
+                <params>
+                    <param name="oglyphs" type="int[]"/>
+                </params>
+                <declaration name="len" type="int" line="1080"/>
+                <declaration name="vglyphs" type="int[]" line="1081"/>
+                <scope line="1082">
+                    <scope line="1083"/>
+                    <scope line="1085"/>
+                </scope>
+            </method>
+            <method name="init" type="void" line="1094">
+                <params>
+                    <param name="font" type="Font"/>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="1108">
+                    !!! change mapper interface?                    
+                </comment>
+                <comment line="1115">
+                    sets up font2D                    
+                </comment>
+                <comment line="1117">
+                    !!! no layout for now, should add checks                    
+                </comment>
+                <comment line="1118">
+                    !!! need to support creating a StandardGlyphVector from a TextMeasurer&apos;s info...                    
+                </comment>
+                <comment line="1119">
+                    hmmm                    
+                </comment>
+                <comment line="1120">
+                                        
+                </comment>
+                <scope line="1096"/>
+                <scope line="1104"/>
+                <scope line="1109">
+                    <declaration name="temp" type="char[]" line="1110"/>
+                </scope>
+            </method>
+            <method name="initFontData" type="void" line="1125">
+                <declaration name="s" type="float" line="1127"/>
+                <scope line="1128">
+                    <scope line="1130"/>
+                </scope>
+                <scope line="1135"/>
+            </method>
+            <javadoc line="1143">
+                Copy glyph position data into a result array starting at the indicated
+                  offset in the array.  If the passed-in result array is null, a new
+                  array will be allocated and returned.
+                  This is an internal method and does no extra argument checking.                
+                <param>
+                    start the index of the first glyph to get                    
+                </param>
+                <param>
+                    count the number of glyphs to get                    
+                </param>
+                <param>
+                    offset the offset into result at which to put the data                    
+                </param>
+                <param>
+                    result an array to hold the x,y positions                    
+                </param>
+                <return>
+                    the modified position array                    
+                </return>
+            </javadoc>
+            <method name="internalGetGlyphPositions" type="float[]" line="1156">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="offset" type="int"/>
+                    <param name="result" type="float[]"/>
+                </params>
+                <comment line="1163">
+                    System.arraycopy is slow for stuff like this                    
+                </comment>
+                <scope line="1157"/>
+                <scope line="1164"/>
+            </method>
+            <method name="getGlyphOutlineBounds" type="Rectangle2D" line="1171">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1177">
+                Used by getOutline, getGlyphsOutline                
+            </javadoc>
+            <method name="getGlyphsOutline" type="Shape" line="1180">
+                <params>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                </params>
+                <declaration name="result" type="GeneralPath" line="1184"/>
+                <scope line="1185">
+                    <declaration name="px" type="float" line="1186"/>
+                    <declaration name="py" type="float" line="1187"/>
+                </scope>
+            </method>
+            <method name="getGlyphsPixelBounds" type="Rectangle" line="1195">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="x" type="float"/>
+                    <param name="y" type="float"/>
+                    <param name="start" type="int"/>
+                    <param name="count" type="int"/>
+                </params>
+                <comment line="1196">
+                    FIRST ensure we have positions based on our frctx                    
+                </comment>
+                <comment line="1204">
+                    need to get the right strikes, but we use tx itself to translate the points                    
+                </comment>
+                <declaration name="tx" type="AffineTransform" line="1198"/>
+                <scope line="1199"/>
+                <scope line="1201"/>
+                <scope line="1206"/>
+                <declaration name="fs" type="FontStrike" line="1210"/>
+                <declaration name="result" type="Rectangle" line="1211"/>
+                <declaration name="r" type="Rectangle" line="1212"/>
+                <declaration name="pt" type="Point2D.Float" line="1213"/>
+                <declaration name="n" type="int" line="1214"/>
+                <scope line="1215">
+                    <scope line="1220">
+                        <scope line="1221"/>
+                        <scope line="1223"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="clearCaches" type="void" line="1231">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <scope line="1232">
+                    <declaration name="lbcache" type="Shape[]" line="1233"/>
+                    <scope line="1234"/>
+                </scope>
+                <scope line="1239">
+                    <declaration name="vbcache" type="Shape[]" line="1240"/>
+                    <scope line="1241"/>
+                </scope>
+            </method>
+            <method name="clearCaches" type="void" line="1247"/>
+            <declaration name="FLAG_USES_VERTICAL_BASELINE" type="int" line="1254"/>
+            <javadoc line="1254">
+                A flag used with getLayoutFlags that indicates whether this &lt;code&gt;GlyphVector&lt;/code&gt; uses
+                  a vertical baseline.                
+            </javadoc>
+            <declaration name="FLAG_USES_VERTICAL_METRICS" type="int" line="1260"/>
+            <javadoc line="1260">
+                A flag used with getLayoutFlags that indicates whether this &lt;code&gt;GlyphVector&lt;/code&gt; uses
+                  vertical glyph metrics.  A &lt;code&gt;GlyphVector&lt;/code&gt; can use vertical metrics on a
+                  horizontal line, or vice versa.                
+            </javadoc>
+            <declaration name="FLAG_USES_ALTERNATE_ORIENTATION" type="int" line="1267"/>
+            <javadoc line="1267">
+                A flag used with getLayoutFlags that indicates whether this &lt;code&gt;GlyphVector&lt;/code&gt; uses
+                  the &apos;alternate orientation.&apos;  Glyphs have a default orientation given a
+                  particular baseline and metrics orientation, this is the orientation appropriate
+                  for left-to-right text.  For example, the letter &apos;A&apos; can have four orientations,
+                  with the point at 12, 3, 6, or 9 &apos;o clock.  The following table shows where the
+                  point displays for different values of vertical baseline (vb), vertical
+                  metrics (vm) and alternate orientation (fo):&lt;br&gt;
+                  &lt;blockquote&gt;
+                  vb vm ao
+                  -- -- --  --
+                  f  f  f  12   ^  horizontal metrics on horizontal lines
+                  f  f  t   6   v
+                  f  t  f   9   &lt;  vertical metrics on horizontal lines
+                  f  t  t   3   &gt;
+                  t  f  f   3   &gt;  horizontal metrics on vertical lines
+                  t  f  t   9   &lt;
+                  t  t  f  12   ^  vertical metrics on vertical lines
+                  t  t  t   6   v
+                  &lt;/blockquote&gt;                
+            </javadoc>
+            <javadoc line="1291">
+                Ensure that the positions array exists and holds position data.
+                  If the array is null, this allocates it and sets default positions.                
+            </javadoc>
+            <method name="initPositions" type="void" line="1295">
+                <comment line="1305">
+                    advance delta                    
+                </comment>
+                <scope line="1296">
+                    <declaration name="trackPt" type="Point2D.Float" line="1301"/>
+                    <declaration name="track" type="float" line="1302"/>
+                    <scope line="1303"/>
+                    <declaration name="pt" type="Point2D.Float" line="1308"/>
+                    <scope line="1309">
+                        <declaration name="at" type="AffineTransform" line="1310"/>
+                        <scope line="1315"/>
+                    </scope>
+                    <scope line="1319">
+                        <scope line="1321"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1331">
+                OR newFlags with existing flags.  First computes existing flags if needed.                
+            </javadoc>
+            <method name="addFlags" type="void" line="1334">
+                <params>
+                    <param name="newflags" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1338">
+                AND the complement of clearedFlags with existing flags.  First computes existing flags if needed.                
+            </javadoc>
+            <method name="clearFlags" type="void" line="1341">
+                <params>
+                    <param name="clearedFlags" type="int"/>
+                </params>
+            </method>
+            <method name="getGlyphStrike" type="GlyphStrike" line="1348">
+                <params>
+                    <param name="ix" type="int"/>
+                </params>
+                <scope line="1349"/>
+                <scope line="1351"/>
+            </method>
+            <method name="getDefaultStrike" type="GlyphStrike" line="1357">
+                <declaration name="gs" type="GlyphStrike" line="1358"/>
+                <scope line="1359"/>
+                <scope line="1362"/>
+            </method>
+            <class name="GlyphTransformInfo" line="1378">
+                <comment line="1380">
+                    reference back to glyph vector - yuck                    
+                </comment>
+                <comment line="1381">
+                    index into unique strikes                    
+                </comment>
+                <comment line="1382">
+                    six doubles per unique transform, because AT is a pain to manipulate                    
+                </comment>
+                <comment line="1383">
+                    ref to unique strikes, one per transform                    
+                </comment>
+                <comment line="1384">
+                    true if the strike array has been filled by getStrikes().                    
+                </comment>
+                <comment line="1386">
+                    used when first setting a transform                    
+                </comment>
+                <comment line="1391">
+                    used when cloning a glyph vector, need to set back link                    
+                </comment>
+                <comment line="1400">
+                    used in sgv equality                    
+                </comment>
+                <comment line="1438">
+                    implements sgv.setGlyphTransform                    
+                </comment>
+                <comment line="1552">
+                    implements sgv.getGlyphTransform                    
+                </comment>
+                <comment line="1697">
+                    hard reference                    
+                </comment>
+                <declaration name="sgv" type="StandardGlyphVector" line="1379"/>
+                <declaration name="indices" type="int[]" line="1380"/>
+                <declaration name="transforms" type="double[]" line="1381"/>
+                <declaration name="strikesRef" type="SoftReference" line="1382"/>
+                <declaration name="haveAllStrikes" type="boolean" line="1383"/>
+                <method name="GlyphTransformInfo" type="constructor" line="1386">
+                    <params>
+                        <param name="sgv" type="StandardGlyphVector"/>
+                    </params>
+                </method>
+                <method name="GlyphTransformInfo" type="constructor" line="1391">
+                    <params>
+                        <param name="sgv" type="StandardGlyphVector"/>
+                        <param name="rhs" type="GlyphTransformInfo"/>
+                    </params>
+                    <comment line="1396">
+                        can&apos;t share cache, so rather than clone, we just null out                        
+                    </comment>
+                </method>
+                <method name="equals" type="boolean" line="1400">
+                    <params>
+                        <param name="rhs" type="GlyphTransformInfo"/>
+                    </params>
+                    <comment line="1414">
+                        slow since we end up processing the same transforms multiple                        
+                    </comment>
+                    <comment line="1415">
+                        times, but since transforms can be in any order, we either do                        
+                    </comment>
+                    <comment line="1416">
+                        this or create a mapping.  Equality tests aren&apos;t common so                        
+                    </comment>
+                    <comment line="1417">
+                        leave it like this.                        
+                    </comment>
+                    <scope line="1401"/>
+                    <scope line="1404"/>
+                    <scope line="1407"/>
+                    <scope line="1410"/>
+                    <scope line="1418">
+                        <declaration name="tix" type="int" line="1419"/>
+                        <declaration name="rix" type="int" line="1420"/>
+                        <scope line="1421"/>
+                        <scope line="1424">
+                            <scope line="1427">
+                                <scope line="1428"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="setGlyphTransform" type="void" line="1438">
+                    <params>
+                        <param name="glyphIndex" type="int"/>
+                        <param name="newTX" type="AffineTransform"/>
+                    </params>
+                    <comment line="1440">
+                        we store all the glyph transforms as a double array, and for each glyph there                        
+                    </comment>
+                    <comment line="1441">
+                        is an entry in the txIndices array indicating which transform to use.  0 means                        
+                    </comment>
+                    <comment line="1442">
+                        there&apos;s no transform, 1 means use the first transform (the 6 doubles at offset                        
+                    </comment>
+                    <comment line="1443">
+                        0), 2 means use the second transform (the 6 doubles at offset 6), etc.                        
+                    </comment>
+                    <comment line="1444">
+                                                
+                    </comment>
+                    <comment line="1445">
+                        Since this can be called multiple times, and since the number of transforms                        
+                    </comment>
+                    <comment line="1446">
+                        affects the time it takes to construct the glyphs, we try to keep the arrays as                        
+                    </comment>
+                    <comment line="1447">
+                        compact as possible, by removing transforms that are no longer used, and reusing                        
+                    </comment>
+                    <comment line="1448">
+                        transforms where we already have them.                        
+                    </comment>
+                    <comment line="1453">
+                        Fill in temp                        
+                    </comment>
+                    <comment line="1462">
+                        no change                        
+                    </comment>
+                    <comment line="1470">
+                        assume we&apos;re not growing                        
+                    </comment>
+                    <comment line="1473">
+                        might shrink                        
+                    </comment>
+                    <comment line="1475">
+                        assume no match                        
+                    </comment>
+                    <comment line="1487">
+                        if no match, end of list                        
+                    </comment>
+                    <comment line="1490">
+                        if we&apos;re using the same transform, nothing to do                        
+                    </comment>
+                    <comment line="1493">
+                        see if we are removing last use of the old slot                        
+                    </comment>
+                    <comment line="1505">
+                        reuse old slot with new transform                        
+                    </comment>
+                    <comment line="1509">
+                        removing last one, so clear arrays                        
+                    </comment>
+                    <comment line="1526">
+                        clean up indices                        
+                    </comment>
+                    <comment line="1528">
+                        ignore == oldIndex, it&apos;s going away                        
+                    </comment>
+                    <comment line="1532">
+                        don&apos;t forget to decrement this too if we need to                        
+                    </comment>
+                    <declaration name="temp" type="double[]" line="1450"/>
+                    <declaration name="isIdentity" type="boolean" line="1451"/>
+                    <scope line="1452"/>
+                    <scope line="1456"/>
+                    <scope line="1461">
+                        <scope line="1462"/>
+                    </scope>
+                    <scope line="1469">
+                        <declaration name="addSlot" type="boolean" line="1470"/>
+                        <declaration name="newIndex" type="int" line="1471"/>
+                        <scope line="1472"/>
+                        <scope line="1474">
+                            <declaration name="i" type="int" line="1476"/>
+                            <scope line="1478">
+                                <scope line="1479">
+                                    <scope line="1480"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <declaration name="oldIndex" type="int" line="1491"/>
+                        <scope line="1492">
+                            <declaration name="removeSlot" type="boolean" line="1494"/>
+                            <scope line="1495">
+                                <scope line="1497">
+                                    <scope line="1498"/>
+                                </scope>
+                            </scope>
+                            <scope line="1505"/>
+                            <scope line="1508">
+                                <scope line="1509"/>
+                                <declaration name="ttemp" type="double[]" line="1520"/>
+                                <scope line="1527">
+                                    <scope line="1528"/>
+                                </scope>
+                                <scope line="1532"/>
+                            </scope>
+                            <scope line="1535">
+                                <declaration name="ttemp" type="double[]" line="1536"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="getGlyphTransform" type="AffineTransform" line="1552">
+                    <params>
+                        <param name="ix" type="int"/>
+                    </params>
+                    <declaration name="index" type="int" line="1553"/>
+                    <scope line="1554"/>
+                    <declaration name="x" type="int" line="1558"/>
+                </method>
+                <method name="transformCount" type="int" line="1567">
+                    <scope line="1568"/>
+                </method>
+                <javadoc line="1574">
+                    The strike cache works like this.
+                      -Each glyph is thought of as having a transform, usually identity.
+                      -Each request for a strike is based on a device transform, either the
+                      one in the frc or the rendering transform.
+                      -For general info, strikes are held with soft references.
+                      -When rendering, strikes must be held with hard references for the
+                      duration of the rendering call.  GlyphList will have to hold this
+                      info along with the image and position info, but toss the strike info
+                      when done.
+                      -Build the strike cache as needed.  If the dev transform we want to use
+                      has changed from the last time it is built, the cache is flushed by
+                      the caller before these methods are called.
+                      Use a tx that doesn&apos;t include translation components of dst tx.                    
+                </javadoc>
+                <method name="setupGlyphImages" type="Object" line="1591">
+                    <params>
+                        <param name="images" type="long[]"/>
+                        <param name="positions" type="float[]"/>
+                        <param name="tx" type="AffineTransform"/>
+                    </params>
+                    <declaration name="len" type="int" line="1592"/>
+                    <declaration name="sl" type="GlyphStrike[]" line="1594"/>
+                    <scope line="1595">
+                        <declaration name="gs" type="GlyphStrike" line="1596"/>
+                        <declaration name="glyphID" type="int" line="1597"/>
+                    </scope>
+                </method>
+                <method name="getGlyphsPixelBounds" type="Rectangle" line="1607">
+                    <params>
+                        <param name="tx" type="AffineTransform"/>
+                        <param name="x" type="float"/>
+                        <param name="y" type="float"/>
+                        <param name="start" type="int"/>
+                        <param name="count" type="int"/>
+                    </params>
+                    <declaration name="result" type="Rectangle" line="1608"/>
+                    <declaration name="r" type="Rectangle" line="1609"/>
+                    <declaration name="pt" type="Point2D.Float" line="1610"/>
+                    <declaration name="n" type="int" line="1611"/>
+                    <scope line="1612">
+                        <declaration name="gs" type="GlyphStrike" line="1613"/>
+                        <scope line="1618">
+                            <scope line="1619"/>
+                            <scope line="1621"/>
+                        </scope>
+                    </scope>
+                </method>
+                <method name="getStrike" type="GlyphStrike" line="1629">
+                    <params>
+                        <param name="glyphIndex" type="int"/>
+                    </params>
+                    <scope line="1630">
+                        <declaration name="strikes" type="GlyphStrike[]" line="1631"/>
+                    </scope>
+                </method>
+                <method name="getAllStrikes" type="GlyphStrike[]" line="1637">
+                    <scope line="1638"/>
+                    <declaration name="strikes" type="GlyphStrike[]" line="1642"/>
+                    <scope line="1643">
+                        <scope line="1644"/>
+                    </scope>
+                </method>
+                <method name="getStrikeArray" type="GlyphStrike[]" line="1653">
+                    <declaration name="strikes" type="GlyphStrike[]" line="1654"/>
+                    <scope line="1655"/>
+                    <scope line="1658"/>
+                </method>
+                <method name="getStrikeAtIndex" type="GlyphStrike" line="1667">
+                    <params>
+                        <param name="strikes" type="GlyphStrike[]"/>
+                        <param name="strikeIndex" type="int"/>
+                    </params>
+                    <declaration name="strike" type="GlyphStrike" line="1668"/>
+                    <scope line="1669">
+                        <scope line="1670"/>
+                        <scope line="1672">
+                            <declaration name="ix" type="int" line="1673"/>
+                            <declaration name="gtx" type="AffineTransform" line="1674"/>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <class name="GlyphStrike" line="1694">
+                <comment line="1380">
+                    reference back to glyph vector - yuck                    
+                </comment>
+                <comment line="1381">
+                    index into unique strikes                    
+                </comment>
+                <comment line="1382">
+                    six doubles per unique transform, because AT is a pain to manipulate                    
+                </comment>
+                <comment line="1383">
+                    ref to unique strikes, one per transform                    
+                </comment>
+                <comment line="1384">
+                    true if the strike array has been filled by getStrikes().                    
+                </comment>
+                <comment line="1386">
+                    used when first setting a transform                    
+                </comment>
+                <comment line="1391">
+                    used when cloning a glyph vector, need to set back link                    
+                </comment>
+                <comment line="1400">
+                    used in sgv equality                    
+                </comment>
+                <comment line="1438">
+                    implements sgv.setGlyphTransform                    
+                </comment>
+                <comment line="1552">
+                    implements sgv.getGlyphTransform                    
+                </comment>
+                <comment line="1697">
+                    hard reference                    
+                </comment>
+                <declaration name="sgv" type="StandardGlyphVector" line="1695"/>
+                <declaration name="strike" type="FontStrike" line="1696"/>
+                <declaration name="dx" type="float" line="1697"/>
+                <declaration name="dy" type="float" line="1698"/>
+                <method name="create" type="GlyphStrike" line="1700">
+                    <params>
+                        <param name="sgv" type="StandardGlyphVector"/>
+                        <param name="dtx" type="AffineTransform"/>
+                        <param name="gtx" type="AffineTransform"/>
+                    </params>
+                    <comment line="1709">
+                        uses ftx then gtx to get translation                        
+                    </comment>
+                    <comment line="1717">
+                        only matters for &apos;gasp&apos; case.                        
+                    </comment>
+                    <comment line="1720">
+                        Must pass in the calculated point size for rendering.
+                         If the glyph tx is anything other than identity or a
+                          simple translate, calculate the transformed point size.                        
+                    </comment>
+                    <comment line="1744">
+                        !!! getStrike(desc, false)                        
+                    </comment>
+                    <declaration name="dx" type="float" line="1701"/>
+                    <declaration name="dy" type="float" line="1702"/>
+                    <declaration name="tx" type="AffineTransform" line="1704"/>
+                    <scope line="1705">
+                        <scope line="1707"/>
+                        <scope line="1712"/>
+                    </scope>
+                    <declaration name="ptSize" type="int" line="1717"/>
+                    <declaration name="aaHint" type="Object" line="1718"/>
+                    <scope line="1719">
+                        <scope line="1725">
+                            <declaration name="shearx" type="double" line="1726"/>
+                            <scope line="1727">
+                                <declaration name="scaley" type="double" line="1728"/>
+                            </scope>
+                            <scope line="1731"/>
+                        </scope>
+                    </scope>
+                    <declaration name="aa" type="int" line="1736"/>
+                    <declaration name="fm" type="int" line="1737"/>
+                    <declaration name="desc" type="FontStrikeDesc" line="1739"/>
+                    <declaration name="strike" type="FontStrike" line="1744"/>
+                </method>
+                <method name="GlyphStrike" type="constructor" line="1749">
+                    <params>
+                        <param name="sgv" type="StandardGlyphVector"/>
+                        <param name="strike" type="FontStrike"/>
+                        <param name="dx" type="float"/>
+                        <param name="dy" type="float"/>
+                    </params>
+                </method>
+                <method name="getADL" type="void" line="1756">
+                    <params>
+                        <param name="result" type="ADL"/>
+                    </params>
+                    <declaration name="sm" type="StrikeMetrics" line="1757"/>
+                    <declaration name="delta" type="Point2D.Float" line="1758"/>
+                    <scope line="1759"/>
+                </method>
+                <method name="getGlyphPosition" type="void" line="1773">
+                    <params>
+                        <param name="glyphID" type="int"/>
+                        <param name="ix" type="int"/>
+                        <param name="positions" type="float[]"/>
+                        <param name="result" type="float[]"/>
+                    </params>
+                </method>
+                <method name="addDefaultGlyphAdvance" type="void" line="1779">
+                    <params>
+                        <param name="glyphID" type="int"/>
+                        <param name="result" type="Point2D.Float"/>
+                    </params>
+                    <comment line="1780">
+                        !!! change this API?  Creates unnecessary garbage.  Also the name doesn&apos;t quite fit.                        
+                    </comment>
+                    <comment line="1781">
+                        strike.addGlyphAdvance(Point2D.Float adv);  // hey, whaddya know, matches my api :-)                        
+                    </comment>
+                    <declaration name="adv" type="Point2D.Float" line="1782"/>
+                </method>
+                <method name="getGlyphOutlineBounds" type="Rectangle2D" line="1787">
+                    <params>
+                        <param name="glyphID" type="int"/>
+                        <param name="x" type="float"/>
+                        <param name="y" type="float"/>
+                    </params>
+                    <comment line="1791">
+                        don&apos;t mutate cached rect                        
+                    </comment>
+                    <comment line="1797">
+                        Since x is the logical advance of the glyph to this point.
+                         Because of the way that Rectangle.union is specified, this
+                         means that subsequent unioning of a rect including that
+                         will be affected, even if the glyph is empty. So skip such
+                         cases. This alone isn&apos;t a complete solution since x==0
+                         may also not be what is wanted. The code that does the
+                         unioning also needs to be aware to ignore empty glyphs.                        
+                    </comment>
+                    <declaration name="result" type="Rectangle2D" line="1788"/>
+                    <scope line="1789"/>
+                    <scope line="1792">
+                        <declaration name="gp" type="GeneralPath" line="1793"/>
+                    </scope>
+                    <scope line="1805"/>
+                </method>
+                <method name="appendGlyphOutline" type="void" line="1813">
+                    <params>
+                        <param name="glyphID" type="int"/>
+                        <param name="result" type="GeneralPath"/>
+                        <param name="x" type="float"/>
+                        <param name="y" type="float"/>
+                    </params>
+                    <comment line="1814">
+                        !!! fontStrike needs a method for this.  For that matter, GeneralPath does.                        
+                    </comment>
+                    <declaration name="gp" type="GeneralPath" line="1815"/>
+                    <scope line="1816"/>
+                    <scope line="1818"/>
+                    <declaration name="iterator" type="PathIterator" line="1823"/>
+                </method>
+            </class>
+            <method name="toString" type="String" line="1828"/>
+            <method name="appendString" type="StringBuffer" line="1832">
+                <params>
+                    <param name="buf" type="StringBuffer"/>
+                </params>
+                <scope line="1833"/>
+                <scope line="1836">
+                    <scope line="1844">
+                        <scope line="1845"/>
+                    </scope>
+                    <scope line="1851">
+                        <scope line="1855">
+                            <scope line="1856"/>
+                        </scope>
+                    </scope>
+                    <scope line="1865">
+                        <scope line="1869">
+                            <scope line="1870"/>
+                        </scope>
+                    </scope>
+                    <scope line="1878"/>
+                    <scope line="1880">
+                        <scope line="1881"/>
+                        <scope line="1884"/>
+                        <scope line="1887"/>
+                        <scope line="1890"/>
+                    </scope>
+                </scope>
+                <scope line="1895"/>
+            </method>
+            <class name="ADL" line="1903">
+                <comment line="1380">
+                    reference back to glyph vector - yuck                    
+                </comment>
+                <comment line="1381">
+                    index into unique strikes                    
+                </comment>
+                <comment line="1382">
+                    six doubles per unique transform, because AT is a pain to manipulate                    
+                </comment>
+                <comment line="1383">
+                    ref to unique strikes, one per transform                    
+                </comment>
+                <comment line="1384">
+                    true if the strike array has been filled by getStrikes().                    
+                </comment>
+                <comment line="1386">
+                    used when first setting a transform                    
+                </comment>
+                <comment line="1391">
+                    used when cloning a glyph vector, need to set back link                    
+                </comment>
+                <comment line="1400">
+                    used in sgv equality                    
+                </comment>
+                <comment line="1438">
+                    implements sgv.setGlyphTransform                    
+                </comment>
+                <comment line="1552">
+                    implements sgv.getGlyphTransform                    
+                </comment>
+                <comment line="1697">
+                    hard reference                    
+                </comment>
+                <declaration name="ascentX" type="float" line="1904"/>
+                <declaration name="ascentY" type="float" line="1905"/>
+                <declaration name="descentX" type="float" line="1906"/>
+                <declaration name="descentY" type="float" line="1907"/>
+                <declaration name="leadingX" type="float" line="1908"/>
+                <declaration name="leadingY" type="float" line="1909"/>
+                <method name="toString" type="String" line="1911"/>
+                <method name="toStringBuffer" type="StringBuffer" line="1915">
+                    <params>
+                        <param name="result" type="StringBuffer"/>
+                    </params>
+                    <scope line="1916"/>
+                </method>
+            </class>
+        </class>
+    </source>

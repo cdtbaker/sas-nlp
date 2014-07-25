@@ -1,0 +1,228 @@
+package sun.security.jgss;
+import org.ietf.jgss.GSSException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.IOException;
+import sun.security.util.*;
+/** 
+ * This class represents the mechanism independent part of a GSS-API
+ * context establishment token. Some mechanisms may choose to encode
+ * all subsequent tokens as well such that they start with an encoding
+ * of an instance of this class. e.g., The Kerberos v5 GSS-API Mechanism
+ * uses this header for all GSS-API tokens.
+ * <p>
+ * The format is specified in RFC 2743 section 3.1.
+ * @author Mayank Upadhyay
+ */
+public class GSSHeader {
+  private ObjectIdentifier mechOid=null;
+  private byte[] mechOidBytes=null;
+  private int mechTokenLength=0;
+  /** 
+ * The tag defined in the GSS-API mechanism independent token
+ * format.
+ */
+  public static final int TOKEN_ID=0x60;
+  /** 
+ * Creates a GSSHeader instance whose encoding can be used as the
+ * prefix for a particular mechanism token.
+ * @param mechOid the Oid of the mechanism which generated the token
+ * @param mechTokenLength the length of the subsequent portion that
+ * the mechanism will be adding.
+ */
+  public GSSHeader(  ObjectIdentifier mechOid,  int mechTokenLength) throws IOException {
+    this.mechOid=mechOid;
+    DerOutputStream temp=new DerOutputStream();
+    temp.putOID(mechOid);
+    mechOidBytes=temp.toByteArray();
+    this.mechTokenLength=mechTokenLength;
+  }
+  /** 
+ * Reads in a GSSHeader from an InputStream. Typically this would be
+ * used as part of reading the complete token from an InputStream
+ * that is obtained from a socket.
+ */
+  public GSSHeader(  InputStream is) throws IOException, GSSException {
+    int tag=is.read();
+    if (tag != TOKEN_ID)     throw new GSSException(GSSException.DEFECTIVE_TOKEN,-1,"GSSHeader did not find the right tag");
+    int length=getLength(is);
+    DerValue temp=new DerValue(is);
+    mechOidBytes=temp.toByteArray();
+    mechOid=temp.getOID();
+    mechTokenLength=length - mechOidBytes.length;
+  }
+  /** 
+ * Used to obtain the Oid stored in this GSSHeader instance.
+ * @return the Oid of the mechanism.
+ */
+  public ObjectIdentifier getOid(){
+    return mechOid;
+  }
+  /** 
+ * Used to obtain the length of the mechanism specific token that
+ * will follow the encoding of this GSSHeader instance.
+ * @return the length of the mechanism specific token portion that
+ * will follow this GSSHeader.
+ */
+  public int getMechTokenLength(){
+    return mechTokenLength;
+  }
+  /** 
+ * Used to obtain the length of the encoding of this GSSHeader.
+ * @return the lenght of the encoding of this GSSHeader instance.
+ */
+  public int getLength(){
+    int lenField=mechOidBytes.length + mechTokenLength;
+    return (1 + getLenFieldSize(lenField) + mechOidBytes.length);
+  }
+  /** 
+ * Used to determine what the maximum possible mechanism token
+ * size is if the complete GSSToken returned to the application
+ * (including a GSSHeader) is not to exceed some pre-determined
+ * value in size.
+ * @param mechOid the Oid of the mechanism that will generate
+ * this GSS-API token
+ * @param maxTotalSize the pre-determined value that serves as a
+ * maximum size for the complete GSS-API token (including a
+ * GSSHeader)
+ * @return the maximum size of mechanism token that can be used
+ * so as to not exceed maxTotalSize with the GSS-API token
+ */
+  public static int getMaxMechTokenSize(  ObjectIdentifier mechOid,  int maxTotalSize){
+    int mechOidBytesSize=0;
+    try {
+      DerOutputStream temp=new DerOutputStream();
+      temp.putOID(mechOid);
+      mechOidBytesSize=temp.toByteArray().length;
+    }
+ catch (    IOException e) {
+    }
+    maxTotalSize-=(1 + mechOidBytesSize);
+    maxTotalSize-=5;
+    return maxTotalSize;
+  }
+  /** 
+ * Used to determine the number of bytes that will be need to encode
+ * the length field of the GSSHeader.
+ */
+  private int getLenFieldSize(  int len){
+    int retVal=1;
+    if (len < 128) {
+      retVal=1;
+    }
+ else     if (len < (1 << 8)) {
+      retVal=2;
+    }
+ else     if (len < (1 << 16)) {
+      retVal=3;
+    }
+ else     if (len < (1 << 24)) {
+      retVal=4;
+    }
+ else {
+      retVal=5;
+    }
+    return retVal;
+  }
+  /** 
+ * Encodes this GSSHeader instance onto the provided OutputStream.
+ * @param os the OutputStream to which the token should be written.
+ * @return the number of bytes that are output as a result of this
+ * encoding
+ */
+  public int encode(  OutputStream os) throws IOException {
+    int retVal=1 + mechOidBytes.length;
+    os.write(TOKEN_ID);
+    int length=mechOidBytes.length + mechTokenLength;
+    retVal+=putLength(length,os);
+    os.write(mechOidBytes);
+    return retVal;
+  }
+  /** 
+ * Get a length from the input stream, allowing for at most 32 bits of
+ * encoding to be used. (Not the same as getting a tagged integer!)
+ * @return the length or -1 if indefinite length found.
+ * @exception IOException on parsing error or unsupported lengths.
+ */
+  private int getLength(  InputStream in) throws IOException {
+    return getLength(in.read(),in);
+  }
+  /** 
+ * Get a length from the input stream, allowing for at most 32 bits of
+ * encoding to be used. (Not the same as getting a tagged integer!)
+ * @return the length or -1 if indefinite length found.
+ * @exception IOException on parsing error or unsupported lengths.
+ */
+  private int getLength(  int lenByte,  InputStream in) throws IOException {
+    int value, tmp;
+    tmp=lenByte;
+    if ((tmp & 0x080) == 0x00) {
+      value=tmp;
+    }
+ else {
+      tmp&=0x07f;
+      if (tmp == 0)       return -1;
+      if (tmp < 0 || tmp > 4)       throw new IOException("DerInputStream.getLength(): lengthTag=" + tmp + ", "+ ((tmp < 0) ? "incorrect DER encoding." : "too big."));
+      for (value=0; tmp > 0; tmp--) {
+        value<<=8;
+        value+=0x0ff & in.read();
+      }
+    }
+    return value;
+  }
+  /** 
+ * Put the encoding of the length in the specified stream.
+ * @params len the length of the attribute.
+ * @param out the outputstream to write the length to
+ * @return the number of bytes written
+ * @exception IOException on writing errors.
+ */
+  private int putLength(  int len,  OutputStream out) throws IOException {
+    int retVal=0;
+    if (len < 128) {
+      out.write((byte)len);
+      retVal=1;
+    }
+ else     if (len < (1 << 8)) {
+      out.write((byte)0x081);
+      out.write((byte)len);
+      retVal=2;
+    }
+ else     if (len < (1 << 16)) {
+      out.write((byte)0x082);
+      out.write((byte)(len >> 8));
+      out.write((byte)len);
+      retVal=3;
+    }
+ else     if (len < (1 << 24)) {
+      out.write((byte)0x083);
+      out.write((byte)(len >> 16));
+      out.write((byte)(len >> 8));
+      out.write((byte)len);
+      retVal=4;
+    }
+ else {
+      out.write((byte)0x084);
+      out.write((byte)(len >> 24));
+      out.write((byte)(len >> 16));
+      out.write((byte)(len >> 8));
+      out.write((byte)len);
+      retVal=5;
+    }
+    return retVal;
+  }
+  private void debug(  String str){
+    System.err.print(str);
+  }
+  private String getHexBytes(  byte[] bytes,  int len) throws IOException {
+    StringBuffer sb=new StringBuffer();
+    for (int i=0; i < len; i++) {
+      int b1=(bytes[i] >> 4) & 0x0f;
+      int b2=bytes[i] & 0x0f;
+      sb.append(Integer.toHexString(b1));
+      sb.append(Integer.toHexString(b2));
+      sb.append(' ');
+    }
+    return sb.toString();
+  }
+}

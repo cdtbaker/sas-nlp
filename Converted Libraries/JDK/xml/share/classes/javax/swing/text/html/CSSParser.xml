@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.swing.text.html">
+        <import package="java.io"/>
+        <class name="CSSParser" line="29">
+            <comment line="60">
+                Parsing something like the following:                
+            </comment>
+            <comment line="61">
+                (@rule | ruleset | block)*                
+            </comment>
+            <comment line="62">
+                                
+            </comment>
+            <comment line="63">
+                @rule       (block | identifier)*; (block with {} ends @rule)                
+            </comment>
+            <comment line="64">
+                block       matching [] () {} (that is, [()] is a block, [(){}{[]}]                
+            </comment>
+            <comment line="65">
+                is a block, ()[] is two blocks)                
+            </comment>
+            <comment line="66">
+                identifier  &quot;*&quot; | &apos;*&apos; | anything but a [](){} and whitespace                
+            </comment>
+            <comment line="67">
+                                
+            </comment>
+            <comment line="68">
+                ruleset     selector decblock                
+            </comment>
+            <comment line="69">
+                selector    (identifier | (block, except block &apos;{}&apos;) )*                
+            </comment>
+            <comment line="70">
+                declblock   declaration* block*                
+            </comment>
+            <comment line="71">
+                declaration (identifier* stopping when identifier ends with :)                
+            </comment>
+            <comment line="72">
+                (identifier* stopping when identifier ends with ;)                
+            </comment>
+            <comment line="73">
+                                
+            </comment>
+            <comment line="74">
+                comments /* */ can appear any where, and are stripped.                
+            </comment>
+            <comment line="77">
+                identifier - letters, digits, dashes and escaped characters                
+            </comment>
+            <comment line="78">
+                block starts with { ends with matching }, () [] and {} always occur                
+            </comment>
+            <comment line="79">
+                in matching pairs, &apos;&apos; and &quot;&quot; also occur in pairs, except &quot; may be                
+            </comment>
+            <comment line="82">
+                Indicates the type of token being parsed.                
+            </comment>
+            <comment line="120">
+                The delegate interface.                
+            </comment>
+            <javadoc line="29">
+                A CSS parser. This works by way of a delegate that implements the
+                  CSSParserCallback interface. The delegate is notified of the following
+                  events:
+                  &lt;ul&gt;
+                  &lt;li&gt;Import statement: &lt;code&gt;handleImport&lt;/code&gt;
+                  &lt;li&gt;Selectors &lt;code&gt;handleSelector&lt;/code&gt;. This is invoked for each
+                  string. For example if the Reader contained p, bar , a {}, the delegate
+                  would be notified 4 times, for &apos;p,&apos; &apos;bar&apos; &apos;,&apos; and &apos;a&apos;.
+                  &lt;li&gt;When a rule starts, &lt;code&gt;startRule&lt;/code&gt;
+                  &lt;li&gt;Properties in the rule via the &lt;code&gt;handleProperty&lt;/code&gt;. This
+                  is invoked one per property/value key, eg font size: foo;, would
+                  cause the delegate to be notified once with a value of &apos;font size&apos;.
+                  &lt;li&gt;Values in the rule via the &lt;code&gt;handleValue&lt;/code&gt;, this is notified
+                  for the total value.
+                  &lt;li&gt;When a rule ends, &lt;code&gt;endRule&lt;/code&gt;
+                  &lt;/ul&gt;
+                  This will parse much more than CSS 1, and loosely implements the
+                  recommendation for &lt;i&gt;Forward-compatible parsing&lt;/i&gt; in section
+                  7.1 of the CSS spec found at:
+                  &lt;a href=http://www.w3.org/TR/REC-CSS1&gt;http://www.w3.org/TR/REC-CSS1&lt;/a&gt;.
+                  If an error results in parsing, a RuntimeException will be thrown.
+                  &lt;p&gt;
+                  This will preserve case. If the callback wishes to treat certain poritions
+                  case insensitively (such as selectors), it should use toLowerCase, or
+                  something similar.                
+                <author>
+                    Scott Violet                    
+                </author>
+            </javadoc>
+            <declaration name="IDENTIFIER" type="int" line="82"/>
+            <declaration name="BRACKET_OPEN" type="int" line="83"/>
+            <declaration name="BRACKET_CLOSE" type="int" line="84"/>
+            <declaration name="BRACE_OPEN" type="int" line="85"/>
+            <declaration name="BRACE_CLOSE" type="int" line="86"/>
+            <declaration name="PAREN_OPEN" type="int" line="87"/>
+            <declaration name="PAREN_CLOSE" type="int" line="88"/>
+            <declaration name="END" type="int" line="89"/>
+            <declaration name="charMapping" type="char[]" line="91"/>
+            <declaration name="didPushChar" type="boolean" line="95"/>
+            <javadoc line="95">
+                Set to true if one character has been read ahead.                
+            </javadoc>
+            <declaration name="pushedChar" type="int" line="97"/>
+            <javadoc line="97">
+                The read ahead character.                
+            </javadoc>
+            <declaration name="unitBuffer" type="StringBuffer" line="99"/>
+            <javadoc line="99">
+                Temporary place to hold identifiers.                
+            </javadoc>
+            <declaration name="unitStack" type="int[]" line="101"/>
+            <javadoc line="101">
+                Used to indicate blocks.                
+            </javadoc>
+            <declaration name="stackCount" type="int" line="103"/>
+            <javadoc line="103">
+                Number of valid blocks.                
+            </javadoc>
+            <declaration name="reader" type="Reader" line="105"/>
+            <javadoc line="105">
+                Holds the incoming CSS rules.                
+            </javadoc>
+            <declaration name="encounteredRuleSet" type="boolean" line="107"/>
+            <javadoc line="107">
+                Set to true when the first non @ rule is encountered.                
+            </javadoc>
+            <declaration name="callback" type="CSSParserCallback" line="109"/>
+            <javadoc line="109">
+                Notified of state.                
+            </javadoc>
+            <declaration name="tokenBuffer" type="char[]" line="111"/>
+            <javadoc line="111">
+                nextToken() inserts the string here.                
+            </javadoc>
+            <declaration name="tokenBufferLength" type="int" line="113"/>
+            <javadoc line="113">
+                Current number of chars in tokenBufferLength.                
+            </javadoc>
+            <declaration name="readWS" type="boolean" line="115"/>
+            <javadoc line="115">
+                Set to true if any whitespace is read.                
+            </javadoc>
+            <interface name="CSSParserCallback">
+                <comment line="124">
+                    There is currently no way to distinguish between &apos;&quot;foo,&quot;&apos; and                    
+                </comment>
+                <comment line="125">
+                    &apos;foo,&apos;. But this generally isn&apos;t valid CSS. If it becomes                    
+                </comment>
+                <comment line="126">
+                    a problem, handleSelector will have to be told if the string is                    
+                </comment>
+                <comment line="127">
+                    quoted.                    
+                </comment>
+                <comment line="130">
+                    Property names are mapped to lower case before being passed to                    
+                </comment>
+                <comment line="131">
+                    the delegate.                    
+                </comment>
+                <comment line="344">
+                    identifier+: identifier* ;|}                    
+                </comment>
+                <comment line="516">
+                    NOTE: this could be combined with readTill, as they contain somewhat                    
+                </comment>
+                <comment line="517">
+                    similiar functionality.                    
+                </comment>
+                <method name="handleImport" type="void" line="121"/>
+                <javadoc line="121">
+                    Called when an @import is encountered.                    
+                </javadoc>
+                <method name="handleSelector" type="void" line="127"/>
+                <method name="startRule" type="void" line="128"/>
+                <method name="handleProperty" type="void" line="131"/>
+                <method name="handleValue" type="void" line="132"/>
+                <method name="endRule" type="void" line="133"/>
+            </interface>
+            <method name="CSSParser" type="constructor" line="136"/>
+            <method name="parse" type="void" line="143">
+                <params>
+                    <param name="reader" type="Reader"/>
+                    <param name="callback" type="CSSParserCallback"/>
+                    <param name="inRule" type="boolean"/>
+                </params>
+                <scope line="148">
+                    <scope line="149"/>
+                    <scope line="152"/>
+                </scope>
+                <scope line="155"/>
+            </method>
+            <javadoc line="161">
+                Gets the next statement, returning false if the end is reached. A
+                  statement is either an @rule, or a ruleset.                
+            </javadoc>
+            <method name="getNextStatement" type="boolean" line="165">
+                <comment line="191">
+                    Shouldn&apos;t happen...                    
+                </comment>
+                <declaration name="token" type="int" line="168"/>
+                <scope line="172">
+                    <scope line="173"/>
+                    <scope line="176"/>
+                </scope>
+            </method>
+            <javadoc line="200">
+                Parses an @ rule, stopping at a matching brace pair, or ;.                
+            </javadoc>
+            <method name="parseAtRule" type="void" line="203">
+                <comment line="204">
+                    PENDING: make this more effecient.                    
+                </comment>
+                <comment line="238">
+                    Skip a tailing &apos;;&apos;, not really to spec.                    
+                </comment>
+                <declaration name="done" type="boolean" line="205"/>
+                <declaration name="isImport" type="boolean" line="206"/>
+                <scope line="213">
+                    <declaration name="nextToken" type="int" line="214"/>
+                    <scope line="219"/>
+                    <scope line="223">
+                        <scope line="224"/>
+                    </scope>
+                    <scope line="232"/>
+                    <scope line="239">
+                        <declaration name="nextChar" type="int" line="240"/>
+                        <scope line="241"/>
+                    </scope>
+                </scope>
+                <scope line="260"/>
+            </method>
+            <javadoc line="265">
+                Parses the next rule set, which is a selector followed by a
+                  declaration block.                
+            </javadoc>
+            <method name="parseRuleSet" type="void" line="269">
+                <scope line="270"/>
+            </method>
+            <javadoc line="277">
+                Parses a set of selectors, returning false if the end of the stream
+                  is reached.                
+            </javadoc>
+            <method name="parseSelectors" type="boolean" line="281">
+                <comment line="282">
+                    Parse the selectors                    
+                </comment>
+                <comment line="304">
+                    Not too sure about this, how we handle this isn&apos;t very                    
+                </comment>
+                <comment line="305">
+                    well spec&apos;d.                    
+                </comment>
+                <comment line="313">
+                    Prematurely hit end.                    
+                </comment>
+                <declaration name="nextToken" type="int" line="283"/>
+                <scope line="285"/>
+                <scope line="291">
+                    <scope line="292">
+                        <scope line="293"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="319">
+                Parses a declaration block. Which a number of declarations followed
+                  by a })].                
+            </javadoc>
+            <method name="parseDeclarationBlock" type="void" line="323">
+                <comment line="331">
+                    Bail                    
+                </comment>
+                <scope line="324">
+                    <declaration name="token" type="int" line="325"/>
+                </scope>
+            </method>
+            <javadoc line="339">
+                Parses a single declaration, which is an identifier a : and another
+                  identifier. This returns the last token seen.                
+            </javadoc>
+            <method name="parseDeclaration" type="int" line="344">
+                <comment line="343">
+                    identifier+: identifier* ;|}                    
+                </comment>
+                <comment line="350">
+                    Make the property name to lowercase                    
+                </comment>
+                <declaration name="token" type="int" line="345"/>
+                <scope line="347"/>
+                <scope line="351"/>
+            </method>
+            <javadoc line="362">
+                Parses identifiers until &lt;code&gt;extraChar&lt;/code&gt; is encountered,
+                  returning the ending token, which will be IDENTIFIER if extraChar
+                  is found.                
+            </javadoc>
+            <method name="parseIdentifiers" type="int" line="368">
+                <params>
+                    <param name="extraChar" type="char"/>
+                    <param name="wantsBlocks" type="boolean"/>
+                </params>
+                <comment line="410">
+                    No need to throw for these two, we return token and                    
+                </comment>
+                <comment line="411">
+                    caller can do whatever.                    
+                </comment>
+                <comment line="415">
+                    Hit the end                    
+                </comment>
+                <declaration name="nextToken" type="int" line="369"/>
+                <declaration name="ubl" type="int" line="370"/>
+                <scope line="373">
+                    <scope line="378">
+                        <scope line="379">
+                            <scope line="380">
+                                <scope line="381"/>
+                            </scope>
+                        </scope>
+                        <scope line="389"/>
+                    </scope>
+                    <scope line="400"/>
+                    <scope line="404"/>
+                </scope>
+            </method>
+            <javadoc line="421">
+                Parses till a matching block close is encountered. This is only
+                  appropriate to be called at the top level (no nesting).                
+            </javadoc>
+            <method name="parseTillClosed" type="void" line="425">
+                <params>
+                    <param name="openToken" type="int"/>
+                </params>
+                <comment line="462">
+                    Prematurely hit end.                    
+                </comment>
+                <declaration name="nextToken" type="int" line="426"/>
+                <declaration name="done" type="boolean" line="427"/>
+                <scope line="430">
+                    <scope line="434"/>
+                    <scope line="437"/>
+                    <scope line="443"/>
+                    <scope line="451"/>
+                    <scope line="456"/>
+                </scope>
+            </method>
+            <javadoc line="468">
+                Fetches the next token.                
+            </javadoc>
+            <method name="nextToken" type="int" line="471">
+                <params>
+                    <param name="idChar" type="char"/>
+                </params>
+                <declaration name="nextChar" type="int" line="474"/>
+                <scope line="479"/>
+                <scope line="485"/>
+            </method>
+            <javadoc line="510">
+                Gets an identifier, returning true if the length of the string is greater than 0,
+                  stopping when &lt;code&gt;stopChar&lt;/code&gt;, whitespace, or one of {}()[] is
+                  hit.                
+            </javadoc>
+            <method name="getIdentifier" type="boolean" line="517">
+                <params>
+                    <param name="stopChar" type="char"/>
+                </params>
+                <comment line="515">
+                    NOTE: this could be combined with readTill, as they contain somewhat                    
+                </comment>
+                <comment line="516">
+                    similiar functionality.                    
+                </comment>
+                <comment line="524">
+                    1 for &apos;\&apos;, 2 for valid escape char [0-9a-fA-F], 3 for                    
+                </comment>
+                <comment line="525">
+                    stop character (white space, ()[]{}) 0 otherwise                    
+                </comment>
+                <comment line="564">
+                    Reached the end                    
+                </comment>
+                <comment line="575">
+                    Continue with escape.                    
+                </comment>
+                <comment line="583">
+                    no longer escaped                    
+                </comment>
+                <comment line="587">
+                    Make this simpler, reprocess the character.                    
+                </comment>
+                <comment line="605">
+                    Potential comment                    
+                </comment>
+                <declaration name="lastWasEscape" type="boolean" line="518"/>
+                <declaration name="done" type="boolean" line="519"/>
+                <declaration name="escapeCount" type="int" line="520"/>
+                <declaration name="escapeChar" type="int" line="521"/>
+                <declaration name="nextChar" type="int" line="522"/>
+                <declaration name="intStopChar" type="int" line="523"/>
+                <declaration name="type" type="short" line="526"/>
+                <declaration name="escapeOffset" type="int" line="527"/>
+                <scope line="530">
+                    <scope line="573">
+                        <scope line="574">
+                            <scope line="577"/>
+                        </scope>
+                        <scope line="582">
+                            <scope line="585"/>
+                            <scope line="590"/>
+                        </scope>
+                    </scope>
+                    <scope line="595">
+                        <scope line="596"/>
+                        <scope line="600"/>
+                        <scope line="604">
+                            <scope line="607"/>
+                            <scope line="612">
+                                <scope line="614"/>
+                                <scope line="617"/>
+                            </scope>
+                        </scope>
+                        <scope line="622">
+                            <scope line="624"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="633">
+                Reads till a &lt;code&gt;stopChar&lt;/code&gt; is encountered, escaping characters
+                  as necessary.                
+            </javadoc>
+            <method name="readTill" type="void" line="637">
+                <params>
+                    <param name="stopChar" type="char"/>
+                </params>
+                <comment line="644">
+                    1 for &apos;\&apos;, 2 for valid escape char [0-9a-fA-F], 0 otherwise                    
+                </comment>
+                <comment line="673">
+                    Prematurely reached the end!                    
+                </comment>
+                <comment line="682">
+                    Continue with escape.                    
+                </comment>
+                <comment line="690">
+                    no longer escaped                    
+                </comment>
+                <declaration name="lastWasEscape" type="boolean" line="638"/>
+                <declaration name="escapeCount" type="int" line="639"/>
+                <declaration name="escapeChar" type="int" line="640"/>
+                <declaration name="nextChar" type="int" line="641"/>
+                <declaration name="done" type="boolean" line="642"/>
+                <declaration name="intStopChar" type="int" line="643"/>
+                <declaration name="type" type="short" line="645"/>
+                <declaration name="escapeOffset" type="int" line="646"/>
+                <scope line="649">
+                    <scope line="680">
+                        <scope line="681">
+                            <scope line="684"/>
+                        </scope>
+                        <scope line="689">
+                            <scope line="691">
+                                <scope line="693"/>
+                                <scope line="697">
+                                    <scope line="698"/>
+                                </scope>
+                            </scope>
+                            <scope line="705"/>
+                        </scope>
+                    </scope>
+                    <scope line="711"/>
+                    <scope line="715">
+                        <scope line="716"/>
+                    </scope>
+                </scope>
+            </method>
+            <method name="append" type="void" line="724">
+                <params>
+                    <param name="character" type="char"/>
+                </params>
+                <scope line="725">
+                    <declaration name="newBuffer" type="char[]" line="726"/>
+                </scope>
+            </method>
+            <javadoc line="733">
+                Parses a comment block.                
+            </javadoc>
+            <method name="readComment" type="void" line="736">
+                <declaration name="nextChar" type="int" line="737"/>
+                <scope line="739">
+                    <scope line="746"/>
+                    <scope line="749"/>
+                    <scope line="752"/>
+                </scope>
+            </method>
+            <javadoc line="762">
+                Called when a block start is encountered ({[.                
+            </javadoc>
+            <method name="startBlock" type="void" line="765">
+                <params>
+                    <param name="startToken" type="int"/>
+                </params>
+                <scope line="766">
+                    <declaration name="newUS" type="int[]" line="767"/>
+                </scope>
+            </method>
+            <javadoc line="775">
+                Called when an end block is encountered )]}                
+            </javadoc>
+            <method name="endBlock" type="void" line="778">
+                <params>
+                    <param name="endToken" type="int"/>
+                </params>
+                <comment line="792">
+                    Will never happen.                    
+                </comment>
+                <comment line="800">
+                    Invalid state, should do something.                    
+                </comment>
+                <declaration name="startToken" type="int" line="779"/>
+                <scope line="796"/>
+                <scope line="799"/>
+            </method>
+            <javadoc line="805">
+                @return true if currently in a block.                
+            </javadoc>
+            <method name="inBlock" type="boolean" line="808"/>
+            <javadoc line="812">
+                Skips any white space, returning the character after the white space.                
+            </javadoc>
+            <method name="readWS" type="int" line="815">
+                <declaration name="nextChar" type="int" line="816"/>
+                <scope line="818"/>
+            </method>
+            <javadoc line="824">
+                Reads a character from the stream.                
+            </javadoc>
+            <method name="readChar" type="int" line="827">
+                <comment line="833">
+                    Uncomment the following to do case insensitive parsing.                    
+                </comment>
+                <comment line="834">
+                    if (retValue != -1) {
+                    return (int)Character.toLowerCase((char)retValue);
+                    }
+                    return retValue;                    
+                </comment>
+                <scope line="828"/>
+            </method>
+            <javadoc line="842">
+                Supports one character look ahead, this will throw if called twice
+                  in a row.                
+            </javadoc>
+            <method name="pushChar" type="void" line="846">
+                <params>
+                    <param name="tempChar" type="int"/>
+                </params>
+                <comment line="848">
+                    Should never happen.                    
+                </comment>
+                <scope line="847"/>
+            </method>
+        </class>
+    </source>

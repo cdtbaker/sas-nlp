@@ -1,0 +1,2839 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.awt">
+        <import package="java.awt.font.FontRenderContext"/>
+        <import package="java.awt.font.GlyphVector"/>
+        <import package="java.awt.font.LineMetrics"/>
+        <import package="java.awt.font.TextAttribute"/>
+        <import package="java.awt.font.TextLayout"/>
+        <import package="java.awt.geom.AffineTransform"/>
+        <import package="java.awt.geom.Point2D"/>
+        <import package="java.awt.geom.Rectangle2D"/>
+        <import package="java.awt.peer.FontPeer"/>
+        <import package="java.io"/>
+        <import package="java.lang.ref.SoftReference"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedExceptionAction"/>
+        <import package="java.text.AttributedCharacterIterator.Attribute"/>
+        <import package="java.text.CharacterIterator"/>
+        <import package="java.text.StringCharacterIterator"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Locale"/>
+        <import package="java.util.Map"/>
+        <import package="sun.font.StandardGlyphVector"/>
+        <import package="sun.font.AttributeMap"/>
+        <import package="sun.font.AttributeValues"/>
+        <import package="sun.font.CompositeFont"/>
+        <import package="sun.font.CreatedFontTracker"/>
+        <import package="sun.font.Font2D"/>
+        <import package="sun.font.Font2DHandle"/>
+        <import package="sun.font.FontAccess"/>
+        <import package="sun.font.FontManager"/>
+        <import package="sun.font.FontManagerFactory"/>
+        <import package="sun.font.FontUtilities"/>
+        <import package="sun.font.GlyphLayout"/>
+        <import package="sun.font.FontLineMetrics"/>
+        <import package="sun.font.CoreMetrics"/>
+        <import package="sun.font.EAttribute"/>
+        <class name="Font" line="65">
+            <comment line="260">
+                Constants to be used for logical font family names.                
+            </comment>
+            <comment line="304">
+                Constants to be used for styles. Can be combined to mix
+                 styles.                
+            </comment>
+            <comment line="406">
+                native JDK1.1 font pointer                
+            </comment>
+            <comment line="412">
+                If the origin of a Font is a created font then this attribute
+                 must be set on all derived fonts too.                
+            </comment>
+            <comment line="418">
+                This is true if the font transform is not identity.  It
+                 is used to avoid unnecessary instantiation of an AffineTransform.                
+            </comment>
+            <comment line="424">
+                A cached value used when a transform is required for internal
+                 use.  This must not be exposed to callers since AffineTransform
+                 is mutable.                
+            </comment>
+            <comment line="431">
+                JDK 1.1 serialVersionUID                
+            </comment>
+            <comment line="446">
+                NOTE: This method is called by privileged threads.                
+            </comment>
+            <comment line="447">
+                We implement this functionality in a package-private method                
+            </comment>
+            <comment line="448">
+                to insure that it cannot be overridden by client subclasses.                
+            </comment>
+            <comment line="449">
+                DO NOT INVOKE CLIENT CODE ON THIS THREAD!                
+            </comment>
+            <comment line="580">
+                                
+            </comment>
+            <comment line="605">
+                                
+            </comment>
+            <comment line="622">
+                This constructor is used when one font is derived from another.
+                 Fonts created from a stream will use the same font2D instance as the
+                 parent. They can be distinguished because the &quot;created&quot; argument
+                 will be &quot;true&quot;. Since there is no way to recreate these fonts they
+                 need to have the handle to the underlying font2D passed in.
+                 &quot;created&quot; is also true when a special composite is referenced by the
+                 handle for essentially the same reasons.
+                 But when deriving a font in these cases two particular attributes
+                 need special attention: familyface and style.
+                 The &quot;composites&quot; in these cases need to be recreated with optimal
+                 fonts for the new values of family and style.
+                 For fonts created with createFont() these are treated differently.
+                 JDK can often synthesise a different style (bold from plain
+                 for example). For fonts created with &quot;createFont&quot; this is a reasonable
+                 solution but its also possible (although rare) to derive a font with a
+                 different family attribute. In this case JDK needs
+                 to break the tie with the original Font2D and find a new Font.
+                 The oldName and oldStyle are supplied so they can be compared with
+                 what the Font2D and the values. To speed things along :
+                 oldName == null will be interpreted as the name is unchanged.
+                 oldStyle = -1 will be interpreted as the style is unchanged.
+                 In these cases there is no need to interrogate &quot;values&quot;.                
+            </comment>
+            <comment line="1111">
+                x = r^0 + r^1 + r^2... r^n                
+            </comment>
+            <comment line="1112">
+                rx = r^1 + r^2 + r^3... r^(n+1)                
+            </comment>
+            <comment line="1113">
+                x - rx = r^0 - r^(n+1)                
+            </comment>
+            <comment line="1114">
+                x (1 - r) = r^0 - r^(n+1)                
+            </comment>
+            <comment line="1115">
+                x = (r^0 - r^(n+1)) / (1 - r)                
+            </comment>
+            <comment line="1116">
+                x = (1 - r^(n+1)) / (1 - r)                
+            </comment>
+            <comment line="1118">
+                scale ratio is 2/3                
+            </comment>
+            <comment line="1119">
+                trans = 1/2 of ascent * x                
+            </comment>
+            <comment line="1120">
+                assume ascent is 3/4 of point size                
+            </comment>
+            <comment line="1155">
+                NOTE: This method is called by privileged threads.                
+            </comment>
+            <comment line="1156">
+                We implement this functionality in a package-private                
+            </comment>
+            <comment line="1157">
+                method to insure that it cannot be overridden by client                
+            </comment>
+            <comment line="1158">
+                subclasses.                
+            </comment>
+            <comment line="1159">
+                DO NOT INVOKE CLIENT CODE ON THIS THREAD!                
+            </comment>
+            <comment line="1652">
+                toString()                
+            </comment>
+            <comment line="1655">
+                Serialization support.  A &lt;code&gt;readObject&lt;code&gt;
+                  method is neccessary because the constructor creates
+                  the font&apos;s peer, and we can&apos;t serialize the peer.
+                  Similarly the computed font &quot;family&quot; may be different
+                  at &lt;code&gt;readObject&lt;code&gt; time than at
+                  &lt;code&gt;writeObject&lt;code&gt; time.  An integer version is
+                  written so that future versions of this class will be
+                  able to recognize serialized output from this one.                
+            </comment>
+            <comment line="2095">
+                The FRC hints don&apos;t affect the value of the italic angle but
+                 we need to pass them in to look up a strike.
+                 If we can pass in ones already being used it can prevent an extra
+                 strike from being allocated. Note that since italic angle is
+                 a property of the font, the font transform is needed not the
+                 device transform. Finally, this is private but the only caller of this
+                 in the JDK - and the only likely caller - is in this same class.                
+            </comment>
+            <comment line="2649">
+                Initialize JNI field and method IDs                
+            </comment>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="65">
+                The &lt;code&gt;Font&lt;/code&gt; class represents fonts, which are used to
+                  render text in a visible way.
+                  A font provides the information needed to map sequences of
+                  &lt;em&gt;characters&lt;/em&gt; to sequences of &lt;em&gt;glyphs&lt;/em&gt;
+                  and to render sequences of glyphs on &lt;code&gt;Graphics&lt;/code&gt; and
+                  &lt;code&gt;Component&lt;/code&gt; objects.
+                  &lt;h4&gt;Characters and Glyphs&lt;/h4&gt;
+                  A &lt;em&gt;character&lt;/em&gt; is a symbol that represents an item such as a letter,
+                  a digit, or punctuation in an abstract way. For example, &lt;code&gt;&apos;g&apos;&lt;/code&gt;,
+                  &lt;font size=-1&gt;LATIN SMALL LETTER G&lt;/font&gt;, is a character.
+                  &lt;p&gt;
+                  A &lt;em&gt;glyph&lt;/em&gt; is a shape used to render a character or a sequence of
+                  characters. In simple writing systems, such as Latin, typically one glyph
+                  represents one character. In general, however, characters and glyphs do not
+                  have one-to-one correspondence. For example, the character &apos;&amp;aacute;&apos;
+                  &lt;font size=-1&gt;LATIN SMALL LETTER A WITH ACUTE&lt;/font&gt;, can be represented by
+                  two glyphs: one for &apos;a&apos; and one for &apos;&amp;acute;&apos;. On the other hand, the
+                  two-character string &quot;fi&quot; can be represented by a single glyph, an
+                  &quot;fi&quot; ligature. In complex writing systems, such as Arabic or the South
+                  and South-East Asian writing systems, the relationship between characters
+                  and glyphs can be more complicated and involve context-dependent selection
+                  of glyphs as well as glyph reordering.
+                  A font encapsulates the collection of glyphs needed to render a selected set
+                  of characters as well as the tables needed to map sequences of characters to
+                  corresponding sequences of glyphs.
+                  &lt;h4&gt;Physical and Logical Fonts&lt;/h4&gt;
+                  The Java Platform distinguishes between two kinds of fonts:
+                  &lt;em&gt;physical&lt;/em&gt; fonts and &lt;em&gt;logical&lt;/em&gt; fonts.
+                  &lt;p&gt;
+                  &lt;em&gt;Physical&lt;/em&gt; fonts are the actual font libraries containing glyph data
+                  and tables to map from character sequences to glyph sequences, using a font
+                  technology such as TrueType or PostScript Type 1.
+                  All implementations of the Java Platform must support TrueType fonts;
+                  support for other font technologies is implementation dependent.
+                  Physical fonts may use names such as Helvetica, Palatino, HonMincho, or
+                  any number of other font names.
+                  Typically, each physical font supports only a limited set of writing
+                  systems, for example, only Latin characters or only Japanese and Basic
+                  Latin.
+                  The set of available physical fonts varies between configurations.
+                  Applications that require specific fonts can bundle them and instantiate
+                  them using the {@link #createFont createFont} method.
+                  &lt;p&gt;
+                  &lt;em&gt;Logical&lt;/em&gt; fonts are the five font families defined by the Java
+                  platform which must be supported by any Java runtime environment:
+                  Serif, SansSerif, Monospaced, Dialog, and DialogInput.
+                  These logical fonts are not actual font libraries. Instead, the logical
+                  font names are mapped to physical fonts by the Java runtime environment.
+                  The mapping is implementation and usually locale dependent, so the look
+                  and the metrics provided by them vary.
+                  Typically, each logical font name maps to several physical fonts in order to
+                  cover a large range of characters.
+                  &lt;p&gt;
+                  Peered AWT components, such as {@link Label Label} and{@link TextField TextField}, can only use logical fonts.
+                  &lt;p&gt;
+                  For a discussion of the relative advantages and disadvantages of using
+                  physical or logical fonts, see the
+                  &lt;a href=&quot;http://java.sun.com/j2se/corejava/intl/reference/faqs/index.html#desktop-rendering&quot;&gt;Internationalization FAQ&lt;/a&gt;
+                  document.
+                  &lt;h4&gt;Font Faces and Names&lt;/h4&gt;
+                  A &lt;code&gt;Font&lt;/code&gt;
+                  can have many faces, such as heavy, medium, oblique, gothic and
+                  regular. All of these faces have similar typographic design.
+                  &lt;p&gt;
+                  There are three different names that you can get from a
+                  &lt;code&gt;Font&lt;/code&gt; object.  The &lt;em&gt;logical font name&lt;/em&gt; is simply the
+                  name that was used to construct the font.
+                  The &lt;em&gt;font face name&lt;/em&gt;, or just &lt;em&gt;font name&lt;/em&gt; for
+                  short, is the name of a particular font face, like Helvetica Bold. The
+                  &lt;em&gt;family name&lt;/em&gt; is the name of the font family that determines the
+                  typographic design across several faces, like Helvetica.
+                  &lt;p&gt;
+                  The &lt;code&gt;Font&lt;/code&gt; class represents an instance of a font face from
+                  a collection of  font faces that are present in the system resources
+                  of the host system.  As examples, Arial Bold and Courier Bold Italic
+                  are font faces.  There can be several &lt;code&gt;Font&lt;/code&gt; objects
+                  associated with a font face, each differing in size, style, transform
+                  and font features.
+                  &lt;p&gt;
+                  The {@link GraphicsEnvironment#getAllFonts() getAllFonts} method
+                  of the &lt;code&gt;GraphicsEnvironment&lt;/code&gt; class returns an
+                  array of all font faces available in the system. These font faces are
+                  returned as &lt;code&gt;Font&lt;/code&gt; objects with a size of 1, identity
+                  transform and default font features. These
+                  base fonts can then be used to derive new &lt;code&gt;Font&lt;/code&gt; objects
+                  with varying sizes, styles, transforms and font features via the
+                  &lt;code&gt;deriveFont&lt;/code&gt; methods in this class.
+                  &lt;h4&gt;Font and TextAttribute&lt;/h4&gt;
+                  &lt;p&gt;&lt;code&gt;Font&lt;/code&gt; supports most
+                  &lt;code&gt;TextAttribute&lt;/code&gt;s.  This makes some operations, such as
+                  rendering underlined text, convenient since it is not
+                  necessary to explicitly construct a &lt;code&gt;TextLayout&lt;/code&gt; object.
+                  Attributes can be set on a Font by constructing or deriving it
+                  using a &lt;code&gt;Map&lt;/code&gt; of &lt;code&gt;TextAttribute&lt;/code&gt; values.
+                  &lt;p&gt;The values of some &lt;code&gt;TextAttributes&lt;/code&gt; are not
+                  serializable, and therefore attempting to serialize an instance of
+                  &lt;code&gt;Font&lt;/code&gt; that has such values will not serialize them.
+                  This means a Font deserialized from such a stream will not compare
+                  equal to the original Font that contained the non-serializable
+                  attributes.  This should very rarely pose a problem
+                  since these attributes are typically used only in special
+                  circumstances and are unlikely to be serialized.
+                  &lt;ul&gt;
+                  &lt;li&gt;&lt;code&gt;FOREGROUND&lt;/code&gt; and &lt;code&gt;BACKGROUND&lt;/code&gt; use
+                  &lt;code&gt;Paint&lt;/code&gt; values. The subclass &lt;code&gt;Color&lt;/code&gt; is
+                  serializable, while &lt;code&gt;GradientPaint&lt;/code&gt; and
+                  &lt;code&gt;TexturePaint&lt;/code&gt; are not.&lt;/li&gt;
+                  &lt;li&gt;&lt;code&gt;CHAR_REPLACEMENT&lt;/code&gt; uses
+                  &lt;code&gt;GraphicAttribute&lt;/code&gt; values.  The subclasses
+                  &lt;code&gt;ShapeGraphicAttribute&lt;/code&gt; and
+                  &lt;code&gt;ImageGraphicAttribute&lt;/code&gt; are not serializable.&lt;/li&gt;
+                  &lt;li&gt;&lt;code&gt;INPUT_METHOD_HIGHLIGHT&lt;/code&gt; uses
+                  &lt;code&gt;InputMethodHighlight&lt;/code&gt; values, which are
+                  not serializable.  See {@link java.awt.im.InputMethodHighlight}.&lt;/li&gt;
+                  &lt;/ul&gt;
+                  Clients who create custom subclasses of &lt;code&gt;Paint&lt;/code&gt; and
+                  &lt;code&gt;GraphicAttribute&lt;/code&gt; can make them serializable and
+                  avoid this problem.  Clients who use input method highlights can
+                  convert these to the platform-specific attributes for that
+                  highlight on the current platform and set them on the Font as
+                  a workaround.&lt;/p&gt;
+                  &lt;p&gt;The &lt;code&gt;Map&lt;/code&gt;-based constructor and
+                  &lt;code&gt;deriveFont&lt;/code&gt; APIs ignore the FONT attribute, and it is
+                  not retained by the Font; the static {@link #getFont} method should
+                  be used if the FONT attribute might be present.  See {@link java.awt.font.TextAttribute#FONT} for more information.&lt;/p&gt;
+                  &lt;p&gt;Several attributes will cause additional rendering overhead
+                  and potentially invoke layout.  If a &lt;code&gt;Font&lt;/code&gt; has such
+                  attributes, the &lt;code&gt;{@link #hasLayoutAttributes()}&lt;/code&gt; method
+                  will return true.&lt;/p&gt;
+                  &lt;p&gt;Note: Font rotations can cause text baselines to be rotated.  In
+                  order to account for this (rare) possibility, font APIs are
+                  specified to return metrics and take parameters &apos;in
+                  baseline-relative coordinates&apos;.  This maps the &apos;x&apos; coordinate to
+                  the advance along the baseline, (positive x is forward along the
+                  baseline), and the &apos;y&apos; coordinate to a distance along the
+                  perpendicular to the baseline at &apos;x&apos; (positive y is 90 degrees
+                  clockwise from the baseline vector).  APIs for which this is
+                  especially important are called out as having &apos;baseline-relative
+                  coordinates.&apos;                
+            </javadoc>
+            <class name="FontAccessImpl" line="225">
+                <extends class="FontAccess"/>
+                <comment line="1639">
+                    NOTE: This method may be called by privileged threads.                    
+                </comment>
+                <comment line="1640">
+                    DO NOT INVOKE CLIENT CODE ON THIS THREAD!                    
+                </comment>
+                <method name="getFont2D" type="Font2D" line="226">
+                    <params>
+                        <param name="font" type="Font"/>
+                    </params>
+                </method>
+                <method name="setFont2D" type="void" line="230">
+                    <params>
+                        <param name="font" type="Font"/>
+                        <param name="handle" type="Font2DHandle"/>
+                    </params>
+                </method>
+                <method name="setCreatedFont" type="void" line="234">
+                    <params>
+                        <param name="font" type="Font"/>
+                    </params>
+                </method>
+                <method name="isCreatedFont" type="boolean" line="238">
+                    <params>
+                        <param name="font" type="Font"/>
+                    </params>
+                </method>
+            </class>
+            <scope line="243"/>
+            <declaration name="fRequestedAttributes" type="Hashtable" line="250"/>
+            <javadoc line="250">
+                This is now only used during serialization.  Typically
+                  it is null.                
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #getAttributes()                    
+                </see>
+            </javadoc>
+            <declaration name="DIALOG" type="String" line="263"/>
+            <javadoc line="263">
+                A String constant for the canonical family name of the
+                  logical font &quot;Dialog&quot;. It is useful in Font construction
+                  to provide compile-time verification of the name.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="DIALOG_INPUT" type="String" line="271"/>
+            <javadoc line="271">
+                A String constant for the canonical family name of the
+                  logical font &quot;DialogInput&quot;. It is useful in Font construction
+                  to provide compile-time verification of the name.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="SANS_SERIF" type="String" line="279"/>
+            <javadoc line="279">
+                A String constant for the canonical family name of the
+                  logical font &quot;SansSerif&quot;. It is useful in Font construction
+                  to provide compile-time verification of the name.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="SERIF" type="String" line="287"/>
+            <javadoc line="287">
+                A String constant for the canonical family name of the
+                  logical font &quot;Serif&quot;. It is useful in Font construction
+                  to provide compile-time verification of the name.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="MONOSPACED" type="String" line="295"/>
+            <javadoc line="295">
+                A String constant for the canonical family name of the
+                  logical font &quot;Monospaced&quot;. It is useful in Font construction
+                  to provide compile-time verification of the name.                
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <declaration name="PLAIN" type="int" line="308"/>
+            <javadoc line="308">
+                The plain style constant.                
+            </javadoc>
+            <declaration name="BOLD" type="int" line="313"/>
+            <javadoc line="313">
+                The bold style constant.  This can be combined with the other style
+                  constants (except PLAIN) for mixed styles.                
+            </javadoc>
+            <declaration name="ITALIC" type="int" line="319"/>
+            <javadoc line="319">
+                The italicized style constant.  This can be combined with the other
+                  style constants (except PLAIN) for mixed styles.                
+            </javadoc>
+            <declaration name="ROMAN_BASELINE" type="int" line="325"/>
+            <javadoc line="325">
+                The baseline used in most Roman scripts when laying out text.                
+            </javadoc>
+            <declaration name="CENTER_BASELINE" type="int" line="330"/>
+            <javadoc line="330">
+                The baseline used in ideographic scripts like Chinese, Japanese,
+                  and Korean when laying out text.                
+            </javadoc>
+            <declaration name="HANGING_BASELINE" type="int" line="336"/>
+            <javadoc line="336">
+                The baseline used in Devanigiri and similar scripts when laying
+                  out text.                
+            </javadoc>
+            <declaration name="TRUETYPE_FONT" type="int" line="342"/>
+            <javadoc line="342">
+                Identify a font resource of type TRUETYPE.
+                  Used to specify a TrueType font resource to the{@link #createFont} method.
+                  The TrueType format was extended to become the OpenType
+                  format, which adds support for fonts with Postscript outlines,
+                  this tag therefore references these fonts, as well as those
+                  with TrueType outlines.                
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <declaration name="TYPE1_FONT" type="int" line="355"/>
+            <javadoc line="355">
+                Identify a font resource of type TYPE1.
+                  Used to specify a Type1 font resource to the{@link #createFont} method.                
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <declaration name="name" type="String" line="363"/>
+            <javadoc line="363">
+                The logical name of this &lt;code&gt;Font&lt;/code&gt;, as passed to the
+                  constructor.                
+                <since>
+                    JDK1.0                    
+                </since>
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #getName                    
+                </see>
+            </javadoc>
+            <declaration name="style" type="int" line="373"/>
+            <javadoc line="373">
+                The style of this &lt;code&gt;Font&lt;/code&gt;, as passed to the constructor.
+                  This style can be PLAIN, BOLD, ITALIC, or BOLD+ITALIC.                
+                <since>
+                    JDK1.0                    
+                </since>
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #getStyle()                    
+                </see>
+            </javadoc>
+            <declaration name="size" type="int" line="383"/>
+            <javadoc line="383">
+                The point size of this &lt;code&gt;Font&lt;/code&gt;, rounded to integer.                
+                <since>
+                    JDK1.0                    
+                </since>
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #getSize()                    
+                </see>
+            </javadoc>
+            <declaration name="pointSize" type="float" line="392"/>
+            <javadoc line="392">
+                The point size of this &lt;code&gt;Font&lt;/code&gt; in &lt;code&gt;float&lt;/code&gt;.                
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #getSize()                    
+                </see>
+                <see>
+                    #getSize2D()                    
+                </see>
+            </javadoc>
+            <declaration name="peer" type="FontPeer" line="401"/>
+            <javadoc line="401">
+                The platform specific font information.                
+            </javadoc>
+            <declaration name="pData" type="long" line="405"/>
+            <declaration name="font2DHandle" type="Font2DHandle" line="406"/>
+            <declaration name="values" type="AttributeValues" line="408"/>
+            <declaration name="hasLayoutAttributes" type="boolean" line="409"/>
+            <declaration name="createdFont" type="boolean" line="415"/>
+            <declaration name="nonIdentityTx" type="boolean" line="421"/>
+            <declaration name="identityTx" type="AffineTransform" line="428"/>
+            <declaration name="serialVersionUID" type="long" line="433"/>
+            <javadoc line="435">
+                Gets the peer of this &lt;code&gt;Font&lt;/code&gt;.                
+                <return>
+                    the peer of the <code>Font</code>.                    
+                </return>
+                <since>
+                    JDK1.1                    
+                </since>
+                <deprecated>
+                    Font rendering is now platform independent.                    
+                </deprecated>
+            </javadoc>
+            <method name="getPeer" type="FontPeer" line="442"/>
+            <method name="getPeer_NoClientCode" type="FontPeer" line="449">
+                <scope line="450">
+                    <declaration name="tk" type="Toolkit" line="451"/>
+                </scope>
+            </method>
+            <javadoc line="457">
+                Return the AttributeValues object associated with this
+                  font.  Most of the time, the internal object is null.
+                  If required, it will be created from the &apos;standard&apos;
+                  state on the font.  Only non-default values will be
+                  set in the AttributeValues object.
+                  &lt;p&gt;Since the AttributeValues object is mutable, and it
+                  is cached in the font, care must be taken to ensure that
+                  it is not mutated.                
+            </javadoc>
+            <method name="getAttributeValues" type="AttributeValues" line="468">
+                <comment line="472">
+                    expects the float value.                    
+                </comment>
+                <comment line="475">
+                    WEIGHT_BOLD                    
+                </comment>
+                <comment line="479">
+                    POSTURE_OBLIQUE                    
+                </comment>
+                <comment line="481">
+                    for streaming compatibility                    
+                </comment>
+                <scope line="469">
+                    <declaration name="valuesTmp" type="AttributeValues" line="470"/>
+                    <scope line="474"/>
+                    <scope line="478"/>
+                </scope>
+            </method>
+            <method name="getFont2D" type="Font2D" line="488">
+                <comment line="501">
+                    Do not cache the de-referenced font2D. It must be explicitly
+                     de-referenced to pick up a valid font in the event that the
+                     original one is marked invalid                    
+                </comment>
+                <declaration name="fm" type="FontManager" line="489"/>
+                <scope line="493"/>
+                <scope line="496"/>
+            </method>
+            <javadoc line="508">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; from the specified name, style and
+                  point size.
+                  &lt;p&gt;
+                  The font name can be a font face name or a font family name.
+                  It is used together with the style to find an appropriate font face.
+                  When a font family name is specified, the style argument is used to
+                  select the most appropriate face from the family. When a font face
+                  name is specified, the face&apos;s style and the style argument are
+                  merged to locate the best matching font from the same family.
+                  For example if face name &quot;Arial Bold&quot; is specified with style
+                  &lt;code&gt;Font.ITALIC&lt;/code&gt;, the font system looks for a face in the
+                  &quot;Arial&quot; family that is bold and italic, and may associate the font
+                  instance with the physical font face &quot;Arial Bold Italic&quot;.
+                  The style argument is merged with the specified face&apos;s style, not
+                  added or subtracted.
+                  This means, specifying a bold face and a bold style does not
+                  double-embolden the font, and specifying a bold face and a plain
+                  style does not lighten the font.
+                  &lt;p&gt;
+                  If no face for the requested style can be found, the font system
+                  may apply algorithmic styling to achieve the desired style.
+                  For example, if &lt;code&gt;ITALIC&lt;/code&gt; is requested, but no italic
+                  face is available, glyphs from the plain face may be algorithmically
+                  obliqued (slanted).
+                  &lt;p&gt;
+                  Font name lookup is case insensitive, using the case folding
+                  rules of the US locale.
+                  &lt;p&gt;
+                  If the &lt;code&gt;name&lt;/code&gt; parameter represents something other than a
+                  logical font, i.e. is interpreted as a physical font face or family, and
+                  this cannot be mapped by the implementation to a physical font or a
+                  compatible alternative, then the font system will map the Font
+                  instance to &quot;Dialog&quot;, such that for example, the family as reported
+                  by {@link #getFamily() getFamily} will be &quot;Dialog&quot;.
+                  &lt;p&gt;                
+                <param>
+                    name the font name.  This can be a font face name or a font
+                      family name, and may represent either a logical font or a physical
+                      font found in this {@code GraphicsEnvironment}.
+                      The family names for logical fonts are: Dialog, DialogInput,
+                      Monospaced, Serif, or SansSerif. Pre-defined String constants exist
+                      for all of these names, for example, {@code DIALOG}. If {@code name} is{@code null}, the <em>logical font name</em> of the new{@code Font} as returned by {@code getName()} is set to
+                      the name "Default".                    
+                </param>
+                <param>
+                    style the style constant for the {@code Font}The style argument is an integer bitmask that may
+                      be {@code PLAIN}, or a bitwise union of {@code BOLD} and/or{@code ITALIC} (for example, {@code ITALIC} or {@code BOLD|ITALIC}).
+                      If the style argument does not conform to one of the expected
+                      integer bitmasks then the style is set to {@code PLAIN}.                    
+                </param>
+                <param>
+                    size the point size of the {@code Font}                    
+                </param>
+                <see>
+                    GraphicsEnvironment#getAllFonts                    
+                </see>
+                <see>
+                    GraphicsEnvironment#getAvailableFontFamilyNames                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="Font" type="constructor" line="565">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="style" type="int"/>
+                    <param name="size" type="int"/>
+                </params>
+            </method>
+            <method name="Font" type="constructor" line="572">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="style" type="int"/>
+                    <param name="sizePts" type="float"/>
+                </params>
+            </method>
+            <method name="Font" type="constructor" line="581">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="style" type="int"/>
+                    <param name="sizePts" type="float"/>
+                    <param name="created" type="boolean"/>
+                    <param name="handle" type="Font2DHandle"/>
+                </params>
+                <comment line="584">
+                    Fonts created from a stream will use the same font2D instance
+                     as the parent.
+                     One exception is that if the derived font is requested to be
+                     in a different style, then also check if its a CompositeFont
+                     and if so build a new CompositeFont from components of that style.
+                     CompositeFonts can only be marked as &quot;created&quot; if they are used
+                     to add fall backs to a physical font. And non-composites are
+                     always from &quot;Font.createFont()&quot; and shouldn&apos;t get this treatment.                    
+                </comment>
+                <scope line="593">
+                    <scope line="595">
+                        <declaration name="fm" type="FontManager" line="596"/>
+                    </scope>
+                    <scope line="598"/>
+                </scope>
+            </method>
+            <method name="Font" type="constructor" line="607">
+                <params>
+                    <param name="fontFile" type="File"/>
+                    <param name="fontFormat" type="int"/>
+                    <param name="isCopy" type="boolean"/>
+                    <param name="tracker" type="CreatedFontTracker"/>
+                </params>
+                <comment line="609">
+                    Font2D instances created by this method track their font file
+                     so that when the Font2D is GC&apos;d it can also remove the file.                    
+                </comment>
+                <declaration name="fm" type="FontManager" line="612"/>
+            </method>
+            <method name="Font" type="constructor" line="645">
+                <params>
+                    <param name="values" type="AttributeValues"/>
+                    <param name="oldName" type="String"/>
+                    <param name="oldStyle" type="int"/>
+                    <param name="created" type="boolean"/>
+                    <param name="handle" type="Font2DHandle"/>
+                </params>
+                <scope line="648">
+                    <declaration name="newName" type="String" line="651"/>
+                    <scope line="652"/>
+                    <declaration name="newStyle" type="int" line="656"/>
+                    <scope line="657"/>
+                    <scope line="659"/>
+                    <scope line="664">
+                        <scope line="665">
+                            <declaration name="fm" type="FontManager" line="666"/>
+                        </scope>
+                    </scope>
+                    <scope line="670"/>
+                </scope>
+            </method>
+            <javadoc line="678">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; with the specified attributes.
+                  Only keys defined in {@link java.awt.font.TextAttribute TextAttribute}are recognized.  In addition the FONT attribute is
+                  not recognized by this constructor
+                  (see {@link #getAvailableAttributes}). Only attributes that have
+                  values of valid types will affect the new &lt;code&gt;Font&lt;/code&gt;.
+                  &lt;p&gt;
+                  If &lt;code&gt;attributes&lt;/code&gt; is &lt;code&gt;null&lt;/code&gt;, a new
+                  &lt;code&gt;Font&lt;/code&gt; is initialized with default values.                
+                <see>
+                    java.awt.font.TextAttribute                    
+                </see>
+                <param>
+                    attributes the attributes to assign to the new
+                      <code>Font</code>, or <code>null</code>                    
+                </param>
+            </javadoc>
+            <method name="Font" type="constructor" line="692">
+                <params>
+                    <param name="attributes" type="Map<? extends Attribute,?>"/>
+                </params>
+            </method>
+            <javadoc line="696">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; from the specified &lt;code&gt;font&lt;/code&gt;.
+                  This constructor is intended for use by subclasses.                
+                <param>
+                    font from which to create this <code>Font</code>.                    
+                </param>
+                <throws>
+                    NullPointerException if <code>font</code> is null                    
+                </throws>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="Font" type="constructor" line="703">
+                <params>
+                    <param name="font" type="Font"/>
+                </params>
+                <scope line="704"/>
+                <scope line="706"/>
+            </method>
+            <declaration name="RECOGNIZED_MASK" type="int" line="716"/>
+            <javadoc line="716">
+                Font recognizes all attributes except FONT.                
+            </javadoc>
+            <declaration name="PRIMARY_MASK" type="int" line="722"/>
+            <javadoc line="722">
+                These attributes are considered primary by the FONT attribute.                
+            </javadoc>
+            <declaration name="SECONDARY_MASK" type="int" line="729"/>
+            <javadoc line="729">
+                These attributes are considered secondary by the FONT attribute.                
+            </javadoc>
+            <declaration name="LAYOUT_MASK" type="int" line="735"/>
+            <javadoc line="735">
+                These attributes are handled by layout.                
+            </javadoc>
+            <declaration name="EXTRA_MASK" type="int" line="746"/>
+            <javadoc line="749">
+                Initialize the standard Font fields from the values object.                
+            </javadoc>
+            <method name="initFromValues" type="void" line="752">
+                <params>
+                    <param name="values" type="AttributeValues"/>
+                </params>
+                <comment line="754">
+                    for 1.5 streaming compatibility                    
+                </comment>
+                <comment line="759">
+                    not == 2f                    
+                </comment>
+                <comment line="760">
+                    not  == .2f                    
+                </comment>
+            </method>
+            <javadoc line="766">
+                Returns a &lt;code&gt;Font&lt;/code&gt; appropriate to the attributes.
+                  If &lt;code&gt;attributes&lt;/code&gt;contains a &lt;code&gt;FONT&lt;/code&gt; attribute
+                  with a valid &lt;code&gt;Font&lt;/code&gt; as its value, it will be
+                  merged with any remaining attributes.  See{@link java.awt.font.TextAttribute#FONT} for more
+                  information.                
+                <param>
+                    attributes the attributes to assign to the new
+                      <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> created with the specified
+                      attributes                    
+                </return>
+                <throws>
+                    NullPointerException if <code>attributes</code> is null.                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+                <see>
+                    java.awt.font.TextAttribute                    
+                </see>
+            </javadoc>
+            <method name="getFont" type="Font" line="782">
+                <params>
+                    <param name="attributes" type="Map<? extends Attribute,?>"/>
+                </params>
+                <comment line="783">
+                    optimize for two cases:                    
+                </comment>
+                <comment line="784">
+                    1) FONT attribute, and nothing else                    
+                </comment>
+                <comment line="785">
+                    2) attributes, but no FONT                    
+                </comment>
+                <comment line="787">
+                    avoid turning the attributemap into a regular map for no reason                    
+                </comment>
+                <comment line="796">
+                    merge                    
+                </comment>
+                <comment line="807">
+                    oh well, check for anything else                    
+                </comment>
+                <scope line="789">
+                    <declaration name="values" type="AttributeValues" line="790"/>
+                    <scope line="791">
+                        <declaration name="font" type="Font" line="792"/>
+                        <scope line="793"/>
+                    </scope>
+                </scope>
+                <declaration name="font" type="Font" line="805"/>
+                <scope line="806">
+                    <scope line="807">
+                        <declaration name="values" type="AttributeValues" line="808"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="820">
+                Used with the byte count tracker for fonts created from streams.
+                  If a thread can create temp files anyway, no point in counting
+                  font bytes.                
+            </javadoc>
+            <method name="hasTempPermission" type="boolean" line="825">
+                <comment line="838">
+                                        
+                </comment>
+                <scope line="827"/>
+                <declaration name="f" type="File" line="830"/>
+                <declaration name="hasPerm" type="boolean" line="831"/>
+                <scope line="832"/>
+                <scope line="837"/>
+            </method>
+            <javadoc line="843">
+                Returns a new &lt;code&gt;Font&lt;/code&gt; using the specified font type
+                  and input data.  The new &lt;code&gt;Font&lt;/code&gt; is
+                  created with a point size of 1 and style {@link #PLAIN PLAIN}.
+                  This base font can then be used with the &lt;code&gt;deriveFont&lt;/code&gt;
+                  methods in this class to derive new &lt;code&gt;Font&lt;/code&gt; objects with
+                  varying sizes, styles, transforms and font features.  This
+                  method does not close the {@link InputStream}.
+                  &lt;p&gt;
+                  To make the &lt;code&gt;Font&lt;/code&gt; available to Font constructors the
+                  returned &lt;code&gt;Font&lt;/code&gt; must be registered in the
+                  &lt;code&gt;GraphicsEnviroment&lt;/code&gt; by calling{@link GraphicsEnvironment#registerFont(Font) registerFont(Font)}.                
+                <param>
+                    fontFormat the type of the <code>Font</code>, which is{@link #TRUETYPE_FONT TRUETYPE_FONT} if a TrueType resource is specified.
+                      or {@link #TYPE1_FONT TYPE1_FONT} if a Type 1 resource is specified.                    
+                </param>
+                <param>
+                    fontStream an <code>InputStream</code> object representing the
+                      input data for the font.                    
+                </param>
+                <return>
+                    a new <code>Font</code> created with the specified font type.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if <code>fontFormat</code> is not
+                      <code>TRUETYPE_FONT</code>or<code>TYPE1_FONT</code>.                    
+                </throws>
+                <throws>
+                    FontFormatException if the <code>fontStream</code> data does
+                      not contain the required font tables for the specified format.                    
+                </throws>
+                <throws>
+                    IOException if the <code>fontStream</code>
+                      cannot be completely read.                    
+                </throws>
+                <see>
+                    GraphicsEnvironment#registerFont(Font)                    
+                </see>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="createFont" type="Font" line="872">
+                <params>
+                    <param name="fontFormat" type="int"/>
+                    <param name="fontStream" type="InputStream"/>
+                </params>
+                <comment line="923">
+                                        
+                </comment>
+                <comment line="927">
+                    After all references to a Font2D are dropped, the file
+                     will be removed. To support long-lived AppContexts,
+                     we need to then decrement the byte count by the size
+                     of the file.
+                     If the data isn&apos;t a valid font, the implementation will
+                     delete the tmp file and decrement the byte count
+                     in the tracker object before returning from the
+                     constructor, so we can set &apos;copiedFontData&apos; to true here
+                     without waiting for the results of that constructor.                    
+                </comment>
+                <scope line="875"/>
+                <declaration name="copiedFontData" type="boolean" line="878"/>
+                <scope line="879">
+                    <anonymous_class line="881">
+                        <method name="run" type="File" line="882"/>
+                    </anonymous_class>
+                    <declaration name="tFile" type="File" line="880"/>
+                    <declaration name="totalSize" type="int" line="888"/>
+                    <declaration name="tracker" type="CreatedFontTracker" line="889"/>
+                    <scope line="890">
+                        <anonymous_class line="893">
+                            <method name="run" type="OutputStream" line="894"/>
+                        </anonymous_class>
+                        <declaration name="outStream" type="OutputStream" line="891"/>
+                        <scope line="899"/>
+                        <scope line="902">
+                            <declaration name="buf" type="byte[]" line="903"/>
+                            <scope line="904">
+                                <declaration name="bytesRead" type="int" line="905"/>
+                                <scope line="906"/>
+                                <scope line="909">
+                                    <scope line="910"/>
+                                    <scope line="915"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <scope line="924"/>
+                        <declaration name="font" type="Font" line="938"/>
+                    </scope>
+                    <scope line="940">
+                        <scope line="941">
+                            <scope line="942"/>
+                            <anonymous_class line="946">
+                                <method name="run" type="Void" line="947"/>
+                            </anonymous_class>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="955">
+                    <scope line="956"/>
+                    <scope line="959"/>
+                    <declaration name="cause" type="Throwable" line="962"/>
+                    <scope line="963"/>
+                </scope>
+            </method>
+            <javadoc line="970">
+                Returns a new &lt;code&gt;Font&lt;/code&gt; using the specified font type
+                  and the specified font file.  The new &lt;code&gt;Font&lt;/code&gt; is
+                  created with a point size of 1 and style {@link #PLAIN PLAIN}.
+                  This base font can then be used with the &lt;code&gt;deriveFont&lt;/code&gt;
+                  methods in this class to derive new &lt;code&gt;Font&lt;/code&gt; objects with
+                  varying sizes, styles, transforms and font features.                
+                <param>
+                    fontFormat the type of the <code>Font</code>, which is{@link #TRUETYPE_FONT TRUETYPE_FONT} if a TrueType resource is
+                      specified or {@link #TYPE1_FONT TYPE1_FONT} if a Type 1 resource is
+                      specified.
+                      So long as the returned font, or its derived fonts are referenced
+                      the implementation may continue to access <code>fontFile</code>
+                      to retrieve font data. Thus the results are undefined if the file
+                      is changed, or becomes inaccessible.
+                      <p>
+                      To make the <code>Font</code> available to Font constructors the
+                      returned <code>Font</code> must be registered in the
+                      <code>GraphicsEnviroment</code> by calling{@link GraphicsEnvironment#registerFont(Font) registerFont(Font)}.                    
+                </param>
+                <param>
+                    fontFile a <code>File</code> object representing the
+                      input data for the font.                    
+                </param>
+                <return>
+                    a new <code>Font</code> created with the specified font type.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if <code>fontFormat</code> is not
+                      <code>TRUETYPE_FONT</code>or<code>TYPE1_FONT</code>.                    
+                </throws>
+                <throws>
+                    NullPointerException if <code>fontFile</code> is null.                    
+                </throws>
+                <throws>
+                    IOException if the <code>fontFile</code> cannot be read.                    
+                </throws>
+                <throws>
+                    FontFormatException if <code>fontFile</code> does
+                      not contain the required font tables for the specified format.                    
+                </throws>
+                <throws>
+                    SecurityException if the executing code does not have
+                      permission to read from the file.                    
+                </throws>
+                <see>
+                    GraphicsEnvironment#registerFont(Font)                    
+                </see>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <method name="createFont" type="Font" line="1005">
+                <params>
+                    <param name="fontFormat" type="int"/>
+                    <param name="fontFile" type="File"/>
+                </params>
+                <scope line="1010"/>
+                <declaration name="sm" type="SecurityManager" line="1013"/>
+                <scope line="1014">
+                    <declaration name="filePermission" type="FilePermission" line="1015"/>
+                </scope>
+                <scope line="1019"/>
+            </method>
+            <javadoc line="1025">
+                Returns a copy of the transform associated with this
+                  &lt;code&gt;Font&lt;/code&gt;.  This transform is not necessarily the one
+                  used to construct the font.  If the font has algorithmic
+                  superscripting or width adjustment, this will be incorporated
+                  into the returned &lt;code&gt;AffineTransform&lt;/code&gt;.
+                  &lt;p&gt;
+                  Typically, fonts will not be transformed.  Clients generally
+                  should call {@link #isTransformed} first, and only call this
+                  method if &lt;code&gt;isTransformed&lt;/code&gt; returns true.                
+                <return>
+                    an {@link AffineTransform} object representing the
+                      transform attribute of this <code>Font</code> object.                    
+                </return>
+            </javadoc>
+            <method name="getTransform" type="AffineTransform" line="1039">
+                <comment line="1040">
+                    The most common case is the identity transform.  Most callers
+                     should call isTransformed() first, to decide if they need to
+                     get the transform, but some may not.  Here we check to see
+                     if we have a nonidentity transform, and only do the work to
+                     fetch andor compute it if so, otherwise we return a new
+                     identity transform.
+                    
+                     Note that the transform is _not_ necessarily the same as
+                     the transform passed in as an Attribute in a Map, as the
+                     transform returned will also reflect the effects of WIDTH and
+                     SUPERSCRIPT attributes.  Clients who want the actual transform
+                     need to call getRequestedAttributes.                    
+                </comment>
+                <comment line="1061">
+                    can&apos;t get ascent and descent here, recursive call to this fn,                    
+                </comment>
+                <comment line="1062">
+                    so use pointsize                    
+                </comment>
+                <comment line="1063">
+                    let users combine super- and sub-scripting                    
+                </comment>
+                <comment line="1086">
+                    note on placement and italics                    
+                </comment>
+                <comment line="1087">
+                    We preconcatenate the transform because we don&apos;t want to translate along                    
+                </comment>
+                <comment line="1088">
+                    the italic angle, but purely perpendicular to the baseline.  While this                    
+                </comment>
+                <comment line="1089">
+                    looks ok for superscripts, it can lead subscripts to stack on each other                    
+                </comment>
+                <comment line="1090">
+                    and bring the following text too close.  The way we deal with potential                    
+                </comment>
+                <comment line="1091">
+                    collisions that can occur in the case of italics is by adjusting the                    
+                </comment>
+                <comment line="1092">
+                    horizontal spacing of the adjacent glyphvectors.  Examine the italic                    
+                </comment>
+                <comment line="1093">
+                    angle of both vectors, if one is non-zero, compute the minimum ascent                    
+                </comment>
+                <comment line="1094">
+                    and descent, and then the x position at each for each vector along its                    
+                </comment>
+                <comment line="1095">
+                    italic angle starting from its (offset) baseline.  Compute the difference                    
+                </comment>
+                <comment line="1096">
+                    between the x positions and use the maximum difference to adjust the                    
+                </comment>
+                <comment line="1097">
+                    position of the right gv.                    
+                </comment>
+                <scope line="1053">
+                    <declaration name="values" type="AttributeValues" line="1054"/>
+                    <declaration name="at" type="AffineTransform" line="1056"/>
+                    <scope line="1060">
+                        <declaration name="superscript" type="int" line="1065"/>
+                        <declaration name="trans" type="double" line="1067"/>
+                        <declaration name="n" type="int" line="1068"/>
+                        <declaration name="up" type="boolean" line="1069"/>
+                        <declaration name="sign" type="int" line="1070"/>
+                        <declaration name="ss" type="int" line="1071"/>
+                        <scope line="1073">
+                            <declaration name="newn" type="int" line="1074"/>
+                        </scope>
+                        <declaration name="scale" type="double" line="1081"/>
+                    </scope>
+                    <scope line="1100"/>
+                </scope>
+            </method>
+            <declaration name="ssinfo" type="float[]" line="1121"/>
+            <javadoc line="1132">
+                Returns the family name of this &lt;code&gt;Font&lt;/code&gt;.
+                  &lt;p&gt;The family name of a font is font specific. Two fonts such as
+                  Helvetica Italic and Helvetica Bold have the same family name,
+                  &lt;i&gt;Helvetica&lt;/i&gt;, whereas their font face names are
+                  &lt;i&gt;Helvetica Bold&lt;/i&gt; and &lt;i&gt;Helvetica Italic&lt;/i&gt;. The list of
+                  available family names may be obtained by using the{@link GraphicsEnvironment#getAvailableFontFamilyNames()} method.
+                  &lt;p&gt;Use &lt;code&gt;getName&lt;/code&gt; to get the logical name of the font.
+                  Use &lt;code&gt;getFontName&lt;/code&gt; to get the font face name of the font.                
+                <return>
+                    a <code>String</code> that is the family name of this
+                      <code>Font</code>.                    
+                </return>
+                <see>
+                    #getName                    
+                </see>
+                <see>
+                    #getFontName                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <method name="getFamily" type="String" line="1151"/>
+            <method name="getFamily_NoClientCode" type="String" line="1159"/>
+            <javadoc line="1163">
+                Returns the family name of this &lt;code&gt;Font&lt;/code&gt;, localized for
+                  the specified locale.
+                  &lt;p&gt;The family name of a font is font specific. Two fonts such as
+                  Helvetica Italic and Helvetica Bold have the same family name,
+                  &lt;i&gt;Helvetica&lt;/i&gt;, whereas their font face names are
+                  &lt;i&gt;Helvetica Bold&lt;/i&gt; and &lt;i&gt;Helvetica Italic&lt;/i&gt;. The list of
+                  available family names may be obtained by using the{@link GraphicsEnvironment#getAvailableFontFamilyNames()} method.
+                  &lt;p&gt;Use &lt;code&gt;getFontName&lt;/code&gt; to get the font face name of the font.                
+                <param>
+                    l locale for which to get the family name                    
+                </param>
+                <return>
+                    a <code>String</code> representing the family name of the
+                      font, localized for the specified locale.                    
+                </return>
+                <see>
+                    #getFontName                    
+                </see>
+                <see>
+                    java.util.Locale                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getFamily" type="String" line="1182">
+                <params>
+                    <param name="l" type="Locale"/>
+                </params>
+                <scope line="1183"/>
+            </method>
+            <javadoc line="1189">
+                Returns the postscript name of this &lt;code&gt;Font&lt;/code&gt;.
+                  Use &lt;code&gt;getFamily&lt;/code&gt; to get the family name of the font.
+                  Use &lt;code&gt;getFontName&lt;/code&gt; to get the font face name of the font.                
+                <return>
+                    a <code>String</code> representing the postscript name of
+                      this <code>Font</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getPSName" type="String" line="1197"/>
+            <javadoc line="1201">
+                Returns the logical name of this &lt;code&gt;Font&lt;/code&gt;.
+                  Use &lt;code&gt;getFamily&lt;/code&gt; to get the family name of the font.
+                  Use &lt;code&gt;getFontName&lt;/code&gt; to get the font face name of the font.                
+                <return>
+                    a <code>String</code> representing the logical name of
+                      this <code>Font</code>.                    
+                </return>
+                <see>
+                    #getFamily                    
+                </see>
+                <see>
+                    #getFontName                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="getName" type="String" line="1211"/>
+            <javadoc line="1215">
+                Returns the font face name of this &lt;code&gt;Font&lt;/code&gt;.  For example,
+                  Helvetica Bold could be returned as a font face name.
+                  Use &lt;code&gt;getFamily&lt;/code&gt; to get the family name of the font.
+                  Use &lt;code&gt;getName&lt;/code&gt; to get the logical name of the font.                
+                <return>
+                    a <code>String</code> representing the font face name of
+                      this <code>Font</code>.                    
+                </return>
+                <see>
+                    #getFamily                    
+                </see>
+                <see>
+                    #getName                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getFontName" type="String" line="1226"/>
+            <javadoc line="1230">
+                Returns the font face name of the &lt;code&gt;Font&lt;/code&gt;, localized
+                  for the specified locale. For example, Helvetica Fett could be
+                  returned as the font face name.
+                  Use &lt;code&gt;getFamily&lt;/code&gt; to get the family name of the font.                
+                <param>
+                    l a locale for which to get the font face name                    
+                </param>
+                <return>
+                    a <code>String</code> representing the font face name,
+                      localized for the specified locale.                    
+                </return>
+                <see>
+                    #getFamily                    
+                </see>
+                <see>
+                    java.util.Locale                    
+                </see>
+            </javadoc>
+            <method name="getFontName" type="String" line="1241">
+                <params>
+                    <param name="l" type="Locale"/>
+                </params>
+                <scope line="1242"/>
+            </method>
+            <javadoc line="1248">
+                Returns the style of this &lt;code&gt;Font&lt;/code&gt;.  The style can be
+                  PLAIN, BOLD, ITALIC, or BOLD+ITALIC.                
+                <return>
+                    the style of this <code>Font</code>                    
+                </return>
+                <see>
+                    #isPlain                    
+                </see>
+                <see>
+                    #isBold                    
+                </see>
+                <see>
+                    #isItalic                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="getStyle" type="int" line="1257"/>
+            <javadoc line="1261">
+                Returns the point size of this &lt;code&gt;Font&lt;/code&gt;, rounded to
+                  an integer.
+                  Most users are familiar with the idea of using &lt;i&gt;point size&lt;/i&gt; to
+                  specify the size of glyphs in a font. This point size defines a
+                  measurement between the baseline of one line to the baseline of the
+                  following line in a single spaced text document. The point size is
+                  based on &lt;i&gt;typographic points&lt;/i&gt;, approximately 1/72 of an inch.
+                  &lt;p&gt;
+                  The Java(tm)2D API adopts the convention that one point is
+                  equivalent to one unit in user coordinates.  When using a
+                  normalized transform for converting user space coordinates to
+                  device space coordinates 72 user
+                  space units equal 1 inch in device space.  In this case one point
+                  is 1/72 of an inch.                
+                <return>
+                    the point size of this <code>Font</code> in 1/72 of an
+                      inch units.                    
+                </return>
+                <see>
+                    #getSize2D                    
+                </see>
+                <see>
+                    GraphicsConfiguration#getDefaultTransform                    
+                </see>
+                <see>
+                    GraphicsConfiguration#getNormalizingTransform                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="getSize" type="int" line="1283"/>
+            <javadoc line="1287">
+                Returns the point size of this &lt;code&gt;Font&lt;/code&gt; in
+                  &lt;code&gt;float&lt;/code&gt; value.                
+                <return>
+                    the point size of this <code>Font</code> as a
+                      <code>float</code> value.                    
+                </return>
+                <see>
+                    #getSize                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getSize2D" type="float" line="1295"/>
+            <javadoc line="1299">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; object&apos;s style is
+                  PLAIN.                
+                <return>
+                    <code>true</code> if this <code>Font</code> has a
+                      PLAIN sytle;
+                      <code>false</code> otherwise.                    
+                </return>
+                <see>
+                    java.awt.Font#getStyle                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="isPlain" type="boolean" line="1308"/>
+            <javadoc line="1312">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; object&apos;s style is
+                  BOLD.                
+                <return>
+                    <code>true</code> if this <code>Font</code> object's
+                      style is BOLD;
+                      <code>false</code> otherwise.                    
+                </return>
+                <see>
+                    java.awt.Font#getStyle                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="isBold" type="boolean" line="1321"/>
+            <javadoc line="1325">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; object&apos;s style is
+                  ITALIC.                
+                <return>
+                    <code>true</code> if this <code>Font</code> object's
+                      style is ITALIC;
+                      <code>false</code> otherwise.                    
+                </return>
+                <see>
+                    java.awt.Font#getStyle                    
+                </see>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="isItalic" type="boolean" line="1334"/>
+            <javadoc line="1338">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; object has a
+                  transform that affects its size in addition to the Size
+                  attribute.                
+                <return>
+                    <code>true</code> if this <code>Font</code> object
+                      has a non-identity AffineTransform attribute.
+                      <code>false</code> otherwise.                    
+                </return>
+                <see>
+                    java.awt.Font#getTransform                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="isTransformed" type="boolean" line="1348"/>
+            <javadoc line="1352">
+                Return true if this Font contains attributes that require extra
+                  layout processing.                
+                <return>
+                    true if the font has layout attributes                    
+                </return>
+                <since>
+                    1.6                    
+                </since>
+            </javadoc>
+            <method name="hasLayoutAttributes" type="boolean" line="1358"/>
+            <javadoc line="1362">
+                Returns a &lt;code&gt;Font&lt;/code&gt; object from the system properties list.
+                  &lt;code&gt;nm&lt;/code&gt; is treated as the name of a system property to be
+                  obtained.  The &lt;code&gt;String&lt;/code&gt; value of this property is then
+                  interpreted as a &lt;code&gt;Font&lt;/code&gt; object according to the
+                  specification of &lt;code&gt;Font.decode(String)&lt;/code&gt;
+                  If the specified property is not found, or the executing code does
+                  not have permission to read the property, null is returned instead.                
+                <param>
+                    nm the property name                    
+                </param>
+                <return>
+                    a <code>Font</code> object that the property name
+                      describes, or null if no such property exists.                    
+                </return>
+                <throws>
+                    NullPointerException if nm is null.                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+                <see>
+                    #decode(String)                    
+                </see>
+            </javadoc>
+            <method name="getFont" type="Font" line="1378">
+                <params>
+                    <param name="nm" type="String"/>
+                </params>
+            </method>
+            <javadoc line="1382">
+                Returns the &lt;code&gt;Font&lt;/code&gt; that the &lt;code&gt;str&lt;/code&gt;
+                  argument describes.
+                  To ensure that this method returns the desired Font,
+                  format the &lt;code&gt;str&lt;/code&gt; parameter in
+                  one of these ways
+                  &lt;p&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;&lt;em&gt;fontname-style-pointsize&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname-pointsize&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname-style&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname style pointsize&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname pointsize&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname style&lt;/em&gt;
+                  &lt;li&gt;&lt;em&gt;fontname&lt;/em&gt;
+                  &lt;/ul&gt;
+                  in which &lt;i&gt;style&lt;/i&gt; is one of the four
+                  case-insensitive strings:
+                  &lt;code&gt;&quot;PLAIN&quot;&lt;/code&gt;, &lt;code&gt;&quot;BOLD&quot;&lt;/code&gt;, &lt;code&gt;&quot;BOLDITALIC&quot;&lt;/code&gt;, or
+                  &lt;code&gt;&quot;ITALIC&quot;&lt;/code&gt;, and pointsize is a positive decimal integer
+                  representation of the point size.
+                  For example, if you want a font that is Arial, bold, with
+                  a point size of 18, you would call this method with:
+                  &quot;Arial-BOLD-18&quot;.
+                  This is equivalent to calling the Font constructor :
+                  &lt;code&gt;new Font(&quot;Arial&quot;, Font.BOLD, 18);&lt;/code&gt;
+                  and the values are interpreted as specified by that constructor.
+                  &lt;p&gt;
+                  A valid trailing decimal field is always interpreted as the pointsize.
+                  Therefore a fontname containing a trailing decimal value should not
+                  be used in the fontname only form.
+                  &lt;p&gt;
+                  If a style name field is not one of the valid style strings, it is
+                  interpreted as part of the font name, and the default style is used.
+                  &lt;p&gt;
+                  Only one of &apos; &apos; or &apos;-&apos; may be used to separate fields in the input.
+                  The identified separator is the one closest to the end of the string
+                  which separates a valid pointsize, or a valid style name from
+                  the rest of the string.
+                  Null (empty) pointsize and style fields are treated
+                  as valid fields with the default value for that field.
+                  &lt;p&gt;
+                  Some font names may include the separator characters &apos; &apos; or &apos;-&apos;.
+                  If &lt;code&gt;str&lt;/code&gt; is not formed with 3 components, e.g. such that
+                  &lt;code&gt;style&lt;/code&gt; or &lt;code&gt;pointsize&lt;/code&gt; fields are not present in
+                  &lt;code&gt;str&lt;/code&gt;, and &lt;code&gt;fontname&lt;/code&gt; also contains a
+                  character determined to be the separator character
+                  then these characters where they appear as intended to be part of
+                  &lt;code&gt;fontname&lt;/code&gt; may instead be interpreted as separators
+                  so the font name may not be properly recognised.
+                  &lt;p&gt;
+                  The default size is 12 and the default style is PLAIN.
+                  If &lt;code&gt;str&lt;/code&gt; does not specify a valid size, the returned
+                  &lt;code&gt;Font&lt;/code&gt; has a size of 12.  If &lt;code&gt;str&lt;/code&gt; does not
+                  specify a valid style, the returned Font has a style of PLAIN.
+                  If you do not specify a valid font name in
+                  the &lt;code&gt;str&lt;/code&gt; argument, this method will return
+                  a font with the family name &quot;Dialog&quot;.
+                  To determine what font family names are available on
+                  your system, use the{@link GraphicsEnvironment#getAvailableFontFamilyNames()} method.
+                  If &lt;code&gt;str&lt;/code&gt; is &lt;code&gt;null&lt;/code&gt;, a new &lt;code&gt;Font&lt;/code&gt;
+                  is returned with the family name &quot;Dialog&quot;, a size of 12 and a
+                  PLAIN style.                
+                <param>
+                    str the name of the font, or <code>null</code>                    
+                </param>
+                <return>
+                    the <code>Font</code> object that <code>str</code>
+                      describes, or a new default <code>Font</code> if
+                      <code>str</code> is <code>null</code>.                    
+                </return>
+                <see>
+                    #getFamily                    
+                </see>
+                <since>
+                    JDK1.1                    
+                </since>
+            </javadoc>
+            <method name="decode" type="Font" line="1455">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <comment line="1480">
+                    It wasn&apos;t a valid size, if we didn&apos;t also find the                    
+                </comment>
+                <comment line="1502">
+                    this string isn&apos;t any of the expected styles, so
+                     assume its part of the font name                    
+                </comment>
+                <declaration name="fontName" type="String" line="1456"/>
+                <declaration name="styleName" type="String" line="1457"/>
+                <declaration name="fontSize" type="int" line="1458"/>
+                <declaration name="fontStyle" type="int" line="1459"/>
+                <scope line="1461"/>
+                <declaration name="lastHyphen" type="int" line="1465"/>
+                <declaration name="lastSpace" type="int" line="1466"/>
+                <declaration name="sepChar" type="char" line="1467"/>
+                <declaration name="sizeIndex" type="int" line="1468"/>
+                <declaration name="styleIndex" type="int" line="1469"/>
+                <declaration name="strlen" type="int" line="1470"/>
+                <scope line="1472">
+                    <scope line="1473">
+                        <scope line="1476"/>
+                    </scope>
+                    <scope line="1479">
+                        <scope line="1484"/>
+                    </scope>
+                </scope>
+                <scope line="1490">
+                    <scope line="1493"/>
+                    <scope line="1495"/>
+                    <scope line="1497"/>
+                    <scope line="1499"/>
+                    <scope line="1501">
+                        <scope line="1506"/>
+                    </scope>
+                </scope>
+                <scope line="1512">
+                    <declaration name="fontEnd" type="int" line="1513"/>
+                    <scope line="1514"/>
+                    <scope line="1516"/>
+                    <scope line="1519"/>
+                </scope>
+            </method>
+            <javadoc line="1528">
+                Gets the specified &lt;code&gt;Font&lt;/code&gt; from the system properties
+                  list.  As in the &lt;code&gt;getProperty&lt;/code&gt; method of
+                  &lt;code&gt;System&lt;/code&gt;, the first
+                  argument is treated as the name of a system property to be
+                  obtained.  The &lt;code&gt;String&lt;/code&gt; value of this property is then
+                  interpreted as a &lt;code&gt;Font&lt;/code&gt; object.
+                  &lt;p&gt;
+                  The property value should be one of the forms accepted by
+                  &lt;code&gt;Font.decode(String)&lt;/code&gt;
+                  If the specified property is not found, or the executing code does not
+                  have permission to read the property, the &lt;code&gt;font&lt;/code&gt;
+                  argument is returned instead.                
+                <param>
+                    nm the case-insensitive property name                    
+                </param>
+                <param>
+                    font a default <code>Font</code> to return if property
+                      <code>nm</code> is not defined                    
+                </param>
+                <return>
+                    the <code>Font</code> value of the property.                    
+                </return>
+                <throws>
+                    NullPointerException if nm is null.                    
+                </throws>
+                <see>
+                    #decode(String)                    
+                </see>
+            </javadoc>
+            <method name="getFont" type="Font" line="1548">
+                <params>
+                    <param name="nm" type="String"/>
+                    <param name="font" type="Font"/>
+                </params>
+                <declaration name="str" type="String" line="1549"/>
+                <scope line="1550"/>
+                <scope line="1552"/>
+                <scope line="1554"/>
+            </method>
+            <declaration name="hash" type="int" line="1560"/>
+            <javadoc line="1561">
+                Returns a hashcode for this &lt;code&gt;Font&lt;/code&gt;.                
+                <return>
+                    a hashcode value for this <code>Font</code>.                    
+                </return>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="hashCode" type="int" line="1566">
+                <comment line="1569">
+                    It is possible many fonts differ only in transform.
+                     So include the transform in the hash calculation.
+                     nonIdentityTx is set whenever there is a transform in
+                     &apos;values&apos;. The tests for null are required because it can
+                     also be set for other reasons.                    
+                </comment>
+                <scope line="1567">
+                    <scope line="1576"/>
+                </scope>
+            </method>
+            <javadoc line="1583">
+                Compares this &lt;code&gt;Font&lt;/code&gt; object to the specified
+                  &lt;code&gt;Object&lt;/code&gt;.                
+                <param>
+                    obj the <code>Object</code> to compare                    
+                </param>
+                <return>
+                    <code>true</code> if the objects are the same
+                      or if the argument is a <code>Font</code> object
+                      describing the same font as this object;
+                      <code>false</code> otherwise.                    
+                </return>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="equals" type="boolean" line="1593">
+                <params>
+                    <param name="obj" type="Object"/>
+                </params>
+                <comment line="1608">
+                    &apos;values&apos; is usually initialized lazily, except when
+                     the font is constructed from a Map, or derived using
+                     a Map or other values. So if only one font has
+                     the field initialized we need to initialize it in
+                     the other instance and compare.                    
+                </comment>
+                <scope line="1594"/>
+                <scope line="1598">
+                    <scope line="1599">
+                        <declaration name="font" type="Font" line="1600"/>
+                        <scope line="1606">
+                            <scope line="1614">
+                                <scope line="1615"/>
+                                <scope line="1617"/>
+                            </scope>
+                            <scope line="1620"/>
+                        </scope>
+                    </scope>
+                    <scope line="1625"/>
+                </scope>
+            </method>
+            <javadoc line="1631">
+                Converts this &lt;code&gt;Font&lt;/code&gt; object to a &lt;code&gt;String&lt;/code&gt;
+                  representation.                
+                <return>
+                    a <code>String</code> representation of this
+                      <code>Font</code> object.                    
+                </return>
+                <since>
+                    JDK1.0                    
+                </since>
+            </javadoc>
+            <method name="toString" type="String" line="1640">
+                <comment line="1638">
+                    NOTE: This method may be called by privileged threads.                    
+                </comment>
+                <comment line="1639">
+                    DO NOT INVOKE CLIENT CODE ON THIS THREAD!                    
+                </comment>
+                <declaration name="strStyle" type="String" line="1641"/>
+                <scope line="1643"/>
+                <scope line="1645"/>
+            </method>
+            <declaration name="fontSerializedDataVersion" type="int" line="1663"/>
+            <javadoc line="1663">
+                The &lt;code&gt;Font&lt;/code&gt; Serializable Data Form.                
+                <serial>
+                                        
+                </serial>
+            </javadoc>
+            <javadoc line="1670">
+                Writes default serializable fields to a stream.                
+                <param>
+                    s the <code>ObjectOutputStream</code> to write                    
+                </param>
+                <see>
+                    AWTEventMulticaster#save(ObjectOutputStream,String,EventListener)                    
+                </see>
+                <see>
+                    #readObject(java.io.ObjectInputStream)                    
+                </see>
+            </javadoc>
+            <method name="writeObject" type="void" line="1680">
+                <params>
+                    <param name="s" type="java.io.ObjectOutputStream"/>
+                </params>
+                <comment line="1683">
+                    transient                    
+                </comment>
+                <scope line="1681">
+                    <scope line="1682"/>
+                </scope>
+                <scope line="1688"/>
+            </method>
+            <javadoc line="1693">
+                Reads the &lt;code&gt;ObjectInputStream&lt;/code&gt;.
+                  Unrecognized keys or values will be ignored.                
+                <param>
+                    s the <code>ObjectInputStream</code> to read                    
+                </param>
+                <serial>
+                                        
+                </serial>
+                <see>
+                    #writeObject(java.io.ObjectOutputStream)                    
+                </see>
+            </javadoc>
+            <method name="readObject" type="void" line="1704">
+                <params>
+                    <param name="s" type="java.io.ObjectInputStream"/>
+                </params>
+                <comment line="1710">
+                    Handle fRequestedAttributes.                    
+                </comment>
+                <comment line="1711">
+                    in 1.5, we always streamed out the font values plus                    
+                </comment>
+                <comment line="1712">
+                    TRANSFORM, SUPERSCRIPT, and WIDTH, regardless of whether the                    
+                </comment>
+                <comment line="1713">
+                    values were default or not.  In 1.6 we only stream out                    
+                </comment>
+                <comment line="1714">
+                    defined values.  So, 1.6 streams in from a 1.5 stream,                    
+                </comment>
+                <comment line="1715">
+                    it check each of these values and &apos;undefines&apos; it if the                    
+                </comment>
+                <comment line="1716">
+                    value is the default.                    
+                </comment>
+                <comment line="1719">
+                    init                    
+                </comment>
+                <comment line="1723">
+                    if legacy stream, undefine these                    
+                </comment>
+                <comment line="1729">
+                    don&apos;t need it any more                    
+                </comment>
+                <scope line="1706"/>
+                <scope line="1718">
+                    <declaration name="extras" type="AttributeValues" line="1720"/>
+                    <scope line="1722"/>
+                </scope>
+            </method>
+            <javadoc line="1733">
+                Returns the number of glyphs in this &lt;code&gt;Font&lt;/code&gt;. Glyph codes
+                  for this &lt;code&gt;Font&lt;/code&gt; range from 0 to
+                  &lt;code&gt;getNumGlyphs()&lt;/code&gt; - 1.                
+                <return>
+                    the number of glyphs in this <code>Font</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getNumGlyphs" type="int" line="1740"/>
+            <javadoc line="1744">
+                Returns the glyphCode which is used when this &lt;code&gt;Font&lt;/code&gt;
+                  does not have a glyph for a specified unicode code point.                
+                <return>
+                    the glyphCode of this <code>Font</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getMissingGlyphCode" type="int" line="1750"/>
+            <javadoc line="1754">
+                Returns the baseline appropriate for displaying this character.
+                  &lt;p&gt;
+                  Large fonts can support different writing systems, and each system can
+                  use a different baseline.
+                  The character argument determines the writing system to use. Clients
+                  should not assume all characters use the same baseline.                
+                <param>
+                    c a character used to identify the writing system                    
+                </param>
+                <return>
+                    the baseline appropriate for the specified character.                    
+                </return>
+                <see>
+                    LineMetrics#getBaselineOffsets                    
+                </see>
+                <see>
+                    #ROMAN_BASELINE                    
+                </see>
+                <see>
+                    #CENTER_BASELINE                    
+                </see>
+                <see>
+                    #HANGING_BASELINE                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getBaselineFor" type="byte" line="1770">
+                <params>
+                    <param name="c" type="char"/>
+                </params>
+            </method>
+            <javadoc line="1774">
+                Returns a map of font attributes available in this
+                  &lt;code&gt;Font&lt;/code&gt;.  Attributes include things like ligatures and
+                  glyph substitution.                
+                <return>
+                    the attributes map of this <code>Font</code>.                    
+                </return>
+            </javadoc>
+            <method name="getAttributes" type="Map<TextAttribute,?>" line="1780"/>
+            <javadoc line="1784">
+                Returns the keys of all the attributes supported by this
+                  &lt;code&gt;Font&lt;/code&gt;.  These attributes can be used to derive other
+                  fonts.                
+                <return>
+                    an array containing the keys of all the attributes
+                      supported by this <code>Font</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getAvailableAttributes" type="Attribute[]" line="1792">
+                <comment line="1793">
+                    FONT is not supported by Font                    
+                </comment>
+                <declaration name="attributes" type="Attribute" line="1795"/>
+            </method>
+            <javadoc line="1823">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating this
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new style and size.                
+                <param>
+                    style the style for the new <code>Font</code>                    
+                </param>
+                <param>
+                    size the size for the new <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1831">
+                <params>
+                    <param name="style" type="int"/>
+                    <param name="size" type="float"/>
+                </params>
+                <scope line="1832"/>
+                <declaration name="newValues" type="AttributeValues" line="1835"/>
+                <declaration name="oldStyle" type="int" line="1836"/>
+            </method>
+            <javadoc line="1842">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating this
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new style and transform.                
+                <param>
+                    style the style for the new <code>Font</code>                    
+                </param>
+                <param>
+                    trans the <code>AffineTransform</code> associated with the
+                      new <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if <code>trans</code> is
+                      <code>null</code>                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1853">
+                <params>
+                    <param name="style" type="int"/>
+                    <param name="trans" type="AffineTransform"/>
+                </params>
+                <declaration name="newValues" type="AttributeValues" line="1854"/>
+                <declaration name="oldStyle" type="int" line="1855"/>
+            </method>
+            <javadoc line="1861">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating the current
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new size to it.                
+                <param>
+                    size the size for the new <code>Font</code>.                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1868">
+                <params>
+                    <param name="size" type="float"/>
+                </params>
+                <scope line="1869"/>
+                <declaration name="newValues" type="AttributeValues" line="1872"/>
+            </method>
+            <javadoc line="1877">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating the current
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new transform to it.                
+                <param>
+                    trans the <code>AffineTransform</code> associated with the
+                      new <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if <code>trans</code> is
+                      <code>null</code>                    
+                </throws>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1887">
+                <params>
+                    <param name="trans" type="AffineTransform"/>
+                </params>
+                <declaration name="newValues" type="AttributeValues" line="1888"/>
+            </method>
+            <javadoc line="1893">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating the current
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new style to it.                
+                <param>
+                    style the style for the new <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1900">
+                <params>
+                    <param name="style" type="int"/>
+                </params>
+                <scope line="1901"/>
+                <declaration name="newValues" type="AttributeValues" line="1904"/>
+                <declaration name="oldStyle" type="int" line="1905"/>
+            </method>
+            <javadoc line="1910">
+                Creates a new &lt;code&gt;Font&lt;/code&gt; object by replicating the current
+                  &lt;code&gt;Font&lt;/code&gt; object and applying a new set of font attributes
+                  to it.                
+                <param>
+                    attributes a map of attributes enabled for the new
+                      <code>Font</code>                    
+                </param>
+                <return>
+                    a new <code>Font</code> object.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="deriveFont" type="Font" line="1920">
+                <params>
+                    <param name="attributes" type="Map<? extends Attribute,?>"/>
+                </params>
+                <scope line="1921"/>
+                <declaration name="newValues" type="AttributeValues" line="1924"/>
+            </method>
+            <javadoc line="1930">
+                Checks if this &lt;code&gt;Font&lt;/code&gt; has a glyph for the specified
+                  character.
+                  &lt;p&gt; &lt;b&gt;Note:&lt;/b&gt; This method cannot handle &lt;a
+                  href=&quot;../../java/lang/Character.html#supplementary&quot;&gt; supplementary
+                  characters&lt;/a&gt;. To support all Unicode characters, including
+                  supplementary characters, use the {@link #canDisplay(int)}method or &lt;code&gt;canDisplayUpTo&lt;/code&gt; methods.                
+                <param>
+                    c the character for which a glyph is needed                    
+                </param>
+                <return>
+                    <code>true</code> if this <code>Font</code> has a glyph for this
+                      character; <code>false</code> otherwise.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="canDisplay" type="boolean" line="1945">
+                <params>
+                    <param name="c" type="char"/>
+                </params>
+            </method>
+            <javadoc line="1949">
+                Checks if this &lt;code&gt;Font&lt;/code&gt; has a glyph for the specified
+                  character.                
+                <param>
+                    codePoint the character (Unicode code point) for which a glyph
+                      is needed.                    
+                </param>
+                <return>
+                    <code>true</code> if this <code>Font</code> has a glyph for the
+                      character; <code>false</code> otherwise.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if the code point is not a valid Unicode
+                      code point.                    
+                </throws>
+                <see>
+                    Character#isValidCodePoint(int)                    
+                </see>
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <method name="canDisplay" type="boolean" line="1962">
+                <params>
+                    <param name="codePoint" type="int"/>
+                </params>
+                <scope line="1963"/>
+            </method>
+            <javadoc line="1970">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; can display a
+                  specified &lt;code&gt;String&lt;/code&gt;.  For strings with Unicode encoding,
+                  it is important to know if a particular font can display the
+                  string. This method returns an offset into the &lt;code&gt;String&lt;/code&gt;
+                  &lt;code&gt;str&lt;/code&gt; which is the first character this
+                  &lt;code&gt;Font&lt;/code&gt; cannot display without using the missing glyph
+                  code. If the &lt;code&gt;Font&lt;/code&gt; can display all characters, -1 is
+                  returned.                
+                <param>
+                    str a <code>String</code> object                    
+                </param>
+                <return>
+                    an offset into <code>str</code> that points
+                      to the first character in <code>str</code> that this
+                      <code>Font</code> cannot display; or <code>-1</code> if
+                      this <code>Font</code> can display all characters in
+                      <code>str</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="canDisplayUpTo" type="int" line="1987">
+                <params>
+                    <param name="str" type="String"/>
+                </params>
+                <declaration name="font2d" type="Font2D" line="1988"/>
+                <declaration name="len" type="int" line="1989"/>
+                <scope line="1990">
+                    <declaration name="c" type="char" line="1991"/>
+                    <scope line="1992"/>
+                    <scope line="1995"/>
+                    <scope line="1998"/>
+                </scope>
+            </method>
+            <javadoc line="2006">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; can display
+                  the characters in the specified &lt;code&gt;text&lt;/code&gt;
+                  starting at &lt;code&gt;start&lt;/code&gt; and ending at
+                  &lt;code&gt;limit&lt;/code&gt;.  This method is a convenience overload.                
+                <param>
+                    text the specified array of <code>char</code> values                    
+                </param>
+                <param>
+                    start the specified starting offset (in
+                      <code>char</code>s) into the specified array of
+                      <code>char</code> values                    
+                </param>
+                <param>
+                    limit the specified ending offset (in
+                      <code>char</code>s) into the specified array of
+                      <code>char</code> values                    
+                </param>
+                <return>
+                    an offset into <code>text</code> that points
+                      to the first character in <code>text</code> that this
+                      <code>Font</code> cannot display; or <code>-1</code> if
+                      this <code>Font</code> can display all characters in
+                      <code>text</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="canDisplayUpTo" type="int" line="2025">
+                <params>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="limit" type="int"/>
+                </params>
+                <declaration name="font2d" type="Font2D" line="2026"/>
+                <scope line="2027">
+                    <declaration name="c" type="char" line="2028"/>
+                    <scope line="2029"/>
+                    <scope line="2032"/>
+                    <scope line="2035"/>
+                </scope>
+            </method>
+            <javadoc line="2043">
+                Indicates whether or not this &lt;code&gt;Font&lt;/code&gt; can display the
+                  text specified by the &lt;code&gt;iter&lt;/code&gt; starting at
+                  &lt;code&gt;start&lt;/code&gt; and ending at &lt;code&gt;limit&lt;/code&gt;.                
+                <param>
+                    iter  a {@link CharacterIterator} object                    
+                </param>
+                <param>
+                    start the specified starting offset into the specified
+                      <code>CharacterIterator</code>.                    
+                </param>
+                <param>
+                    limit the specified ending offset into the specified
+                      <code>CharacterIterator</code>.                    
+                </param>
+                <return>
+                    an offset into <code>iter</code> that points
+                      to the first character in <code>iter</code> that this
+                      <code>Font</code> cannot display; or <code>-1</code> if
+                      this <code>Font</code> can display all characters in
+                      <code>iter</code>.                    
+                </return>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="canDisplayUpTo" type="int" line="2060">
+                <params>
+                    <param name="iter" type="CharacterIterator"/>
+                    <param name="start" type="int"/>
+                    <param name="limit" type="int"/>
+                </params>
+                <comment line="2071">
+                    c2 could be CharacterIterator.DONE which is not a low surrogate.                    
+                </comment>
+                <declaration name="font2d" type="Font2D" line="2061"/>
+                <declaration name="c" type="char" line="2062"/>
+                <scope line="2063">
+                    <scope line="2064"/>
+                    <scope line="2067"/>
+                    <declaration name="c2" type="char" line="2070"/>
+                    <scope line="2072"/>
+                    <scope line="2075"/>
+                </scope>
+            </method>
+            <javadoc line="2083">
+                Returns the italic angle of this &lt;code&gt;Font&lt;/code&gt;.  The italic angle
+                  is the inverse slope of the caret which best matches the posture of this
+                  &lt;code&gt;Font&lt;/code&gt;.                
+                <see>
+                    TextAttribute#POSTURE                    
+                </see>
+                <return>
+                    the angle of the ITALIC style of this <code>Font</code>.                    
+                </return>
+            </javadoc>
+            <method name="getItalicAngle" type="float" line="2090"/>
+            <method name="getItalicAngle" type="float" line="2102">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="aa" type="Object" line="2103"/>
+                <scope line="2104"/>
+                <scope line="2107"/>
+            </method>
+            <javadoc line="2114">
+                Checks whether or not this &lt;code&gt;Font&lt;/code&gt; has uniform
+                  line metrics.  A logical &lt;code&gt;Font&lt;/code&gt; might be a
+                  composite font, which means that it is composed of different
+                  physical fonts to cover different code ranges.  Each of these
+                  fonts might have different &lt;code&gt;LineMetrics&lt;/code&gt;.  If the
+                  logical &lt;code&gt;Font&lt;/code&gt; is a single
+                  font then the metrics would be uniform.                
+                <return>
+                    <code>true</code> if this <code>Font</code> has
+                      uniform line metrics; <code>false</code> otherwise.                    
+                </return>
+            </javadoc>
+            <method name="hasUniformLineMetrics" type="boolean" line="2125">
+                <comment line="2126">
+                    REMIND always safe, but prevents caller optimize                    
+                </comment>
+            </method>
+            <declaration name="flmref" type="SoftReference" line="2129"/>
+            <method name="defaultLineMetrics" type="FontLineMetrics" line="2130">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <comment line="2136">
+                    The device transform in the frc is not used in obtaining line
+                     metrics, although it probably should be: REMIND find why not?
+                     The font transform is used but its applied in getFontMetrics, so
+                     just pass identity here                    
+                </comment>
+                <comment line="2157">
+                    need real index, assumes roman for everything                    
+                </comment>
+                <comment line="2158">
+                    need real baselines eventually                    
+                </comment>
+                <comment line="2170">
+                    extract rotation                    
+                </comment>
+                <declaration name="flm" type="FontLineMetrics" line="2131"/>
+                <scope line="2134">
+                    <declaration name="metrics" type="float[]" line="2141"/>
+                    <declaration name="ascent" type="float" line="2146"/>
+                    <declaration name="descent" type="float" line="2147"/>
+                    <declaration name="leading" type="float" line="2148"/>
+                    <declaration name="ssOffset" type="float" line="2149"/>
+                    <scope line="2150"/>
+                    <declaration name="height" type="float" line="2155"/>
+                    <declaration name="baselineIndex" type="int" line="2157"/>
+                    <declaration name="baselineOffsets" type="float[]" line="2159"/>
+                    <declaration name="strikethroughOffset" type="float" line="2161"/>
+                    <declaration name="strikethroughThickness" type="float" line="2162"/>
+                    <declaration name="underlineOffset" type="float" line="2164"/>
+                    <declaration name="underlineThickness" type="float" line="2165"/>
+                    <declaration name="italicAngle" type="float" line="2167"/>
+                    <scope line="2169">
+                        <declaration name="ctx" type="AffineTransform" line="2170"/>
+                        <scope line="2171">
+                            <declaration name="pt" type="Point2D.Float" line="2172"/>
+                        </scope>
+                    </scope>
+                    <declaration name="cm" type="CoreMetrics" line="2190"/>
+                </scope>
+            </method>
+            <javadoc line="2203">
+                Returns a {@link LineMetrics} object created with the specified
+                  &lt;code&gt;String&lt;/code&gt; and {@link FontRenderContext}.                
+                <param>
+                    str the specified <code>String</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>LineMetrics</code> object created with the
+                      specified <code>String</code> and {@link FontRenderContext}.                    
+                </return>
+            </javadoc>
+            <method name="getLineMetrics" type="LineMetrics" line="2211">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="flm" type="FontLineMetrics" line="2212"/>
+            </method>
+            <javadoc line="2217">
+                Returns a &lt;code&gt;LineMetrics&lt;/code&gt; object created with the
+                  specified arguments.                
+                <param>
+                    str the specified <code>String</code>                    
+                </param>
+                <param>
+                    beginIndex the initial offset of <code>str</code>                    
+                </param>
+                <param>
+                    limit the end offset of <code>str</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>LineMetrics</code> object created with the
+                      specified arguments.                    
+                </return>
+            </javadoc>
+            <method name="getLineMetrics" type="LineMetrics" line="2229">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="flm" type="FontLineMetrics" line="2230"/>
+                <declaration name="numChars" type="int" line="2231"/>
+            </method>
+            <javadoc line="2236">
+                Returns a &lt;code&gt;LineMetrics&lt;/code&gt; object created with the
+                  specified arguments.                
+                <param>
+                    chars an array of characters                    
+                </param>
+                <param>
+                    beginIndex the initial offset of <code>chars</code>                    
+                </param>
+                <param>
+                    limit the end offset of <code>chars</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>LineMetrics</code> object created with the
+                      specified arguments.                    
+                </return>
+            </javadoc>
+            <method name="getLineMetrics" type="LineMetrics" line="2248">
+                <params>
+                    <param name="chars" type="char[]"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="flm" type="FontLineMetrics" line="2249"/>
+                <declaration name="numChars" type="int" line="2250"/>
+            </method>
+            <javadoc line="2255">
+                Returns a &lt;code&gt;LineMetrics&lt;/code&gt; object created with the
+                  specified arguments.                
+                <param>
+                    ci the specified <code>CharacterIterator</code>                    
+                </param>
+                <param>
+                    beginIndex the initial offset in <code>ci</code>                    
+                </param>
+                <param>
+                    limit the end offset of <code>ci</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>LineMetrics</code> object created with the
+                      specified arguments.                    
+                </return>
+            </javadoc>
+            <method name="getLineMetrics" type="LineMetrics" line="2267">
+                <params>
+                    <param name="ci" type="CharacterIterator"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="flm" type="FontLineMetrics" line="2268"/>
+                <declaration name="numChars" type="int" line="2269"/>
+            </method>
+            <javadoc line="2274">
+                Returns the logical bounds of the specified &lt;code&gt;String&lt;/code&gt; in
+                  the specified &lt;code&gt;FontRenderContext&lt;/code&gt;.  The logical bounds
+                  contains the origin, ascent, advance, and height, which includes
+                  the leading.  The logical bounds does not always enclose all the
+                  text.  For example, in some languages and in some fonts, accent
+                  marks can be positioned above the ascent or below the descent.
+                  To obtain a visual bounding box, which encloses all the text,
+                  use the {@link TextLayout#getBounds() getBounds} method of
+                  &lt;code&gt;TextLayout&lt;/code&gt;.
+                  &lt;p&gt;Note: The returned bounds is in baseline-relative coordinates
+                  (see {@link java.awt.Font class notes}).                
+                <param>
+                    str the specified <code>String</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a {@link Rectangle2D} that is the bounding box of the
+                      specified <code>String</code> in the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+                <see>
+                    FontRenderContext                    
+                </see>
+                <see>
+                    Font#createGlyphVector                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getStringBounds" type="Rectangle2D" line="2295">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="array" type="char[]" line="2296"/>
+            </method>
+            <javadoc line="2300">
+                Returns the logical bounds of the specified &lt;code&gt;String&lt;/code&gt; in
+                  the specified &lt;code&gt;FontRenderContext&lt;/code&gt;.  The logical bounds
+                  contains the origin, ascent, advance, and height, which includes
+                  the leading.  The logical bounds does not always enclose all the
+                  text.  For example, in some languages and in some fonts, accent
+                  marks can be positioned above the ascent or below the descent.
+                  To obtain a visual bounding box, which encloses all the text,
+                  use the {@link TextLayout#getBounds() getBounds} method of
+                  &lt;code&gt;TextLayout&lt;/code&gt;.
+                  &lt;p&gt;Note: The returned bounds is in baseline-relative coordinates
+                  (see {@link java.awt.Font class notes}).                
+                <param>
+                    str the specified <code>String</code>                    
+                </param>
+                <param>
+                    beginIndex the initial offset of <code>str</code>                    
+                </param>
+                <param>
+                    limit the end offset of <code>str</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>Rectangle2D</code> that is the bounding box of the
+                      specified <code>String</code> in the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+                <throws>
+                    IndexOutOfBoundsException if <code>beginIndex</code> is
+                      less than zero, or <code>limit</code> is greater than the
+                      length of <code>str</code>, or <code>beginIndex</code>
+                      is greater than <code>limit</code>.                    
+                </throws>
+                <see>
+                    FontRenderContext                    
+                </see>
+                <see>
+                    Font#createGlyphVector                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getStringBounds" type="Rectangle2D" line="2329">
+                <params>
+                    <param name="str" type="String"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="substr" type="String" line="2330"/>
+            </method>
+            <javadoc line="2334">
+                Returns the logical bounds of the specified array of characters
+                  in the specified &lt;code&gt;FontRenderContext&lt;/code&gt;.  The logical
+                  bounds contains the origin, ascent, advance, and height, which
+                  includes the leading.  The logical bounds does not always enclose
+                  all the text.  For example, in some languages and in some fonts,
+                  accent marks can be positioned above the ascent or below the
+                  descent.  To obtain a visual bounding box, which encloses all the
+                  text, use the {@link TextLayout#getBounds() getBounds} method of
+                  &lt;code&gt;TextLayout&lt;/code&gt;.
+                  &lt;p&gt;Note: The returned bounds is in baseline-relative coordinates
+                  (see {@link java.awt.Font class notes}).                
+                <param>
+                    chars an array of characters                    
+                </param>
+                <param>
+                    beginIndex the initial offset in the array of
+                      characters                    
+                </param>
+                <param>
+                    limit the end offset in the array of characters                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>Rectangle2D</code> that is the bounding box of the
+                      specified array of characters in the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+                <throws>
+                    IndexOutOfBoundsException if <code>beginIndex</code> is
+                      less than zero, or <code>limit</code> is greater than the
+                      length of <code>chars</code>, or <code>beginIndex</code>
+                      is greater than <code>limit</code>.                    
+                </throws>
+                <see>
+                    FontRenderContext                    
+                </see>
+                <see>
+                    Font#createGlyphVector                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+            </javadoc>
+            <method name="getStringBounds" type="Rectangle2D" line="2364">
+                <params>
+                    <param name="chars" type="char[]"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <comment line="2376">
+                    this code should be in textlayout                    
+                </comment>
+                <comment line="2377">
+                    quick check for simple text, assume GV ok to use if simple                    
+                </comment>
+                <comment line="2391">
+                    need char array constructor on textlayout                    
+                </comment>
+                <scope line="2365"/>
+                <scope line="2368"/>
+                <scope line="2371"/>
+                <declaration name="simple" type="boolean" line="2379"/>
+                <scope line="2382"/>
+                <scope line="2386">
+                    <declaration name="gv" type="GlyphVector" line="2387"/>
+                </scope>
+                <scope line="2390">
+                    <declaration name="str" type="String" line="2392"/>
+                    <declaration name="tl" type="TextLayout" line="2393"/>
+                </scope>
+            </method>
+            <javadoc line="2400">
+                Returns the logical bounds of the characters indexed in the
+                  specified {@link CharacterIterator} in the
+                  specified &lt;code&gt;FontRenderContext&lt;/code&gt;.  The logical bounds
+                  contains the origin, ascent, advance, and height, which includes
+                  the leading.  The logical bounds does not always enclose all the
+                  text.  For example, in some languages and in some fonts, accent
+                  marks can be positioned above the ascent or below the descent.
+                  To obtain a visual bounding box, which encloses all the text,
+                  use the {@link TextLayout#getBounds() getBounds} method of
+                  &lt;code&gt;TextLayout&lt;/code&gt;.
+                  &lt;p&gt;Note: The returned bounds is in baseline-relative coordinates
+                  (see {@link java.awt.Font class notes}).                
+                <param>
+                    ci the specified <code>CharacterIterator</code>                    
+                </param>
+                <param>
+                    beginIndex the initial offset in <code>ci</code>                    
+                </param>
+                <param>
+                    limit the end offset in <code>ci</code>                    
+                </param>
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>Rectangle2D</code> that is the bounding box of the
+                      characters indexed in the specified <code>CharacterIterator</code>
+                      in the specified <code>FontRenderContext</code>.                    
+                </return>
+                <see>
+                    FontRenderContext                    
+                </see>
+                <see>
+                    Font#createGlyphVector                    
+                </see>
+                <since>
+                    1.2                    
+                </since>
+                <throws>
+                    IndexOutOfBoundsException if <code>beginIndex</code> is
+                      less than the start index of <code>ci</code>, or
+                      <code>limit</code> is greater than the end index of
+                      <code>ci</code>, or <code>beginIndex</code> is greater
+                      than <code>limit</code>                    
+                </throws>
+            </javadoc>
+            <method name="getStringBounds" type="Rectangle2D" line="2431">
+                <params>
+                    <param name="ci" type="CharacterIterator"/>
+                    <param name="beginIndex" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="start" type="int" line="2432"/>
+                <declaration name="end" type="int" line="2433"/>
+                <scope line="2435"/>
+                <scope line="2438"/>
+                <scope line="2441"/>
+                <declaration name="arr" type="char[]" line="2446"/>
+                <scope line="2449"/>
+            </method>
+            <javadoc line="2457">
+                Returns the bounds for the character with the maximum
+                  bounds as defined in the specified &lt;code&gt;FontRenderContext&lt;/code&gt;.
+                  &lt;p&gt;Note: The returned bounds is in baseline-relative coordinates
+                  (see {@link java.awt.Font class notes}).                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <return>
+                    a <code>Rectangle2D</code> that is the bounding box
+                      for the character with the maximum bounds.                    
+                </return>
+            </javadoc>
+            <method name="getMaxCharBounds" type="Rectangle2D" line="2466">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                </params>
+                <declaration name="metrics" type="float[]" line="2467"/>
+            </method>
+            <javadoc line="2476">
+                Creates a {@link java.awt.font.GlyphVector GlyphVector} by
+                  mapping characters to glyphs one-to-one based on the
+                  Unicode cmap in this &lt;code&gt;Font&lt;/code&gt;.  This method does no other
+                  processing besides the mapping of glyphs to characters.  This
+                  means that this method is not useful for some scripts, such
+                  as Arabic, Hebrew, Thai, and Indic, that require reordering,
+                  shaping, or ligature substitution.                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <param>
+                    str the specified <code>String</code>                    
+                </param>
+                <return>
+                    a new <code>GlyphVector</code> created with the
+                      specified <code>String</code> and the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+            </javadoc>
+            <method name="createGlyphVector" type="GlyphVector" line="2491">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="str" type="String"/>
+                </params>
+            </method>
+            <javadoc line="2495">
+                Creates a {@link java.awt.font.GlyphVector GlyphVector} by
+                  mapping characters to glyphs one-to-one based on the
+                  Unicode cmap in this &lt;code&gt;Font&lt;/code&gt;.  This method does no other
+                  processing besides the mapping of glyphs to characters.  This
+                  means that this method is not useful for some scripts, such
+                  as Arabic, Hebrew, Thai, and Indic, that require reordering,
+                  shaping, or ligature substitution.                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <param>
+                    chars the specified array of characters                    
+                </param>
+                <return>
+                    a new <code>GlyphVector</code> created with the
+                      specified array of characters and the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+            </javadoc>
+            <method name="createGlyphVector" type="GlyphVector" line="2510">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="chars" type="char[]"/>
+                </params>
+            </method>
+            <javadoc line="2514">
+                Creates a {@link java.awt.font.GlyphVector GlyphVector} by
+                  mapping the specified characters to glyphs one-to-one based on the
+                  Unicode cmap in this &lt;code&gt;Font&lt;/code&gt;.  This method does no other
+                  processing besides the mapping of glyphs to characters.  This
+                  means that this method is not useful for some scripts, such
+                  as Arabic, Hebrew, Thai, and Indic, that require reordering,
+                  shaping, or ligature substitution.                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <param>
+                    ci the specified <code>CharacterIterator</code>                    
+                </param>
+                <return>
+                    a new <code>GlyphVector</code> created with the
+                      specified <code>CharacterIterator</code> and the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+            </javadoc>
+            <method name="createGlyphVector" type="GlyphVector" line="2530">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="ci" type="CharacterIterator"/>
+                </params>
+            </method>
+            <javadoc line="2534">
+                Creates a {@link java.awt.font.GlyphVector GlyphVector} by
+                  mapping characters to glyphs one-to-one based on the
+                  Unicode cmap in this &lt;code&gt;Font&lt;/code&gt;.  This method does no other
+                  processing besides the mapping of glyphs to characters.  This
+                  means that this method is not useful for some scripts, such
+                  as Arabic, Hebrew, Thai, and Indic, that require reordering,
+                  shaping, or ligature substitution.                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <param>
+                    glyphCodes the specified integer array                    
+                </param>
+                <return>
+                    a new <code>GlyphVector</code> created with the
+                      specified integer array and the specified
+                      <code>FontRenderContext</code>.                    
+                </return>
+            </javadoc>
+            <method name="createGlyphVector" type="GlyphVector" line="2550">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="glyphCodes" type="int[]"/>
+                </params>
+            </method>
+            <javadoc line="2554">
+                Returns a new &lt;code&gt;GlyphVector&lt;/code&gt; object, performing full
+                  layout of the text if possible.  Full layout is required for
+                  complex text, such as Arabic or Hindi.  Support for different
+                  scripts depends on the font and implementation.
+                  &lt;p&gt;
+                  Layout requires bidi analysis, as performed by
+                  &lt;code&gt;Bidi&lt;/code&gt;, and should only be performed on text that
+                  has a uniform direction.  The direction is indicated in the
+                  flags parameter,by using LAYOUT_RIGHT_TO_LEFT to indicate a
+                  right-to-left (Arabic and Hebrew) run direction, or
+                  LAYOUT_LEFT_TO_RIGHT to indicate a left-to-right (English)
+                  run direction.
+                  &lt;p&gt;
+                  In addition, some operations, such as Arabic shaping, require
+                  context, so that the characters at the start and limit can have
+                  the proper shapes.  Sometimes the data in the buffer outside
+                  the provided range does not have valid data.  The values
+                  LAYOUT_NO_START_CONTEXT and LAYOUT_NO_LIMIT_CONTEXT can be
+                  added to the flags parameter to indicate that the text before
+                  start, or after limit, respectively, should not be examined
+                  for context.
+                  &lt;p&gt;
+                  All other values for the flags parameter are reserved.                
+                <param>
+                    frc the specified <code>FontRenderContext</code>                    
+                </param>
+                <param>
+                    text the text to layout                    
+                </param>
+                <param>
+                    start the start of the text to use for the <code>GlyphVector</code>                    
+                </param>
+                <param>
+                    limit the limit of the text to use for the <code>GlyphVector</code>                    
+                </param>
+                <param>
+                    flags control flags as described above                    
+                </param>
+                <return>
+                    a new <code>GlyphVector</code> representing the text between
+                      start and limit, with glyphs chosen and positioned so as to best represent
+                      the text                    
+                </return>
+                <throws>
+                    ArrayIndexOutOfBoundsException if start or limit is
+                      out of bounds                    
+                </throws>
+                <see>
+                    java.text.Bidi                    
+                </see>
+                <see>
+                    #LAYOUT_LEFT_TO_RIGHT                    
+                </see>
+                <see>
+                    #LAYOUT_RIGHT_TO_LEFT                    
+                </see>
+                <see>
+                    #LAYOUT_NO_START_CONTEXT                    
+                </see>
+                <see>
+                    #LAYOUT_NO_LIMIT_CONTEXT                    
+                </see>
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <method name="layoutGlyphVector" type="GlyphVector" line="2600">
+                <params>
+                    <param name="frc" type="FontRenderContext"/>
+                    <param name="text" type="char[]"/>
+                    <param name="start" type="int"/>
+                    <param name="limit" type="int"/>
+                    <param name="flags" type="int"/>
+                </params>
+                <comment line="2602">
+                    !!! no custom layout engines                    
+                </comment>
+                <declaration name="gl" type="GlyphLayout" line="2602"/>
+                <declaration name="gv" type="StandardGlyphVector" line="2603"/>
+            </method>
+            <declaration name="LAYOUT_LEFT_TO_RIGHT" type="int" line="2609"/>
+            <javadoc line="2609">
+                A flag to layoutGlyphVector indicating that text is left-to-right as
+                  determined by Bidi analysis.                
+            </javadoc>
+            <declaration name="LAYOUT_RIGHT_TO_LEFT" type="int" line="2615"/>
+            <javadoc line="2615">
+                A flag to layoutGlyphVector indicating that text is right-to-left as
+                  determined by Bidi analysis.                
+            </javadoc>
+            <declaration name="LAYOUT_NO_START_CONTEXT" type="int" line="2621"/>
+            <javadoc line="2621">
+                A flag to layoutGlyphVector indicating that text in the char array
+                  before the indicated start should not be examined.                
+            </javadoc>
+            <declaration name="LAYOUT_NO_LIMIT_CONTEXT" type="int" line="2627"/>
+            <javadoc line="2627">
+                A flag to layoutGlyphVector indicating that text in the char array
+                  after the indicated limit should not be examined.                
+            </javadoc>
+            <method name="applyTransform" type="void" line="2634">
+                <params>
+                    <param name="trans" type="AffineTransform"/>
+                    <param name="values" type="AttributeValues"/>
+                </params>
+                <scope line="2635"/>
+            </method>
+            <method name="applyStyle" type="void" line="2641">
+                <params>
+                    <param name="style" type="int"/>
+                    <param name="values" type="AttributeValues"/>
+                </params>
+                <comment line="2642">
+                    WEIGHT_BOLD, WEIGHT_REGULAR                    
+                </comment>
+                <comment line="2644">
+                    POSTURE_OBLIQUE, POSTURE_REGULAR                    
+                </comment>
+            </method>
+            <method name="initIDs" type="void" line="2651"/>
+        </class>
+    </source>

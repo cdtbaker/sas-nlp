@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.transport">
+        <import package="java.lang.ref.ReferenceQueue"/>
+        <import package="java.rmi.NoSuchObjectException"/>
+        <import package="java.rmi.Remote"/>
+        <import package="java.rmi.dgc.VMID"/>
+        <import package="java.rmi.server.ExportException"/>
+        <import package="java.rmi.server.ObjID"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Map"/>
+        <import package="sun.misc.GC"/>
+        <import package="sun.rmi.runtime.Log"/>
+        <import package="sun.rmi.runtime.NewThreadAction"/>
+        <import package="sun.security.action.GetLongAction"/>
+        <class name="ObjectTable" line="42">
+            <comment line="88">
+                Disallow anyone from creating one of these.                
+            </comment>
+            <javadoc line="42">
+                Object table shared by all implementors of the Transport interface.
+                  This table maps object ids to remote object targets in this address
+                  space.                
+                <author>
+                    Ann Wollrath                    
+                </author>
+                <author>
+                    Peter Jones                    
+                </author>
+            </javadoc>
+            <declaration name="gcInterval" type="long" line="52"/>
+            <javadoc line="52">
+                maximum interval between complete garbage collections of local heap                
+            </javadoc>
+            <declaration name="tableLock" type="Object" line="57"/>
+            <javadoc line="57">
+                lock guarding objTable and implTable.
+                  Holders MAY acquire a Target instance&apos;s lock or keepAliveLock.                
+            </javadoc>
+            <declaration name="objTable" type="Map&lt;ObjectEndpoint,Target&gt;" line="63"/>
+            <javadoc line="63">
+                tables mapping to Target, keyed from ObjectEndpoint and impl object                
+            </javadoc>
+            <declaration name="implTable" type="Map&lt;WeakRef,Target&gt;" line="66"/>
+            <declaration name="keepAliveLock" type="Object" line="69"/>
+            <javadoc line="69">
+                lock guarding keepAliveCount, reaper, and gcLatencyRequest.
+                  Holders may NOT acquire a Target instance&apos;s lock or tableLock.                
+            </javadoc>
+            <declaration name="keepAliveCount" type="int" line="75"/>
+            <javadoc line="75">
+                count of non-permanent objects in table or still processing calls                
+            </javadoc>
+            <declaration name="reaper" type="Thread" line="78"/>
+            <javadoc line="78">
+                thread to collect unreferenced objects from table                
+            </javadoc>
+            <declaration name="reapQueue" type="ReferenceQueue" line="81"/>
+            <javadoc line="81">
+                queue notified when weak refs in the table are cleared                
+            </javadoc>
+            <declaration name="gcLatencyRequest" type="GC.LatencyRequest" line="84"/>
+            <javadoc line="84">
+                handle for GC latency request (for future cancellation)                
+            </javadoc>
+            <method name="ObjectTable" type="constructor" line="90"/>
+            <javadoc line="92">
+                Returns the target associated with the object id.                
+            </javadoc>
+            <method name="getTarget" type="Target" line="95">
+                <params>
+                    <param name="oe" type="ObjectEndpoint"/>
+                </params>
+                <scope line="96"/>
+            </method>
+            <javadoc line="101">
+                Returns the target associated with the remote object                
+            </javadoc>
+            <method name="getTarget" type="Target" line="104">
+                <params>
+                    <param name="impl" type="Remote"/>
+                </params>
+                <scope line="105"/>
+            </method>
+            <javadoc line="110">
+                Returns the stub for the remote object &lt;b&gt;obj&lt;/b&gt; passed
+                  as a parameter. This operation is only valid &lt;i&gt;after&lt;/i&gt;
+                  the object has been exported.                
+                <return>
+                    the stub for the remote object, <b>obj</b>.                    
+                </return>
+                <exception>
+                    NoSuchObjectException if the stub for the
+                      remote object could not be found.                    
+                </exception>
+            </javadoc>
+            <method name="getStub" type="Remote" line="121">
+                <params>
+                    <param name="impl" type="Remote"/>
+                </params>
+                <declaration name="target" type="Target" line="122"/>
+                <scope line="123"/>
+                <scope line="125"/>
+            </method>
+            <javadoc line="130">
+                Remove the remote object, obj, from the RMI runtime. If
+                  successful, the object can no longer accept incoming RMI calls.
+                  If the force parameter is true, the object is forcibly unexported
+                  even if there are pending calls to the remote object or the
+                  remote object still has calls in progress.  If the force
+                  parameter is false, the object is only unexported if there are
+                  no pending or in progress calls to the object.                
+                <param>
+                    obj the remote object to be unexported                    
+                </param>
+                <param>
+                    force if true, unexports the object even if there are
+                      pending or in-progress calls; if false, only unexports the object
+                      if there are no pending or in-progress calls                    
+                </param>
+                <return>
+                    true if operation is successful, false otherwise                    
+                </return>
+                <exception>
+                    NoSuchObjectException if the remote object is not
+                      currently exported                    
+                </exception>
+            </javadoc>
+            <method name="unexportObject" type="boolean" line="149">
+                <params>
+                    <param name="obj" type="Remote"/>
+                    <param name="force" type="boolean"/>
+                </params>
+                <scope line="150">
+                    <declaration name="target" type="Target" line="151"/>
+                    <scope line="152"/>
+                    <scope line="154">
+                        <scope line="155"/>
+                        <scope line="158"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="165">
+                Add target to object table.  If it is not a permanent entry, then
+                  make sure that reaper thread is running to remove collected entries
+                  and keep VM alive.                
+            </javadoc>
+            <method name="putTarget" type="void" line="170">
+                <params>
+                    <param name="target" type="Target"/>
+                </params>
+                <comment line="179">
+                    Do nothing if impl has already been collected (see 6597112). Check while
+                     holding tableLock to ensure that Reaper cannot process weakImpl in between
+                     null check and putincrement effects.                    
+                </comment>
+                <declaration name="oe" type="ObjectEndpoint" line="171"/>
+                <declaration name="weakImpl" type="WeakRef" line="172"/>
+                <scope line="174"/>
+                <scope line="178">
+                    <scope line="184">
+                        <scope line="185"/>
+                        <scope line="188"/>
+                        <scope line="195"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="202">
+                Remove target from object table.
+                  NOTE: This method must only be invoked while synchronized on
+                  the &quot;tableLock&quot; object, because it does not do so itself.                
+            </javadoc>
+            <method name="removeTarget" type="void" line="208">
+                <params>
+                    <param name="target" type="Target"/>
+                </params>
+                <comment line="209">
+                    assert Thread.holdsLock(tableLock);                    
+                </comment>
+                <comment line="221">
+                    handles decrementing keep-alive count                    
+                </comment>
+                <declaration name="oe" type="ObjectEndpoint" line="211"/>
+                <declaration name="weakImpl" type="WeakRef" line="212"/>
+                <scope line="214"/>
+            </method>
+            <javadoc line="224">
+                Process client VM signalling reference for given ObjID: forward to
+                  correspoding Target entry.  If ObjID is not found in table,
+                  no action is taken.                
+            </javadoc>
+            <method name="referenced" type="void" line="229">
+                <params>
+                    <param name="id" type="ObjID"/>
+                    <param name="sequenceNum" type="long"/>
+                    <param name="vmid" type="VMID"/>
+                </params>
+                <scope line="230">
+                    <declaration name="oe" type="ObjectEndpoint" line="231"/>
+                    <declaration name="target" type="Target" line="233"/>
+                    <scope line="234"/>
+                </scope>
+            </method>
+            <javadoc line="240">
+                Process client VM dropping reference for given ObjID: forward to
+                  correspoding Target entry.  If ObjID is not found in table,
+                  no action is taken.                
+            </javadoc>
+            <method name="unreferenced" type="void" line="247">
+                <params>
+                    <param name="id" type="ObjID"/>
+                    <param name="sequenceNum" type="long"/>
+                    <param name="vmid" type="VMID"/>
+                    <param name="strong" type="boolean"/>
+                </params>
+                <scope line="248">
+                    <declaration name="oe" type="ObjectEndpoint" line="249"/>
+                    <declaration name="target" type="Target" line="251"/>
+                </scope>
+            </method>
+            <javadoc line="257">
+                Increments the &quot;keep-alive count&quot;.
+                  The &quot;keep-alive count&quot; is the number of non-permanent remote objects
+                  that are either in the object table or still have calls in progress.
+                  Therefore, this method should be invoked exactly once for every
+                  non-permanent remote object exported (a remote object must be
+                  exported before it can have any calls in progress).
+                  The VM is &quot;kept alive&quot; while the keep-alive count is greater than
+                  zero; this is accomplished by keeping a non-daemon thread running.
+                  Because non-permanent objects are those that can be garbage
+                  collected while exported, and thus those for which the &quot;reaper&quot;
+                  thread operates, the reaper thread also serves as the non-daemon
+                  VM keep-alive thread; a new reaper thread is created if necessary.                
+            </javadoc>
+            <method name="incrementKeepAliveCount" type="void" line="274">
+                <comment line="284">
+                    While there are non-&quot;permanent&quot; objects in the object table,
+                     request a maximum latency for inspecting the entire heap
+                     from the local garbage collector, to place an upper bound
+                     on the time to discover remote objects that have become
+                     unreachable (and thus can be removed from the table).                    
+                </comment>
+                <scope line="275">
+                    <scope line="278"/>
+                    <scope line="291"/>
+                </scope>
+            </method>
+            <javadoc line="297">
+                Decrements the &quot;keep-alive count&quot;.
+                  The &quot;keep-alive count&quot; is the number of non-permanent remote objects
+                  that are either in the object table or still have calls in progress.
+                  Therefore, this method should be invoked exactly once for every
+                  previously-exported non-permanent remote object that both has been
+                  removed from the object table and has no calls still in progress.
+                  If the keep-alive count is decremented to zero, then the current
+                  reaper thread is terminated to cease keeping the VM alive (and
+                  because there are no more non-permanent remote objects to reap).                
+            </javadoc>
+            <method name="decrementKeepAliveCount" type="void" line="310">
+                <comment line="324">
+                    If there are no longer any non-permanent objects in the
+                     object table, we are no longer concerned with the latency
+                     of local garbage collection here.                    
+                </comment>
+                <scope line="311">
+                    <scope line="314">
+                        <scope line="315"/>
+                        <anonymous_class line="316">
+                            <method name="run" type="Void" line="317"/>
+                        </anonymous_class>
+                    </scope>
+                </scope>
+            </method>
+            <class name="Reaper" line="335">
+                <implements interface="Runnable"/>
+                <javadoc line="335">
+                    The Reaper thread waits for notifications that weak references in the
+                      object table have been cleared.  When it receives a notification, it
+                      removes the corresponding entry from the table.
+                      Since the Reaper is created as a non-daemon thread, it also serves
+                      to keep the VM from exiting while there are objects in the table
+                      (other than permanent entries that should neither be reaped nor
+                      keep the VM alive).                    
+                </javadoc>
+                <method name="run" type="void" line="347">
+                    <comment line="350">
+                        wait for next cleared weak reference                        
+                    </comment>
+                    <comment line="367">
+                        pass away if interrupted                        
+                    </comment>
+                    <scope line="348">
+                        <scope line="349">
+                            <declaration name="weakImpl" type="WeakRef" line="351"/>
+                            <scope line="353">
+                                <declaration name="target" type="Target" line="354"/>
+                                <scope line="355">
+                                    <scope line="356"/>
+                                    <scope line="359"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <scope line="366"/>
+                </method>
+            </class>
+        </class>
+    </source>

@@ -1,0 +1,376 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.filter">
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.NullArgumentException"/>
+        <import package="org.apache.commons.math3.linear.Array2DRowRealMatrix"/>
+        <import package="org.apache.commons.math3.linear.ArrayRealVector"/>
+        <import package="org.apache.commons.math3.linear.CholeskyDecomposition"/>
+        <import package="org.apache.commons.math3.linear.DecompositionSolver"/>
+        <import package="org.apache.commons.math3.linear.MatrixDimensionMismatchException"/>
+        <import package="org.apache.commons.math3.linear.MatrixUtils"/>
+        <import package="org.apache.commons.math3.linear.NonSquareMatrixException"/>
+        <import package="org.apache.commons.math3.linear.RealMatrix"/>
+        <import package="org.apache.commons.math3.linear.RealVector"/>
+        <import package="org.apache.commons.math3.linear.SingularMatrixException"/>
+        <import package="org.apache.commons.math3.util.MathUtils"/>
+        <class name="KalmanFilter" line="33">
+            <javadoc line="33">
+                Implementation of a Kalman filter to estimate the state &lt;i&gt;x&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt;
+                  of a discrete-time controlled process that is governed by the linear
+                  stochastic difference equation:
+                  &lt;pre&gt;
+                  &lt;i&gt;x&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; = &lt;b&gt;A&lt;/b&gt;&lt;i&gt;x&lt;sub&gt;k-1&lt;/sub&gt;&lt;/i&gt; + &lt;b&gt;B&lt;/b&gt;&lt;i&gt;u&lt;sub&gt;k-1&lt;/sub&gt;&lt;/i&gt; + &lt;i&gt;w&lt;sub&gt;k-1&lt;/sub&gt;&lt;/i&gt;
+                  &lt;/pre&gt;
+                  with a measurement &lt;i&gt;x&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; that is
+                  &lt;pre&gt;
+                  &lt;i&gt;z&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; = &lt;b&gt;H&lt;/b&gt;&lt;i&gt;x&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; + &lt;i&gt;v&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt;.
+                  &lt;/pre&gt;
+                  &lt;p&gt;
+                  The random variables &lt;i&gt;w&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; and &lt;i&gt;v&lt;sub&gt;k&lt;/sub&gt;&lt;/i&gt; represent
+                  the process and measurement noise and are assumed to be independent of each
+                  other and distributed with normal probability (white noise).
+                  &lt;p&gt;
+                  The Kalman filter cycle involves the following steps:
+                  &lt;ol&gt;
+                  &lt;li&gt;predict: project the current state estimate ahead in time&lt;/li&gt;
+                  &lt;li&gt;correct: adjust the projected estimate by an actual measurement&lt;/li&gt;
+                  &lt;/ol&gt;
+                  &lt;p&gt;
+                  The Kalman filter is initialized with a {@link ProcessModel} and a{@link MeasurementModel}, which contain the corresponding transformation and
+                  noise covariance matrices. The parameter names used in the respective models
+                  correspond to the following names commonly used in the mathematical
+                  literature:
+                  &lt;ul&gt;
+                  &lt;li&gt;A - state transition matrix&lt;/li&gt;
+                  &lt;li&gt;B - control input matrix&lt;/li&gt;
+                  &lt;li&gt;H - measurement matrix&lt;/li&gt;
+                  &lt;li&gt;Q - process noise covariance matrix&lt;/li&gt;
+                  &lt;li&gt;R - measurement noise covariance matrix&lt;/li&gt;
+                  &lt;li&gt;P - error covariance matrix&lt;/li&gt;
+                  &lt;/ul&gt;                
+                <see>
+                    <a href="http://www.cs.unc.edu/~welch/kalman/">Kalman filter
+                           resources</a>                    
+                </see>
+                <see>
+                    <a href="http://www.cs.unc.edu/~welch/media/pdf/kalman_intro.pdf">An
+                           introduction to the Kalman filter by Greg Welch and Gary Bishop</a>                    
+                </see>
+                <see>
+                    <a href="http://academic.csuohio.edu/simond/courses/eec644/kalman.pdf">
+                           Kalman filter example by Dan Simon</a>                    
+                </see>
+                <see>
+                    ProcessModel                    
+                </see>
+                <see>
+                    MeasurementModel                    
+                </see>
+                <since>
+                    3.0                    
+                </since>
+                <version>
+                    $Id: KalmanFilter.java 1416643 2012-12-03 19:37:14Z tn $                    
+                </version>
+            </javadoc>
+            <declaration name="processModel" type="ProcessModel" line="85"/>
+            <javadoc line="85">
+                The process model used by this filter instance.                
+            </javadoc>
+            <declaration name="measurementModel" type="MeasurementModel" line="87"/>
+            <javadoc line="87">
+                The measurement model used by this filter instance.                
+            </javadoc>
+            <declaration name="transitionMatrix" type="RealMatrix" line="89"/>
+            <javadoc line="89">
+                The transition matrix, equivalent to A.                
+            </javadoc>
+            <declaration name="transitionMatrixT" type="RealMatrix" line="91"/>
+            <javadoc line="91">
+                The transposed transition matrix.                
+            </javadoc>
+            <declaration name="controlMatrix" type="RealMatrix" line="93"/>
+            <javadoc line="93">
+                The control matrix, equivalent to B.                
+            </javadoc>
+            <declaration name="measurementMatrix" type="RealMatrix" line="95"/>
+            <javadoc line="95">
+                The measurement matrix, equivalent to H.                
+            </javadoc>
+            <declaration name="measurementMatrixT" type="RealMatrix" line="97"/>
+            <javadoc line="97">
+                The transposed measurement matrix.                
+            </javadoc>
+            <declaration name="stateEstimation" type="RealVector" line="99"/>
+            <javadoc line="99">
+                The internal state estimation vector, equivalent to x hat.                
+            </javadoc>
+            <declaration name="errorCovariance" type="RealMatrix" line="101"/>
+            <javadoc line="101">
+                The error covariance matrix, equivalent to P.                
+            </javadoc>
+            <javadoc line="104">
+                Creates a new Kalman filter with the given process and measurement models.                
+                <param>
+                    processthe model defining the underlying process dynamics                    
+                </param>
+                <param>
+                    measurementthe model defining the given measurement characteristics                    
+                </param>
+                <throws>
+                    NullArgumentExceptionif any of the given inputs is null (except for the control matrix)                    
+                </throws>
+                <throws>
+                    NonSquareMatrixExceptionif the transition matrix is non square                    
+                </throws>
+                <throws>
+                    DimensionMismatchExceptionif the column dimension of the transition matrix does not match the dimension of the
+                      initial state estimation vector                    
+                </throws>
+                <throws>
+                    MatrixDimensionMismatchExceptionif the matrix dimensions do not fit together                    
+                </throws>
+            </javadoc>
+            <method name="KalmanFilter" type="constructor" line="123">
+                <params>
+                    <param name="process" type="ProcessModel"/>
+                    <param name="measurement" type="MeasurementModel"/>
+                </params>
+                <comment line="135">
+                    create an empty matrix if no control matrix was given                    
+                </comment>
+                <comment line="146">
+                    check that the process and measurement noise matrices are not null                    
+                </comment>
+                <comment line="147">
+                    they will be directly accessed from the model as they may change                    
+                </comment>
+                <comment line="148">
+                    over time                    
+                </comment>
+                <comment line="154">
+                    set the initial state estimate to a zero vector if it is not                    
+                </comment>
+                <comment line="155">
+                    available from the process model                    
+                </comment>
+                <comment line="167">
+                    initialize the error covariance to the process noise if it is not                    
+                </comment>
+                <comment line="168">
+                    available from the process model                    
+                </comment>
+                <comment line="175">
+                    sanity checks, the control matrix B may be null                    
+                </comment>
+                <comment line="177">
+                    A must be a square matrix                    
+                </comment>
+                <comment line="184">
+                    row dimension of B must be equal to A                    
+                </comment>
+                <comment line="195">
+                    Q must be equal to A                    
+                </comment>
+                <comment line="198">
+                    column dimension of H must be equal to row dimension of A                    
+                </comment>
+                <comment line="206">
+                    row dimension of R must be equal to row dimension of H                    
+                </comment>
+                <scope line="136"/>
+                <scope line="138"/>
+                <declaration name="processNoise" type="RealMatrix" line="149"/>
+                <declaration name="measNoise" type="RealMatrix" line="151"/>
+                <scope line="156"/>
+                <scope line="158"/>
+                <scope line="162"/>
+                <scope line="169"/>
+                <scope line="171"/>
+                <scope line="178"/>
+                <scope line="189"/>
+                <scope line="199"/>
+                <scope line="208"/>
+            </method>
+            <javadoc line="215">
+                Returns the dimension of the state estimation vector.                
+                <return>
+                    the state dimension                    
+                </return>
+            </javadoc>
+            <method name="getStateDimension" type="int" line="220"/>
+            <javadoc line="224">
+                Returns the dimension of the measurement vector.                
+                <return>
+                    the measurement vector dimension                    
+                </return>
+            </javadoc>
+            <method name="getMeasurementDimension" type="int" line="229"/>
+            <javadoc line="233">
+                Returns the current state estimation vector.                
+                <return>
+                    the state estimation vector                    
+                </return>
+            </javadoc>
+            <method name="getStateEstimation" type="double[]" line="238"/>
+            <javadoc line="242">
+                Returns a copy of the current state estimation vector.                
+                <return>
+                    the state estimation vector                    
+                </return>
+            </javadoc>
+            <method name="getStateEstimationVector" type="RealVector" line="247"/>
+            <javadoc line="251">
+                Returns the current error covariance matrix.                
+                <return>
+                    the error covariance matrix                    
+                </return>
+            </javadoc>
+            <method name="getErrorCovariance" type="double[][]" line="256"/>
+            <javadoc line="260">
+                Returns a copy of the current error covariance matrix.                
+                <return>
+                    the error covariance matrix                    
+                </return>
+            </javadoc>
+            <method name="getErrorCovarianceMatrix" type="RealMatrix" line="265"/>
+            <javadoc line="269">
+                Predict the internal state estimation one time step ahead.                
+            </javadoc>
+            <method name="predict" type="void" line="272"/>
+            <javadoc line="276">
+                Predict the internal state estimation one time step ahead.                
+                <param>
+                    uthe control vector                    
+                </param>
+                <throws>
+                    DimensionMismatchExceptionif the dimension of the control vector does not fit                    
+                </throws>
+            </javadoc>
+            <method name="predict" type="void" line="284">
+                <params>
+                    <param name="u" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="288">
+                Predict the internal state estimation one time step ahead.                
+                <param>
+                    uthe control vector                    
+                </param>
+                <throws>
+                    DimensionMismatchExceptionif the dimension of the control vector does not match                    
+                </throws>
+            </javadoc>
+            <method name="predict" type="void" line="296">
+                <params>
+                    <param name="u" type="RealVector"/>
+                </params>
+                <comment line="297">
+                    sanity checks                    
+                </comment>
+                <comment line="304">
+                    project the state estimation ahead (a priori state)                    
+                </comment>
+                <comment line="305">
+                    xHat(k)- = A * xHat(k-1) + B * u(k-1)                    
+                </comment>
+                <comment line="308">
+                    add control input if it is available                    
+                </comment>
+                <comment line="313">
+                    project the error covariance ahead                    
+                </comment>
+                <comment line="314">
+                    P(k)- = A * P(k-1) * A&apos; + Q                    
+                </comment>
+                <scope line="299"/>
+                <scope line="309"/>
+            </method>
+            <javadoc line="320">
+                Correct the current state estimate with an actual measurement.                
+                <param>
+                    zthe measurement vector                    
+                </param>
+                <throws>
+                    NullArgumentExceptionif the measurement vector is {@code null}                    
+                </throws>
+                <throws>
+                    DimensionMismatchExceptionif the dimension of the measurement vector does not fit                    
+                </throws>
+                <throws>
+                    SingularMatrixExceptionif the covariance matrix could not be inverted                    
+                </throws>
+            </javadoc>
+            <method name="correct" type="void" line="333">
+                <params>
+                    <param name="z" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="337">
+                Correct the current state estimate with an actual measurement.                
+                <param>
+                    zthe measurement vector                    
+                </param>
+                <throws>
+                    NullArgumentExceptionif the measurement vector is {@code null}                    
+                </throws>
+                <throws>
+                    DimensionMismatchExceptionif the dimension of the measurement vector does not fit                    
+                </throws>
+                <throws>
+                    SingularMatrixExceptionif the covariance matrix could not be inverted                    
+                </throws>
+            </javadoc>
+            <method name="correct" type="void" line="350">
+                <params>
+                    <param name="z" type="RealVector"/>
+                </params>
+                <comment line="352">
+                    sanity checks                    
+                </comment>
+                <comment line="359">
+                    S = H * P(k) - * H&apos; + R                    
+                </comment>
+                <comment line="364">
+                    invert S                    
+                </comment>
+                <comment line="365">
+                    as the error covariance matrix is a symmetric positive                    
+                </comment>
+                <comment line="366">
+                    semi-definite matrix, we can use the cholesky decomposition                    
+                </comment>
+                <comment line="370">
+                    Inn = z(k) - H * xHat(k)-                    
+                </comment>
+                <comment line="373">
+                    calculate gain matrix                    
+                </comment>
+                <comment line="374">
+                    K(k) = P(k)- * H&apos; * (H * P(k)- * H&apos; + R)^-1                    
+                </comment>
+                <comment line="375">
+                    K(k) = P(k)- * H&apos; * S^-1                    
+                </comment>
+                <comment line="378">
+                    update estimate with measurement z(k)                    
+                </comment>
+                <comment line="379">
+                    xHat(k) = xHat(k)- + K * Inn                    
+                </comment>
+                <comment line="382">
+                    update covariance of prediction error                    
+                </comment>
+                <comment line="383">
+                    P(k) = (I - K * H) * P(k)-                    
+                </comment>
+                <scope line="354"/>
+                <declaration name="s" type="RealMatrix" line="360"/>
+                <declaration name="solver" type="DecompositionSolver" line="367"/>
+                <declaration name="invertedS" type="RealMatrix" line="368"/>
+                <declaration name="innovation" type="RealVector" line="371"/>
+                <declaration name="kalmanGain" type="RealMatrix" line="376"/>
+                <declaration name="identity" type="RealMatrix" line="384"/>
+            </method>
+        </class>
+    </source>

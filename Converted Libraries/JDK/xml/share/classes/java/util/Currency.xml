@@ -1,0 +1,754 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util">
+        <import package="java.io.BufferedInputStream"/>
+        <import package="java.io.DataInputStream"/>
+        <import package="java.io.File"/>
+        <import package="java.io.FileInputStream"/>
+        <import package="java.io.FileReader"/>
+        <import package="java.io.IOException"/>
+        <import package="java.io.Serializable"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.util.logging.Level"/>
+        <import package="java.util.regex.Pattern"/>
+        <import package="java.util.regex.Matcher"/>
+        <import package="java.util.spi.CurrencyNameProvider"/>
+        <import package="java.util.spi.LocaleServiceProvider"/>
+        <import package="sun.util.LocaleServiceProviderPool"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <import package="sun.util.resources.LocaleData"/>
+        <import package="sun.util.resources.OpenListResourceBundle"/>
+        <class name="Currency" line="48">
+            <comment line="101">
+                class data: instance map                
+            </comment>
+            <comment line="107">
+                Class data: currency data obtained from currency.data file.                
+            </comment>
+            <comment line="108">
+                Purpose:                
+            </comment>
+            <comment line="109">
+                - determine valid country codes                
+            </comment>
+            <comment line="110">
+                - determine valid currency codes                
+            </comment>
+            <comment line="111">
+                - map country codes to currency codes                
+            </comment>
+            <comment line="112">
+                - obtain default fraction digits for currency codes                
+            </comment>
+            <comment line="113">
+                                
+            </comment>
+            <comment line="114">
+                sc = special case; dfd = default fraction digits                
+            </comment>
+            <comment line="115">
+                Simple countries are those where the country code is a prefix of the                
+            </comment>
+            <comment line="116">
+                currency code, and there are no known plans to change the currency.                
+            </comment>
+            <comment line="117">
+                                
+            </comment>
+            <comment line="118">
+                table formats:                
+            </comment>
+            <comment line="119">
+                - mainTable:                
+            </comment>
+            <comment line="120">
+                - maps country code to 32-bit int                
+            </comment>
+            <comment line="121">
+                - 26*26 entries, corresponding to [A-Z]*[A-Z]                
+            </comment>
+            <comment line="122">
+                - \u007F -&gt; not valid country                
+            </comment>
+            <comment line="123">
+                - bits 18-31: unused                
+            </comment>
+            <comment line="124">
+                - bits 8-17: numeric code (0 to 1023)                
+            </comment>
+            <comment line="125">
+                - bit 7: 1 - special case, bits 0-4 indicate which one                
+            </comment>
+            <comment line="126">
+                0 - simple country, bits 0-4 indicate final char of currency code                
+            </comment>
+            <comment line="127">
+                - bits 5-6: fraction digits for simple countries, 0 for special cases                
+            </comment>
+            <comment line="128">
+                - bits 0-4: final char for currency code for simple country, or ID of special case                
+            </comment>
+            <comment line="129">
+                - special case IDs:                
+            </comment>
+            <comment line="130">
+                - 0: country has no currency                
+            </comment>
+            <comment line="131">
+                - other: index into sc* arrays + 1                
+            </comment>
+            <comment line="132">
+                - scCutOverTimes: cut-over time in millis as returned by                
+            </comment>
+            <comment line="133">
+                System.currentTimeMillis for special case countries that are changing                
+            </comment>
+            <comment line="134">
+                currencies; Long.MAX_VALUE for countries that are not changing currencies                
+            </comment>
+            <comment line="135">
+                - scOldCurrencies: old currencies for special case countries                
+            </comment>
+            <comment line="136">
+                - scNewCurrencies: new currencies for special case countries that are                
+            </comment>
+            <comment line="137">
+                changing currencies; null for others                
+            </comment>
+            <comment line="138">
+                - scOldCurrenciesDFD: default fraction digits for old currencies                
+            </comment>
+            <comment line="139">
+                - scNewCurrenciesDFD: default fraction digits for new currencies, 0 for                
+            </comment>
+            <comment line="140">
+                countries that are not changing currencies                
+            </comment>
+            <comment line="141">
+                - otherCurrencies: concatenation of all currency codes that are not the                
+            </comment>
+            <comment line="142">
+                main currency of a simple country, separated by &quot;-&quot;                
+            </comment>
+            <comment line="143">
+                - otherCurrenciesDFD: decimal format digits for currencies in otherCurrencies, same order                
+            </comment>
+            <comment line="159">
+                handy constants - must match definitions in GenerateCurrencyData                
+            </comment>
+            <comment line="160">
+                magic number                
+            </comment>
+            <comment line="162">
+                number of characters from A to Z                
+            </comment>
+            <comment line="164">
+                entry for invalid country codes                
+            </comment>
+            <comment line="166">
+                entry for countries without currency                
+            </comment>
+            <comment line="168">
+                mask for simple case country entries                
+            </comment>
+            <comment line="170">
+                mask for simple case country entry final character                
+            </comment>
+            <comment line="172">
+                mask for simple case country entry default currency digits                
+            </comment>
+            <comment line="174">
+                shift count for simple case country entry default currency digits                
+            </comment>
+            <comment line="176">
+                mask for special case country entries                
+            </comment>
+            <comment line="178">
+                mask for special case country index                
+            </comment>
+            <comment line="180">
+                delta from entry index component in main table to index into special case tables                
+            </comment>
+            <comment line="182">
+                mask for distinguishing simple and special case countries                
+            </comment>
+            <comment line="184">
+                mask for the numeric code of the currency                
+            </comment>
+            <comment line="186">
+                shift count for the numeric code of the currency                
+            </comment>
+            <comment line="189">
+                Currency data format version                
+            </comment>
+            <implements interface="Serializable"/>
+            <javadoc line="48">
+                Represents a currency. Currencies are identified by their ISO 4217 currency
+                  codes. Visit the &lt;a href=&quot;http://www.iso.org/iso/en/prods-services/popstds/currencycodes.html&quot;&gt;
+                  ISO web site&lt;/a&gt; for more information, including a table of
+                  currency codes.
+                  &lt;p&gt;
+                  The class is designed so that there&apos;s never more than one
+                  &lt;code&gt;Currency&lt;/code&gt; instance for any given currency. Therefore, there&apos;s
+                  no public constructor. You obtain a &lt;code&gt;Currency&lt;/code&gt; instance using
+                  the &lt;code&gt;getInstance&lt;/code&gt; methods.
+                  &lt;p&gt;
+                  Users can supersede the Java runtime currency data by creating a properties
+                  file named &lt;code&gt;&amp;lt;JAVA_HOME&amp;gt;/lib/currency.properties&lt;/code&gt;.  The contents
+                  of the properties file are key/value pairs of the ISO 3166 country codes
+                  and the ISO 4217 currency data respectively.  The value part consists of
+                  three ISO 4217 values of a currency, i.e., an alphabetic code, a numeric
+                  code, and a minor unit.  Those three ISO 4217 values are separated by commas.
+                  The lines which start with &apos;#&apos;s are considered comment lines.  For example,
+                  &lt;p&gt;
+                  &lt;code&gt;
+                  #Sample currency properties&lt;br&gt;
+                  JP=JPZ,999,0
+                  &lt;/code&gt;
+                  &lt;p&gt;
+                  will supersede the currency data for Japan.                
+                <since>
+                    1.4                    
+                </since>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="78"/>
+            <declaration name="currencyCode" type="String" line="80"/>
+            <javadoc line="80">
+                ISO 4217 currency code for this currency.                
+                <serial>
+                                        
+                </serial>
+            </javadoc>
+            <declaration name="defaultFractionDigits" type="int" line="87"/>
+            <javadoc line="87">
+                Default fraction digits for this currency.
+                  Set from currency data tables.                
+            </javadoc>
+            <declaration name="numericCode" type="int" line="93"/>
+            <javadoc line="93">
+                ISO 4217 numeric code for this currency.
+                  Set from currency data tables.                
+            </javadoc>
+            <declaration name="instances" type="HashMap&lt;String,Currency&gt;" line="102"/>
+            <declaration name="available" type="HashSet&lt;Currency&gt;" line="103"/>
+            <declaration name="formatVersion" type="int" line="144"/>
+            <declaration name="dataVersion" type="int" line="145"/>
+            <declaration name="mainTable" type="int[]" line="146"/>
+            <declaration name="scCutOverTimes" type="long[]" line="147"/>
+            <declaration name="scOldCurrencies" type="String[]" line="148"/>
+            <declaration name="scNewCurrencies" type="String[]" line="149"/>
+            <declaration name="scOldCurrenciesDFD" type="int[]" line="150"/>
+            <declaration name="scNewCurrenciesDFD" type="int[]" line="151"/>
+            <declaration name="scOldCurrenciesNumericCode" type="int[]" line="152"/>
+            <declaration name="scNewCurrenciesNumericCode" type="int[]" line="153"/>
+            <declaration name="otherCurrencies" type="String" line="154"/>
+            <declaration name="otherCurrenciesDFD" type="int[]" line="155"/>
+            <declaration name="otherCurrenciesNumericCode" type="int[]" line="156"/>
+            <declaration name="MAGIC_NUMBER" type="int" line="160"/>
+            <declaration name="A_TO_Z" type="int" line="162"/>
+            <declaration name="INVALID_COUNTRY_ENTRY" type="int" line="164"/>
+            <declaration name="COUNTRY_WITHOUT_CURRENCY_ENTRY" type="int" line="166"/>
+            <declaration name="SIMPLE_CASE_COUNTRY_MASK" type="int" line="168"/>
+            <declaration name="SIMPLE_CASE_COUNTRY_FINAL_CHAR_MASK" type="int" line="170"/>
+            <declaration name="SIMPLE_CASE_COUNTRY_DEFAULT_DIGITS_MASK" type="int" line="172"/>
+            <declaration name="SIMPLE_CASE_COUNTRY_DEFAULT_DIGITS_SHIFT" type="int" line="174"/>
+            <declaration name="SPECIAL_CASE_COUNTRY_MASK" type="int" line="176"/>
+            <declaration name="SPECIAL_CASE_COUNTRY_INDEX_MASK" type="int" line="178"/>
+            <declaration name="SPECIAL_CASE_COUNTRY_INDEX_DELTA" type="int" line="180"/>
+            <declaration name="COUNTRY_TYPE_MASK" type="int" line="182"/>
+            <declaration name="NUMERIC_CODE_MASK" type="int" line="184"/>
+            <declaration name="NUMERIC_CODE_SHIFT" type="int" line="186"/>
+            <declaration name="VALID_FORMAT_VERSION" type="int" line="189"/>
+            <scope line="191">
+                <anonymous_class line="192">
+                    <method name="run" type="Object" line="193">
+                        <comment line="229">
+                            look for the properties file for overrides                            
+                        </comment>
+                        <declaration name="homeDir" type="String" line="194"/>
+                        <scope line="195">
+                            <declaration name="dataFile" type="String" line="196"/>
+                            <declaration name="dis" type="DataInputStream" line="198"/>
+                            <scope line="201"/>
+                            <scope line="205"/>
+                            <declaration name="scCount" type="int" line="210"/>
+                            <declaration name="ocCount" type="int" line="218"/>
+                        </scope>
+                        <scope line="223">
+                            <declaration name="ie" type="InternalError" line="224"/>
+                        </scope>
+                        <scope line="230">
+                            <declaration name="propFile" type="File" line="231"/>
+                            <scope line="234">
+                                <declaration name="props" type="Properties" line="235"/>
+                                <scope line="236"/>
+                                <declaration name="keys" type="Set&lt;String&gt;" line="239"/>
+                                <declaration name="propertiesPattern" type="Pattern" line="240"/>
+                                <scope line="242"/>
+                            </scope>
+                        </scope>
+                        <scope line="248"/>
+                    </method>
+                </anonymous_class>
+            </scope>
+            <declaration name="SYMBOL" type="int" line="256"/>
+            <javadoc line="256">
+                Constants for retrieving localized names from the name providers.                
+            </javadoc>
+            <declaration name="DISPLAYNAME" type="int" line="260"/>
+            <javadoc line="263">
+                Constructs a &lt;code&gt;Currency&lt;/code&gt; instance. The constructor is private
+                  so that we can insure that there&apos;s never more than one instance for a
+                  given currency.                
+            </javadoc>
+            <method name="Currency" type="constructor" line="268">
+                <params>
+                    <param name="currencyCode" type="String"/>
+                    <param name="defaultFractionDigits" type="int"/>
+                    <param name="numericCode" type="int"/>
+                </params>
+            </method>
+            <javadoc line="274">
+                Returns the &lt;code&gt;Currency&lt;/code&gt; instance for the given currency code.                
+                <param>
+                    currencyCode the ISO 4217 code of the currency                    
+                </param>
+                <return>
+                    the <code>Currency</code> instance for the given currency code                    
+                </return>
+                <exception>
+                    NullPointerException if <code>currencyCode</code> is null                    
+                </exception>
+                <exception>
+                    IllegalArgumentException if <code>currencyCode</code> is not
+                      a supported ISO 4217 code.                    
+                </exception>
+            </javadoc>
+            <method name="getInstance" type="Currency" line="283">
+                <params>
+                    <param name="currencyCode" type="String"/>
+                </params>
+            </method>
+            <method name="getInstance" type="Currency" line="288">
+                <params>
+                    <param name="currencyCode" type="String"/>
+                    <param name="defaultFractionDigits" type="int"/>
+                    <param name="numericCode" type="int"/>
+                </params>
+                <comment line="290">
+                    Try to look up the currency code in the instances table.                    
+                </comment>
+                <comment line="291">
+                    This does the null pointer check as a side effect.                    
+                </comment>
+                <comment line="292">
+                    Also, if there already is an entry, the currencyCode must be valid.                    
+                </comment>
+                <comment line="299">
+                    Currency code not internally generated, need to verify first                    
+                </comment>
+                <comment line="300">
+                    A currency code must have 3 characters and exist in the main table                    
+                </comment>
+                <comment line="301">
+                    or in the list of other currencies.                    
+                </comment>
+                <comment line="314">
+                    Check for &apos;-&apos; separately so we don&apos;t get false hits in the table.                    
+                </comment>
+                <scope line="289">
+                    <declaration name="instance" type="Currency" line="293"/>
+                    <scope line="294"/>
+                    <scope line="298">
+                        <scope line="302"/>
+                        <declaration name="char1" type="char" line="305"/>
+                        <declaration name="char2" type="char" line="306"/>
+                        <declaration name="tableEntry" type="int" line="307"/>
+                        <scope line="310"/>
+                        <scope line="313">
+                            <scope line="315"/>
+                            <declaration name="index" type="int" line="318"/>
+                            <scope line="319"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="333">
+                Returns the &lt;code&gt;Currency&lt;/code&gt; instance for the country of the
+                  given locale. The language and variant components of the locale
+                  are ignored. The result may vary over time, as countries change their
+                  currencies. For example, for the original member countries of the
+                  European Monetary Union, the method returns the old national currencies
+                  until December 31, 2001, and the Euro from January 1, 2002, local time
+                  of the respective countries.
+                  &lt;p&gt;
+                  The method returns &lt;code&gt;null&lt;/code&gt; for territories that don&apos;t
+                  have a currency, such as Antarctica.                
+                <param>
+                    locale the locale for whose country a <code>Currency</code>
+                      instance is needed                    
+                </param>
+                <return>
+                    the <code>Currency</code> instance for the country of the given
+                      locale, or null                    
+                </return>
+                <exception>
+                    NullPointerException if <code>locale</code> or its country
+                      code is null                    
+                </exception>
+                <exception>
+                    IllegalArgumentException if the country of the given locale
+                      is not a supported ISO 3166 country code.                    
+                </exception>
+            </javadoc>
+            <method name="getInstance" type="Currency" line="354">
+                <params>
+                    <param name="locale" type="Locale"/>
+                </params>
+                <comment line="376">
+                    special cases                    
+                </comment>
+                <declaration name="country" type="String" line="355"/>
+                <scope line="356"/>
+                <scope line="360"/>
+                <declaration name="char1" type="char" line="364"/>
+                <declaration name="char2" type="char" line="365"/>
+                <declaration name="tableEntry" type="int" line="366"/>
+                <scope line="368">
+                    <declaration name="finalChar" type="char" line="369"/>
+                    <declaration name="defaultFractionDigits" type="int" line="370"/>
+                    <declaration name="numericCode" type="int" line="371"/>
+                    <declaration name="sb" type="StringBuffer" line="372"/>
+                </scope>
+                <scope line="375">
+                    <scope line="377"/>
+                    <scope line="380"/>
+                    <scope line="382">
+                        <declaration name="index" type="int" line="383"/>
+                        <scope line="384"/>
+                        <scope line="387"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="395">
+                Gets the set of available currencies.  The returned set of currencies
+                  contains all of the available currencies, which may include currencies
+                  that represent obsolete ISO 4217 codes.  The set can be modified
+                  without affecting the available currencies in the runtime.                
+                <return>
+                    the set of available currencies.  If there is no currency
+                      available in the runtime, the returned set is empty.                    
+                </return>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getAvailableCurrencies" type="Set<Currency>" line="405">
+                <comment line="410">
+                    Add simple currencies first                    
+                </comment>
+                <comment line="428">
+                    Now add other currencies                    
+                </comment>
+                <scope line="406">
+                    <scope line="407">
+                        <scope line="411">
+                            <scope line="412">
+                                <declaration name="tableEntry" type="int" line="413"/>
+                                <scope line="415">
+                                    <declaration name="finalChar" type="char" line="416"/>
+                                    <declaration name="defaultFractionDigits" type="int" line="417"/>
+                                    <declaration name="numericCode" type="int" line="418"/>
+                                    <declaration name="sb" type="StringBuilder" line="419"/>
+                                </scope>
+                            </scope>
+                        </scope>
+                        <declaration name="st" type="StringTokenizer" line="429"/>
+                        <scope line="430"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="439">
+                Gets the ISO 4217 currency code of this currency.                
+                <return>
+                    the ISO 4217 currency code of this currency.                    
+                </return>
+            </javadoc>
+            <method name="getCurrencyCode" type="String" line="444"/>
+            <javadoc line="448">
+                Gets the symbol of this currency for the default locale.
+                  For example, for the US Dollar, the symbol is &quot;$&quot; if the default
+                  locale is the US, while for other locales it may be &quot;US$&quot;. If no
+                  symbol can be determined, the ISO 4217 currency code is returned.                
+                <return>
+                    the symbol of this currency for the default locale                    
+                </return>
+            </javadoc>
+            <method name="getSymbol" type="String" line="456"/>
+            <javadoc line="460">
+                Gets the symbol of this currency for the specified locale.
+                  For example, for the US Dollar, the symbol is &quot;$&quot; if the specified
+                  locale is the US, while for other locales it may be &quot;US$&quot;. If no
+                  symbol can be determined, the ISO 4217 currency code is returned.                
+                <param>
+                    locale the locale for which a display name for this currency is
+                      needed                    
+                </param>
+                <return>
+                    the symbol of this currency for the specified locale                    
+                </return>
+                <exception>
+                    NullPointerException if <code>locale</code> is null                    
+                </exception>
+            </javadoc>
+            <method name="getSymbol" type="String" line="471">
+                <params>
+                    <param name="locale" type="Locale"/>
+                </params>
+                <comment line="473">
+                    Check whether a provider can provide an implementation that&apos;s closer                    
+                </comment>
+                <comment line="474">
+                    to the requested locale than what the Java runtime itself can provide.                    
+                </comment>
+                <comment line="479">
+                    Assuming that all the country locales include necessary currency                    
+                </comment>
+                <comment line="480">
+                    symbols in the Java runtime&apos;s resources,  so there is no need to                    
+                </comment>
+                <comment line="481">
+                    examine whether Java runtime&apos;s currency resource bundle is missing                    
+                </comment>
+                <comment line="482">
+                    names.  Therefore, no resource bundle is provided for calling this                    
+                </comment>
+                <comment line="483">
+                    method.                    
+                </comment>
+                <comment line="496">
+                    use currency code as symbol of last resort                    
+                </comment>
+                <scope line="472">
+                    <declaration name="pool" type="LocaleServiceProviderPool" line="475"/>
+                    <scope line="478">
+                        <declaration name="symbol" type="String" line="484"/>
+                        <scope line="488"/>
+                    </scope>
+                    <declaration name="bundle" type="ResourceBundle" line="493"/>
+                </scope>
+                <scope line="495"/>
+            </method>
+            <javadoc line="501">
+                Gets the default number of fraction digits used with this currency.
+                  For example, the default number of fraction digits for the Euro is 2,
+                  while for the Japanese Yen it&apos;s 0.
+                  In the case of pseudo-currencies, such as IMF Special Drawing Rights,
+                  -1 is returned.                
+                <return>
+                    the default number of fraction digits used with this currency                    
+                </return>
+            </javadoc>
+            <method name="getDefaultFractionDigits" type="int" line="510"/>
+            <javadoc line="514">
+                Returns the ISO 4217 numeric code of this currency.                
+                <return>
+                    the ISO 4217 numeric code of this currency                    
+                </return>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getNumericCode" type="int" line="520"/>
+            <javadoc line="524">
+                Gets the name that is suitable for displaying this currency for
+                  the default locale.  If there is no suitable display name found
+                  for the default locale, the ISO 4217 currency code is returned.                
+                <return>
+                    the display name of this currency for the default locale                    
+                </return>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getDisplayName" type="String" line="532"/>
+            <javadoc line="536">
+                Gets the name that is suitable for displaying this currency for
+                  the specified locale.  If there is no suitable display name found
+                  for the specified locale, the ISO 4217 currency code is returned.                
+                <param>
+                    locale the locale for which a display name for this currency is
+                      needed                    
+                </param>
+                <return>
+                    the display name of this currency for the specified locale                    
+                </return>
+                <exception>
+                    NullPointerException if <code>locale</code> is null                    
+                </exception>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="getDisplayName" type="String" line="547">
+                <params>
+                    <param name="locale" type="Locale"/>
+                </params>
+                <comment line="553">
+                    Check whether a provider can provide an implementation that&apos;s closer                    
+                </comment>
+                <comment line="554">
+                    to the requested locale than what the Java runtime itself can provide.                    
+                </comment>
+                <comment line="571">
+                    fall through                    
+                </comment>
+                <comment line="574">
+                    use currency code as symbol of last resort                    
+                </comment>
+                <scope line="548">
+                    <declaration name="bundle" type="OpenListResourceBundle" line="549"/>
+                    <declaration name="result" type="String" line="550"/>
+                    <declaration name="bundleKey" type="String" line="551"/>
+                    <declaration name="pool" type="LocaleServiceProviderPool" line="555"/>
+                    <scope line="557"/>
+                    <scope line="563"/>
+                    <scope line="567"/>
+                </scope>
+                <scope line="570"/>
+            </method>
+            <javadoc line="578">
+                Returns the ISO 4217 currency code of this currency.                
+                <return>
+                    the ISO 4217 currency code of this currency                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="583"/>
+            <javadoc line="587">
+                Resolves instances being deserialized to a single instance per currency.                
+            </javadoc>
+            <method name="readResolve" type="Object" line="590"/>
+            <javadoc line="594">
+                Gets the main table entry for the country whose country code consists
+                  of char1 and char2.                
+            </javadoc>
+            <method name="getMainTableEntry" type="int" line="598">
+                <params>
+                    <param name="char1" type="char"/>
+                    <param name="char2" type="char"/>
+                </params>
+                <scope line="599"/>
+            </method>
+            <javadoc line="605">
+                Sets the main table entry for the country whose country code consists
+                  of char1 and char2.                
+            </javadoc>
+            <method name="setMainTableEntry" type="void" line="609">
+                <params>
+                    <param name="char1" type="char"/>
+                    <param name="char2" type="char"/>
+                    <param name="entry" type="int"/>
+                </params>
+                <scope line="610"/>
+            </method>
+            <class name="CurrencyNameGetter" line="616">
+                <implements interface="LocaleServiceProviderPool.LocalizedObjectGetter">
+                    <type_params>
+                        <type_param name="CurrencyNameProvider"/>
+                        <type_param name="String"/>
+                    </type_params>
+                </implements>
+                <javadoc line="616">
+                    Obtains a localized currency names from a CurrencyNameProvider
+                      implementation.                    
+                </javadoc>
+                <declaration name="INSTANCE" type="CurrencyNameGetter" line="623"/>
+                <method name="getObject" type="String" line="628">
+                    <params>
+                        <param name="currencyNameProvider" type="CurrencyNameProvider"/>
+                        <param name="locale" type="Locale"/>
+                        <param name="key" type="String"/>
+                        <param name="params" type="Object"/>
+                    </params>
+                    <comment line="638">
+                        shouldn&apos;t happen                        
+                    </comment>
+                    <declaration name="type" type="int" line="630"/>
+                </method>
+            </class>
+            <method name="readIntArray" type="int[]" line="645">
+                <params>
+                    <param name="dis" type="DataInputStream"/>
+                    <param name="count" type="int"/>
+                </params>
+                <declaration name="ret" type="int[]" line="646"/>
+                <scope line="647"/>
+            </method>
+            <method name="readLongArray" type="long[]" line="654">
+                <params>
+                    <param name="dis" type="DataInputStream"/>
+                    <param name="count" type="int"/>
+                </params>
+                <declaration name="ret" type="long[]" line="655"/>
+                <scope line="656"/>
+            </method>
+            <method name="readStringArray" type="String[]" line="663">
+                <params>
+                    <param name="dis" type="DataInputStream"/>
+                    <param name="count" type="int"/>
+                </params>
+                <declaration name="ret" type="String[]" line="664"/>
+                <scope line="665"/>
+            </method>
+            <javadoc line="672">
+                                
+            </javadoc>
+            <method name="replaceCurrencyData" type="void" line="683">
+                <params>
+                    <param name="pattern" type="Pattern"/>
+                    <param name="ctry" type="String"/>
+                    <param name="curdata" type="String"/>
+                </params>
+                <comment line="686">
+                    ignore invalid country code                    
+                </comment>
+                <comment line="697">
+                    format is not recognized.  ignore the data                    
+                </comment>
+                <comment line="720">
+                    simple case                    
+                </comment>
+                <comment line="724">
+                    special case                    
+                </comment>
+                <scope line="685">
+                    <declaration name="message" type="String" line="687"/>
+                </scope>
+                <declaration name="m" type="Matcher" line="695"/>
+                <scope line="696">
+                    <declaration name="message" type="String" line="698"/>
+                </scope>
+                <declaration name="code" type="String" line="707"/>
+                <declaration name="numeric" type="int" line="708"/>
+                <declaration name="fraction" type="int" line="709"/>
+                <declaration name="entry" type="int" line="710"/>
+                <declaration name="index" type="int" line="712"/>
+                <scope line="713">
+                    <scope line="714"/>
+                </scope>
+                <scope line="719"/>
+                <scope line="723"/>
+            </method>
+            <method name="info" type="void" line="731">
+                <params>
+                    <param name="message" type="String"/>
+                    <param name="t" type="Throwable"/>
+                </params>
+                <declaration name="logger" type="PlatformLogger" line="732"/>
+                <scope line="733">
+                    <scope line="734"/>
+                    <scope line="736"/>
+                </scope>
+            </method>
+        </class>
+    </source>

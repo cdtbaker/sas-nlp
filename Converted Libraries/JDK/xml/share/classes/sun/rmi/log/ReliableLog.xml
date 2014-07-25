@@ -1,0 +1,666 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.rmi.log">
+        <import package="java.io"/>
+        <import package="java.lang.reflect.Constructor"/>
+        <import package="java.rmi.server.RMIClassLoader"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="sun.security.action.GetBooleanAction"/>
+        <import package="sun.security.action.GetPropertyAction"/>
+        <class name="ReliableLog" line="36">
+            <comment line="87">
+                sun.rmi.log.debug=false                
+            </comment>
+            <comment line="97">
+                base directory                
+            </comment>
+            <comment line="98">
+                current snapshot and log version                
+            </comment>
+            <comment line="106">
+                private long padBoundary = intBytes;                
+            </comment>
+            <comment line="110">
+                format version numbers read from/written to this.log                
+            </comment>
+            <comment line="188">
+                                
+            </comment>
+            <comment line="428">
+                                
+            </comment>
+            <javadoc line="36">
+                This class is a simple implementation of a reliable Log.  The
+                  client of a ReliableLog must provide a set of callbacks (via a
+                  LogHandler) that enables a ReliableLog to read and write
+                  checkpoints and log records.  This implementation ensures that the
+                  current value of the data stored (via a ReliableLog) is recoverable
+                  after a system crash. &lt;p&gt;
+                  The secondary storage strategy is to record values in files using a
+                  representation of the caller&apos;s choosing.  Two sorts of files are
+                  kept: snapshots and logs.  At any instant, one snapshot is current.
+                  The log consists of a sequence of updates that have occurred since
+                  the current snapshot was taken.  The current stable state is the
+                  value of the snapshot, as modified by the sequence of updates in
+                  the log.  From time to time, the client of a ReliableLog instructs
+                  the package to make a new snapshot and clear the log.  A ReliableLog
+                  arranges disk writes such that updates are stable (as long as the
+                  changes are force-written to disk) and atomic : no update is lost,
+                  and each update either is recorded completely in the log or not at
+                  all.  Making a new snapshot is also atomic. &lt;p&gt;
+                  Normal use for maintaining the recoverable store is as follows: The
+                  client maintains the relevant data structure in virtual memory.  As
+                  updates happen to the structure, the client informs the ReliableLog
+                  (all it &quot;log&quot;) by calling log.update.  Periodically, the client
+                  calls log.snapshot to provide the current value of the data
+                  structure.  On restart, the client calls log.recover to obtain the
+                  latest snapshot and the following sequences of updates; the client
+                  applies the updates to the snapshot to obtain the state that
+                  existed before the crash. &lt;p&gt;
+                  The current logfile format is: &lt;ol&gt;
+                  &lt;li&gt; a format version number (two 4-octet integers, major and
+                  minor), followed by
+                  &lt;li&gt; a sequence of log records.  Each log record contains, in
+                  order, &lt;ol&gt;
+                  &lt;li&gt; a 4-octet integer representing the length of the following log
+                  data,
+                  &lt;li&gt; the log data (variable length). &lt;/ol&gt; &lt;/ol&gt; &lt;p&gt;                
+                <see>
+                    LogHandler                    
+                </see>
+                <author>
+                    Ann Wollrath                    
+                </author>
+            </javadoc>
+            <declaration name="PreferredMajorVersion" type="int" line="83"/>
+            <declaration name="PreferredMinorVersion" type="int" line="84"/>
+            <declaration name="Debug" type="boolean" line="87"/>
+            <declaration name="snapshotPrefix" type="String" line="89"/>
+            <declaration name="logfilePrefix" type="String" line="90"/>
+            <declaration name="versionFile" type="String" line="91"/>
+            <declaration name="newVersionFile" type="String" line="92"/>
+            <declaration name="intBytes" type="int" line="93"/>
+            <declaration name="diskPageSize" type="long" line="94"/>
+            <declaration name="dir" type="File" line="96"/>
+            <declaration name="version" type="int" line="97"/>
+            <declaration name="logName" type="String" line="98"/>
+            <declaration name="log" type="LogFile" line="99"/>
+            <declaration name="snapshotBytes" type="long" line="100"/>
+            <declaration name="logBytes" type="long" line="101"/>
+            <declaration name="logEntries" type="int" line="102"/>
+            <declaration name="lastSnapshot" type="long" line="103"/>
+            <declaration name="lastLog" type="long" line="104"/>
+            <declaration name="handler" type="LogHandler" line="106"/>
+            <declaration name="intBuf" type="byte[]" line="107"/>
+            <declaration name="majorFormatVersion" type="int" line="110"/>
+            <declaration name="minorFormatVersion" type="int" line="111"/>
+            <declaration name="logClassConstructor" type="Constructor&lt;? extends LogFile&gt;" line="114"/>
+            <javadoc line="114">
+                Constructor for the log file.  If the system property
+                  sun.rmi.log.class is non-null and the class specified by this
+                  property a) can be loaded, b) is a subclass of LogFile, and c) has a
+                  public two-arg constructor (String, String), ReliableLog uses the
+                  constructor to construct the LogFile.                
+            </javadoc>
+            <javadoc line="124">
+                Creates a ReliableLog to handle checkpoints and logging in a
+                  stable storage directory.                
+                <param>
+                    dirPath path to the stable storage directory                    
+                </param>
+                <param>
+                    logCl the closure object containing callbacks for logging and
+                      recovery                    
+                </param>
+                <param>
+                    pad ignored                    
+                </param>
+                <exception>
+                    IOException If a directory creation error has
+                      occurred or if initialSnapshot callback raises an exception or
+                      if an exception occurs during invocation of the handler's
+                      snapshot method or if other IOException occurs.                    
+                </exception>
+            </javadoc>
+            <method name="ReliableLog" type="constructor" line="141">
+                <params>
+                    <param name="dirPath" type="String"/>
+                    <param name="handler" type="LogHandler"/>
+                    <param name="pad" type="boolean"/>
+                </params>
+                <comment line="147">
+                    create directory                    
+                </comment>
+                <comment line="153">
+                    padBoundary = (pad ? diskPageSize : intBytes);                    
+                </comment>
+                <scope line="146">
+                    <scope line="148"/>
+                </scope>
+                <scope line="158">
+                    <scope line="159"/>
+                    <scope line="161"/>
+                    <scope line="163"/>
+                </scope>
+            </method>
+            <javadoc line="170">
+                Creates a ReliableLog to handle checkpoints and logging in a
+                  stable storage directory.                
+                <param>
+                    dirPath path to the stable storage directory                    
+                </param>
+                <param>
+                    logCl the closure object containing callbacks for logging and
+                      recovery                    
+                </param>
+                <exception>
+                    IOException If a directory creation error has
+                      occurred or if initialSnapshot callback raises an exception                    
+                </exception>
+            </javadoc>
+            <method name="ReliableLog" type="constructor" line="183">
+                <params>
+                    <param name="dirPath" type="String"/>
+                    <param name="handler" type="LogHandler"/>
+                </params>
+            </method>
+            <javadoc line="189">
+                Returns an object which is the value recorded in the current
+                  snapshot.  This snapshot is recovered by calling the client
+                  supplied callback &quot;recover&quot; and then subsequently invoking
+                  the &quot;readUpdate&quot; callback to apply any logged updates to the state.                
+                <exception>
+                    IOException If recovery fails due to serious log
+                      corruption, read update failure, or if an exception occurs
+                      during the recover callback                    
+                </exception>
+            </javadoc>
+            <method name="recover" type="Object" line="201">
+                <declaration name="snapshot" type="Object" line="208"/>
+                <declaration name="fname" type="String" line="209"/>
+                <declaration name="snapshotFile" type="File" line="210"/>
+                <declaration name="in" type="InputStream" line="211"/>
+                <scope line="217">
+                    <scope line="218"/>
+                    <scope line="221"/>
+                    <scope line="223"/>
+                </scope>
+                <scope line="230"/>
+            </method>
+            <javadoc line="237">
+                Records this update in the log file (does not force update to disk).
+                  The update is recorded by calling the client&apos;s &quot;writeUpdate&quot; callback.
+                  This method must not be called until this log&apos;s recover method has
+                  been invoked (and completed).                
+                <param>
+                    value the object representing the update                    
+                </param>
+                <exception>
+                    IOException If an exception occurred during a
+                      writeUpdate callback or if other I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="update" type="void" line="247">
+                <params>
+                    <param name="value" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="251">
+                Records this update in the log file.  The update is recorded by
+                  calling the client&apos;s writeUpdate callback.  This method must not be
+                  called until this log&apos;s recover method has been invoked
+                  (and completed).                
+                <param>
+                    value the object representing the update                    
+                </param>
+                <param>
+                    forceToDisk ignored; changes are always forced to disk                    
+                </param>
+                <exception>
+                    IOException If force-write to log failed or an
+                      exception occurred during the writeUpdate callback or if other
+                      I/O error occurs while updating the log.                    
+                </exception>
+            </javadoc>
+            <method name="update" type="void" line="265">
+                <params>
+                    <param name="value" type="Object"/>
+                    <param name="forceToDisk" type="boolean"/>
+                </params>
+                <comment line="266">
+                    avoid accessing a null log field.                    
+                </comment>
+                <comment line="272">
+                    If the entry length field spans a sector boundary, write
+                     the high order bit of the entry length, otherwise write zero for
+                     the entry length.                    
+                </comment>
+                <comment line="281">
+                    Write update, and sync.                    
+                </comment>
+                <comment line="299">
+                    If length field spans a sector boundary, then
+                     the next two steps are required (see 4652922):
+                    
+                     1) Write actual length with high order bit set; sync.
+                     2) Then clear high order bit of length; sync.                    
+                </comment>
+                <comment line="314">
+                    Write actual length; sync.                    
+                </comment>
+                <scope line="267"/>
+                <declaration name="entryStart" type="long" line="277"/>
+                <declaration name="spansBoundary" type="boolean" line="278"/>
+                <scope line="284"/>
+                <scope line="286"/>
+                <scope line="288"/>
+                <declaration name="entryEnd" type="long" line="294"/>
+                <declaration name="updateLen" type="int" line="295"/>
+                <scope line="298"/>
+                <scope line="313"/>
+            </method>
+            <javadoc line="327">
+                Returns the constructor for the log file if the system property
+                  sun.rmi.log.class is non-null and the class specified by the
+                  property a) can be loaded, b) is a subclass of LogFile, and c) has a
+                  public two-arg constructor (String, String); otherwise returns null.                
+            </javadoc>
+            <method name="getLogClassConstructor" type="Constructor<? extends LogFile>" line="334">
+                <declaration name="logClassName" type="String" line="336"/>
+                <scope line="338">
+                    <scope line="339">
+                        <anonymous_class line="342">
+                            <method name="run" type="ClassLoader" line="343"/>
+                        </anonymous_class>
+                        <declaration name="loader" type="ClassLoader" line="340"/>
+                        <declaration name="cl" type="Class" line="347"/>
+                        <scope line="348"/>
+                    </scope>
+                    <scope line="351"/>
+                </scope>
+            </method>
+            <javadoc line="359">
+                Records this value as the current snapshot by invoking the client
+                  supplied &quot;snapshot&quot; callback and then empties the log.                
+                <param>
+                    value the object representing the new snapshot                    
+                </param>
+                <exception>
+                    IOException If an exception occurred during the
+                      snapshot callback or if other I/O error has occurred during the
+                      snapshot process                    
+                </exception>
+            </javadoc>
+            <method name="snapshot" type="void" line="370">
+                <params>
+                    <param name="value" type="Object"/>
+                </params>
+                <declaration name="oldVersion" type="int" line="371"/>
+                <declaration name="fname" type="String" line="374"/>
+                <declaration name="snapshotFile" type="File" line="375"/>
+                <declaration name="out" type="FileOutputStream" line="376"/>
+                <scope line="377">
+                    <scope line="378"/>
+                    <scope line="380"/>
+                    <scope line="382"/>
+                </scope>
+                <scope line="386"/>
+            </method>
+            <javadoc line="398">
+                Close the stable storage directory in an orderly manner.                
+                <exception>
+                    IOException If an I/O error occurs when the log is
+                      closed                    
+                </exception>
+            </javadoc>
+            <method name="close" type="void" line="404">
+                <scope line="406"/>
+                <scope line="408"/>
+            </method>
+            <javadoc line="413">
+                Returns the size of the snapshot file in bytes;                
+            </javadoc>
+            <method name="snapshotSize" type="long" line="416"/>
+            <javadoc line="420">
+                Returns the size of the log file in bytes;                
+            </javadoc>
+            <method name="logSize" type="long" line="423"/>
+            <javadoc line="429">
+                Write an int value in single write operation.  This method
+                  assumes that the caller is synchronized on the log file.                
+                <param>
+                    out output stream                    
+                </param>
+                <param>
+                    val int value                    
+                </param>
+                <throws>
+                    IOException if any other I/O error occurs                    
+                </throws>
+            </javadoc>
+            <method name="writeInt" type="void" line="439">
+                <params>
+                    <param name="out" type="DataOutput"/>
+                    <param name="val" type="int"/>
+                </params>
+            </method>
+            <javadoc line="447">
+                Generates a filename prepended with the stable storage directory path.                
+                <param>
+                    name the leaf name of the file                    
+                </param>
+            </javadoc>
+            <method name="fName" type="String" line="452">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="456">
+                Generates a version 0 filename prepended with the stable storage
+                  directory path                
+                <param>
+                    name version file name                    
+                </param>
+            </javadoc>
+            <method name="versionName" type="String" line="462">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="466">
+                Generates a version filename prepended with the stable storage
+                  directory path with the version number as a suffix.                
+                <param>
+                    name version file name                    
+                </param>
+                <thisversion>
+                    a version number                    
+                </thisversion>
+            </javadoc>
+            <method name="versionName" type="String" line="473">
+                <params>
+                    <param name="prefix" type="String"/>
+                    <param name="ver" type="int"/>
+                </params>
+            </method>
+            <javadoc line="478">
+                Increments the directory version number.                
+            </javadoc>
+            <method name="incrVersion" type="void" line="481">
+                <scope line="482"/>
+            </method>
+            <javadoc line="485">
+                Delete a file.                
+                <param>
+                    name the name of the file                    
+                </param>
+                <exception>
+                    IOException If new version file couldn't be removed                    
+                </exception>
+            </javadoc>
+            <method name="deleteFile" type="void" line="491">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <declaration name="f" type="File" line="493"/>
+            </method>
+            <javadoc line="498">
+                Removes the new version number file.                
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="deleteNewVersionFile" type="void" line="503"/>
+            <javadoc line="507">
+                Removes the snapshot file.                
+                <param>
+                    ver the version to remove                    
+                </param>
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="deleteSnapshot" type="void" line="513">
+                <params>
+                    <param name="ver" type="int"/>
+                </params>
+            </method>
+            <javadoc line="518">
+                Removes the log file.                
+                <param>
+                    ver the version to remove                    
+                </param>
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="deleteLogFile" type="void" line="524">
+                <params>
+                    <param name="ver" type="int"/>
+                </params>
+            </method>
+            <javadoc line="529">
+                Opens the log file in read/write mode.  If file does not exist, it is
+                  created.                
+                <param>
+                    truncate if true and file exists, file is truncated to zero
+                      length                    
+                </param>
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="openLogFile" type="void" line="537">
+                <params>
+                    <param name="truncate" type="boolean"/>
+                </params>
+                <comment line="540">
+                                        
+                </comment>
+                <scope line="538"/>
+                <scope line="540"/>
+                <scope line="545"/>
+                <scope line="549"/>
+                <scope line="554"/>
+            </method>
+            <javadoc line="559">
+                Creates a new log file, truncated and initialized with the format
+                  version number preferred by this implementation.
+                  &lt;p&gt;Environment: inited, synchronized
+                  &lt;p&gt;Precondition: valid: log, log contains nothing useful
+                  &lt;p&gt;Postcondition: if successful, log is initialised with the format
+                  version number (Preferred{Major,Minor}Version), and logBytes is
+                  set to the resulting size of the updatelog, and logEntries is set to
+                  zero.  Otherwise, log is in an indeterminate state, and logBytes
+                  is unchanged, and logEntries is unchanged.                
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="initializeLogFile" type="void" line="574"/>
+            <javadoc line="585">
+                Writes out version number to file.                
+                <param>
+                    newVersion if true, writes to a new version file                    
+                </param>
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="writeVersionFile" type="void" line="591">
+                <params>
+                    <param name="newVersion" type="boolean"/>
+                </params>
+                <declaration name="name" type="String" line="592"/>
+                <scope line="593"/>
+                <scope line="595"/>
+                <declaration name="out" type="DataOutputStream" line="598"/>
+            </method>
+            <javadoc line="604">
+                Creates the initial version file                
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="createFirstVersion" type="void" line="609"/>
+            <javadoc line="614">
+                Commits (atomically) the new version.                
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="commitToNewVersion" type="void" line="619"/>
+            <javadoc line="624">
+                Reads version number from a file.                
+                <param>
+                    name the name of the version file                    
+                </param>
+                <return>
+                    the version                    
+                </return>
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="readVersion" type="int" line="631">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <declaration name="in" type="DataInputStream" line="632"/>
+                <scope line="633"/>
+                <scope line="635"/>
+            </method>
+            <javadoc line="640">
+                Sets the version.  If version file does not exist, the initial
+                  version file is created.                
+                <exception>
+                    IOException If an I/O error has occurred.                    
+                </exception>
+            </javadoc>
+            <method name="getVersion" type="void" line="646">
+                <scope line="647"/>
+                <scope line="650">
+                    <scope line="651"/>
+                    <scope line="654"/>
+                    <scope line="657"/>
+                    <scope line="660"/>
+                </scope>
+            </method>
+            <javadoc line="666">
+                Applies outstanding updates to the snapshot.                
+                <param>
+                    state the most recent snapshot                    
+                </param>
+                <exception>
+                    IOException If serious log corruption is detected or
+                      if an exception occurred during a readUpdate callback or if
+                      other I/O error has occurred.                    
+                </exception>
+                <return>
+                    the resulting state of the object after all updates                    
+                </return>
+            </javadoc>
+            <method name="recoverUpdates" type="Object" line="677">
+                <params>
+                    <param name="state" type="Object"/>
+                </params>
+                <comment line="695">
+                    This is a log which was corrupted andor cleared (by
+                     fsck or equivalent).  This is not an error.                    
+                </comment>
+                <comment line="698">
+                    create and truncate                    
+                </comment>
+                <comment line="701">
+                    A new major version number is a catastrophe (it means
+                     that the file format is incompatible with older
+                     clients, and we&apos;ll only be breaking things by trying to
+                     use the log).  A new minor version is no big deal for
+                     upward compatibility.                    
+                </comment>
+                <comment line="732">
+                                        
+                </comment>
+                <comment line="742">
+                    this is a fragile use of available() which relies on the                    
+                </comment>
+                <comment line="743">
+                    twin facts that BufferedInputStream correctly consults                    
+                </comment>
+                <comment line="744">
+                    the underlying stream, and that FileInputStream returns                    
+                </comment>
+                <comment line="745">
+                    the number of bytes remaining in the file (via FIONREAD).                    
+                </comment>
+                <comment line="747">
+                    corrupted record at end of log (can happen since we
+                     do only one fsync)                    
+                </comment>
+                <comment line="769">
+                                        
+                </comment>
+                <comment line="778">
+                                        
+                </comment>
+                <comment line="781">
+                    avoid accessing a null log field                    
+                </comment>
+                <declaration name="fname" type="String" line="683"/>
+                <declaration name="in" type="InputStream" line="684"/>
+                <declaration name="dataIn" type="DataInputStream" line="686"/>
+                <scope line="691"/>
+                <scope line="694"/>
+                <scope line="707">
+                    <scope line="708"/>
+                </scope>
+                <scope line="721">
+                    <scope line="722">
+                        <declaration name="updateLen" type="int" line="723"/>
+                        <scope line="725"/>
+                        <scope line="727"/>
+                        <scope line="732">
+                            <scope line="733"/>
+                        </scope>
+                        <scope line="746"/>
+                        <scope line="757"/>
+                        <scope line="760"/>
+                        <scope line="762"/>
+                    </scope>
+                </scope>
+                <scope line="770"/>
+                <scope line="782"/>
+            </method>
+            <class name="LogFile" line="793">
+                <extends class="RandomAccessFile"/>
+                <javadoc line="793">
+                    ReliableLog&apos;s log file implementation.  This implementation
+                      is subclassable for testing purposes.                    
+                </javadoc>
+                <declaration name="fd" type="FileDescriptor" line="799"/>
+                <javadoc line="801">
+                    Constructs a LogFile and initializes the file descriptor.                    
+                </javadoc>
+                <method name="LogFile" type="constructor" line="806">
+                    <params>
+                        <param name="name" type="String"/>
+                        <param name="mode" type="String"/>
+                    </params>
+                </method>
+                <javadoc line="811">
+                    Invokes sync on the file descriptor for this log file.                    
+                </javadoc>
+                <method name="sync" type="void" line="814"/>
+                <javadoc line="818">
+                    Returns true if writing 4 bytes starting at the specified file
+                      position, would span a 512 byte sector boundary; otherwise returns
+                      false.                    
+                </javadoc>
+                <method name="checkSpansBoundary" type="boolean" line="823">
+                    <params>
+                        <param name="fp" type="long"/>
+                    </params>
+                </method>
+            </class>
+        </class>
+    </source>

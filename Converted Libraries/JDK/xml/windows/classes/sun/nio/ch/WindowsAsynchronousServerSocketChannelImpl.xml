@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.nio.ch">
+        <import package="java.nio.channels"/>
+        <import package="java.net.InetSocketAddress"/>
+        <import package="java.util.concurrent.Future"/>
+        <import package="java.util.concurrent.atomic.AtomicBoolean"/>
+        <import package="java.io.IOException"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="sun.misc.Unsafe"/>
+        <class name="WindowsAsynchronousServerSocketChannelImpl" line="38">
+            <extends class="AsynchronousServerSocketChannelImpl"/>
+            <comment line="48">
+                2 * (sizeof(SOCKET_ADDRESS) + 16)                
+            </comment>
+            <comment line="55">
+                typically there will be zero, or one I/O operations pending. In rare                
+            </comment>
+            <comment line="56">
+                cases there may be more. These rare cases arise when a sequence of accept                
+            </comment>
+            <comment line="57">
+                operations complete immediately and handled by the initiating thread.                
+            </comment>
+            <comment line="58">
+                The corresponding OVERLAPPED cannot be reused/released until the completion                
+            </comment>
+            <comment line="59">
+                event has been posted.                
+            </comment>
+            <comment line="62">
+                the data buffer to receive the local/remote socket address                
+            </comment>
+            <comment line="65">
+                flag to indicate that an accept operation is outstanding                
+            </comment>
+            <comment line="354">
+                -- Native methods --                
+            </comment>
+            <implements interface="Iocp.OverlappedChannel"/>
+            <javadoc line="38">
+                Windows implementation of AsynchronousServerSocketChannel using overlapped I/O.                
+            </javadoc>
+            <declaration name="unsafe" type="Unsafe" line="45"/>
+            <declaration name="DATA_BUFFER_SIZE" type="int" line="48"/>
+            <declaration name="handle" type="long" line="50"/>
+            <declaration name="completionKey" type="int" line="51"/>
+            <declaration name="iocp" type="Iocp" line="52"/>
+            <declaration name="ioCache" type="PendingIoCache" line="59"/>
+            <declaration name="dataBuffer" type="long" line="62"/>
+            <declaration name="accepting" type="AtomicBoolean" line="65"/>
+            <method name="WindowsAsynchronousServerSocketChannelImpl" type="constructor" line="68">
+                <params>
+                    <param name="iocp" type="Iocp"/>
+                </params>
+                <comment line="71">
+                    associate socket with given completion port                    
+                </comment>
+                <comment line="77">
+                    prevent leak                    
+                </comment>
+                <declaration name="h" type="long" line="72"/>
+                <declaration name="key" type="int" line="73"/>
+                <scope line="74"/>
+                <scope line="76"/>
+            </method>
+            <method name="getByOverlapped" type="PendingFuture<V,A>" line="89">
+                <params>
+                    <param name="overlapped" type="long"/>
+                </params>
+            </method>
+            <method name="implClose" type="void" line="94">
+                <comment line="95">
+                    close socket (which may cause outstanding accept to be aborted).                    
+                </comment>
+                <comment line="98">
+                    waits until the accept operations have completed                    
+                </comment>
+                <comment line="101">
+                    finally disassociate from the completion port                    
+                </comment>
+                <comment line="104">
+                    release other resources                    
+                </comment>
+            </method>
+            <method name="group" type="AsynchronousChannelGroupImpl" line="109"/>
+            <class name="AcceptTask" line="113">
+                <comment line="141">
+                    caller must have acquired read lock for the listener and child channel.                    
+                </comment>
+                <implements interface="Runnable"/>
+                <implements interface="Iocp.ResultHandler"/>
+                <javadoc line="113">
+                    Task to initiate accept operation and to handle result.                    
+                </javadoc>
+                <declaration name="channel" type="WindowsAsynchronousSocketChannelImpl" line="117"/>
+                <declaration name="acc" type="AccessControlContext" line="118"/>
+                <declaration name="result" type="PendingFuture&lt;AsynchronousSocketChannel,Object&gt;" line="119"/>
+                <method name="AcceptTask" type="constructor" line="124">
+                    <params>
+                        <param name="channel" type="WindowsAsynchronousSocketChannelImpl"/>
+                        <param name="acc" type="AccessControlContext"/>
+                        <param name="result" type="PendingFuture<AsynchronousSocketChannel,Object>"/>
+                    </params>
+                </method>
+                <method name="enableAccept" type="void" line="130"/>
+                <method name="closeChildChannel" type="void" line="134">
+                    <scope line="135"/>
+                    <scope line="137"/>
+                </method>
+                <method name="finishAccept" type="void" line="141">
+                    <comment line="142">
+                        Set localremote addresses. This is currently very inefficient
+                         in that it requires 2 calls to getsockname and 2 calls to getpeername.
+                         (should change this to use GetAcceptExSockaddrs)                        
+                    </comment>
+                    <comment line="153">
+                        permission check (in context of initiating thread)                        
+                    </comment>
+                    <declaration name="local" type="InetSocketAddress" line="149"/>
+                    <declaration name="remote" type="InetSocketAddress" line="150"/>
+                    <scope line="154">
+                        <anonymous_class line="155">
+                            <method name="run" type="Void" line="156">
+                                <declaration name="sm" type="SecurityManager" line="157"/>
+                            </method>
+                        </anonymous_class>
+                    </scope>
+                </method>
+                <javadoc line="166">
+                    Initiates the accept operation.                    
+                </javadoc>
+                <method name="run" type="void" line="170">
+                    <comment line="174">
+                        begin usage of listener socket                        
+                    </comment>
+                    <comment line="177">
+                        begin usage of child socket (as it is registered with                        
+                    </comment>
+                    <comment line="178">
+                        completion port and so may be closed in the event that                        
+                    </comment>
+                    <comment line="179">
+                        the group is forcefully closed).                        
+                    </comment>
+                    <comment line="190">
+                        connection accepted immediately                        
+                    </comment>
+                    <comment line="193">
+                        allow another accept before the result is set                        
+                    </comment>
+                    <comment line="198">
+                        end usage on child socket                        
+                    </comment>
+                    <comment line="202">
+                        failed to initiate accept so release resources                        
+                    </comment>
+                    <comment line="213">
+                        end of usage of listener socket                        
+                    </comment>
+                    <comment line="217">
+                        accept completed immediately but may not have executed on                        
+                    </comment>
+                    <comment line="218">
+                        initiating thread in which case the operation may have been                        
+                    </comment>
+                    <comment line="219">
+                        cancelled.                        
+                    </comment>
+                    <comment line="224">
+                        invoke completion handler                        
+                    </comment>
+                    <declaration name="overlapped" type="long" line="171"/>
+                    <scope line="173">
+                        <scope line="176">
+                            <scope line="182">
+                                <declaration name="n" type="int" line="185"/>
+                                <scope line="186"/>
+                            </scope>
+                        </scope>
+                        <scope line="197"/>
+                    </scope>
+                    <scope line="201"/>
+                    <scope line="212"/>
+                    <scope line="220"/>
+                </method>
+                <javadoc line="228">
+                    Executed when the I/O has completed                    
+                </javadoc>
+                <method name="completed" type="void" line="232">
+                    <params>
+                        <param name="bytesTransferred" type="int"/>
+                        <param name="canInvokeDirect" type="boolean"/>
+                    </params>
+                    <comment line="234">
+                        connection accept after group has shutdown                        
+                    </comment>
+                    <comment line="239">
+                        finish the accept                        
+                    </comment>
+                    <comment line="252">
+                        allow another accept before the result is set                        
+                    </comment>
+                    <comment line="265">
+                        if an async cancel has already cancelled the operation then                        
+                    </comment>
+                    <comment line="266">
+                        close the new channel so as to free resources                        
+                    </comment>
+                    <comment line="271">
+                        invoke handler (but not directly)                        
+                    </comment>
+                    <scope line="233">
+                        <scope line="235"/>
+                        <scope line="240">
+                            <scope line="242"/>
+                            <scope line="245"/>
+                        </scope>
+                        <scope line="248"/>
+                    </scope>
+                    <scope line="255"/>
+                    <scope line="267"/>
+                </method>
+                <method name="failed" type="void" line="276">
+                    <params>
+                        <param name="error" type="int"/>
+                        <param name="x" type="IOException"/>
+                    </params>
+                    <comment line="280">
+                        release waiters                        
+                    </comment>
+                    <scope line="281"/>
+                    <scope line="283"/>
+                </method>
+            </class>
+            <method name="implAccept" type="Future<AsynchronousSocketChannel>" line="293">
+                <params>
+                    <param name="attachment" type="Object"/>
+                    <param name="handler" type="CompletionHandler<AsynchronousSocketChannel,Object>"/>
+                </params>
+                <comment line="304">
+                    ensure channel is bound to local address                    
+                </comment>
+                <comment line="308">
+                    create the socket that will be accepted. The creation of the socket                    
+                </comment>
+                <comment line="309">
+                    is enclosed by a begin/end for the listener socket to ensure that                    
+                </comment>
+                <comment line="310">
+                    we check that the listener is open and also to prevent the I/O                    
+                </comment>
+                <comment line="311">
+                    port from being closed as the new socket is registered.                    
+                </comment>
+                <comment line="329">
+                    need calling context when there is security manager as                    
+                </comment>
+                <comment line="330">
+                    permission check may be done in a different thread without                    
+                </comment>
+                <comment line="331">
+                    any application call frames on the stack                    
+                </comment>
+                <comment line="340">
+                    check and set flag to prevent concurrent accepting                    
+                </comment>
+                <comment line="344">
+                    initiate I/O                    
+                </comment>
+                <scope line="294">
+                    <declaration name="exc" type="Throwable" line="295"/>
+                </scope>
+                <declaration name="ch" type="WindowsAsynchronousSocketChannelImpl" line="312"/>
+                <declaration name="ioe" type="IOException" line="313"/>
+                <scope line="314"/>
+                <scope line="317"/>
+                <scope line="319"/>
+                <scope line="322"/>
+                <declaration name="acc" type="AccessControlContext" line="332"/>
+                <declaration name="result" type="PendingFuture&lt;AsynchronousSocketChannel,Object&gt;" line="335"/>
+                <declaration name="task" type="AcceptTask" line="337"/>
+                <scope line="345"/>
+                <scope line="347"/>
+            </method>
+            <method name="initIDs" type="void" line="355"/>
+            <method name="accept0" type="int" line="357"/>
+            <method name="updateAcceptContext" type="void" line="360"/>
+            <method name="closesocket0" type="void" line="363"/>
+            <scope line="365"/>
+        </class>
+    </source>

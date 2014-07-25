@@ -1,0 +1,2121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.util.concurrent.locks">
+        <import package="java.util"/>
+        <import package="java.util.concurrent"/>
+        <import package="java.util.concurrent.atomic"/>
+        <import package="sun.misc.Unsafe"/>
+        <class name="AbstractQueuedSynchronizer" line="42">
+            <extends class="AbstractOwnableSynchronizer"/>
+            <comment line="570">
+                Queuing utilities                
+            </comment>
+            <comment line="734">
+                Utilities for various versions of acquire                
+            </comment>
+            <comment line="839">
+                Various flavors of acquire, varying in exclusiveshared and
+                 control modes.  Each is mostly the same, but annoyingly
+                 different.  Only a little bit of factoring is possible due to
+                 interactions of exception mechanics (including ensuring that we
+                 cancel if tryAcquire throws exception) and other control, at
+                 least not without hurting performance too much.                
+            </comment>
+            <comment line="1047">
+                Main exported methods                
+            </comment>
+            <comment line="1348">
+                Queue inspection methods                
+            </comment>
+            <comment line="1524">
+                Instrumentation and monitoring methods                
+            </comment>
+            <comment line="1623">
+                Internal support methods for Conditions                
+            </comment>
+            <comment line="1736">
+                Instrumentation methods for conditions                
+            </comment>
+            <implements interface="java.io.Serializable"/>
+            <javadoc line="42">
+                Provides a framework for implementing blocking locks and related
+                  synchronizers (semaphores, events, etc) that rely on
+                  first-in-first-out (FIFO) wait queues.  This class is designed to
+                  be a useful basis for most kinds of synchronizers that rely on a
+                  single atomic &lt;tt&gt;int&lt;/tt&gt; value to represent state. Subclasses
+                  must define the protected methods that change this state, and which
+                  define what that state means in terms of this object being acquired
+                  or released.  Given these, the other methods in this class carry
+                  out all queuing and blocking mechanics. Subclasses can maintain
+                  other state fields, but only the atomically updated &lt;tt&gt;int&lt;/tt&gt;
+                  value manipulated using methods {@link #getState}, {@link #setState} and {@link #compareAndSetState} is tracked with respect
+                  to synchronization.
+                  &lt;p&gt;Subclasses should be defined as non-public internal helper
+                  classes that are used to implement the synchronization properties
+                  of their enclosing class.  Class
+                  &lt;tt&gt;AbstractQueuedSynchronizer&lt;/tt&gt; does not implement any
+                  synchronization interface.  Instead it defines methods such as{@link #acquireInterruptibly} that can be invoked as
+                  appropriate by concrete locks and related synchronizers to
+                  implement their public methods.
+                  &lt;p&gt;This class supports either or both a default &lt;em&gt;exclusive&lt;/em&gt;
+                  mode and a &lt;em&gt;shared&lt;/em&gt; mode. When acquired in exclusive mode,
+                  attempted acquires by other threads cannot succeed. Shared mode
+                  acquires by multiple threads may (but need not) succeed. This class
+                  does not &amp;quot;understand&amp;quot; these differences except in the
+                  mechanical sense that when a shared mode acquire succeeds, the next
+                  waiting thread (if one exists) must also determine whether it can
+                  acquire as well. Threads waiting in the different modes share the
+                  same FIFO queue. Usually, implementation subclasses support only
+                  one of these modes, but both can come into play for example in a{@link ReadWriteLock}. Subclasses that support only exclusive or
+                  only shared modes need not define the methods supporting the unused mode.
+                  &lt;p&gt;This class defines a nested {@link ConditionObject} class that
+                  can be used as a {@link Condition} implementation by subclasses
+                  supporting exclusive mode for which method {@link #isHeldExclusively} reports whether synchronization is exclusively
+                  held with respect to the current thread, method {@link #release}invoked with the current {@link #getState} value fully releases
+                  this object, and {@link #acquire}, given this saved state value,
+                  eventually restores this object to its previous acquired state.  No
+                  &lt;tt&gt;AbstractQueuedSynchronizer&lt;/tt&gt; method otherwise creates such a
+                  condition, so if this constraint cannot be met, do not use it.  The
+                  behavior of {@link ConditionObject} depends of course on the
+                  semantics of its synchronizer implementation.
+                  &lt;p&gt;This class provides inspection, instrumentation, and monitoring
+                  methods for the internal queue, as well as similar methods for
+                  condition objects. These can be exported as desired into classes
+                  using an &lt;tt&gt;AbstractQueuedSynchronizer&lt;/tt&gt; for their
+                  synchronization mechanics.
+                  &lt;p&gt;Serialization of this class stores only the underlying atomic
+                  integer maintaining state, so deserialized objects have empty
+                  thread queues. Typical subclasses requiring serializability will
+                  define a &lt;tt&gt;readObject&lt;/tt&gt; method that restores this to a known
+                  initial state upon deserialization.
+                  &lt;h3&gt;Usage&lt;/h3&gt;
+                  &lt;p&gt;To use this class as the basis of a synchronizer, redefine the
+                  following methods, as applicable, by inspecting and/or modifying
+                  the synchronization state using {@link #getState}, {@link #setState} and/or {@link #compareAndSetState}:
+                  &lt;ul&gt;
+                  &lt;li&gt; {@link #tryAcquire}&lt;li&gt; {@link #tryRelease}&lt;li&gt; {@link #tryAcquireShared}&lt;li&gt; {@link #tryReleaseShared}&lt;li&gt; {@link #isHeldExclusively}&lt;/ul&gt;
+                  Each of these methods by default throws {@link UnsupportedOperationException}.  Implementations of these methods
+                  must be internally thread-safe, and should in general be short and
+                  not block. Defining these methods is the &lt;em&gt;only&lt;/em&gt; supported
+                  means of using this class. All other methods are declared
+                  &lt;tt&gt;final&lt;/tt&gt; because they cannot be independently varied.
+                  &lt;p&gt;You may also find the inherited methods from {@link AbstractOwnableSynchronizer} useful to keep track of the thread
+                  owning an exclusive synchronizer.  You are encouraged to use them
+                  -- this enables monitoring and diagnostic tools to assist users in
+                  determining which threads hold locks.
+                  &lt;p&gt;Even though this class is based on an internal FIFO queue, it
+                  does not automatically enforce FIFO acquisition policies.  The core
+                  of exclusive synchronization takes the form:
+                  &lt;pre&gt;
+                  Acquire:
+                  while (!tryAcquire(arg)) {
+                  &lt;em&gt;enqueue thread if it is not already queued&lt;/em&gt;;
+                  &lt;em&gt;possibly block current thread&lt;/em&gt;;
+                  }
+                  Release:
+                  if (tryRelease(arg))
+                  &lt;em&gt;unblock the first queued thread&lt;/em&gt;;
+                  &lt;/pre&gt;
+                  (Shared mode is similar but may involve cascading signals.)
+                  &lt;p&gt;&lt;a name=&quot;barging&quot;&gt;Because checks in acquire are invoked before
+                  enqueuing, a newly acquiring thread may &lt;em&gt;barge&lt;/em&gt; ahead of
+                  others that are blocked and queued.  However, you can, if desired,
+                  define &lt;tt&gt;tryAcquire&lt;/tt&gt; and/or &lt;tt&gt;tryAcquireShared&lt;/tt&gt; to
+                  disable barging by internally invoking one or more of the inspection
+                  methods, thereby providing a &lt;em&gt;fair&lt;/em&gt; FIFO acquisition order.
+                  In particular, most fair synchronizers can define &lt;tt&gt;tryAcquire&lt;/tt&gt;
+                  to return &lt;tt&gt;false&lt;/tt&gt; if {@link #hasQueuedPredecessors} (a method
+                  specifically designed to be used by fair synchronizers) returns
+                  &lt;tt&gt;true&lt;/tt&gt;.  Other variations are possible.
+                  &lt;p&gt;Throughput and scalability are generally highest for the
+                  default barging (also known as &lt;em&gt;greedy&lt;/em&gt;,
+                  &lt;em&gt;renouncement&lt;/em&gt;, and &lt;em&gt;convoy-avoidance&lt;/em&gt;) strategy.
+                  While this is not guaranteed to be fair or starvation-free, earlier
+                  queued threads are allowed to recontend before later queued
+                  threads, and each recontention has an unbiased chance to succeed
+                  against incoming threads.  Also, while acquires do not
+                  &amp;quot;spin&amp;quot; in the usual sense, they may perform multiple
+                  invocations of &lt;tt&gt;tryAcquire&lt;/tt&gt; interspersed with other
+                  computations before blocking.  This gives most of the benefits of
+                  spins when exclusive synchronization is only briefly held, without
+                  most of the liabilities when it isn&apos;t. If so desired, you can
+                  augment this by preceding calls to acquire methods with
+                  &quot;fast-path&quot; checks, possibly prechecking {@link #hasContended}and/or {@link #hasQueuedThreads} to only do so if the synchronizer
+                  is likely not to be contended.
+                  &lt;p&gt;This class provides an efficient and scalable basis for
+                  synchronization in part by specializing its range of use to
+                  synchronizers that can rely on &lt;tt&gt;int&lt;/tt&gt; state, acquire, and
+                  release parameters, and an internal FIFO wait queue. When this does
+                  not suffice, you can build synchronizers from a lower level using{@link java.util.concurrent.atomic atomic} classes, your own custom{@link java.util.Queue} classes, and {@link LockSupport} blocking
+                  support.
+                  &lt;h3&gt;Usage Examples&lt;/h3&gt;
+                  &lt;p&gt;Here is a non-reentrant mutual exclusion lock class that uses
+                  the value zero to represent the unlocked state, and one to
+                  represent the locked state. While a non-reentrant lock
+                  does not strictly require recording of the current owner
+                  thread, this class does so anyway to make usage easier to monitor.
+                  It also supports conditions and exposes
+                  one of the instrumentation methods:
+                  &lt;pre&gt;
+                  class Mutex implements Lock, java.io.Serializable {
+                  // Our internal helper class
+                  private static class Sync extends AbstractQueuedSynchronizer {
+                  // Report whether in locked state
+                  protected boolean isHeldExclusively() {
+                  return getState() == 1;
+                  }
+                  // Acquire the lock if state is zero
+                  public boolean tryAcquire(int acquires) {
+                  assert acquires == 1; // Otherwise unused
+                  if (compareAndSetState(0, 1)) {
+                  setExclusiveOwnerThread(Thread.currentThread());
+                  return true;
+                  }
+                  return false;
+                  }
+                  // Release the lock by setting state to zero
+                  protected boolean tryRelease(int releases) {
+                  assert releases == 1; // Otherwise unused
+                  if (getState() == 0) throw new IllegalMonitorStateException();
+                  setExclusiveOwnerThread(null);
+                  setState(0);
+                  return true;
+                  }
+                  // Provide a Condition
+                  Condition newCondition() { return new ConditionObject(); }
+                  // Deserialize properly
+                  private void readObject(ObjectInputStream s)
+                  throws IOException, ClassNotFoundException {
+                  s.defaultReadObject();
+                  setState(0); // reset to unlocked state
+                  }
+                  }
+                  // The sync object does all the hard work. We just forward to it.
+                  private final Sync sync = new Sync();
+                  public void lock()                { sync.acquire(1); }
+                  public boolean tryLock()          { return sync.tryAcquire(1); }
+                  public void unlock()              { sync.release(1); }
+                  public Condition newCondition()   { return sync.newCondition(); }
+                  public boolean isLocked()         { return sync.isHeldExclusively(); }
+                  public boolean hasQueuedThreads() { return sync.hasQueuedThreads(); }
+                  public void lockInterruptibly() throws InterruptedException {
+                  sync.acquireInterruptibly(1);
+                  }
+                  public boolean tryLock(long timeout, TimeUnit unit)
+                  throws InterruptedException {
+                  return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+                  }
+                  }
+                  &lt;/pre&gt;
+                  &lt;p&gt;Here is a latch class that is like a {@link CountDownLatch}except that it only requires a single &lt;tt&gt;signal&lt;/tt&gt; to
+                  fire. Because a latch is non-exclusive, it uses the &lt;tt&gt;shared&lt;/tt&gt;
+                  acquire and release methods.
+                  &lt;pre&gt;
+                  class BooleanLatch {
+                  private static class Sync extends AbstractQueuedSynchronizer {
+                  boolean isSignalled() { return getState() != 0; }
+                  protected int tryAcquireShared(int ignore) {
+                  return isSignalled() ? 1 : -1;
+                  }
+                  protected boolean tryReleaseShared(int ignore) {
+                  setState(1);
+                  return true;
+                  }
+                  }
+                  private final Sync sync = new Sync();
+                  public boolean isSignalled() { return sync.isSignalled(); }
+                  public void signal()         { sync.releaseShared(1); }
+                  public void await() throws InterruptedException {
+                  sync.acquireSharedInterruptibly(1);
+                  }
+                  }
+                  &lt;/pre&gt;                
+                <since>
+                    1.5                    
+                </since>
+                <author>
+                    Doug Lea                    
+                </author>
+            </javadoc>
+            <declaration name="serialVersionUID" type="long" line="293"/>
+            <javadoc line="295">
+                Creates a new &lt;tt&gt;AbstractQueuedSynchronizer&lt;/tt&gt; instance
+                  with initial synchronization state of zero.                
+            </javadoc>
+            <method name="AbstractQueuedSynchronizer" type="constructor" line="299"/>
+            <class name="Node" line="301">
+                <comment line="1845">
+                    Internal methods                    
+                </comment>
+                <comment line="1930">
+                    public methods                    
+                </comment>
+                <comment line="1988">
+                    For interruptible waits, we need to track whether to throw
+                     InterruptedException, if interrupted while blocked on
+                     condition, versus reinterrupt current thread, if
+                     interrupted while blocked waiting to re-acquire.                    
+                </comment>
+                <comment line="2193">
+                    support for instrumentation                    
+                </comment>
+                <javadoc line="301">
+                    Wait queue node class.
+                      &lt;p&gt;The wait queue is a variant of a &quot;CLH&quot; (Craig, Landin, and
+                      Hagersten) lock queue. CLH locks are normally used for
+                      spinlocks.  We instead use them for blocking synchronizers, but
+                      use the same basic tactic of holding some of the control
+                      information about a thread in the predecessor of its node.  A
+                      &quot;status&quot; field in each node keeps track of whether a thread
+                      should block.  A node is signalled when its predecessor
+                      releases.  Each node of the queue otherwise serves as a
+                      specific-notification-style monitor holding a single waiting
+                      thread. The status field does NOT control whether threads are
+                      granted locks etc though.  A thread may try to acquire if it is
+                      first in the queue. But being first does not guarantee success;
+                      it only gives the right to contend.  So the currently released
+                      contender thread may need to rewait.
+                      &lt;p&gt;To enqueue into a CLH lock, you atomically splice it in as new
+                      tail. To dequeue, you just set the head field.
+                      &lt;pre&gt;
+                      +------+  prev +-----+       +-----+
+                      head |      | &lt;---- |     | &lt;---- |     |  tail
+                      +------+       +-----+       +-----+
+                      &lt;/pre&gt;
+                      &lt;p&gt;Insertion into a CLH queue requires only a single atomic
+                      operation on &quot;tail&quot;, so there is a simple atomic point of
+                      demarcation from unqueued to queued. Similarly, dequeing
+                      involves only updating the &quot;head&quot;. However, it takes a bit
+                      more work for nodes to determine who their successors are,
+                      in part to deal with possible cancellation due to timeouts
+                      and interrupts.
+                      &lt;p&gt;The &quot;prev&quot; links (not used in original CLH locks), are mainly
+                      needed to handle cancellation. If a node is cancelled, its
+                      successor is (normally) relinked to a non-cancelled
+                      predecessor. For explanation of similar mechanics in the case
+                      of spin locks, see the papers by Scott and Scherer at
+                      http://www.cs.rochester.edu/u/scott/synchronization/
+                      &lt;p&gt;We also use &quot;next&quot; links to implement blocking mechanics.
+                      The thread id for each node is kept in its own node, so a
+                      predecessor signals the next node to wake up by traversing
+                      next link to determine which thread it is.  Determination of
+                      successor must avoid races with newly queued nodes to set
+                      the &quot;next&quot; fields of their predecessors.  This is solved
+                      when necessary by checking backwards from the atomically
+                      updated &quot;tail&quot; when a node&apos;s successor appears to be null.
+                      (Or, said differently, the next-links are an optimization
+                      so that we don&apos;t usually need a backward scan.)
+                      &lt;p&gt;Cancellation introduces some conservatism to the basic
+                      algorithms.  Since we must poll for cancellation of other
+                      nodes, we can miss noticing whether a cancelled node is
+                      ahead or behind us. This is dealt with by always unparking
+                      successors upon cancellation, allowing them to stabilize on
+                      a new predecessor, unless we can identify an uncancelled
+                      predecessor who will carry this responsibility.
+                      &lt;p&gt;CLH queues need a dummy header node to get started. But
+                      we don&apos;t create them on construction, because it would be wasted
+                      effort if there is never contention. Instead, the node
+                      is constructed and head and tail pointers are set upon first
+                      contention.
+                      &lt;p&gt;Threads waiting on Conditions use the same nodes, but
+                      use an additional link. Conditions only need to link nodes
+                      in simple (non-concurrent) linked queues because they are
+                      only accessed when exclusively held.  Upon await, a node is
+                      inserted into a condition queue.  Upon signal, the node is
+                      transferred to the main queue.  A special value of status
+                      field is used to mark which queue a node is on.
+                      &lt;p&gt;Thanks go to Dave Dice, Mark Moir, Victor Luchangco, Bill
+                      Scherer and Michael Scott, along with members of JSR-166
+                      expert group, for helpful ideas, discussions, and critiques
+                      on the design of this class.                    
+                </javadoc>
+                <declaration name="SHARED" type="Node" line="381"/>
+                <javadoc line="381">
+                    Marker to indicate a node is waiting in shared mode                    
+                </javadoc>
+                <declaration name="EXCLUSIVE" type="Node" line="383"/>
+                <javadoc line="383">
+                    Marker to indicate a node is waiting in exclusive mode                    
+                </javadoc>
+                <declaration name="CANCELLED" type="int" line="386"/>
+                <javadoc line="386">
+                    waitStatus value to indicate thread has cancelled                    
+                </javadoc>
+                <declaration name="SIGNAL" type="int" line="388"/>
+                <javadoc line="388">
+                    waitStatus value to indicate successor&apos;s thread needs unparking                    
+                </javadoc>
+                <declaration name="CONDITION" type="int" line="390"/>
+                <javadoc line="390">
+                    waitStatus value to indicate thread is waiting on condition                    
+                </javadoc>
+                <declaration name="PROPAGATE" type="int" line="392"/>
+                <javadoc line="392">
+                    waitStatus value to indicate the next acquireShared should
+                      unconditionally propagate                    
+                </javadoc>
+                <declaration name="waitStatus" type="int" line="398"/>
+                <javadoc line="398">
+                    Status field, taking on only the values:
+                      SIGNAL:     The successor of this node is (or will soon be)
+                      blocked (via park), so the current node must
+                      unpark its successor when it releases or
+                      cancels. To avoid races, acquire methods must
+                      first indicate they need a signal,
+                      then retry the atomic acquire, and then,
+                      on failure, block.
+                      CANCELLED:  This node is cancelled due to timeout or interrupt.
+                      Nodes never leave this state. In particular,
+                      a thread with cancelled node never again blocks.
+                      CONDITION:  This node is currently on a condition queue.
+                      It will not be used as a sync queue node
+                      until transferred, at which time the status
+                      will be set to 0. (Use of this value here has
+                      nothing to do with the other uses of the
+                      field, but simplifies mechanics.)
+                      PROPAGATE:  A releaseShared should be propagated to other
+                      nodes. This is set (for head node only) in
+                      doReleaseShared to ensure propagation
+                      continues, even if other operations have
+                      since intervened.
+                      0:          None of the above
+                      The values are arranged numerically to simplify use.
+                      Non-negative values mean that a node doesn&apos;t need to
+                      signal. So, most code doesn&apos;t need to check for particular
+                      values, just for sign.
+                      The field is initialized to 0 for normal sync nodes, and
+                      CONDITION for condition nodes.  It is modified using CAS
+                      (or when possible, unconditional volatile writes).                    
+                </javadoc>
+                <declaration name="prev" type="Node" line="434"/>
+                <javadoc line="434">
+                    Link to predecessor node that current node/thread relies on
+                      for checking waitStatus. Assigned during enqueing, and nulled
+                      out (for sake of GC) only upon dequeuing.  Also, upon
+                      cancellation of a predecessor, we short-circuit while
+                      finding a non-cancelled one, which will always exist
+                      because the head node is never cancelled: A node becomes
+                      head only as a result of successful acquire. A
+                      cancelled thread never succeeds in acquiring, and a thread only
+                      cancels itself, not any other node.                    
+                </javadoc>
+                <declaration name="next" type="Node" line="447"/>
+                <javadoc line="447">
+                    Link to the successor node that the current node/thread
+                      unparks upon release. Assigned during enqueuing, adjusted
+                      when bypassing cancelled predecessors, and nulled out (for
+                      sake of GC) when dequeued.  The enq operation does not
+                      assign next field of a predecessor until after attachment,
+                      so seeing a null next field does not necessarily mean that
+                      node is at end of queue. However, if a next field appears
+                      to be null, we can scan prev&apos;s from the tail to
+                      double-check.  The next field of cancelled nodes is set to
+                      point to the node itself instead of null, to make life
+                      easier for isOnSyncQueue.                    
+                </javadoc>
+                <declaration name="thread" type="Thread" line="462"/>
+                <javadoc line="462">
+                    The thread that enqueued this node.  Initialized on
+                      construction and nulled out after use.                    
+                </javadoc>
+                <declaration name="nextWaiter" type="Node" line="468"/>
+                <javadoc line="468">
+                    Link to next node waiting on condition, or the special
+                      value SHARED.  Because condition queues are accessed only
+                      when holding in exclusive mode, we just need a simple
+                      linked queue to hold nodes while they are waiting on
+                      conditions. They are then transferred to the queue to
+                      re-acquire. And because conditions can only be exclusive,
+                      we save a field by using special value to indicate shared
+                      mode.                    
+                </javadoc>
+                <javadoc line="480">
+                    Returns true if node is waiting in shared mode                    
+                </javadoc>
+                <method name="isShared" type="boolean" line="483"/>
+                <javadoc line="487">
+                    Returns previous node, or throws NullPointerException if null.
+                      Use when predecessor cannot be null.  The null check could
+                      be elided, but is present to help the VM.                    
+                    <return>
+                        the predecessor of this node                        
+                    </return>
+                </javadoc>
+                <method name="predecessor" type="Node" line="494">
+                    <declaration name="p" type="Node" line="495"/>
+                </method>
+                <method name="Node" type="constructor" line="502"/>
+                <method name="Node" type="constructor" line="505">
+                    <params>
+                        <param name="thread" type="Thread"/>
+                        <param name="mode" type="Node"/>
+                    </params>
+                </method>
+                <method name="Node" type="constructor" line="510">
+                    <params>
+                        <param name="thread" type="Thread"/>
+                        <param name="waitStatus" type="int"/>
+                    </params>
+                </method>
+            </class>
+            <declaration name="head" type="Node" line="516"/>
+            <javadoc line="516">
+                Head of the wait queue, lazily initialized.  Except for
+                  initialization, it is modified only via method setHead.  Note:
+                  If head exists, its waitStatus is guaranteed not to be
+                  CANCELLED.                
+            </javadoc>
+            <declaration name="tail" type="Node" line="524"/>
+            <javadoc line="524">
+                Tail of the wait queue, lazily initialized.  Modified only via
+                  method enq to add new wait node.                
+            </javadoc>
+            <declaration name="state" type="int" line="530"/>
+            <javadoc line="530">
+                The synchronization state.                
+            </javadoc>
+            <javadoc line="535">
+                Returns the current value of synchronization state.
+                  This operation has memory semantics of a &lt;tt&gt;volatile&lt;/tt&gt; read.                
+                <return>
+                    current state value                    
+                </return>
+            </javadoc>
+            <method name="getState" type="int" line="540"/>
+            <javadoc line="544">
+                Sets the value of synchronization state.
+                  This operation has memory semantics of a &lt;tt&gt;volatile&lt;/tt&gt; write.                
+                <param>
+                    newState the new state value                    
+                </param>
+            </javadoc>
+            <method name="setState" type="void" line="549">
+                <params>
+                    <param name="newState" type="int"/>
+                </params>
+            </method>
+            <javadoc line="553">
+                Atomically sets synchronization state to the given updated
+                  value if the current state value equals the expected value.
+                  This operation has memory semantics of a &lt;tt&gt;volatile&lt;/tt&gt; read
+                  and write.                
+                <param>
+                    expect the expected value                    
+                </param>
+                <param>
+                    update the new value                    
+                </param>
+                <return>
+                    true if successful. False return indicates that the actual
+                      value was not equal to the expected value.                    
+                </return>
+            </javadoc>
+            <method name="compareAndSetState" type="boolean" line="564">
+                <params>
+                    <param name="expect" type="int"/>
+                    <param name="update" type="int"/>
+                </params>
+                <comment line="565">
+                    See below for intrinsics setup to support this                    
+                </comment>
+            </method>
+            <declaration name="spinForTimeoutThreshold" type="long" line="571"/>
+            <javadoc line="571">
+                The number of nanoseconds for which it is faster to spin
+                  rather than to use timed park. A rough estimate suffices
+                  to improve responsiveness with very short timeouts.                
+            </javadoc>
+            <javadoc line="578">
+                Inserts node into queue, initializing if necessary. See picture above.                
+                <param>
+                    node the node to insert                    
+                </param>
+                <return>
+                    node's predecessor                    
+                </return>
+            </javadoc>
+            <method name="enq" type="Node" line="583">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="586">
+                    Must initialize                    
+                </comment>
+                <scope line="584">
+                    <declaration name="t" type="Node" line="585"/>
+                    <scope line="586"/>
+                    <scope line="589">
+                        <scope line="591"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="599">
+                Creates and enqueues node for current thread and given mode.                
+                <param>
+                    mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared                    
+                </param>
+                <return>
+                    the new node                    
+                </return>
+            </javadoc>
+            <method name="addWaiter" type="Node" line="605">
+                <params>
+                    <param name="mode" type="Node"/>
+                </params>
+                <comment line="607">
+                    Try the fast path of enq; backup to full enq on failure                    
+                </comment>
+                <declaration name="node" type="Node" line="606"/>
+                <declaration name="pred" type="Node" line="608"/>
+                <scope line="609">
+                    <scope line="611"/>
+                </scope>
+            </method>
+            <javadoc line="620">
+                Sets head of queue to be node, thus dequeuing. Called only by
+                  acquire methods.  Also nulls out unused fields for sake of GC
+                  and to suppress unnecessary signals and traversals.                
+                <param>
+                    node the node                    
+                </param>
+            </javadoc>
+            <method name="setHead" type="void" line="627">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+            </method>
+            <javadoc line="633">
+                Wakes up node&apos;s successor, if one exists.                
+                <param>
+                    node the node                    
+                </param>
+            </javadoc>
+            <method name="unparkSuccessor" type="void" line="638">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="639">
+                    If status is negative (i.e., possibly needing signal) try
+                     to clear in anticipation of signalling.  It is OK if this
+                     fails or if status is changed by waiting thread.                    
+                </comment>
+                <comment line="648">
+                    Thread to unpark is held in successor, which is normally
+                     just the next node.  But if cancelled or apparently null,
+                     traverse backwards from tail to find the actual
+                     non-cancelled successor.                    
+                </comment>
+                <declaration name="ws" type="int" line="644"/>
+                <declaration name="s" type="Node" line="654"/>
+                <scope line="655"/>
+            </method>
+            <javadoc line="665">
+                Release action for shared mode -- signal successor and ensure
+                  propagation. (Note: For exclusive mode, release just amounts
+                  to calling unparkSuccessor of head if it needs signal.)                
+            </javadoc>
+            <method name="doReleaseShared" type="void" line="670">
+                <comment line="671">
+                    Ensure that a release propagates, even if there are other
+                     in-progress acquiresreleases.  This proceeds in the usual
+                     way of trying to unparkSuccessor of head if it needs
+                     signal. But if it does not, status is set to PROPAGATE to
+                     ensure that upon release, propagation continues.
+                     Additionally, we must loop in case a new node is added
+                     while we are doing this. Also, unlike other uses of
+                     unparkSuccessor, we need to know if CAS to reset status
+                     fails, if so rechecking.                    
+                </comment>
+                <comment line="688">
+                    loop to recheck cases                    
+                </comment>
+                <comment line="693">
+                    loop on failed CAS                    
+                </comment>
+                <comment line="695">
+                    loop if head changed                    
+                </comment>
+                <scope line="682">
+                    <declaration name="h" type="Node" line="683"/>
+                    <scope line="684">
+                        <declaration name="ws" type="int" line="685"/>
+                        <scope line="686"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="700">
+                Sets head of queue, and checks if successor may be waiting
+                  in shared mode, if so propagating if either propagate &gt; 0 or
+                  PROPAGATE status was set.                
+                <param>
+                    node the node                    
+                </param>
+                <param>
+                    propagate the return value from a tryAcquireShared                    
+                </param>
+            </javadoc>
+            <method name="setHeadAndPropagate" type="void" line="708">
+                <params>
+                    <param name="node" type="Node"/>
+                    <param name="propagate" type="int"/>
+                </params>
+                <comment line="709">
+                    Record old head for check below                    
+                </comment>
+                <comment line="711">
+                    Try to signal next queued node if:
+                       Propagation was indicated by caller,
+                         or was recorded (as h.waitStatus) by a previous operation
+                         (note: this uses sign-check of waitStatus because
+                          PROPAGATE status may transition to SIGNAL.)
+                     and
+                       The next node is waiting in shared mode,
+                         or we don&apos;t know, because it appears null
+                    
+                     The conservatism in both of these checks may cause
+                     unnecessary wake-ups, but only when there are multiple
+                     racing acquiresreleases, so most need signals now or soon
+                     anyway.                    
+                </comment>
+                <declaration name="h" type="Node" line="709"/>
+                <scope line="726">
+                    <declaration name="s" type="Node" line="727"/>
+                </scope>
+            </method>
+            <javadoc line="735">
+                Cancels an ongoing attempt to acquire.                
+                <param>
+                    node the node                    
+                </param>
+            </javadoc>
+            <method name="cancelAcquire" type="void" line="740">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="741">
+                    Ignore if node doesn&apos;t exist                    
+                </comment>
+                <comment line="747">
+                    Skip cancelled predecessors                    
+                </comment>
+                <comment line="752">
+                    predNext is the apparent node to unsplice. CASes below will                    
+                </comment>
+                <comment line="753">
+                    fail if not, in which case, we lost race vs another cancel                    
+                </comment>
+                <comment line="754">
+                    or signal, so no further action is necessary.                    
+                </comment>
+                <comment line="757">
+                    Can use unconditional write instead of CAS here.                    
+                </comment>
+                <comment line="758">
+                    After this atomic step, other Nodes can skip past us.                    
+                </comment>
+                <comment line="759">
+                    Before, we are free of interference from other threads.                    
+                </comment>
+                <comment line="762">
+                    If we are the tail, remove ourselves.                    
+                </comment>
+                <comment line="766">
+                    If successor needs signal, try to set pred&apos;s next-link                    
+                </comment>
+                <comment line="767">
+                    so it will get one. Otherwise wake it up to propagate.                    
+                </comment>
+                <comment line="780">
+                    help GC                    
+                </comment>
+                <declaration name="pred" type="Node" line="748"/>
+                <declaration name="predNext" type="Node" line="755"/>
+                <scope line="763"/>
+                <scope line="765">
+                    <declaration name="ws" type="int" line="768"/>
+                    <scope line="772">
+                        <declaration name="next" type="Node" line="773"/>
+                    </scope>
+                    <scope line="776"/>
+                </scope>
+            </method>
+            <javadoc line="784">
+                Checks and updates status for a node that failed to acquire.
+                  Returns true if thread should block. This is the main signal
+                  control in all acquire loops.  Requires that pred == node.prev                
+                <param>
+                    pred node's predecessor holding status                    
+                </param>
+                <param>
+                    node the node                    
+                </param>
+                <return>
+                    {@code true} if thread should block                    
+                </return>
+            </javadoc>
+            <method name="shouldParkAfterFailedAcquire" type="boolean" line="793">
+                <params>
+                    <param name="pred" type="Node"/>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="796">
+                    This node has already set status asking a release
+                     to signal it, so it can safely park.                    
+                </comment>
+                <comment line="802">
+                    Predecessor was cancelled. Skip over predecessors and
+                     indicate retry.                    
+                </comment>
+                <comment line="811">
+                    waitStatus must be 0 or PROPAGATE.  Indicate that we
+                     need a signal, but don&apos;t park yet.  Caller will need to
+                     retry to make sure it cannot acquire before parking.                    
+                </comment>
+                <declaration name="ws" type="int" line="794"/>
+                <scope line="801">
+                    <scope line="806"/>
+                </scope>
+                <scope line="810"/>
+            </method>
+            <javadoc line="821">
+                Convenience method to interrupt current thread.                
+            </javadoc>
+            <method name="selfInterrupt" type="void" line="824"/>
+            <javadoc line="828">
+                Convenience method to park and then check if interrupted                
+                <return>
+                    {@code true} if interrupted                    
+                </return>
+            </javadoc>
+            <method name="parkAndCheckInterrupt" type="boolean" line="833"/>
+            <javadoc line="847">
+                Acquires in exclusive uninterruptible mode for thread already in
+                  queue. Used by condition wait methods as well as acquire.                
+                <param>
+                    node the node                    
+                </param>
+                <param>
+                    arg the acquire argument                    
+                </param>
+                <return>
+                    {@code true} if interrupted while waiting                    
+                </return>
+            </javadoc>
+            <method name="acquireQueued" type="boolean" line="855">
+                <params>
+                    <param name="node" type="Node"/>
+                    <param name="arg" type="int"/>
+                </params>
+                <comment line="863">
+                    help GC                    
+                </comment>
+                <declaration name="failed" type="boolean" line="856"/>
+                <scope line="857">
+                    <declaration name="interrupted" type="boolean" line="858"/>
+                    <scope line="859">
+                        <declaration name="p" type="Node" line="860"/>
+                        <scope line="861"/>
+                    </scope>
+                </scope>
+                <scope line="871"/>
+            </method>
+            <javadoc line="877">
+                Acquires in exclusive interruptible mode.                
+                <param>
+                    arg the acquire argument                    
+                </param>
+            </javadoc>
+            <method name="doAcquireInterruptibly" type="void" line="882">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+                <comment line="890">
+                    help GC                    
+                </comment>
+                <declaration name="node" type="Node" line="883"/>
+                <declaration name="failed" type="boolean" line="884"/>
+                <scope line="885">
+                    <scope line="886">
+                        <declaration name="p" type="Node" line="887"/>
+                        <scope line="888"/>
+                    </scope>
+                </scope>
+                <scope line="898"/>
+            </method>
+            <javadoc line="904">
+                Acquires in exclusive timed mode.                
+                <param>
+                    arg the acquire argument                    
+                </param>
+                <param>
+                    nanosTimeout max wait time                    
+                </param>
+                <return>
+                    {@code true} if acquired                    
+                </return>
+            </javadoc>
+            <method name="doAcquireNanos" type="boolean" line="912">
+                <params>
+                    <param name="arg" type="int"/>
+                    <param name="nanosTimeout" type="long"/>
+                </params>
+                <comment line="921">
+                    help GC                    
+                </comment>
+                <declaration name="lastTime" type="long" line="913"/>
+                <declaration name="node" type="Node" line="914"/>
+                <declaration name="failed" type="boolean" line="915"/>
+                <scope line="916">
+                    <scope line="917">
+                        <declaration name="p" type="Node" line="918"/>
+                        <scope line="919"/>
+                        <declaration name="now" type="long" line="930"/>
+                    </scope>
+                </scope>
+                <scope line="936"/>
+            </method>
+            <javadoc line="942">
+                Acquires in shared uninterruptible mode.                
+                <param>
+                    arg the acquire argument                    
+                </param>
+            </javadoc>
+            <method name="doAcquireShared" type="void" line="946">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+                <comment line="957">
+                    help GC                    
+                </comment>
+                <declaration name="node" type="Node" line="947"/>
+                <declaration name="failed" type="boolean" line="948"/>
+                <scope line="949">
+                    <declaration name="interrupted" type="boolean" line="950"/>
+                    <scope line="951">
+                        <declaration name="p" type="Node" line="952"/>
+                        <scope line="953">
+                            <declaration name="r" type="int" line="954"/>
+                            <scope line="955"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="968"/>
+            </method>
+            <javadoc line="974">
+                Acquires in shared interruptible mode.                
+                <param>
+                    arg the acquire argument                    
+                </param>
+            </javadoc>
+            <method name="doAcquireSharedInterruptibly" type="void" line="979">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+                <comment line="989">
+                    help GC                    
+                </comment>
+                <declaration name="node" type="Node" line="980"/>
+                <declaration name="failed" type="boolean" line="981"/>
+                <scope line="982">
+                    <scope line="983">
+                        <declaration name="p" type="Node" line="984"/>
+                        <scope line="985">
+                            <declaration name="r" type="int" line="986"/>
+                            <scope line="987"/>
+                        </scope>
+                    </scope>
+                </scope>
+                <scope line="998"/>
+            </method>
+            <javadoc line="1004">
+                Acquires in shared timed mode.                
+                <param>
+                    arg the acquire argument                    
+                </param>
+                <param>
+                    nanosTimeout max wait time                    
+                </param>
+                <return>
+                    {@code true} if acquired                    
+                </return>
+            </javadoc>
+            <method name="doAcquireSharedNanos" type="boolean" line="1012">
+                <params>
+                    <param name="arg" type="int"/>
+                    <param name="nanosTimeout" type="long"/>
+                </params>
+                <comment line="1024">
+                    help GC                    
+                </comment>
+                <declaration name="lastTime" type="long" line="1014"/>
+                <declaration name="node" type="Node" line="1015"/>
+                <declaration name="failed" type="boolean" line="1016"/>
+                <scope line="1017">
+                    <scope line="1018">
+                        <declaration name="p" type="Node" line="1019"/>
+                        <scope line="1020">
+                            <declaration name="r" type="int" line="1021"/>
+                            <scope line="1022"/>
+                        </scope>
+                        <declaration name="now" type="long" line="1034"/>
+                    </scope>
+                </scope>
+                <scope line="1040"/>
+            </method>
+            <javadoc line="1048">
+                Attempts to acquire in exclusive mode. This method should query
+                  if the state of the object permits it to be acquired in the
+                  exclusive mode, and if so to acquire it.
+                  &lt;p&gt;This method is always invoked by the thread performing
+                  acquire.  If this method reports failure, the acquire method
+                  may queue the thread, if it is not already queued, until it is
+                  signalled by a release from some other thread. This can be used
+                  to implement method {@link Lock#tryLock()}.
+                  &lt;p&gt;The default
+                  implementation throws {@link UnsupportedOperationException}.                
+                <param>
+                    arg the acquire argument. This value is always the one
+                      passed to an acquire method, or is the value saved on entry
+                      to a condition wait.  The value is otherwise uninterpreted
+                      and can represent anything you like.                    
+                </param>
+                <return>
+                    {@code true} if successful. Upon success, this object has
+                      been acquired.                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if acquiring would place this
+                      synchronizer in an illegal state. This exception must be
+                      thrown in a consistent fashion for synchronization to work
+                      correctly.                    
+                </throws>
+                <throws>
+                    UnsupportedOperationException if exclusive mode is not supported                    
+                </throws>
+            </javadoc>
+            <method name="tryAcquire" type="boolean" line="1074">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1078">
+                Attempts to set the state to reflect a release in exclusive
+                  mode.
+                  &lt;p&gt;This method is always invoked by the thread performing release.
+                  &lt;p&gt;The default implementation throws{@link UnsupportedOperationException}.                
+                <param>
+                    arg the release argument. This value is always the one
+                      passed to a release method, or the current state value upon
+                      entry to a condition wait.  The value is otherwise
+                      uninterpreted and can represent anything you like.                    
+                </param>
+                <return>
+                    {@code true} if this object is now in a fully released
+                      state, so that any waiting threads may attempt to acquire;
+                      and {@code false} otherwise.                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if releasing would place this
+                      synchronizer in an illegal state. This exception must be
+                      thrown in a consistent fashion for synchronization to work
+                      correctly.                    
+                </throws>
+                <throws>
+                    UnsupportedOperationException if exclusive mode is not supported                    
+                </throws>
+            </javadoc>
+            <method name="tryRelease" type="boolean" line="1100">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1104">
+                Attempts to acquire in shared mode. This method should query if
+                  the state of the object permits it to be acquired in the shared
+                  mode, and if so to acquire it.
+                  &lt;p&gt;This method is always invoked by the thread performing
+                  acquire.  If this method reports failure, the acquire method
+                  may queue the thread, if it is not already queued, until it is
+                  signalled by a release from some other thread.
+                  &lt;p&gt;The default implementation throws {@link UnsupportedOperationException}.                
+                <param>
+                    arg the acquire argument. This value is always the one
+                      passed to an acquire method, or is the value saved on entry
+                      to a condition wait.  The value is otherwise uninterpreted
+                      and can represent anything you like.                    
+                </param>
+                <return>
+                    a negative value on failure; zero if acquisition in shared
+                      mode succeeded but no subsequent shared-mode acquire can
+                      succeed; and a positive value if acquisition in shared
+                      mode succeeded and subsequent shared-mode acquires might
+                      also succeed, in which case a subsequent waiting thread
+                      must check availability. (Support for three different
+                      return values enables this method to be used in contexts
+                      where acquires only sometimes act exclusively.)  Upon
+                      success, this object has been acquired.                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if acquiring would place this
+                      synchronizer in an illegal state. This exception must be
+                      thrown in a consistent fashion for synchronization to work
+                      correctly.                    
+                </throws>
+                <throws>
+                    UnsupportedOperationException if shared mode is not supported                    
+                </throws>
+            </javadoc>
+            <method name="tryAcquireShared" type="int" line="1136">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1140">
+                Attempts to set the state to reflect a release in shared mode.
+                  &lt;p&gt;This method is always invoked by the thread performing release.
+                  &lt;p&gt;The default implementation throws{@link UnsupportedOperationException}.                
+                <param>
+                    arg the release argument. This value is always the one
+                      passed to a release method, or the current state value upon
+                      entry to a condition wait.  The value is otherwise
+                      uninterpreted and can represent anything you like.                    
+                </param>
+                <return>
+                    {@code true} if this release of shared mode may permit a
+                      waiting acquire (shared or exclusive) to succeed; and{@code false} otherwise                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if releasing would place this
+                      synchronizer in an illegal state. This exception must be
+                      thrown in a consistent fashion for synchronization to work
+                      correctly.                    
+                </throws>
+                <throws>
+                    UnsupportedOperationException if shared mode is not supported                    
+                </throws>
+            </javadoc>
+            <method name="tryReleaseShared" type="boolean" line="1161">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1165">
+                Returns {@code true} if synchronization is held exclusively with
+                  respect to the current (calling) thread.  This method is invoked
+                  upon each call to a non-waiting {@link ConditionObject} method.
+                  (Waiting methods instead invoke {@link #release}.)
+                  &lt;p&gt;The default implementation throws {@link UnsupportedOperationException}. This method is invoked
+                  internally only within {@link ConditionObject} methods, so need
+                  not be defined if conditions are not used.                
+                <return>
+                    {@code true} if synchronization is held exclusively;{@code false} otherwise                    
+                </return>
+                <throws>
+                    UnsupportedOperationException if conditions are not supported                    
+                </throws>
+            </javadoc>
+            <method name="isHeldExclusively" type="boolean" line="1180"/>
+            <javadoc line="1184">
+                Acquires in exclusive mode, ignoring interrupts.  Implemented
+                  by invoking at least once {@link #tryAcquire},
+                  returning on success.  Otherwise the thread is queued, possibly
+                  repeatedly blocking and unblocking, invoking {@link #tryAcquire} until success.  This method can be used
+                  to implement method {@link Lock#lock}.                
+                <param>
+                    arg the acquire argument.  This value is conveyed to{@link #tryAcquire} but is otherwise uninterpreted and
+                      can represent anything you like.                    
+                </param>
+            </javadoc>
+            <method name="acquire" type="void" line="1196">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1202">
+                Acquires in exclusive mode, aborting if interrupted.
+                  Implemented by first checking interrupt status, then invoking
+                  at least once {@link #tryAcquire}, returning on
+                  success.  Otherwise the thread is queued, possibly repeatedly
+                  blocking and unblocking, invoking {@link #tryAcquire}until success or the thread is interrupted.  This method can be
+                  used to implement method {@link Lock#lockInterruptibly}.                
+                <param>
+                    arg the acquire argument.  This value is conveyed to{@link #tryAcquire} but is otherwise uninterpreted and
+                      can represent anything you like.                    
+                </param>
+                <throws>
+                    InterruptedException if the current thread is interrupted                    
+                </throws>
+            </javadoc>
+            <method name="acquireInterruptibly" type="void" line="1217">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1224">
+                Attempts to acquire in exclusive mode, aborting if interrupted,
+                  and failing if the given timeout elapses.  Implemented by first
+                  checking interrupt status, then invoking at least once {@link #tryAcquire}, returning on success.  Otherwise, the thread is
+                  queued, possibly repeatedly blocking and unblocking, invoking{@link #tryAcquire} until success or the thread is interrupted
+                  or the timeout elapses.  This method can be used to implement
+                  method {@link Lock#tryLock(long,TimeUnit)}.                
+                <param>
+                    arg the acquire argument.  This value is conveyed to{@link #tryAcquire} but is otherwise uninterpreted and
+                      can represent anything you like.                    
+                </param>
+                <param>
+                    nanosTimeout the maximum number of nanoseconds to wait                    
+                </param>
+                <return>
+                    {@code true} if acquired; {@code false} if timed out                    
+                </return>
+                <throws>
+                    InterruptedException if the current thread is interrupted                    
+                </throws>
+            </javadoc>
+            <method name="tryAcquireNanos" type="boolean" line="1242">
+                <params>
+                    <param name="arg" type="int"/>
+                    <param name="nanosTimeout" type="long"/>
+                </params>
+            </method>
+            <javadoc line="1249">
+                Releases in exclusive mode.  Implemented by unblocking one or
+                  more threads if {@link #tryRelease} returns true.
+                  This method can be used to implement method {@link Lock#unlock}.                
+                <param>
+                    arg the release argument.  This value is conveyed to{@link #tryRelease} but is otherwise uninterpreted and
+                      can represent anything you like.                    
+                </param>
+                <return>
+                    the value returned from {@link #tryRelease}                    
+                </return>
+            </javadoc>
+            <method name="release" type="boolean" line="1259">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+                <scope line="1260">
+                    <declaration name="h" type="Node" line="1261"/>
+                </scope>
+            </method>
+            <javadoc line="1269">
+                Acquires in shared mode, ignoring interrupts.  Implemented by
+                  first invoking at least once {@link #tryAcquireShared},
+                  returning on success.  Otherwise the thread is queued, possibly
+                  repeatedly blocking and unblocking, invoking {@link #tryAcquireShared} until success.                
+                <param>
+                    arg the acquire argument.  This value is conveyed to{@link #tryAcquireShared} but is otherwise uninterpreted
+                      and can represent anything you like.                    
+                </param>
+            </javadoc>
+            <method name="acquireShared" type="void" line="1280">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1285">
+                Acquires in shared mode, aborting if interrupted.  Implemented
+                  by first checking interrupt status, then invoking at least once{@link #tryAcquireShared}, returning on success.  Otherwise the
+                  thread is queued, possibly repeatedly blocking and unblocking,
+                  invoking {@link #tryAcquireShared} until success or the thread
+                  is interrupted.                
+                <param>
+                    arg the acquire argument
+                      This value is conveyed to {@link #tryAcquireShared} but is
+                      otherwise uninterpreted and can represent anything
+                      you like.                    
+                </param>
+                <throws>
+                    InterruptedException if the current thread is interrupted                    
+                </throws>
+            </javadoc>
+            <method name="acquireSharedInterruptibly" type="void" line="1299">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+            </method>
+            <javadoc line="1306">
+                Attempts to acquire in shared mode, aborting if interrupted, and
+                  failing if the given timeout elapses.  Implemented by first
+                  checking interrupt status, then invoking at least once {@link #tryAcquireShared}, returning on success.  Otherwise, the
+                  thread is queued, possibly repeatedly blocking and unblocking,
+                  invoking {@link #tryAcquireShared} until success or the thread
+                  is interrupted or the timeout elapses.                
+                <param>
+                    arg the acquire argument.  This value is conveyed to{@link #tryAcquireShared} but is otherwise uninterpreted
+                      and can represent anything you like.                    
+                </param>
+                <param>
+                    nanosTimeout the maximum number of nanoseconds to wait                    
+                </param>
+                <return>
+                    {@code true} if acquired; {@code false} if timed out                    
+                </return>
+                <throws>
+                    InterruptedException if the current thread is interrupted                    
+                </throws>
+            </javadoc>
+            <method name="tryAcquireSharedNanos" type="boolean" line="1323">
+                <params>
+                    <param name="arg" type="int"/>
+                    <param name="nanosTimeout" type="long"/>
+                </params>
+            </method>
+            <javadoc line="1330">
+                Releases in shared mode.  Implemented by unblocking one or more
+                  threads if {@link #tryReleaseShared} returns true.                
+                <param>
+                    arg the release argument.  This value is conveyed to{@link #tryReleaseShared} but is otherwise uninterpreted
+                      and can represent anything you like.                    
+                </param>
+                <return>
+                    the value returned from {@link #tryReleaseShared}                    
+                </return>
+            </javadoc>
+            <method name="releaseShared" type="boolean" line="1339">
+                <params>
+                    <param name="arg" type="int"/>
+                </params>
+                <scope line="1340"/>
+            </method>
+            <javadoc line="1349">
+                Queries whether any threads are waiting to acquire. Note that
+                  because cancellations due to interrupts and timeouts may occur
+                  at any time, a {@code true} return does not guarantee that any
+                  other thread will ever acquire.
+                  &lt;p&gt;In this implementation, this operation returns in
+                  constant time.                
+                <return>
+                    {@code true} if there may be other threads waiting to acquire                    
+                </return>
+            </javadoc>
+            <method name="hasQueuedThreads" type="boolean" line="1360"/>
+            <javadoc line="1364">
+                Queries whether any threads have ever contended to acquire this
+                  synchronizer; that is if an acquire method has ever blocked.
+                  &lt;p&gt;In this implementation, this operation returns in
+                  constant time.                
+                <return>
+                    {@code true} if there has ever been contention                    
+                </return>
+            </javadoc>
+            <method name="hasContended" type="boolean" line="1373"/>
+            <javadoc line="1377">
+                Returns the first (longest-waiting) thread in the queue, or{@code null} if no threads are currently queued.
+                  &lt;p&gt;In this implementation, this operation normally returns in
+                  constant time, but may iterate upon contention if other threads are
+                  concurrently modifying the queue.                
+                <return>
+                    the first (longest-waiting) thread in the queue, or{@code null} if no threads are currently queued                    
+                </return>
+            </javadoc>
+            <method name="getFirstQueuedThread" type="Thread" line="1388">
+                <comment line="1389">
+                    handle only fast path, else relay                    
+                </comment>
+            </method>
+            <javadoc line="1393">
+                Version of getFirstQueuedThread called when fastpath fails                
+            </javadoc>
+            <method name="fullGetFirstQueuedThread" type="Thread" line="1396">
+                <comment line="1397">
+                    The first node is normally head.next. Try to get its
+                     thread field, ensuring consistent reads: If thread
+                     field is nulled out or s.prev is no longer head, then
+                     some other thread(s) concurrently performed setHead in
+                     between some of our reads. We try this twice before
+                     resorting to traversal.                    
+                </comment>
+                <comment line="1413">
+                    Head&apos;s next field might not have been set yet, or may have
+                     been unset after setHead. So we must check to see if tail
+                     is actually first node. If not, we continue on, safely
+                     traversing from tail back to head to find first,
+                     guaranteeing termination.                    
+                </comment>
+                <declaration name="h" type="Node" line="1405"/>
+                <declaration name="st" type="Thread" line="1406"/>
+                <declaration name="t" type="Node" line="1421"/>
+                <declaration name="firstThread" type="Thread" line="1422"/>
+                <scope line="1423">
+                    <declaration name="tt" type="Thread" line="1424"/>
+                </scope>
+            </method>
+            <javadoc line="1432">
+                Returns true if the given thread is currently queued.
+                  &lt;p&gt;This implementation traverses the queue to determine
+                  presence of the given thread.                
+                <param>
+                    thread the thread                    
+                </param>
+                <return>
+                    {@code true} if the given thread is on the queue                    
+                </return>
+                <throws>
+                    NullPointerException if the thread is null                    
+                </throws>
+            </javadoc>
+            <method name="isQueued" type="boolean" line="1442">
+                <params>
+                    <param name="thread" type="Thread"/>
+                </params>
+            </method>
+            <javadoc line="1451">
+                Returns {@code true} if the apparent first queued thread, if one
+                  exists, is waiting in exclusive mode.  If this method returns{@code true}, and the current thread is attempting to acquire in
+                  shared mode (that is, this method is invoked from {@link #tryAcquireShared}) then it is guaranteed that the current thread
+                  is not the first queued thread.  Used only as a heuristic in
+                  ReentrantReadWriteLock.                
+            </javadoc>
+            <method name="apparentlyFirstQueuedIsExclusive" type="boolean" line="1460">
+                <declaration name="h" type="Node" line="1461"/>
+            </method>
+            <javadoc line="1468">
+                Queries whether any threads have been waiting to acquire longer
+                  than the current thread.
+                  &lt;p&gt;An invocation of this method is equivalent to (but may be
+                  more efficient than):
+                  &lt;pre&gt; {@codegetFirstQueuedThread() != Thread.currentThread() &amp;&amp;
+                  hasQueuedThreads()}&lt;/pre&gt;
+                  &lt;p&gt;Note that because cancellations due to interrupts and
+                  timeouts may occur at any time, a {@code true} return does not
+                  guarantee that some other thread will acquire before the current
+                  thread.  Likewise, it is possible for another thread to win a
+                  race to enqueue after this method has returned {@code false},
+                  due to the queue being empty.
+                  &lt;p&gt;This method is designed to be used by a fair synchronizer to
+                  avoid &lt;a href=&quot;AbstractQueuedSynchronizer#barging&quot;&gt;barging&lt;/a&gt;.
+                  Such a synchronizer&apos;s {@link #tryAcquire} method should return{@code false}, and its {@link #tryAcquireShared} method should
+                  return a negative value, if this method returns {@code true}(unless this is a reentrant acquire).  For example, the {@codetryAcquire} method for a fair, reentrant, exclusive mode
+                  synchronizer might look like this:
+                  &lt;pre&gt; {@code}protected boolean tryAcquire(int arg) 
+                  if (isHeldExclusively()) {
+                  // A reentrant acquire; increment hold count
+                  return true;
+                  } else if (hasQueuedPredecessors()) {
+                  return false;
+                  } else {
+                  // try to acquire normally
+                  }
+                  }}&lt;/pre&gt;                
+                <return>
+                    {@code true} if there is a queued thread preceding the
+                      current thread, and {@code false} if the current thread
+                      is at the head of the queue or the queue is empty                    
+                </return>
+                <since>
+                    1.7                    
+                </since>
+            </javadoc>
+            <method name="hasQueuedPredecessors" type="boolean" line="1511">
+                <comment line="1512">
+                    The correctness of this depends on head being initialized                    
+                </comment>
+                <comment line="1513">
+                    before tail and on head.next being accurate if the current                    
+                </comment>
+                <comment line="1514">
+                    thread is first in queue.                    
+                </comment>
+                <comment line="1515">
+                    Read fields in reverse initialization order                    
+                </comment>
+                <declaration name="t" type="Node" line="1515"/>
+                <declaration name="h" type="Node" line="1516"/>
+                <declaration name="s" type="Node" line="1517"/>
+            </method>
+            <javadoc line="1525">
+                Returns an estimate of the number of threads waiting to
+                  acquire.  The value is only an estimate because the number of
+                  threads may change dynamically while this method traverses
+                  internal data structures.  This method is designed for use in
+                  monitoring system state, not for synchronization
+                  control.                
+                <return>
+                    the estimated number of threads waiting to acquire                    
+                </return>
+            </javadoc>
+            <method name="getQueueLength" type="int" line="1535">
+                <declaration name="n" type="int" line="1536"/>
+                <scope line="1537"/>
+            </method>
+            <javadoc line="1544">
+                Returns a collection containing threads that may be waiting to
+                  acquire.  Because the actual set of threads may change
+                  dynamically while constructing this result, the returned
+                  collection is only a best-effort estimate.  The elements of the
+                  returned collection are in no particular order.  This method is
+                  designed to facilitate construction of subclasses that provide
+                  more extensive monitoring facilities.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getQueuedThreads" type="Collection<Thread>" line="1555">
+                <declaration name="list" type="ArrayList&lt;Thread&gt;" line="1556"/>
+                <scope line="1557">
+                    <declaration name="t" type="Thread" line="1558"/>
+                </scope>
+            </method>
+            <javadoc line="1565">
+                Returns a collection containing threads that may be waiting to
+                  acquire in exclusive mode. This has the same properties
+                  as {@link #getQueuedThreads} except that it only returns
+                  those threads waiting due to an exclusive acquire.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getExclusiveQueuedThreads" type="Collection<Thread>" line="1573">
+                <declaration name="list" type="ArrayList&lt;Thread&gt;" line="1574"/>
+                <scope line="1575">
+                    <scope line="1576">
+                        <declaration name="t" type="Thread" line="1577"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1585">
+                Returns a collection containing threads that may be waiting to
+                  acquire in shared mode. This has the same properties
+                  as {@link #getQueuedThreads} except that it only returns
+                  those threads waiting due to a shared acquire.                
+                <return>
+                    the collection of threads                    
+                </return>
+            </javadoc>
+            <method name="getSharedQueuedThreads" type="Collection<Thread>" line="1593">
+                <declaration name="list" type="ArrayList&lt;Thread&gt;" line="1594"/>
+                <scope line="1595">
+                    <scope line="1596">
+                        <declaration name="t" type="Thread" line="1597"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1605">
+                Returns a string identifying this synchronizer, as well as its state.
+                  The state, in brackets, includes the String {@code &quot;State =&quot;}followed by the current value of {@link #getState}, and either{@code &quot;nonempty&quot;} or {@code &quot;empty&quot;} depending on whether the
+                  queue is empty.                
+                <return>
+                    a string identifying this synchronizer, as well as its state                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="1614">
+                <declaration name="s" type="int" line="1615"/>
+                <declaration name="q" type="String" line="1616"/>
+            </method>
+            <javadoc line="1624">
+                Returns true if a node, always one that was initially placed on
+                  a condition queue, is now waiting to reacquire on sync queue.                
+                <param>
+                    node the node                    
+                </param>
+                <return>
+                    true if is reacquiring                    
+                </return>
+            </javadoc>
+            <method name="isOnSyncQueue" type="boolean" line="1630">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="1633">
+                    If has successor, it must be on queue                    
+                </comment>
+                <comment line="1635">
+                    node.prev can be non-null, but not yet on queue because
+                     the CAS to place it on queue can fail. So we have to
+                     traverse from tail to make sure it actually made it.  It
+                     will always be near the tail in calls to this method, and
+                     unless the CAS failed (which is unlikely), it will be
+                     there, so we hardly ever traverse much.                    
+                </comment>
+            </method>
+            <javadoc line="1646">
+                Returns true if node is on sync queue by searching backwards from tail.
+                  Called only when needed by isOnSyncQueue.                
+                <return>
+                    true if present                    
+                </return>
+            </javadoc>
+            <method name="findNodeFromTail" type="boolean" line="1651">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <declaration name="t" type="Node" line="1652"/>
+                <scope line="1653"/>
+            </method>
+            <javadoc line="1662">
+                Transfers a node from a condition queue onto sync queue.
+                  Returns true if successful.                
+                <param>
+                    node the node                    
+                </param>
+                <return>
+                    true if successfully transferred (else the node was
+                      cancelled before signal).                    
+                </return>
+            </javadoc>
+            <method name="transferForSignal" type="boolean" line="1669">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="1670">
+                    If cannot change waitStatus, the node has been cancelled.                    
+                </comment>
+                <comment line="1676">
+                    Splice onto queue and try to set waitStatus of predecessor to
+                     indicate that thread is (probably) waiting. If cancelled or
+                     attempt to set waitStatus fails, wake up to resync (in which
+                     case the waitStatus can be transiently and harmlessly wrong).                    
+                </comment>
+                <declaration name="p" type="Node" line="1682"/>
+                <declaration name="ws" type="int" line="1683"/>
+            </method>
+            <javadoc line="1689">
+                Transfers node, if necessary, to sync queue after a cancelled
+                  wait. Returns true if thread was cancelled before being
+                  signalled.                
+                <param>
+                    current the waiting thread                    
+                </param>
+                <param>
+                    node its node                    
+                </param>
+                <return>
+                    true if cancelled before the node was signalled                    
+                </return>
+            </javadoc>
+            <method name="transferAfterCancelledWait" type="boolean" line="1697">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <comment line="1702">
+                    If we lost out to a signal(), then we can&apos;t proceed
+                     until it finishes its enq().  Cancelling during an
+                     incomplete transfer is both rare and transient, so just
+                     spin.                    
+                </comment>
+                <scope line="1698"/>
+            </method>
+            <javadoc line="1713">
+                Invokes release with current state value; returns saved state.
+                  Cancels node and throws exception on failure.                
+                <param>
+                    node the condition node for this wait                    
+                </param>
+                <return>
+                    previous sync state                    
+                </return>
+            </javadoc>
+            <method name="fullyRelease" type="int" line="1719">
+                <params>
+                    <param name="node" type="Node"/>
+                </params>
+                <declaration name="failed" type="boolean" line="1720"/>
+                <scope line="1721">
+                    <declaration name="savedState" type="int" line="1722"/>
+                    <scope line="1723"/>
+                    <scope line="1726"/>
+                </scope>
+                <scope line="1729"/>
+            </method>
+            <javadoc line="1737">
+                Queries whether the given ConditionObject
+                  uses this synchronizer as its lock.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    <tt>true</tt> if owned                    
+                </return>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="owns" type="boolean" line="1745">
+                <params>
+                    <param name="condition" type="ConditionObject"/>
+                </params>
+            </method>
+            <javadoc line="1751">
+                Queries whether any threads are waiting on the given condition
+                  associated with this synchronizer. Note that because timeouts
+                  and interrupts may occur at any time, a &lt;tt&gt;true&lt;/tt&gt; return
+                  does not guarantee that a future &lt;tt&gt;signal&lt;/tt&gt; will awaken
+                  any threads.  This method is designed primarily for use in
+                  monitoring of the system state.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    <tt>true</tt> if there are any waiting threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if exclusive synchronization
+                      is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this synchronizer                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="hasWaiters" type="boolean" line="1767">
+                <params>
+                    <param name="condition" type="ConditionObject"/>
+                </params>
+            </method>
+            <javadoc line="1773">
+                Returns an estimate of the number of threads waiting on the
+                  given condition associated with this synchronizer. Note that
+                  because timeouts and interrupts may occur at any time, the
+                  estimate serves only as an upper bound on the actual number of
+                  waiters.  This method is designed for use in monitoring of the
+                  system state, not for synchronization control.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    the estimated number of waiting threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if exclusive synchronization
+                      is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this synchronizer                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="getWaitQueueLength" type="int" line="1789">
+                <params>
+                    <param name="condition" type="ConditionObject"/>
+                </params>
+            </method>
+            <javadoc line="1795">
+                Returns a collection containing those threads that may be
+                  waiting on the given condition associated with this
+                  synchronizer.  Because the actual set of threads may change
+                  dynamically while constructing this result, the returned
+                  collection is only a best-effort estimate. The elements of the
+                  returned collection are in no particular order.                
+                <param>
+                    condition the condition                    
+                </param>
+                <return>
+                    the collection of threads                    
+                </return>
+                <throws>
+                    IllegalMonitorStateException if exclusive synchronization
+                      is not held                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the given condition is
+                      not associated with this synchronizer                    
+                </throws>
+                <throws>
+                    NullPointerException if the condition is null                    
+                </throws>
+            </javadoc>
+            <method name="getWaitingThreads" type="Collection<Thread>" line="1811">
+                <params>
+                    <param name="condition" type="ConditionObject"/>
+                </params>
+            </method>
+            <class name="ConditionObject" line="1817">
+                <comment line="1845">
+                    Internal methods                    
+                </comment>
+                <comment line="1930">
+                    public methods                    
+                </comment>
+                <comment line="1988">
+                    For interruptible waits, we need to track whether to throw
+                     InterruptedException, if interrupted while blocked on
+                     condition, versus reinterrupt current thread, if
+                     interrupted while blocked waiting to re-acquire.                    
+                </comment>
+                <comment line="2193">
+                    support for instrumentation                    
+                </comment>
+                <implements interface="Condition"/>
+                <implements interface="java.io.Serializable"/>
+                <javadoc line="1817">
+                    Condition implementation for a {@link AbstractQueuedSynchronizer} serving as the basis of a {@link Lock} implementation.
+                      &lt;p&gt;Method documentation for this class describes mechanics,
+                      not behavioral specifications from the point of view of Lock
+                      and Condition users. Exported versions of this class will in
+                      general need to be accompanied by documentation describing
+                      condition semantics that rely on those of the associated
+                      &lt;tt&gt;AbstractQueuedSynchronizer&lt;/tt&gt;.
+                      &lt;p&gt;This class is Serializable, but all fields are transient,
+                      so deserialized conditions have no waiters.                    
+                </javadoc>
+                <declaration name="serialVersionUID" type="long" line="1833"/>
+                <declaration name="firstWaiter" type="Node" line="1834"/>
+                <javadoc line="1834">
+                    First node of condition queue.                    
+                </javadoc>
+                <declaration name="lastWaiter" type="Node" line="1836"/>
+                <javadoc line="1836">
+                    Last node of condition queue.                    
+                </javadoc>
+                <javadoc line="1839">
+                    Creates a new &lt;tt&gt;ConditionObject&lt;/tt&gt; instance.                    
+                </javadoc>
+                <method name="ConditionObject" type="constructor" line="1842"/>
+                <javadoc line="1846">
+                    Adds a new waiter to wait queue.                    
+                    <return>
+                        its new wait node                        
+                    </return>
+                </javadoc>
+                <method name="addConditionWaiter" type="Node" line="1850">
+                    <comment line="1852">
+                        If lastWaiter is cancelled, clean out.                        
+                    </comment>
+                    <declaration name="t" type="Node" line="1851"/>
+                    <scope line="1853"/>
+                    <declaration name="node" type="Node" line="1857"/>
+                </method>
+                <javadoc line="1866">
+                    Removes and transfers nodes until hit non-cancelled one or
+                      null. Split out from signal in part to encourage compilers
+                      to inline the case of no waiters.                    
+                    <param>
+                        first (non-null) the first node on condition queue                        
+                    </param>
+                </javadoc>
+                <method name="doSignal" type="void" line="1872">
+                    <params>
+                        <param name="first" type="Node"/>
+                    </params>
+                    <scope line="1873"/>
+                </method>
+                <javadoc line="1881">
+                    Removes and transfers all nodes.                    
+                    <param>
+                        first (non-null) the first node on condition queue                        
+                    </param>
+                </javadoc>
+                <method name="doSignalAll" type="void" line="1885">
+                    <params>
+                        <param name="first" type="Node"/>
+                    </params>
+                    <scope line="1887">
+                        <declaration name="next" type="Node" line="1888"/>
+                    </scope>
+                </method>
+                <javadoc line="1895">
+                    Unlinks cancelled waiter nodes from condition queue.
+                      Called only while holding lock. This is called when
+                      cancellation occurred during condition wait, and upon
+                      insertion of a new waiter when lastWaiter is seen to have
+                      been cancelled. This method is needed to avoid garbage
+                      retention in the absence of signals. So even though it may
+                      require a full traversal, it comes into play only when
+                      timeouts or cancellations occur in the absence of
+                      signals. It traverses all nodes rather than stopping at a
+                      particular target to unlink all pointers to garbage nodes
+                      without requiring many re-traversals during cancellation
+                      storms.                    
+                </javadoc>
+                <method name="unlinkCancelledWaiters" type="void" line="1909">
+                    <declaration name="t" type="Node" line="1910"/>
+                    <declaration name="trail" type="Node" line="1911"/>
+                    <scope line="1912">
+                        <declaration name="next" type="Node" line="1913"/>
+                        <scope line="1914"/>
+                    </scope>
+                </method>
+                <javadoc line="1931">
+                    Moves the longest-waiting thread, if one exists, from the
+                      wait queue for this condition to the wait queue for the
+                      owning lock.                    
+                    <throws>
+                        IllegalMonitorStateException if {@link #isHeldExclusively}returns {@code false}                        
+                    </throws>
+                </javadoc>
+                <method name="signal" type="void" line="1939">
+                    <declaration name="first" type="Node" line="1942"/>
+                </method>
+                <javadoc line="1947">
+                    Moves all threads from the wait queue for this condition to
+                      the wait queue for the owning lock.                    
+                    <throws>
+                        IllegalMonitorStateException if {@link #isHeldExclusively}returns {@code false}                        
+                    </throws>
+                </javadoc>
+                <method name="signalAll" type="void" line="1954">
+                    <declaration name="first" type="Node" line="1957"/>
+                </method>
+                <javadoc line="1962">
+                    Implements uninterruptible condition wait.
+                      &lt;ol&gt;
+                      &lt;li&gt; Save lock state returned by {@link #getState}.
+                      &lt;li&gt; Invoke {@link #release} with
+                      saved state as argument, throwing
+                      IllegalMonitorStateException if it fails.
+                      &lt;li&gt; Block until signalled.
+                      &lt;li&gt; Reacquire by invoking specialized version of{@link #acquire} with saved state as argument.
+                      &lt;/ol&gt;                    
+                </javadoc>
+                <method name="awaitUninterruptibly" type="void" line="1974">
+                    <declaration name="node" type="Node" line="1975"/>
+                    <declaration name="savedState" type="int" line="1976"/>
+                    <declaration name="interrupted" type="boolean" line="1977"/>
+                    <scope line="1978"/>
+                </method>
+                <declaration name="REINTERRUPT" type="int" line="1994"/>
+                <javadoc line="1994">
+                    Mode meaning to reinterrupt on exit from wait                    
+                </javadoc>
+                <declaration name="THROW_IE" type="int" line="1996"/>
+                <javadoc line="1996">
+                    Mode meaning to throw InterruptedException on exit from wait                    
+                </javadoc>
+                <javadoc line="1999">
+                    Checks for interrupt, returning THROW_IE if interrupted
+                      before signalled, REINTERRUPT if after signalled, or
+                      0 if not interrupted.                    
+                </javadoc>
+                <method name="checkInterruptWhileWaiting" type="int" line="2004">
+                    <params>
+                        <param name="node" type="Node"/>
+                    </params>
+                </method>
+                <javadoc line="2010">
+                    Throws InterruptedException, reinterrupts current thread, or
+                      does nothing, depending on mode.                    
+                </javadoc>
+                <method name="reportInterruptAfterWait" type="void" line="2015">
+                    <params>
+                        <param name="interruptMode" type="int"/>
+                    </params>
+                </method>
+                <javadoc line="2022">
+                    Implements interruptible condition wait.
+                      &lt;ol&gt;
+                      &lt;li&gt; If current thread is interrupted, throw InterruptedException.
+                      &lt;li&gt; Save lock state returned by {@link #getState}.
+                      &lt;li&gt; Invoke {@link #release} with
+                      saved state as argument, throwing
+                      IllegalMonitorStateException if it fails.
+                      &lt;li&gt; Block until signalled or interrupted.
+                      &lt;li&gt; Reacquire by invoking specialized version of{@link #acquire} with saved state as argument.
+                      &lt;li&gt; If interrupted while blocked in step 4, throw InterruptedException.
+                      &lt;/ol&gt;                    
+                </javadoc>
+                <method name="await" type="void" line="2036">
+                    <comment line="2049">
+                        clean up if cancelled                        
+                    </comment>
+                    <declaration name="node" type="Node" line="2039"/>
+                    <declaration name="savedState" type="int" line="2040"/>
+                    <declaration name="interruptMode" type="int" line="2041"/>
+                    <scope line="2042"/>
+                </method>
+                <javadoc line="2055">
+                    Implements timed condition wait.
+                      &lt;ol&gt;
+                      &lt;li&gt; If current thread is interrupted, throw InterruptedException.
+                      &lt;li&gt; Save lock state returned by {@link #getState}.
+                      &lt;li&gt; Invoke {@link #release} with
+                      saved state as argument, throwing
+                      IllegalMonitorStateException if it fails.
+                      &lt;li&gt; Block until signalled, interrupted, or timed out.
+                      &lt;li&gt; Reacquire by invoking specialized version of{@link #acquire} with saved state as argument.
+                      &lt;li&gt; If interrupted while blocked in step 4, throw InterruptedException.
+                      &lt;/ol&gt;                    
+                </javadoc>
+                <method name="awaitNanos" type="long" line="2070">
+                    <params>
+                        <param name="nanosTimeout" type="long"/>
+                    </params>
+                    <declaration name="node" type="Node" line="2073"/>
+                    <declaration name="savedState" type="int" line="2074"/>
+                    <declaration name="lastTime" type="long" line="2075"/>
+                    <declaration name="interruptMode" type="int" line="2076"/>
+                    <scope line="2077">
+                        <scope line="2078"/>
+                        <declaration name="now" type="long" line="2086"/>
+                    </scope>
+                </method>
+                <javadoc line="2099">
+                    Implements absolute timed condition wait.
+                      &lt;ol&gt;
+                      &lt;li&gt; If current thread is interrupted, throw InterruptedException.
+                      &lt;li&gt; Save lock state returned by {@link #getState}.
+                      &lt;li&gt; Invoke {@link #release} with
+                      saved state as argument, throwing
+                      IllegalMonitorStateException if it fails.
+                      &lt;li&gt; Block until signalled, interrupted, or timed out.
+                      &lt;li&gt; Reacquire by invoking specialized version of{@link #acquire} with saved state as argument.
+                      &lt;li&gt; If interrupted while blocked in step 4, throw InterruptedException.
+                      &lt;li&gt; If timed out while blocked in step 4, return false, else true.
+                      &lt;/ol&gt;                    
+                </javadoc>
+                <method name="awaitUntil" type="boolean" line="2115">
+                    <params>
+                        <param name="deadline" type="Date"/>
+                    </params>
+                    <declaration name="abstime" type="long" line="2118"/>
+                    <declaration name="node" type="Node" line="2121"/>
+                    <declaration name="savedState" type="int" line="2122"/>
+                    <declaration name="timedout" type="boolean" line="2123"/>
+                    <declaration name="interruptMode" type="int" line="2124"/>
+                    <scope line="2125">
+                        <scope line="2126"/>
+                    </scope>
+                </method>
+                <javadoc line="2143">
+                    Implements timed condition wait.
+                      &lt;ol&gt;
+                      &lt;li&gt; If current thread is interrupted, throw InterruptedException.
+                      &lt;li&gt; Save lock state returned by {@link #getState}.
+                      &lt;li&gt; Invoke {@link #release} with
+                      saved state as argument, throwing
+                      IllegalMonitorStateException if it fails.
+                      &lt;li&gt; Block until signalled, interrupted, or timed out.
+                      &lt;li&gt; Reacquire by invoking specialized version of{@link #acquire} with saved state as argument.
+                      &lt;li&gt; If interrupted while blocked in step 4, throw InterruptedException.
+                      &lt;li&gt; If timed out while blocked in step 4, return false, else true.
+                      &lt;/ol&gt;                    
+                </javadoc>
+                <method name="await" type="boolean" line="2159">
+                    <params>
+                        <param name="time" type="long"/>
+                        <param name="unit" type="TimeUnit"/>
+                    </params>
+                    <declaration name="nanosTimeout" type="long" line="2162"/>
+                    <declaration name="node" type="Node" line="2165"/>
+                    <declaration name="savedState" type="int" line="2166"/>
+                    <declaration name="lastTime" type="long" line="2167"/>
+                    <declaration name="timedout" type="boolean" line="2168"/>
+                    <declaration name="interruptMode" type="int" line="2169"/>
+                    <scope line="2170">
+                        <scope line="2171"/>
+                        <declaration name="now" type="long" line="2179"/>
+                    </scope>
+                </method>
+                <javadoc line="2194">
+                    Returns true if this condition was created by the given
+                      synchronization object.                    
+                    <return>
+                        {@code true} if owned                        
+                    </return>
+                </javadoc>
+                <method name="isOwnedBy" type="boolean" line="2200">
+                    <params>
+                        <param name="sync" type="AbstractQueuedSynchronizer"/>
+                    </params>
+                </method>
+                <javadoc line="2204">
+                    Queries whether any threads are waiting on this condition.
+                      Implements {@link AbstractQueuedSynchronizer#hasWaiters}.                    
+                    <return>
+                        {@code true} if there are any waiting threads                        
+                    </return>
+                    <throws>
+                        IllegalMonitorStateException if {@link #isHeldExclusively}returns {@code false}                        
+                    </throws>
+                </javadoc>
+                <method name="hasWaiters" type="boolean" line="2212">
+                    <scope line="2215"/>
+                </method>
+                <javadoc line="2222">
+                    Returns an estimate of the number of threads waiting on
+                      this condition.
+                      Implements {@link AbstractQueuedSynchronizer#getWaitQueueLength}.                    
+                    <return>
+                        the estimated number of waiting threads                        
+                    </return>
+                    <throws>
+                        IllegalMonitorStateException if {@link #isHeldExclusively}returns {@code false}                        
+                    </throws>
+                </javadoc>
+                <method name="getWaitQueueLength" type="int" line="2231">
+                    <declaration name="n" type="int" line="2234"/>
+                    <scope line="2235"/>
+                </method>
+                <javadoc line="2242">
+                    Returns a collection containing those threads that may be
+                      waiting on this Condition.
+                      Implements {@link AbstractQueuedSynchronizer#getWaitingThreads}.                    
+                    <return>
+                        the collection of threads                        
+                    </return>
+                    <throws>
+                        IllegalMonitorStateException if {@link #isHeldExclusively}returns {@code false}                        
+                    </throws>
+                </javadoc>
+                <method name="getWaitingThreads" type="Collection<Thread>" line="2251">
+                    <declaration name="list" type="ArrayList&lt;Thread&gt;" line="2254"/>
+                    <scope line="2255">
+                        <scope line="2256">
+                            <declaration name="t" type="Thread" line="2257"/>
+                        </scope>
+                    </scope>
+                </method>
+            </class>
+            <declaration name="unsafe" type="Unsafe" line="2266"/>
+            <javadoc line="2266">
+                Setup to support compareAndSet. We need to natively implement
+                  this here: For the sake of permitting future enhancements, we
+                  cannot explicitly subclass AtomicInteger, which would be
+                  efficient and useful otherwise. So, as the lesser of evils, we
+                  natively implement using hotspot intrinsics API. And while we
+                  are at it, we do the same for other CASable fields (which could
+                  otherwise be done with atomic field updaters).                
+            </javadoc>
+            <declaration name="stateOffset" type="long" line="2276"/>
+            <declaration name="headOffset" type="long" line="2277"/>
+            <declaration name="tailOffset" type="long" line="2278"/>
+            <declaration name="waitStatusOffset" type="long" line="2279"/>
+            <declaration name="nextOffset" type="long" line="2280"/>
+            <scope line="2282">
+                <scope line="2283"/>
+                <scope line="2295"/>
+            </scope>
+            <javadoc line="2298">
+                CAS head field. Used only by enq.                
+            </javadoc>
+            <method name="compareAndSetHead" type="boolean" line="2301">
+                <params>
+                    <param name="update" type="Node"/>
+                </params>
+            </method>
+            <javadoc line="2305">
+                CAS tail field. Used only by enq.                
+            </javadoc>
+            <method name="compareAndSetTail" type="boolean" line="2308">
+                <params>
+                    <param name="expect" type="Node"/>
+                    <param name="update" type="Node"/>
+                </params>
+            </method>
+            <javadoc line="2312">
+                CAS waitStatus field of a node.                
+            </javadoc>
+            <method name="compareAndSetWaitStatus" type="boolean" line="2317">
+                <params>
+                    <param name="node" type="Node"/>
+                    <param name="expect" type="int"/>
+                    <param name="update" type="int"/>
+                </params>
+            </method>
+            <javadoc line="2322">
+                CAS next field of a node.                
+            </javadoc>
+            <method name="compareAndSetNext" type="boolean" line="2327">
+                <params>
+                    <param name="node" type="Node"/>
+                    <param name="expect" type="Node"/>
+                    <param name="update" type="Node"/>
+                </params>
+            </method>
+        </class>
+    </source>

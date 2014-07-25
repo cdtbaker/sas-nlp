@@ -1,0 +1,937 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="javax.management.remote.rmi">
+        <import package="com.sun.jmx.mbeanserver.Util.cast"/>
+        <import package="com.sun.jmx.remote.internal.ServerCommunicatorAdmin"/>
+        <import package="com.sun.jmx.remote.internal.ServerNotifForwarder"/>
+        <import package="com.sun.jmx.remote.security.JMXSubjectDomainCombiner"/>
+        <import package="com.sun.jmx.remote.security.SubjectDelegator"/>
+        <import package="com.sun.jmx.remote.util.ClassLoaderWithRepository"/>
+        <import package="com.sun.jmx.remote.util.ClassLogger"/>
+        <import package="com.sun.jmx.remote.util.EnvHelp"/>
+        <import package="com.sun.jmx.remote.util.OrderClassLoaders"/>
+        <import package="java.io.IOException"/>
+        <import package="java.rmi.MarshalledObject"/>
+        <import package="java.rmi.UnmarshalException"/>
+        <import package="java.rmi.server.Unreferenced"/>
+        <import package="java.security.AccessControlContext"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="java.security.PrivilegedActionException"/>
+        <import package="java.security.PrivilegedExceptionAction"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Set"/>
+        <import package="javax.management.Attribute"/>
+        <import package="javax.management.AttributeList"/>
+        <import package="javax.management.AttributeNotFoundException"/>
+        <import package="javax.management.InstanceAlreadyExistsException"/>
+        <import package="javax.management.InstanceNotFoundException"/>
+        <import package="javax.management.IntrospectionException"/>
+        <import package="javax.management.InvalidAttributeValueException"/>
+        <import package="javax.management.ListenerNotFoundException"/>
+        <import package="javax.management.MBeanException"/>
+        <import package="javax.management.MBeanInfo"/>
+        <import package="javax.management.MBeanRegistrationException"/>
+        <import package="javax.management.MBeanServer"/>
+        <import package="javax.management.NotCompliantMBeanException"/>
+        <import package="javax.management.NotificationFilter"/>
+        <import package="javax.management.ObjectInstance"/>
+        <import package="javax.management.ObjectName"/>
+        <import package="javax.management.QueryExp"/>
+        <import package="javax.management.ReflectionException"/>
+        <import package="javax.management.RuntimeOperationsException"/>
+        <import package="javax.management.remote.JMXServerErrorException"/>
+        <import package="javax.management.remote.NotificationResult"/>
+        <import package="javax.management.remote.TargetedNotification"/>
+        <import package="javax.security.auth.Subject"/>
+        <class name="RMIConnectionImpl" line="76">
+            <comment line="83">
+                Notice that we omit the type parameter from MarshalledObject everywhere,
+                 even though it would add useful information to the documentation.  The
+                 reason is that it was only added in Mustang (Java SE 6), whereas versions
+                 1.4 and 2.0 of the JMX API must be implementable on Tiger per our
+                 commitments for JSR 255.                
+            </comment>
+            <comment line="217">
+                -------------------------------------------------------------------------                
+            </comment>
+            <comment line="218">
+                MBeanServerConnection Wrapper                
+            </comment>
+            <comment line="219">
+                -------------------------------------------------------------------------                
+            </comment>
+            <comment line="1280">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1281">
+                private classes                
+            </comment>
+            <comment line="1282">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1300">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1301">
+                private classes                
+            </comment>
+            <comment line="1302">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1321">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1322">
+                private methods                
+            </comment>
+            <comment line="1323">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1619">
+                The JMX spec doesn&apos;t explicitly say that a null Object[] or
+                 String[] in e.g. MBeanServer.invoke is equivalent to an empty
+                 array, but the RI behaves that way.  In the interests of
+                 maximal interoperability, we make it so even when we&apos;re
+                 connected to some other JMX implementation that might not do
+                 that.  This should be clarified in the next version of JMX.                
+            </comment>
+            <comment line="1635">
+                Similarly, the JMX spec says for some but not all methods in
+                 MBeanServer that take an ObjectName target, that if it&apos;s null
+                 you get this exception.  We specify it for all of them, and
+                 make it so for the ones where it&apos;s not specified in JMX even if
+                 the JMX implementation doesn&apos;t do so.                
+            </comment>
+            <comment line="1650">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1651">
+                private variables                
+            </comment>
+            <comment line="1652">
+                ------------------------------------------------------------------------                
+            </comment>
+            <comment line="1676">
+                Method IDs for doOperation                
+            </comment>
+            <comment line="1677">
+                ---------------------------                
+            </comment>
+            <comment line="1728">
+                SERVER NOTIFICATION                
+            </comment>
+            <comment line="1729">
+                --------------------                
+            </comment>
+            <comment line="1734">
+                TRACES &amp; DEBUG                
+            </comment>
+            <comment line="1735">
+                ---------------                
+            </comment>
+            <implements interface="RMIConnection"/>
+            <implements interface="Unreferenced"/>
+            <javadoc line="76">
+                &lt;p&gt;Implementation of the {@link RMIConnection} interface.  User
+                  code will not usually reference this class.&lt;/p&gt;                
+                <since>
+                    1.5                    
+                </since>
+            </javadoc>
+            <javadoc line="91">
+                Constructs a new {@link RMIConnection}. This connection can be
+                  used with either the JRMP or IIOP transport. This object does
+                  not export itself: it is the responsibility of the caller to
+                  export it appropriately (see {@link RMIJRMPServerImpl#makeClient(String,Subject)} and {@link RMIIIOPServerImpl#makeClient(String,Subject)}.                
+                <param>
+                    rmiServer The RMIServerImpl object for which this
+                      connection is created.  The behavior is unspecified if this
+                      parameter is null.                    
+                </param>
+                <param>
+                    connectionId The ID for this connection.  The behavior
+                      is unspecified if this parameter is null.                    
+                </param>
+                <param>
+                    defaultClassLoader The default ClassLoader to be used
+                      when deserializing marshalled objects.  Can be null, to signify
+                      the bootstrap class loader.                    
+                </param>
+                <param>
+                    subject the authenticated subject to be used for
+                      authorization.  Can be null, to signify that no subject has
+                      been authenticated.                    
+                </param>
+                <param>
+                    env the environment containing attributes for the new
+                      <code>RMIServerImpl</code>.  Can be null, equivalent to an
+                      empty map.                    
+                </param>
+            </javadoc>
+            <method name="RMIConnectionImpl" type="constructor" line="118">
+                <params>
+                    <param name="rmiServer" type="RMIServerImpl"/>
+                    <param name="connectionId" type="String"/>
+                    <param name="defaultClassLoader" type="ClassLoader"/>
+                    <param name="subject" type="Subject"/>
+                    <param name="env" type="Map<String,?>"/>
+                </params>
+                <scope line="129"/>
+                <scope line="132">
+                    <scope line="135"/>
+                    <scope line="138"/>
+                </scope>
+                <declaration name="dcl" type="ClassLoader" line="145"/>
+                <anonymous_class line="148">
+                    <method name="run" type="ClassLoaderWithRepository" line="149"/>
+                </anonymous_class>
+            </method>
+            <method name="getServerNotifFwd" type="ServerNotifForwarder" line="161">
+                <comment line="162">
+                    Lazily created when first use. Mainly when                    
+                </comment>
+                <comment line="163">
+                    addNotificationListener is first called.                    
+                </comment>
+            </method>
+            <method name="getConnectionId" type="String" line="173">
+                <comment line="174">
+                    We should call reqIncomming() here... shouldn&apos;t we?                    
+                </comment>
+            </method>
+            <method name="close" type="void" line="178">
+                <declaration name="debug" type="boolean" line="179"/>
+                <declaration name="idstr" type="String" line="180"/>
+                <scope line="182">
+                    <scope line="183"/>
+                    <scope line="192"/>
+                    <scope line="196"/>
+                </scope>
+            </method>
+            <method name="unreferenced" type="void" line="206">
+                <scope line="208"/>
+                <scope line="211"/>
+            </method>
+            <method name="createMBean" type="ObjectInstance" line="229">
+                <params>
+                    <param name="className" type="String"/>
+                    <param name="name" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="230">
+                    <declaration name="params" type="Object" line="231"/>
+                </scope>
+                <scope line="244">
+                    <declaration name="e" type="Exception" line="245"/>
+                </scope>
+            </method>
+            <method name="createMBean" type="ObjectInstance" line="273">
+                <params>
+                    <param name="className" type="String"/>
+                    <param name="name" type="ObjectName"/>
+                    <param name="loaderName" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="274">
+                    <declaration name="params" type="Object" line="275"/>
+                </scope>
+                <scope line="290">
+                    <declaration name="e" type="Exception" line="291"/>
+                </scope>
+            </method>
+            <method name="createMBean" type="ObjectInstance" line="322">
+                <params>
+                    <param name="className" type="String"/>
+                    <param name="name" type="ObjectName"/>
+                    <param name="params" type="MarshalledObject"/>
+                    <param name="signature" type="String"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="values" type="Object[]" line="324"/>
+                <declaration name="debug" type="boolean" line="325"/>
+                <scope line="335">
+                    <declaration name="params2" type="Object" line="336"/>
+                </scope>
+                <scope line="353">
+                    <declaration name="e" type="Exception" line="354"/>
+                </scope>
+            </method>
+            <method name="createMBean" type="ObjectInstance" line="385">
+                <params>
+                    <param name="className" type="String"/>
+                    <param name="name" type="ObjectName"/>
+                    <param name="loaderName" type="ObjectName"/>
+                    <param name="params" type="MarshalledObject"/>
+                    <param name="signature" type="String"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="values" type="Object[]" line="387"/>
+                <declaration name="debug" type="boolean" line="388"/>
+                <scope line="400">
+                    <declaration name="params2" type="Object" line="401"/>
+                </scope>
+                <scope line="419">
+                    <declaration name="e" type="Exception" line="420"/>
+                </scope>
+            </method>
+            <method name="unregisterMBean" type="void" line="443">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="444">
+                    <declaration name="params" type="Object" line="445"/>
+                </scope>
+                <scope line="455">
+                    <declaration name="e" type="Exception" line="456"/>
+                </scope>
+            </method>
+            <method name="getObjectInstance" type="ObjectInstance" line="471">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="475">
+                    <declaration name="params" type="Object" line="476"/>
+                </scope>
+                <scope line="487">
+                    <declaration name="e" type="Exception" line="488"/>
+                </scope>
+            </method>
+            <method name="queryMBeans" type="Set<ObjectInstance>" line="502">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="query" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="queryValue" type="QueryExp" line="503"/>
+                <declaration name="debug" type="boolean" line="504"/>
+                <scope line="512">
+                    <declaration name="params" type="Object" line="513"/>
+                </scope>
+                <scope line="524">
+                    <declaration name="e" type="Exception" line="525"/>
+                </scope>
+            </method>
+            <method name="queryNames" type="Set<ObjectName>" line="537">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="query" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="queryValue" type="QueryExp" line="538"/>
+                <declaration name="debug" type="boolean" line="539"/>
+                <scope line="547">
+                    <declaration name="params" type="Object" line="548"/>
+                </scope>
+                <scope line="559">
+                    <declaration name="e" type="Exception" line="560"/>
+                </scope>
+            </method>
+            <method name="isRegistered" type="boolean" line="568">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="569">
+                    <declaration name="params" type="Object" line="570"/>
+                </scope>
+                <scope line="576">
+                    <declaration name="e" type="Exception" line="577"/>
+                </scope>
+            </method>
+            <method name="getMBeanCount" type="Integer" line="585">
+                <params>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="586">
+                    <declaration name="params" type="Object" line="587"/>
+                </scope>
+                <scope line="597">
+                    <declaration name="e" type="Exception" line="598"/>
+                </scope>
+            </method>
+            <method name="getAttribute" type="Object" line="613">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="attribute" type="String"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="614">
+                    <declaration name="params" type="Object" line="615"/>
+                </scope>
+                <scope line="626">
+                    <declaration name="e" type="Exception" line="627"/>
+                </scope>
+            </method>
+            <method name="getAttributes" type="AttributeList" line="648">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="attributes" type="String[]"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="649">
+                    <declaration name="params" type="Object" line="650"/>
+                </scope>
+                <scope line="662">
+                    <declaration name="e" type="Exception" line="663"/>
+                </scope>
+            </method>
+            <method name="setAttribute" type="void" line="684">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="attribute" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="attr" type="Attribute" line="685"/>
+                <declaration name="debug" type="boolean" line="686"/>
+                <scope line="697">
+                    <declaration name="params" type="Object" line="698"/>
+                </scope>
+                <scope line="709">
+                    <declaration name="e" type="Exception" line="710"/>
+                </scope>
+            </method>
+            <method name="setAttributes" type="AttributeList" line="734">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="attributes" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="attrlist" type="AttributeList" line="735"/>
+                <declaration name="debug" type="boolean" line="736"/>
+                <scope line="748">
+                    <declaration name="params" type="Object" line="749"/>
+                </scope>
+                <scope line="761">
+                    <declaration name="e" type="Exception" line="762"/>
+                </scope>
+            </method>
+            <method name="invoke" type="Object" line="783">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="operationName" type="String"/>
+                    <param name="params" type="MarshalledObject"/>
+                    <param name="signature" type="String"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="values" type="Object[]" line="788"/>
+                <declaration name="debug" type="boolean" line="789"/>
+                <scope line="800">
+                    <declaration name="params2" type="Object" line="801"/>
+                </scope>
+                <scope line="817">
+                    <declaration name="e" type="Exception" line="818"/>
+                </scope>
+            </method>
+            <method name="getDefaultDomain" type="String" line="832">
+                <params>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="833">
+                    <declaration name="params" type="Object" line="834"/>
+                </scope>
+                <scope line="844">
+                    <declaration name="e" type="Exception" line="845"/>
+                </scope>
+            </method>
+            <method name="getDomains" type="String[]" line="852">
+                <params>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="853">
+                    <declaration name="params" type="Object" line="854"/>
+                </scope>
+                <scope line="864">
+                    <declaration name="e" type="Exception" line="865"/>
+                </scope>
+            </method>
+            <method name="getMBeanInfo" type="MBeanInfo" line="877">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="881">
+                    <declaration name="params" type="Object" line="882"/>
+                </scope>
+                <scope line="893">
+                    <declaration name="e" type="Exception" line="894"/>
+                </scope>
+            </method>
+            <method name="isInstanceOf" type="boolean" line="910">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="className" type="String"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="914">
+                    <declaration name="params" type="Object" line="915"/>
+                </scope>
+                <scope line="927">
+                    <declaration name="e" type="Exception" line="928"/>
+                </scope>
+            </method>
+            <method name="addNotificationListeners" type="Integer[]" line="941">
+                <params>
+                    <param name="names" type="ObjectName[]"/>
+                    <param name="filters" type="MarshalledObject[]"/>
+                    <param name="delegationSubjects" type="Subject[]"/>
+                </params>
+                <comment line="996">
+                    remove all registered listeners                    
+                </comment>
+                <comment line="1002">
+                    strange                    
+                </comment>
+                <scope line="943"/>
+                <declaration name="sbjs" type="Subject[]" line="947"/>
+                <scope line="949">
+                    <declaration name="msg" type="String" line="950"/>
+                </scope>
+                <scope line="955">
+                    <scope line="956"/>
+                </scope>
+                <declaration name="i" type="int" line="961"/>
+                <declaration name="targetCl" type="ClassLoader" line="962"/>
+                <declaration name="filterValues" type="NotificationFilter[]" line="963"/>
+                <declaration name="ids" type="Integer[]" line="965"/>
+                <declaration name="debug" type="boolean" line="966"/>
+                <scope line="968">
+                    <scope line="969"/>
+                </scope>
+                <scope line="995">
+                    <scope line="997">
+                        <scope line="998"/>
+                        <scope line="1001"/>
+                    </scope>
+                    <scope line="1006"/>
+                    <scope line="1010"/>
+                    <scope line="1012"/>
+                    <scope line="1014"/>
+                    <scope line="1016"/>
+                    <scope line="1018"/>
+                </scope>
+            </method>
+            <method name="addNotificationListener" type="void" line="1030">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="ObjectName"/>
+                    <param name="filter" type="MarshalledObject"/>
+                    <param name="handback" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="filterValue" type="NotificationFilter" line="1035"/>
+                <declaration name="handbackValue" type="Object" line="1036"/>
+                <declaration name="debug" type="boolean" line="1037"/>
+                <declaration name="targetCl" type="ClassLoader" line="1039"/>
+                <scope line="1057">
+                    <declaration name="params" type="Object" line="1058"/>
+                </scope>
+                <scope line="1073">
+                    <declaration name="e" type="Exception" line="1074"/>
+                </scope>
+            </method>
+            <method name="removeNotificationListeners" type="void" line="1089">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listenerIDs" type="Integer[]"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="1094"/>
+                <scope line="1099">
+                    <declaration name="params" type="Object" line="1100"/>
+                </scope>
+                <scope line="1112">
+                    <declaration name="e" type="Exception" line="1113"/>
+                </scope>
+            </method>
+            <method name="removeNotificationListener" type="void" line="1130">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="ObjectName"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="1135">
+                    <declaration name="params" type="Object" line="1136"/>
+                </scope>
+                <scope line="1148">
+                    <declaration name="e" type="Exception" line="1149"/>
+                </scope>
+            </method>
+            <method name="removeNotificationListener" type="void" line="1169">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                    <param name="listener" type="ObjectName"/>
+                    <param name="filter" type="MarshalledObject"/>
+                    <param name="handback" type="MarshalledObject"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <declaration name="filterValue" type="NotificationFilter" line="1174"/>
+                <declaration name="handbackValue" type="Object" line="1175"/>
+                <declaration name="debug" type="boolean" line="1176"/>
+                <declaration name="targetCl" type="ClassLoader" line="1178"/>
+                <scope line="1196">
+                    <declaration name="params" type="Object" line="1197"/>
+                </scope>
+                <scope line="1212">
+                    <declaration name="e" type="Exception" line="1213"/>
+                </scope>
+            </method>
+            <method name="fetchNotifications" type="NotificationResult" line="1227">
+                <params>
+                    <param name="clientSequenceNumber" type="long"/>
+                    <param name="maxNotifications" type="int"/>
+                    <param name="timeout" type="long"/>
+                </params>
+                <comment line="1240">
+                    we must not call fetchNotifs() if the server is                    
+                </comment>
+                <comment line="1241">
+                    terminated (timeout elapsed).                    
+                </comment>
+                <comment line="1242">
+                                        
+                </comment>
+                <declaration name="serverTerminated" type="boolean" line="1236"/>
+                <scope line="1238">
+                    <scope line="1239"/>
+                    <declaration name="csn" type="long" line="1247"/>
+                    <declaration name="mn" type="int" line="1248"/>
+                    <declaration name="t" type="long" line="1249"/>
+                    <anonymous_class line="1251">
+                        <method name="run" type="NotificationResult" line="1252"/>
+                    </anonymous_class>
+                    <declaration name="action" type="PrivilegedAction&lt;NotificationResult&gt;" line="1250"/>
+                </scope>
+                <scope line="1260"/>
+            </method>
+            <javadoc line="1265">
+                &lt;p&gt;Returns a string representation of this object.  In general,
+                  the &lt;code&gt;toString&lt;/code&gt; method returns a string that
+                  &quot;textually represents&quot; this object. The result should be a
+                  concise but informative representation that is easy for a
+                  person to read.&lt;/p&gt;                
+                <return>
+                    a String representation of this object.                    
+                </return>
+            </javadoc>
+            <method name="toString" type="String" line="1275"/>
+            <class name="PrivilegedOperation" line="1283">
+                <comment line="311">
+                    MarshalledObject                    
+                </comment>
+                <comment line="372">
+                    MarshalledObject                    
+                </comment>
+                <comment line="498">
+                    MarshalledObject                    
+                </comment>
+                <comment line="533">
+                    MarshalledObject                    
+                </comment>
+                <comment line="675">
+                    MarshalledObject                    
+                </comment>
+                <comment line="728">
+                    MarshalledObject                    
+                </comment>
+                <comment line="774">
+                    MarshalledObject                    
+                </comment>
+                <comment line="938">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1025">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1161">
+                    MarshalledObject                    
+                </comment>
+                <implements interface="PrivilegedExceptionAction">
+                    <type_params>
+                        <type_param name="Object"/>
+                    </type_params>
+                </implements>
+                <method name="PrivilegedOperation" type="constructor" line="1286">
+                    <params>
+                        <param name="operation" type="int"/>
+                        <param name="params" type="Object[]"/>
+                    </params>
+                </method>
+                <method name="run" type="Object" line="1291"/>
+                <declaration name="operation" type="int" line="1295"/>
+                <declaration name="params" type="Object[]" line="1296"/>
+            </class>
+            <class name="RMIServerCommunicatorAdmin" line="1302">
+                <extends class="ServerCommunicatorAdmin"/>
+                <comment line="311">
+                    MarshalledObject                    
+                </comment>
+                <comment line="372">
+                    MarshalledObject                    
+                </comment>
+                <comment line="498">
+                    MarshalledObject                    
+                </comment>
+                <comment line="533">
+                    MarshalledObject                    
+                </comment>
+                <comment line="675">
+                    MarshalledObject                    
+                </comment>
+                <comment line="728">
+                    MarshalledObject                    
+                </comment>
+                <comment line="774">
+                    MarshalledObject                    
+                </comment>
+                <comment line="938">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1025">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1161">
+                    MarshalledObject                    
+                </comment>
+                <method name="RMIServerCommunicatorAdmin" type="constructor" line="1303">
+                    <params>
+                        <param name="timeout" type="long"/>
+                    </params>
+                </method>
+                <method name="doStop" type="void" line="1307">
+                    <scope line="1308"/>
+                    <scope line="1310"/>
+                </method>
+            </class>
+            <method name="getClassLoader" type="ClassLoader" line="1325">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                </params>
+                <scope line="1326">
+                    <anonymous_class line="1329">
+                        <method name="run" type="ClassLoader" line="1330"/>
+                    </anonymous_class>
+                </scope>
+                <scope line="1334"/>
+            </method>
+            <method name="getClassLoaderFor" type="ClassLoader" line="1340">
+                <params>
+                    <param name="name" type="ObjectName"/>
+                </params>
+                <scope line="1341">
+                    <anonymous_class line="1344">
+                        <method name="run" type="Object" line="1345"/>
+                    </anonymous_class>
+                </scope>
+                <scope line="1349"/>
+            </method>
+            <method name="doPrivilegedOperation" type="Object" line="1357">
+                <params>
+                    <param name="operation" type="int"/>
+                    <param name="params" type="Object[]"/>
+                    <param name="delegationSubject" type="Subject"/>
+                </params>
+                <scope line="1360">
+                    <declaration name="reqACC" type="AccessControlContext" line="1362"/>
+                    <scope line="1365">
+                        <scope line="1366">
+                            <declaration name="msg" type="String" line="1367"/>
+                        </scope>
+                    </scope>
+                    <declaration name="op" type="PrivilegedOperation" line="1376"/>
+                    <scope line="1378">
+                        <scope line="1379"/>
+                        <scope line="1381"/>
+                    </scope>
+                    <scope line="1386"/>
+                </scope>
+                <scope line="1389"/>
+                <scope line="1391"/>
+            </method>
+            <method name="doOperation" type="Object" line="1397">
+                <params>
+                    <param name="operation" type="int"/>
+                    <param name="params" type="Object[]"/>
+                </params>
+            </method>
+            <class name="SetCcl" line="1518">
+                <comment line="311">
+                    MarshalledObject                    
+                </comment>
+                <comment line="372">
+                    MarshalledObject                    
+                </comment>
+                <comment line="498">
+                    MarshalledObject                    
+                </comment>
+                <comment line="533">
+                    MarshalledObject                    
+                </comment>
+                <comment line="675">
+                    MarshalledObject                    
+                </comment>
+                <comment line="728">
+                    MarshalledObject                    
+                </comment>
+                <comment line="774">
+                    MarshalledObject                    
+                </comment>
+                <comment line="938">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1025">
+                    MarshalledObject                    
+                </comment>
+                <comment line="1161">
+                    MarshalledObject                    
+                </comment>
+                <implements interface="PrivilegedExceptionAction">
+                    <type_params>
+                        <type_param name="ClassLoader"/>
+                    </type_params>
+                </implements>
+                <declaration name="classLoader" type="ClassLoader" line="1519"/>
+                <method name="SetCcl" type="constructor" line="1521">
+                    <params>
+                        <param name="classLoader" type="ClassLoader"/>
+                    </params>
+                </method>
+                <method name="run" type="ClassLoader" line="1525">
+                    <declaration name="currentThread" type="Thread" line="1526"/>
+                    <declaration name="old" type="ClassLoader" line="1527"/>
+                </method>
+            </class>
+            <method name="unwrap" type="T" line="1536">
+                <params>
+                    <param name="mo" type="MarshalledObject<?>"/>
+                    <param name="cl" type="ClassLoader"/>
+                    <param name="wrappedClass" type="Class<T>"/>
+                </params>
+                <scope line="1537"/>
+                <scope line="1540">
+                    <declaration name="old" type="ClassLoader" line="1541"/>
+                    <scope line="1542"/>
+                    <scope line="1544"/>
+                    <scope line="1546"/>
+                </scope>
+                <scope line="1549">
+                    <declaration name="e" type="Exception" line="1550"/>
+                    <scope line="1551"/>
+                    <scope line="1554"/>
+                </scope>
+            </method>
+            <method name="unwrap" type="T" line="1567">
+                <params>
+                    <param name="mo" type="MarshalledObject<?>"/>
+                    <param name="cl1" type="ClassLoader"/>
+                    <param name="cl2" type="ClassLoader"/>
+                    <param name="wrappedClass" type="Class<T>"/>
+                </params>
+                <scope line="1568"/>
+                <scope line="1571">
+                    <anonymous_class line="1573">
+                        <method name="run" type="ClassLoader" line="1574"/>
+                    </anonymous_class>
+                    <declaration name="orderCL" type="ClassLoader" line="1572"/>
+                </scope>
+                <scope line="1580">
+                    <declaration name="e" type="Exception" line="1581"/>
+                    <scope line="1582"/>
+                    <scope line="1585"/>
+                </scope>
+            </method>
+            <javadoc line="1594">
+                Construct a new IOException with a nested exception.
+                  The nested exception is set only if JDK &gt;= 1.4                
+            </javadoc>
+            <method name="newIOException" type="IOException" line="1599">
+                <params>
+                    <param name="message" type="String"/>
+                    <param name="cause" type="Throwable"/>
+                </params>
+                <declaration name="x" type="IOException" line="1600"/>
+            </method>
+            <javadoc line="1604">
+                Iterate until we extract the real exception
+                  from a stack of PrivilegedActionExceptions.                
+            </javadoc>
+            <method name="extractException" type="Exception" line="1608">
+                <params>
+                    <param name="e" type="Exception"/>
+                </params>
+                <scope line="1609"/>
+            </method>
+            <declaration name="NO_OBJECTS" type="Object[]" line="1615"/>
+            <declaration name="NO_STRINGS" type="String[]" line="1616"/>
+            <method name="nullIsEmpty" type="Object[]" line="1626">
+                <params>
+                    <param name="array" type="Object[]"/>
+                </params>
+            </method>
+            <method name="nullIsEmpty" type="String[]" line="1630">
+                <params>
+                    <param name="array" type="String[]"/>
+                </params>
+            </method>
+            <method name="checkNonNull" type="void" line="1641">
+                <params>
+                    <param name="what" type="String"/>
+                    <param name="x" type="Object"/>
+                </params>
+                <scope line="1642">
+                    <declaration name="wrapped" type="RuntimeException" line="1643"/>
+                </scope>
+            </method>
+            <declaration name="subject" type="Subject" line="1653"/>
+            <declaration name="subjectDelegator" type="SubjectDelegator" line="1655"/>
+            <declaration name="removeCallerContext" type="boolean" line="1657"/>
+            <declaration name="acc" type="AccessControlContext" line="1659"/>
+            <declaration name="rmiServer" type="RMIServerImpl" line="1661"/>
+            <declaration name="mbeanServer" type="MBeanServer" line="1663"/>
+            <declaration name="defaultClassLoader" type="ClassLoader" line="1665"/>
+            <declaration name="classLoaderWithRepository" type="ClassLoaderWithRepository" line="1667"/>
+            <declaration name="terminated" type="boolean" line="1669"/>
+            <declaration name="connectionId" type="String" line="1671"/>
+            <declaration name="serverCommunicatorAdmin" type="ServerCommunicatorAdmin" line="1673"/>
+            <declaration name="ADD_NOTIFICATION_LISTENERS" type="int" line="1678"/>
+            <declaration name="ADD_NOTIFICATION_LISTENER_OBJECTNAME" type="int" line="1680"/>
+            <declaration name="CREATE_MBEAN" type="int" line="1682"/>
+            <declaration name="CREATE_MBEAN_PARAMS" type="int" line="1684"/>
+            <declaration name="CREATE_MBEAN_LOADER" type="int" line="1686"/>
+            <declaration name="CREATE_MBEAN_LOADER_PARAMS" type="int" line="1688"/>
+            <declaration name="GET_ATTRIBUTE" type="int" line="1690"/>
+            <declaration name="GET_ATTRIBUTES" type="int" line="1692"/>
+            <declaration name="GET_DEFAULT_DOMAIN" type="int" line="1694"/>
+            <declaration name="GET_DOMAINS" type="int" line="1696"/>
+            <declaration name="GET_MBEAN_COUNT" type="int" line="1698"/>
+            <declaration name="GET_MBEAN_INFO" type="int" line="1700"/>
+            <declaration name="GET_OBJECT_INSTANCE" type="int" line="1702"/>
+            <declaration name="INVOKE" type="int" line="1704"/>
+            <declaration name="IS_INSTANCE_OF" type="int" line="1706"/>
+            <declaration name="IS_REGISTERED" type="int" line="1708"/>
+            <declaration name="QUERY_MBEANS" type="int" line="1710"/>
+            <declaration name="QUERY_NAMES" type="int" line="1712"/>
+            <declaration name="REMOVE_NOTIFICATION_LISTENER" type="int" line="1714"/>
+            <declaration name="REMOVE_NOTIFICATION_LISTENER_OBJECTNAME" type="int" line="1716"/>
+            <declaration name="REMOVE_NOTIFICATION_LISTENER_OBJECTNAME_FILTER_HANDBACK" type="int" line="1718"/>
+            <declaration name="SET_ATTRIBUTE" type="int" line="1720"/>
+            <declaration name="SET_ATTRIBUTES" type="int" line="1722"/>
+            <declaration name="UNREGISTER_MBEAN" type="int" line="1724"/>
+            <declaration name="serverNotifForwarder" type="ServerNotifForwarder" line="1730"/>
+            <declaration name="env" type="Map&lt;String,?&gt;" line="1731"/>
+            <method name="objects" type="String" line="1736">
+                <params>
+                    <param name="objs" type="Object[]"/>
+                </params>
+            </method>
+            <method name="strings" type="String" line="1743">
+                <params>
+                    <param name="strs" type="String[]"/>
+                </params>
+            </method>
+            <declaration name="logger" type="ClassLogger" line="1747"/>
+        </class>
+    </source>

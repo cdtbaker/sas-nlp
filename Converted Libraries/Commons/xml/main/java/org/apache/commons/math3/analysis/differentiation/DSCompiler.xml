@@ -1,0 +1,2317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.analysis.differentiation">
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.List"/>
+        <import package="java.util.concurrent.atomic.AtomicReference"/>
+        <import package="org.apache.commons.math3.exception.DimensionMismatchException"/>
+        <import package="org.apache.commons.math3.exception.MathArithmeticException"/>
+        <import package="org.apache.commons.math3.exception.MathInternalError"/>
+        <import package="org.apache.commons.math3.exception.NotPositiveException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooLargeException"/>
+        <import package="org.apache.commons.math3.util.ArithmeticUtils"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <import package="org.apache.commons.math3.util.MathArrays"/>
+        <class name="DSCompiler" line="33">
+            <javadoc line="33">
+                Class holding &quot;compiled&quot; computation rules for derivative structures.
+                  &lt;p&gt;This class implements the computation rules described in Dan Kalman&apos;s paper &lt;a
+                  href=&quot;http://www.math.american.edu/People/kalman/pdffiles/mmgautodiff.pdf&quot;&gt;Doubly
+                  Recursive Multivariate Automatic Differentiation&lt;/a&gt;, Mathematics Magazine, vol. 75,
+                  no. 3, June 2002. However, in order to avoid performances bottlenecks, the recursive
+                  rules are &quot;compiled&quot; once in an unfold form. This class does this recursion unrolling
+                  and stores the computation rules as simple loops with pre-computed indirection arrays.&lt;/p&gt;
+                  &lt;p&gt;
+                  This class maps all derivative computation into single dimension arrays that hold the
+                  value and partial derivatives. The class does not hold these arrays, which remains under
+                  the responsibility of the caller. For each combination of number of free parameters and
+                  derivation order, only one compiler is necessary, and this compiler will be used to
+                  perform computations on all arrays provided to it, which can represent hundreds or
+                  thousands of different parameters kept together with all theur partial derivatives.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The arrays on which compilers operate contain only the partial derivatives together
+                  with the 0&lt;sup&gt;th&lt;/sup&gt; derivative, i.e. the value. The partial derivatives are stored in
+                  a compiler-specific order, which can be retrieved using methods {@link #getPartialDerivativeIndex(int...) getPartialDerivativeIndex} and {@link #getPartialDerivativeOrders(int)}. The value is guaranteed to be stored as the first element
+                  (i.e. the {@link #getPartialDerivativeIndex(int...) getPartialDerivativeIndex} method returns
+                  0 when called with 0 for all derivation orders and {@link #getPartialDerivativeOrders(int)getPartialDerivativeOrders} returns an array filled with 0 when called with 0 as the index).
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  Note that the ordering changes with number of parameters and derivation order. For example
+                  given 2 parameters x and y, df/dy is stored at index 2 when derivation order is set to 1 (in
+                  this case the array has three elements: f, df/dx and df/dy). If derivation order is set to
+                  2, then df/dy will be stored at index 3 (in this case the array has six elements: f, df/dx,
+                  df/dxdx, df/dy, df/dxdy and df/dydy).
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  Given this structure, users can perform some simple operations like adding, subtracting
+                  or multiplying constants and negating the elements by themselves, knowing if they want to
+                  mutate their array or create a new array. These simple operations are not provided by
+                  the compiler. The compiler provides only the more complex operations between several arrays.
+                  &lt;/p&gt;
+                  &lt;p&gt;This class is mainly used as the engine for scalar variable {@link DerivativeStructure}.
+                  It can also be used directly to hold several variables in arrays for more complex data
+                  structures. User can for example store a vector of n variables depending on three x, y
+                  and z free parameters in one array as follows:
+                  &lt;pre&gt;
+                  // parameter 0 is x, parameter 1 is y, parameter 2 is z
+                  int parameters = 3;
+                  DSCompiler compiler = DSCompiler.getCompiler(parameters, order);
+                  int size = compiler.getSize();
+                  // pack all elements in a single array
+                  double[] array = new double[n  size];
+                  for (int i = 0; i &lt; n; ++i) {
+                  // we know value is guaranteed to be the first element
+                  array[i  size] = v[i];
+                  // we don&apos;t know where first derivatives are stored, so we ask the compiler
+                  array[i  size + compiler.getPartialDerivativeIndex(1, 0, 0) = dvOnDx[i][0];
+                  array[i  size + compiler.getPartialDerivativeIndex(0, 1, 0) = dvOnDy[i][0];
+                  array[i  size + compiler.getPartialDerivativeIndex(0, 0, 1) = dvOnDz[i][0];
+                  // we let all higher order derivatives set to 0
+                  }
+                  &lt;/pre&gt;
+                  Then in another function, user can perform some operations on all elements stored
+                  in the single array, such as a simple product of all variables:
+                  &lt;pre&gt;
+                  // compute the product of all elements
+                  double[] product = new double[size];
+                  prod[0] = 1.0;
+                  for (int i = 0; i &lt; n; ++i) {
+                  double[] tmp = product.clone();
+                  compiler.multiply(tmp, 0, array, i  size, product, 0);
+                  }
+                  // value
+                  double p = product[0];
+                  // first derivatives
+                  double dPdX = product[compiler.getPartialDerivativeIndex(1, 0, 0)];
+                  double dPdY = product[compiler.getPartialDerivativeIndex(0, 1, 0)];
+                  double dPdZ = product[compiler.getPartialDerivativeIndex(0, 0, 1)];
+                  // cross derivatives (assuming order was at least 2)
+                  double dPdXdX = product[compiler.getPartialDerivativeIndex(2, 0, 0)];
+                  double dPdXdY = product[compiler.getPartialDerivativeIndex(1, 1, 0)];
+                  double dPdXdZ = product[compiler.getPartialDerivativeIndex(1, 0, 1)];
+                  double dPdYdY = product[compiler.getPartialDerivativeIndex(0, 2, 0)];
+                  double dPdYdZ = product[compiler.getPartialDerivativeIndex(0, 1, 1)];
+                  double dPdZdZ = product[compiler.getPartialDerivativeIndex(0, 0, 2)];
+                  &lt;/p&gt;                
+                <see>
+                    DerivativeStructure                    
+                </see>
+                <version>
+                    $Id: DSCompiler.java 1462503 2013-03-29 15:48:27Z luc $                    
+                </version>
+                <since>
+                    3.1                    
+                </since>
+            </javadoc>
+            <declaration name="compilers" type="AtomicReference&lt;DSCompiler[][]&gt;" line="130"/>
+            <javadoc line="130">
+                Array of all compilers created so far.                
+            </javadoc>
+            <declaration name="parameters" type="int" line="134"/>
+            <javadoc line="134">
+                Number of free parameters.                
+            </javadoc>
+            <declaration name="order" type="int" line="137"/>
+            <javadoc line="137">
+                Derivation order.                
+            </javadoc>
+            <declaration name="sizes" type="int[][]" line="140"/>
+            <javadoc line="140">
+                Number of partial derivatives (including the single 0 order derivative element).                
+            </javadoc>
+            <declaration name="derivativesIndirection" type="int[][]" line="143"/>
+            <javadoc line="143">
+                Indirection array for partial derivatives.                
+            </javadoc>
+            <declaration name="lowerIndirection" type="int[]" line="146"/>
+            <javadoc line="146">
+                Indirection array of the lower derivative elements.                
+            </javadoc>
+            <declaration name="multIndirection" type="int[][][]" line="149"/>
+            <javadoc line="149">
+                Indirection arrays for multiplication.                
+            </javadoc>
+            <declaration name="compIndirection" type="int[][][]" line="152"/>
+            <javadoc line="152">
+                Indirection arrays for function composition.                
+            </javadoc>
+            <javadoc line="155">
+                Private constructor, reserved for the factory method {@link #getCompiler(int,int)}.                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <param>
+                    derivativeCompiler compiler for the derivative part                    
+                </param>
+                <throws>
+                    NumberIsTooLargeException if order is too large                    
+                </throws>
+            </javadoc>
+            <method name="DSCompiler" type="constructor" line="164">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                    <param name="derivativeCompiler" type="DSCompiler"/>
+                </params>
+            </method>
+            <javadoc line="185">
+                Get the compiler for number of free parameters and order.                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <return>
+                    cached rules set                    
+                </return>
+                <throws>
+                    NumberIsTooLargeException if order is too large                    
+                </throws>
+            </javadoc>
+            <method name="getCompiler" type="DSCompiler" line="192">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                </params>
+                <comment line="194">
+                    get the cached compilers                    
+                </comment>
+                <comment line="198">
+                    the compiler has already been created                    
+                </comment>
+                <comment line="202">
+                    we need to create more compilers                    
+                </comment>
+                <comment line="208">
+                    preserve the already created compilers                    
+                </comment>
+                <comment line="214">
+                    create the array in increasing diagonal order                    
+                </comment>
+                <comment line="226">
+                    atomically reset the cached compilers array                    
+                </comment>
+                <declaration name="cache" type="DSCompiler[][]" line="195"/>
+                <scope line="197"/>
+                <declaration name="maxParameters" type="int" line="203"/>
+                <declaration name="maxOrder" type="int" line="204"/>
+                <declaration name="newCache" type="DSCompiler[][]" line="205"/>
+                <scope line="207">
+                    <scope line="209"/>
+                </scope>
+                <scope line="215">
+                    <scope line="216">
+                        <declaration name="p" type="int" line="217"/>
+                        <scope line="218">
+                            <declaration name="valueCompiler" type="DSCompiler" line="219"/>
+                            <declaration name="derivativeCompiler" type="DSCompiler" line="220"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="233">
+                Compile the sizes array.                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <return>
+                    sizes array                    
+                </return>
+            </javadoc>
+            <method name="compileSizes" type="int[][]" line="240">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                </params>
+                <declaration name="sizes" type="int[][]" line="242"/>
+                <scope line="243"/>
+                <scope line="245">
+                    <scope line="248"/>
+                </scope>
+            </method>
+            <javadoc line="257">
+                Compile the derivatives indirection array.                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <param>
+                    derivativeCompiler compiler for the derivative part                    
+                </param>
+                <return>
+                    derivatives indirection array                    
+                </return>
+            </javadoc>
+            <method name="compileDerivativesIndirection" type="int[][]" line="266">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                    <param name="derivativeCompiler" type="DSCompiler"/>
+                </params>
+                <comment line="276">
+                    set up the indices for the value part                    
+                </comment>
+                <comment line="278">
+                    copy the first indices, the last one remaining set to 0                    
+                </comment>
+                <comment line="284">
+                    set up the indices for the derivative part                    
+                </comment>
+                <comment line="287">
+                    copy the indices                    
+                </comment>
+                <comment line="292">
+                    increment the derivation order for the last parameter                    
+                </comment>
+                <scope line="268"/>
+                <declaration name="vSize" type="int" line="272"/>
+                <declaration name="dSize" type="int" line="273"/>
+                <declaration name="derivativesIndirection" type="int[][]" line="274"/>
+                <scope line="277"/>
+                <scope line="285"/>
+            </method>
+            <javadoc line="301">
+                Compile the lower derivatives indirection array.
+                  &lt;p&gt;
+                  This indirection array contains the indices of all elements
+                  except derivatives for last derivation order.
+                  &lt;/p&gt;                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <param>
+                    derivativeCompiler compiler for the derivative part                    
+                </param>
+                <return>
+                    lower derivatives indirection array                    
+                </return>
+            </javadoc>
+            <method name="compileLowerIndirection" type="int[]" line="314">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                    <param name="derivativeCompiler" type="DSCompiler"/>
+                </params>
+                <comment line="320">
+                    this is an implementation of definition 6 in Dan Kalman&apos;s paper.                    
+                </comment>
+                <scope line="316"/>
+                <declaration name="vSize" type="int" line="321"/>
+                <declaration name="dSize" type="int" line="322"/>
+                <declaration name="lowerIndirection" type="int[]" line="323"/>
+                <scope line="325"/>
+            </method>
+            <javadoc line="333">
+                Compile the multiplication indirection array.
+                  &lt;p&gt;
+                  This indirection array contains the indices of all pairs of elements
+                  involved when computing a multiplication. This allows a straightforward
+                  loop-based multiplication (see {@link #multiply(double[],int,double[],int,double[],int)}).
+                  &lt;/p&gt;                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <param>
+                    derivativeCompiler compiler for the derivative part                    
+                </param>
+                <param>
+                    lowerIndirection lower derivatives indirection array                    
+                </param>
+                <return>
+                    multiplication indirection array                    
+                </return>
+            </javadoc>
+            <method name="compileMultiplicationIndirection" type="int[][][]" line="349">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                    <param name="derivativeCompiler" type="DSCompiler"/>
+                    <param name="lowerIndirection" type="int[]"/>
+                </params>
+                <comment line="355">
+                    this is an implementation of definition 3 in Dan Kalman&apos;s paper.                    
+                </comment>
+                <comment line="370">
+                    combine terms with similar derivation orders                    
+                </comment>
+                <comment line="378">
+                    combine termJ and termK                    
+                </comment>
+                <comment line="380">
+                    make sure we will skip termK later on in the outer loop                    
+                </comment>
+                <scope line="351"/>
+                <declaration name="vSize" type="int" line="356"/>
+                <declaration name="dSize" type="int" line="357"/>
+                <declaration name="multIndirection" type="int[][][]" line="358"/>
+                <scope line="362">
+                    <declaration name="dRow" type="int[][]" line="363"/>
+                    <declaration name="row" type="List&lt;int[]&gt;" line="364"/>
+                    <scope line="365"/>
+                    <declaration name="combined" type="List&lt;int[]&gt;" line="371"/>
+                    <scope line="372">
+                        <declaration name="termJ" type="int[]" line="373"/>
+                        <scope line="374">
+                            <scope line="375">
+                                <declaration name="termK" type="int[]" line="376"/>
+                                <scope line="377"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="396">
+                Compile the function composition indirection array.
+                  &lt;p&gt;
+                  This indirection array contains the indices of all sets of elements
+                  involved when computing a composition. This allows a straightforward
+                  loop-based composition (see {@link #compose(double[],int,double[],double[],int)}).
+                  &lt;/p&gt;                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    valueCompiler compiler for the value part                    
+                </param>
+                <param>
+                    derivativeCompiler compiler for the derivative part                    
+                </param>
+                <param>
+                    sizes sizes array                    
+                </param>
+                <param>
+                    derivativesIndirection derivatives indirection array                    
+                </param>
+                <return>
+                    multiplication indirection array                    
+                </return>
+                <throws>
+                    NumberIsTooLargeException if order is too large                    
+                </throws>
+            </javadoc>
+            <method name="compileCompositionIndirection" type="int[][][]" line="416">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="valueCompiler" type="DSCompiler"/>
+                    <param name="derivativeCompiler" type="DSCompiler"/>
+                    <param name="sizes" type="int[][]"/>
+                    <param name="derivativesIndirection" type="int[][]"/>
+                </params>
+                <comment line="426">
+                    the composition rules from the value part can be reused as is                    
+                </comment>
+                <comment line="429">
+                    the composition rules for the derivative part are deduced by                    
+                </comment>
+                <comment line="430">
+                    differentiation the rules from the underlying compiler once                    
+                </comment>
+                <comment line="431">
+                    with respect to the parameter this compiler handles and the                    
+                </comment>
+                <comment line="432">
+                    underlying one did not handle                    
+                </comment>
+                <comment line="437">
+                    handle term p * f_k(g(x)) * g_l1(x) * g_l2(x) * ... * g_lp(x)                    
+                </comment>
+                <comment line="439">
+                    derive the first factor in the term: f_k with respect to new parameter                    
+                </comment>
+                <comment line="441">
+                    p                    
+                </comment>
+                <comment line="442">
+                    f_(k+1)                    
+                </comment>
+                <comment line="445">
+                    g_1                    
+                </comment>
+                <comment line="447">
+                    convert the indices as the mapping for the current order                    
+                </comment>
+                <comment line="448">
+                    is different from the mapping with one less order                    
+                </comment>
+                <comment line="456">
+                    derive the various g_l                    
+                </comment>
+                <comment line="462">
+                    convert the indices as the mapping for the current order                    
+                </comment>
+                <comment line="463">
+                    is different from the mapping with one less order                    
+                </comment>
+                <comment line="468">
+                    derive this term                    
+                </comment>
+                <comment line="480">
+                    combine terms with similar derivation orders                    
+                </comment>
+                <comment line="492">
+                    combine termJ and termK                    
+                </comment>
+                <comment line="494">
+                    make sure we will skip termK later on in the outer loop                    
+                </comment>
+                <scope line="418"/>
+                <declaration name="vSize" type="int" line="422"/>
+                <declaration name="dSize" type="int" line="423"/>
+                <declaration name="compIndirection" type="int[][][]" line="424"/>
+                <scope line="433">
+                    <declaration name="row" type="List&lt;int[]&gt;" line="434"/>
+                    <scope line="435">
+                        <declaration name="derivedTermF" type="int[]" line="440"/>
+                        <declaration name="orders" type="int[]" line="443"/>
+                        <scope line="446"/>
+                        <scope line="457">
+                            <declaration name="derivedTermG" type="int[]" line="458"/>
+                            <scope line="461">
+                                <scope line="467"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                    <declaration name="combined" type="List&lt;int[]&gt;" line="481"/>
+                    <scope line="482">
+                        <declaration name="termJ" type="int[]" line="483"/>
+                        <scope line="484">
+                            <scope line="485">
+                                <declaration name="termK" type="int[]" line="486"/>
+                                <declaration name="equals" type="boolean" line="487"/>
+                                <scope line="488"/>
+                                <scope line="491"/>
+                            </scope>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="510">
+                Get the index of a partial derivative in the array.
+                  &lt;p&gt;
+                  If all orders are set to 0, then the 0&lt;sup&gt;th&lt;/sup&gt; order derivative
+                  is returned, which is the value of the function.
+                  &lt;/p&gt;
+                  &lt;p&gt;The indices of derivatives are between 0 and {@link #getSize() getSize()} - 1.
+                  Their specific order is fixed for a given compiler, but otherwise not
+                  publicly specified. There are however some simple cases which have guaranteed
+                  indices:
+                  &lt;/p&gt;
+                  &lt;ul&gt;
+                  &lt;li&gt;the index of 0&lt;sup&gt;th&lt;/sup&gt; order derivative is always 0&lt;/li&gt;
+                  &lt;li&gt;if there is only 1 {@link #getFreeParameters() free parameter}, then the
+                  derivatives are sorted in increasing derivation order (i.e. f at index 0, df/dp
+                  at index 1, d&lt;sup&gt;2&lt;/sup&gt;f/dp&lt;sup&gt;2&lt;/sup&gt; at index 2 ...
+                  d&lt;sup&gt;k&lt;/sup&gt;f/dp&lt;sup&gt;k&lt;/sup&gt; at index k),&lt;/li&gt;
+                  &lt;li&gt;if the {@link #getOrder() derivation order} is 1, then the derivatives
+                  are sorted in increasing free parameter order (i.e. f at index 0, df/dx&lt;sub&gt;1&lt;/sub&gt;
+                  at index 1, df/dx&lt;sub&gt;2&lt;/sub&gt; at index 2 ... df/dx&lt;sub&gt;k&lt;/sub&gt; at index k),&lt;/li&gt;
+                  &lt;li&gt;all other cases are not publicly specified&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;p&gt;
+                  This method is the inverse of method {@link #getPartialDerivativeOrders(int)}&lt;/p&gt;                
+                <param>
+                    orders derivation orders with respect to each parameter                    
+                </param>
+                <return>
+                    index of the partial derivative                    
+                </return>
+                <exception>
+                    DimensionMismatchException if the numbers of parameters does not
+                      match the instance                    
+                </exception>
+                <exception>
+                    NumberIsTooLargeException if sum of derivation orders is larger
+                      than the instance limits                    
+                </exception>
+                <see>
+                    #getPartialDerivativeOrders(int)                    
+                </see>
+            </javadoc>
+            <method name="getPartialDerivativeIndex" type="int" line="543">
+                <params>
+                    <param name="orders" type="int"/>
+                </params>
+                <comment line="545">
+                    safety check                    
+                </comment>
+                <scope line="546"/>
+            </method>
+            <javadoc line="554">
+                Get the index of a partial derivative in an array.                
+                <param>
+                    parameters number of free parameters                    
+                </param>
+                <param>
+                    order derivation order                    
+                </param>
+                <param>
+                    sizes sizes array                    
+                </param>
+                <param>
+                    orders derivation orders with respect to each parameter
+                      (the lenght of this array must match the number of parameters)                    
+                </param>
+                <return>
+                    index of the partial derivative                    
+                </return>
+                <exception>
+                    NumberIsTooLargeException if sum of derivation orders is larger
+                      than the instance limits                    
+                </exception>
+            </javadoc>
+            <method name="getPartialDerivativeIndex" type="int" line="566">
+                <params>
+                    <param name="parameters" type="int"/>
+                    <param name="order" type="int"/>
+                    <param name="sizes" type="int[][]"/>
+                    <param name="orders" type="int"/>
+                </params>
+                <comment line="568">
+                    the value is obtained by diving into the recursive Dan Kalman&apos;s structure                    
+                </comment>
+                <comment line="569">
+                    this is theorem 2 of his paper, with recursion replaced by iteration                    
+                </comment>
+                <comment line="575">
+                    derivative order for current free parameter                    
+                </comment>
+                <comment line="578">
+                    safety check                    
+                </comment>
+                <comment line="585">
+                    as long as we differentiate according to current free parameter,                    
+                </comment>
+                <comment line="586">
+                    we have to skip the value part and dive into the derivative part                    
+                </comment>
+                <comment line="587">
+                    so we add the size of the value part to the base index                    
+                </comment>
+                <declaration name="index" type="int" line="570"/>
+                <declaration name="m" type="int" line="571"/>
+                <declaration name="ordersSum" type="int" line="572"/>
+                <scope line="573">
+                    <declaration name="derivativeOrder" type="int" line="576"/>
+                    <scope line="580"/>
+                    <scope line="584"/>
+                </scope>
+            </method>
+            <javadoc line="597">
+                Convert an index from one (parameters, order) structure to another.                
+                <param>
+                    index index of a partial derivative in source derivative structure                    
+                </param>
+                <param>
+                    srcP number of free parameters in source derivative structure                    
+                </param>
+                <param>
+                    srcDerivativesIndirection derivatives indirection array for the source
+                      derivative structure                    
+                </param>
+                <param>
+                    destP number of free parameters in destination derivative structure                    
+                </param>
+                <param>
+                    destO derivation order in destination derivative structure                    
+                </param>
+                <param>
+                    destSizes sizes array for the destination derivative structure                    
+                </param>
+                <return>
+                    index of the partial derivative with the <em>same</em> characteristics
+                      in destination derivative structure                    
+                </return>
+                <throws>
+                    NumberIsTooLargeException if order is too large                    
+                </throws>
+            </javadoc>
+            <method name="convertIndex" type="int" line="612">
+                <params>
+                    <param name="index" type="int"/>
+                    <param name="srcP" type="int"/>
+                    <param name="srcDerivativesIndirection" type="int[][]"/>
+                    <param name="destP" type="int"/>
+                    <param name="destO" type="int"/>
+                    <param name="destSizes" type="int[][]"/>
+                </params>
+                <declaration name="orders" type="int[]" line="613"/>
+            </method>
+            <javadoc line="618">
+                Get the derivation orders for a specific index in the array.
+                  &lt;p&gt;
+                  This method is the inverse of {@link #getPartialDerivativeIndex(int...)}.
+                  &lt;/p&gt;                
+                <param>
+                    index of the partial derivative                    
+                </param>
+                <return>
+                    orders derivation orders with respect to each parameter                    
+                </return>
+                <see>
+                    #getPartialDerivativeIndex(int...)                    
+                </see>
+            </javadoc>
+            <method name="getPartialDerivativeOrders" type="int[]" line="626">
+                <params>
+                    <param name="index" type="int"/>
+                </params>
+            </method>
+            <javadoc line="630">
+                Get the number of free parameters.                
+                <return>
+                    number of free parameters                    
+                </return>
+            </javadoc>
+            <method name="getFreeParameters" type="int" line="633"/>
+            <javadoc line="637">
+                Get the derivation order.                
+                <return>
+                    derivation order                    
+                </return>
+            </javadoc>
+            <method name="getOrder" type="int" line="640"/>
+            <javadoc line="644">
+                Get the array size required for holding partial derivatives data.
+                  &lt;p&gt;
+                  This number includes the single 0 order derivative element, which is
+                  guaranteed to be stored in the first element of the array.
+                  &lt;/p&gt;                
+                <return>
+                    array size required for holding partial derivatives data                    
+                </return>
+            </javadoc>
+            <method name="getSize" type="int" line="651"/>
+            <javadoc line="655">
+                Compute linear combination.
+                  The derivative structure built will be a1  ds1 + a2  ds2                
+                <param>
+                    a1 first scale factor                    
+                </param>
+                <param>
+                    c1 first base (unscaled) component                    
+                </param>
+                <param>
+                    offset1 offset of first operand in its array                    
+                </param>
+                <param>
+                    a2 second scale factor                    
+                </param>
+                <param>
+                    c2 second base (unscaled) component                    
+                </param>
+                <param>
+                    offset2 offset of second operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="linearCombination" type="void" line="669">
+                <params>
+                    <param name="a1" type="double"/>
+                    <param name="c1" type="double[]"/>
+                    <param name="offset1" type="int"/>
+                    <param name="a2" type="double"/>
+                    <param name="c2" type="double[]"/>
+                    <param name="offset2" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="670"/>
+            </method>
+            <javadoc line="676">
+                Compute linear combination.
+                  The derivative structure built will be a1  ds1 + a2  ds2 + a3  ds3 + a4  ds4                
+                <param>
+                    a1 first scale factor                    
+                </param>
+                <param>
+                    c1 first base (unscaled) component                    
+                </param>
+                <param>
+                    offset1 offset of first operand in its array                    
+                </param>
+                <param>
+                    a2 second scale factor                    
+                </param>
+                <param>
+                    c2 second base (unscaled) component                    
+                </param>
+                <param>
+                    offset2 offset of second operand in its array                    
+                </param>
+                <param>
+                    a3 third scale factor                    
+                </param>
+                <param>
+                    c3 third base (unscaled) component                    
+                </param>
+                <param>
+                    offset3 offset of third operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="linearCombination" type="void" line="694">
+                <params>
+                    <param name="a1" type="double"/>
+                    <param name="c1" type="double[]"/>
+                    <param name="offset1" type="int"/>
+                    <param name="a2" type="double"/>
+                    <param name="c2" type="double[]"/>
+                    <param name="offset2" type="int"/>
+                    <param name="a3" type="double"/>
+                    <param name="c3" type="double[]"/>
+                    <param name="offset3" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="695"/>
+            </method>
+            <javadoc line="703">
+                Compute linear combination.
+                  The derivative structure built will be a1  ds1 + a2  ds2 + a3  ds3 + a4  ds4                
+                <param>
+                    a1 first scale factor                    
+                </param>
+                <param>
+                    c1 first base (unscaled) component                    
+                </param>
+                <param>
+                    offset1 offset of first operand in its array                    
+                </param>
+                <param>
+                    a2 second scale factor                    
+                </param>
+                <param>
+                    c2 second base (unscaled) component                    
+                </param>
+                <param>
+                    offset2 offset of second operand in its array                    
+                </param>
+                <param>
+                    a3 third scale factor                    
+                </param>
+                <param>
+                    c3 third base (unscaled) component                    
+                </param>
+                <param>
+                    offset3 offset of third operand in its array                    
+                </param>
+                <param>
+                    a4 fourth scale factor                    
+                </param>
+                <param>
+                    c4 fourth base (unscaled) component                    
+                </param>
+                <param>
+                    offset4 offset of fourth operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="linearCombination" type="void" line="725">
+                <params>
+                    <param name="a1" type="double"/>
+                    <param name="c1" type="double[]"/>
+                    <param name="offset1" type="int"/>
+                    <param name="a2" type="double"/>
+                    <param name="c2" type="double[]"/>
+                    <param name="offset2" type="int"/>
+                    <param name="a3" type="double"/>
+                    <param name="c3" type="double[]"/>
+                    <param name="offset3" type="int"/>
+                    <param name="a4" type="double"/>
+                    <param name="c4" type="double[]"/>
+                    <param name="offset4" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="726"/>
+            </method>
+            <javadoc line="735">
+                Perform addition of two derivative structures.                
+                <param>
+                    lhs array holding left hand side of addition                    
+                </param>
+                <param>
+                    lhsOffset offset of the left hand side in its array                    
+                </param>
+                <param>
+                    rhs array right hand side of addition                    
+                </param>
+                <param>
+                    rhsOffset offset of the right hand side in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="add" type="void" line="746">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="lhsOffset" type="int"/>
+                    <param name="rhs" type="double[]"/>
+                    <param name="rhsOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="747"/>
+            </method>
+            <javadoc line="751">
+                Perform subtraction of two derivative structures.                
+                <param>
+                    lhs array holding left hand side of subtraction                    
+                </param>
+                <param>
+                    lhsOffset offset of the left hand side in its array                    
+                </param>
+                <param>
+                    rhs array right hand side of subtraction                    
+                </param>
+                <param>
+                    rhsOffset offset of the right hand side in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="subtract" type="void" line="762">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="lhsOffset" type="int"/>
+                    <param name="rhs" type="double[]"/>
+                    <param name="rhsOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="763"/>
+            </method>
+            <javadoc line="768">
+                Perform multiplication of two derivative structures.                
+                <param>
+                    lhs array holding left hand side of multiplication                    
+                </param>
+                <param>
+                    lhsOffset offset of the left hand side in its array                    
+                </param>
+                <param>
+                    rhs array right hand side of multiplication                    
+                </param>
+                <param>
+                    rhsOffset offset of the right hand side in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      multiplication the result array <em>cannot</em> be one of
+                      the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="multiply" type="void" line="780">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="lhsOffset" type="int"/>
+                    <param name="rhs" type="double[]"/>
+                    <param name="rhsOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="781">
+                    <declaration name="mappingI" type="int[][]" line="782"/>
+                    <declaration name="r" type="double" line="783"/>
+                    <scope line="784"/>
+                </scope>
+            </method>
+            <javadoc line="793">
+                Perform division of two derivative structures.                
+                <param>
+                    lhs array holding left hand side of division                    
+                </param>
+                <param>
+                    lhsOffset offset of the left hand side in its array                    
+                </param>
+                <param>
+                    rhs array right hand side of division                    
+                </param>
+                <param>
+                    rhsOffset offset of the right hand side in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      division the result array <em>cannot</em> be one of
+                      the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="divide" type="void" line="805">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="lhsOffset" type="int"/>
+                    <param name="rhs" type="double[]"/>
+                    <param name="rhsOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <declaration name="reciprocal" type="double[]" line="806"/>
+            </method>
+            <javadoc line="811">
+                Perform remainder of two derivative structures.                
+                <param>
+                    lhs array holding left hand side of remainder                    
+                </param>
+                <param>
+                    lhsOffset offset of the left hand side in its array                    
+                </param>
+                <param>
+                    rhs array right hand side of remainder                    
+                </param>
+                <param>
+                    rhsOffset offset of the right hand side in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (it may be
+                      one of the input arrays)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="remainder" type="void" line="822">
+                <params>
+                    <param name="lhs" type="double[]"/>
+                    <param name="lhsOffset" type="int"/>
+                    <param name="rhs" type="double[]"/>
+                    <param name="rhsOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="824">
+                    compute k such that lhs % rhs = lhs - k rhs                    
+                </comment>
+                <comment line="828">
+                    set up value                    
+                </comment>
+                <comment line="831">
+                    set up partial derivatives                    
+                </comment>
+                <declaration name="rem" type="double" line="825"/>
+                <declaration name="k" type="double" line="826"/>
+                <scope line="832"/>
+            </method>
+            <javadoc line="838">
+                Compute power of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    p power to apply                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      power the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="pow" type="void" line="848">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="p" type="double"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="850">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="851">
+                    [x^p, px^(p-1), p(p-1)x^(p-2), ... ]                    
+                </comment>
+                <comment line="865">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="852"/>
+                <declaration name="xk" type="double" line="853"/>
+                <scope line="854"/>
+                <declaration name="coefficient" type="double" line="859"/>
+                <scope line="860"/>
+            </method>
+            <javadoc line="870">
+                Compute integer power of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    n power to apply                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      power the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="pow" type="void" line="880">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="n" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="883">
+                    special case, x^0 = 1 for all x                    
+                </comment>
+                <comment line="889">
+                    create the power function value and derivatives                    
+                </comment>
+                <comment line="890">
+                    [x^n, nx^(n-1), n(n-1)x^(n-2), ... ]                    
+                </comment>
+                <comment line="894">
+                    strictly positive power                    
+                </comment>
+                <comment line="903">
+                    strictly negative power                    
+                </comment>
+                <comment line="918">
+                    apply function composition                    
+                </comment>
+                <scope line="882"/>
+                <declaration name="function" type="double[]" line="891"/>
+                <scope line="893">
+                    <declaration name="maxOrder" type="int" line="895"/>
+                    <declaration name="xk" type="double" line="896"/>
+                    <scope line="897"/>
+                </scope>
+                <scope line="902">
+                    <declaration name="inv" type="double" line="904"/>
+                    <declaration name="xk" type="double" line="905"/>
+                    <scope line="906"/>
+                </scope>
+                <declaration name="coefficient" type="double" line="912"/>
+                <scope line="913"/>
+            </method>
+            <javadoc line="923">
+                Compute power of a derivative structure.                
+                <param>
+                    x array holding the base                    
+                </param>
+                <param>
+                    xOffset offset of the base in its array                    
+                </param>
+                <param>
+                    y array holding the exponent                    
+                </param>
+                <param>
+                    yOffset offset of the exponent in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      power the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="pow" type="void" line="935">
+                <params>
+                    <param name="x" type="double[]"/>
+                    <param name="xOffset" type="int"/>
+                    <param name="y" type="double[]"/>
+                    <param name="yOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <declaration name="logX" type="double[]" line="936"/>
+                <declaration name="yLogX" type="double[]" line="938"/>
+            </method>
+            <javadoc line="943">
+                Compute n&lt;sup&gt;th&lt;/sup&gt; root of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    n order of the root                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      n<sup>th</sup> root the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="rootN" type="void" line="953">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="n" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="955">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="956">
+                    [x^(1/n), (1/n)x^((1/n)-1), (1-n)/n^2x^((1/n)-2), ... ]                    
+                </comment>
+                <comment line="976">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="957"/>
+                <declaration name="xk" type="double" line="958"/>
+                <scope line="959"/>
+                <scope line="962"/>
+                <scope line="965"/>
+                <declaration name="nReciprocal" type="double" line="969"/>
+                <declaration name="xReciprocal" type="double" line="970"/>
+                <scope line="971"/>
+            </method>
+            <javadoc line="981">
+                Compute exponential of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      exponential the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="exp" type="void" line="990">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="992">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="996">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="993"/>
+            </method>
+            <javadoc line="1001">
+                Compute exp(x) - 1 of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      exponential the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="expm1" type="void" line="1010">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1012">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1017">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1013"/>
+            </method>
+            <javadoc line="1022">
+                Compute natural logarithm of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      logarithm the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="log" type="void" line="1031">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1033">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1045">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1034"/>
+                <scope line="1036">
+                    <declaration name="inv" type="double" line="1037"/>
+                    <declaration name="xk" type="double" line="1038"/>
+                    <scope line="1039"/>
+                </scope>
+            </method>
+            <javadoc line="1050">
+                Computes shifted logarithm of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      shifted logarithm the result array <em>cannot</em> be the input array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="log1p" type="void" line="1058">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1060">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1072">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1061"/>
+                <scope line="1063">
+                    <declaration name="inv" type="double" line="1064"/>
+                    <declaration name="xk" type="double" line="1065"/>
+                    <scope line="1066"/>
+                </scope>
+            </method>
+            <javadoc line="1077">
+                Computes base 10 logarithm of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      base 10 logarithm the result array <em>cannot</em> be the input array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="log10" type="void" line="1085">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1087">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1099">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1088"/>
+                <scope line="1090">
+                    <declaration name="inv" type="double" line="1091"/>
+                    <declaration name="xk" type="double" line="1092"/>
+                    <scope line="1093"/>
+                </scope>
+            </method>
+            <javadoc line="1104">
+                Compute cosine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      cosine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="cos" type="void" line="1113">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1115">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1125">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1116"/>
+                <scope line="1118">
+                    <scope line="1120"/>
+                </scope>
+            </method>
+            <javadoc line="1130">
+                Compute sine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      sine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="sin" type="void" line="1139">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1141">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1151">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1142"/>
+                <scope line="1144">
+                    <scope line="1146"/>
+                </scope>
+            </method>
+            <javadoc line="1156">
+                Compute tangent of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      tangent the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="tan" type="void" line="1165">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1167">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1174">
+                    the nth order derivative of tan has the form:                    
+                </comment>
+                <comment line="1175">
+                    dn(tan(x)/dxn = P_n(tan(x))                    
+                </comment>
+                <comment line="1176">
+                    where P_n(t) is a degree n+1 polynomial with same parity as n+1                    
+                </comment>
+                <comment line="1177">
+                    P_0(t) = t, P_1(t) = 1 + t^2, P_2(t) = 2 t (1 + t^2) ...                    
+                </comment>
+                <comment line="1178">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1179">
+                    P_n(x) = (1+t^2) P_(n-1)&apos;(t)                    
+                </comment>
+                <comment line="1180">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1186">
+                    update and evaluate polynomial P_n(t)                    
+                </comment>
+                <comment line="1206">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1168"/>
+                <declaration name="t" type="double" line="1169"/>
+                <scope line="1172">
+                    <declaration name="p" type="double[]" line="1181"/>
+                    <declaration name="t2" type="double" line="1183"/>
+                    <scope line="1184">
+                        <declaration name="v" type="double" line="1187"/>
+                        <scope line="1189">
+                            <scope line="1191"/>
+                            <scope line="1193"/>
+                        </scope>
+                        <scope line="1197"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1211">
+                Compute arc cosine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      arc cosine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="acos" type="void" line="1220">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1222">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1227">
+                    the nth order derivative of acos has the form:                    
+                </comment>
+                <comment line="1228">
+                    dn(acos(x)/dxn = P_n(x) / [1 - x^2]^((2n-1)/2)                    
+                </comment>
+                <comment line="1229">
+                    where P_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1230">
+                    P_1(x) = -1, P_2(x) = -x, P_3(x) = -2x^2 - 1 ...                    
+                </comment>
+                <comment line="1231">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1232">
+                    P_n(x) = (1-x^2) P_(n-1)&apos;(x) + (2n-3) x P_(n-1)(x)                    
+                </comment>
+                <comment line="1233">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1242">
+                    update and evaluate polynomial P_n(x)                    
+                </comment>
+                <comment line="1263">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1223"/>
+                <declaration name="x" type="double" line="1224"/>
+                <scope line="1226">
+                    <declaration name="p" type="double[]" line="1234"/>
+                    <declaration name="x2" type="double" line="1236"/>
+                    <declaration name="f" type="double" line="1237"/>
+                    <declaration name="coeff" type="double" line="1238"/>
+                    <scope line="1240">
+                        <declaration name="v" type="double" line="1243"/>
+                        <scope line="1245">
+                            <scope line="1247"/>
+                            <scope line="1249"/>
+                        </scope>
+                        <scope line="1253"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1268">
+                Compute arc sine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      arc sine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="asin" type="void" line="1277">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1279">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1284">
+                    the nth order derivative of asin has the form:                    
+                </comment>
+                <comment line="1285">
+                    dn(asin(x)/dxn = P_n(x) / [1 - x^2]^((2n-1)/2)                    
+                </comment>
+                <comment line="1286">
+                    where P_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1287">
+                    P_1(x) = 1, P_2(x) = x, P_3(x) = 2x^2 + 1 ...                    
+                </comment>
+                <comment line="1288">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1289">
+                    P_n(x) = (1-x^2) P_(n-1)&apos;(x) + (2n-3) x P_(n-1)(x)                    
+                </comment>
+                <comment line="1290">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1299">
+                    update and evaluate polynomial P_n(x)                    
+                </comment>
+                <comment line="1320">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1280"/>
+                <declaration name="x" type="double" line="1281"/>
+                <scope line="1283">
+                    <declaration name="p" type="double[]" line="1291"/>
+                    <declaration name="x2" type="double" line="1293"/>
+                    <declaration name="f" type="double" line="1294"/>
+                    <declaration name="coeff" type="double" line="1295"/>
+                    <scope line="1297">
+                        <declaration name="v" type="double" line="1300"/>
+                        <scope line="1302">
+                            <scope line="1304"/>
+                            <scope line="1306"/>
+                        </scope>
+                        <scope line="1310"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1325">
+                Compute arc tangent of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      arc tangent the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="atan" type="void" line="1334">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1336">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1341">
+                    the nth order derivative of atan has the form:                    
+                </comment>
+                <comment line="1342">
+                    dn(atan(x)/dxn = Q_n(x) / (1 + x^2)^n                    
+                </comment>
+                <comment line="1343">
+                    where Q_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1344">
+                    Q_1(x) = 1, Q_2(x) = -2x, Q_3(x) = 6x^2 - 2 ...                    
+                </comment>
+                <comment line="1345">
+                    the general recurrence relation for Q_n is:                    
+                </comment>
+                <comment line="1346">
+                    Q_n(x) = (1+x^2) Q_(n-1)&apos;(x) - 2(n-1) x Q_(n-1)(x)                    
+                </comment>
+                <comment line="1347">
+                    as per polynomial parity, we can store coefficients of both Q_(n-1) and Q_n in the same array                    
+                </comment>
+                <comment line="1356">
+                    update and evaluate polynomial Q_n(x)                    
+                </comment>
+                <comment line="1377">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1337"/>
+                <declaration name="x" type="double" line="1338"/>
+                <scope line="1340">
+                    <declaration name="q" type="double[]" line="1348"/>
+                    <declaration name="x2" type="double" line="1350"/>
+                    <declaration name="f" type="double" line="1351"/>
+                    <declaration name="coeff" type="double" line="1352"/>
+                    <scope line="1354">
+                        <declaration name="v" type="double" line="1357"/>
+                        <scope line="1359">
+                            <scope line="1361"/>
+                            <scope line="1363"/>
+                        </scope>
+                        <scope line="1367"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1382">
+                Compute two arguments arc tangent of a derivative structure.                
+                <param>
+                    y array holding the first operand                    
+                </param>
+                <param>
+                    yOffset offset of the first operand in its array                    
+                </param>
+                <param>
+                    x array holding the second operand                    
+                </param>
+                <param>
+                    xOffset offset of the second operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      two arguments arc tangent the result array <em>cannot</em>
+                      be the input array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="atan2" type="void" line="1394">
+                <params>
+                    <param name="y" type="double[]"/>
+                    <param name="yOffset" type="int"/>
+                    <param name="x" type="double[]"/>
+                    <param name="xOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1396">
+                    compute r = sqrt(x^2+y^2)                    
+                </comment>
+                <comment line="1398">
+                    x^2                    
+                </comment>
+                <comment line="1400">
+                    y^2                    
+                </comment>
+                <comment line="1401">
+                    x^2 + y^2                    
+                </comment>
+                <comment line="1402">
+                    r = sqrt(x^2 + y^2)                    
+                </comment>
+                <comment line="1406">
+                    compute atan2(y, x) = 2 atan(y / (r + x))                    
+                </comment>
+                <comment line="1407">
+                    r + x                    
+                </comment>
+                <comment line="1408">
+                    y /(r + x)                    
+                </comment>
+                <comment line="1409">
+                    atan(y / (r + x))                    
+                </comment>
+                <comment line="1411">
+                    2 * atan(y / (r + x))                    
+                </comment>
+                <comment line="1416">
+                    compute atan2(y, x) = +/- pi - 2 atan(y / (r - x))                    
+                </comment>
+                <comment line="1417">
+                    r - x                    
+                </comment>
+                <comment line="1418">
+                    y /(r - x)                    
+                </comment>
+                <comment line="1419">
+                    atan(y / (r - x))                    
+                </comment>
+                <comment line="1421">
+                    +/-pi - 2 * atan(y / (r - x))                    
+                </comment>
+                <comment line="1423">
+                    +/-pi - 2 * atan(y / (r - x))                    
+                </comment>
+                <comment line="1428">
+                    fix value to take special cases (+0/+0, +0/-0, -0/+0, -0/-0, +/-infinity) correctly                    
+                </comment>
+                <declaration name="tmp1" type="double[]" line="1397"/>
+                <declaration name="tmp2" type="double[]" line="1399"/>
+                <scope line="1404">
+                    <scope line="1410"/>
+                </scope>
+                <scope line="1414">
+                    <scope line="1422"/>
+                </scope>
+            </method>
+            <javadoc line="1433">
+                Compute hyperbolic cosine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      hyperbolic cosine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="cosh" type="void" line="1442">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1444">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1454">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1445"/>
+                <scope line="1447">
+                    <scope line="1449"/>
+                </scope>
+            </method>
+            <javadoc line="1459">
+                Compute hyperbolic sine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      hyperbolic sine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="sinh" type="void" line="1468">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1470">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1480">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1471"/>
+                <scope line="1473">
+                    <scope line="1475"/>
+                </scope>
+            </method>
+            <javadoc line="1485">
+                Compute hyperbolic tangent of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      hyperbolic tangent the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="tanh" type="void" line="1494">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1496">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1503">
+                    the nth order derivative of tanh has the form:                    
+                </comment>
+                <comment line="1504">
+                    dn(tanh(x)/dxn = P_n(tanh(x))                    
+                </comment>
+                <comment line="1505">
+                    where P_n(t) is a degree n+1 polynomial with same parity as n+1                    
+                </comment>
+                <comment line="1506">
+                    P_0(t) = t, P_1(t) = 1 - t^2, P_2(t) = -2 t (1 - t^2) ...                    
+                </comment>
+                <comment line="1507">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1508">
+                    P_n(x) = (1-t^2) P_(n-1)&apos;(t)                    
+                </comment>
+                <comment line="1509">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1515">
+                    update and evaluate polynomial P_n(t)                    
+                </comment>
+                <comment line="1535">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1497"/>
+                <declaration name="t" type="double" line="1498"/>
+                <scope line="1501">
+                    <declaration name="p" type="double[]" line="1510"/>
+                    <declaration name="t2" type="double" line="1512"/>
+                    <scope line="1513">
+                        <declaration name="v" type="double" line="1516"/>
+                        <scope line="1518">
+                            <scope line="1520"/>
+                            <scope line="1522"/>
+                        </scope>
+                        <scope line="1526"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1540">
+                Compute inverse hyperbolic cosine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      inverse hyperbolic cosine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="acosh" type="void" line="1549">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1551">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1556">
+                    the nth order derivative of acosh has the form:                    
+                </comment>
+                <comment line="1557">
+                    dn(acosh(x)/dxn = P_n(x) / [x^2 - 1]^((2n-1)/2)                    
+                </comment>
+                <comment line="1558">
+                    where P_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1559">
+                    P_1(x) = 1, P_2(x) = -x, P_3(x) = 2x^2 + 1 ...                    
+                </comment>
+                <comment line="1560">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1561">
+                    P_n(x) = (x^2-1) P_(n-1)&apos;(x) - (2n-3) x P_(n-1)(x)                    
+                </comment>
+                <comment line="1562">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1571">
+                    update and evaluate polynomial P_n(x)                    
+                </comment>
+                <comment line="1592">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1552"/>
+                <declaration name="x" type="double" line="1553"/>
+                <scope line="1555">
+                    <declaration name="p" type="double[]" line="1563"/>
+                    <declaration name="x2" type="double" line="1565"/>
+                    <declaration name="f" type="double" line="1566"/>
+                    <declaration name="coeff" type="double" line="1567"/>
+                    <scope line="1569">
+                        <declaration name="v" type="double" line="1572"/>
+                        <scope line="1574">
+                            <scope line="1576"/>
+                            <scope line="1578"/>
+                        </scope>
+                        <scope line="1582"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1597">
+                Compute inverse hyperbolic sine of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      inverse hyperbolic sine the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="asinh" type="void" line="1606">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1608">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1613">
+                    the nth order derivative of asinh has the form:                    
+                </comment>
+                <comment line="1614">
+                    dn(asinh(x)/dxn = P_n(x) / [x^2 + 1]^((2n-1)/2)                    
+                </comment>
+                <comment line="1615">
+                    where P_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1616">
+                    P_1(x) = 1, P_2(x) = -x, P_3(x) = 2x^2 - 1 ...                    
+                </comment>
+                <comment line="1617">
+                    the general recurrence relation for P_n is:                    
+                </comment>
+                <comment line="1618">
+                    P_n(x) = (x^2+1) P_(n-1)&apos;(x) - (2n-3) x P_(n-1)(x)                    
+                </comment>
+                <comment line="1619">
+                    as per polynomial parity, we can store coefficients of both P_(n-1) and P_n in the same array                    
+                </comment>
+                <comment line="1628">
+                    update and evaluate polynomial P_n(x)                    
+                </comment>
+                <comment line="1649">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1609"/>
+                <declaration name="x" type="double" line="1610"/>
+                <scope line="1612">
+                    <declaration name="p" type="double[]" line="1620"/>
+                    <declaration name="x2" type="double" line="1622"/>
+                    <declaration name="f" type="double" line="1623"/>
+                    <declaration name="coeff" type="double" line="1624"/>
+                    <scope line="1626">
+                        <declaration name="v" type="double" line="1629"/>
+                        <scope line="1631">
+                            <scope line="1633"/>
+                            <scope line="1635"/>
+                        </scope>
+                        <scope line="1639"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1654">
+                Compute inverse hyperbolic tangent of a derivative structure.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      inverse hyperbolic tangent the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="atanh" type="void" line="1663">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <comment line="1665">
+                    create the function value and derivatives                    
+                </comment>
+                <comment line="1670">
+                    the nth order derivative of atanh has the form:                    
+                </comment>
+                <comment line="1671">
+                    dn(atanh(x)/dxn = Q_n(x) / (1 - x^2)^n                    
+                </comment>
+                <comment line="1672">
+                    where Q_n(x) is a degree n-1 polynomial with same parity as n-1                    
+                </comment>
+                <comment line="1673">
+                    Q_1(x) = 1, Q_2(x) = 2x, Q_3(x) = 6x^2 + 2 ...                    
+                </comment>
+                <comment line="1674">
+                    the general recurrence relation for Q_n is:                    
+                </comment>
+                <comment line="1675">
+                    Q_n(x) = (1-x^2) Q_(n-1)&apos;(x) + 2(n-1) x Q_(n-1)(x)                    
+                </comment>
+                <comment line="1676">
+                    as per polynomial parity, we can store coefficients of both Q_(n-1) and Q_n in the same array                    
+                </comment>
+                <comment line="1685">
+                    update and evaluate polynomial Q_n(x)                    
+                </comment>
+                <comment line="1706">
+                    apply function composition                    
+                </comment>
+                <declaration name="function" type="double[]" line="1666"/>
+                <declaration name="x" type="double" line="1667"/>
+                <scope line="1669">
+                    <declaration name="q" type="double[]" line="1677"/>
+                    <declaration name="x2" type="double" line="1679"/>
+                    <declaration name="f" type="double" line="1680"/>
+                    <declaration name="coeff" type="double" line="1681"/>
+                    <scope line="1683">
+                        <declaration name="v" type="double" line="1686"/>
+                        <scope line="1688">
+                            <scope line="1690"/>
+                            <scope line="1692"/>
+                        </scope>
+                        <scope line="1696"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1711">
+                Compute composition of a derivative structure by a function.                
+                <param>
+                    operand array holding the operand                    
+                </param>
+                <param>
+                    operandOffset offset of the operand in its array                    
+                </param>
+                <param>
+                    f array of value and derivatives of the function at
+                      the current point (i.e. at {@code operand[operandOffset]}).                    
+                </param>
+                <param>
+                    result array where result must be stored (for
+                      composition the result array <em>cannot</em> be the input
+                      array)                    
+                </param>
+                <param>
+                    resultOffset offset of the result in its array                    
+                </param>
+            </javadoc>
+            <method name="compose" type="void" line="1722">
+                <params>
+                    <param name="operand" type="double[]"/>
+                    <param name="operandOffset" type="int"/>
+                    <param name="f" type="double[]"/>
+                    <param name="result" type="double[]"/>
+                    <param name="resultOffset" type="int"/>
+                </params>
+                <scope line="1723">
+                    <declaration name="mappingI" type="int[][]" line="1724"/>
+                    <declaration name="r" type="double" line="1725"/>
+                    <scope line="1726">
+                        <declaration name="mappingIJ" type="int[]" line="1727"/>
+                        <declaration name="product" type="double" line="1728"/>
+                        <scope line="1729"/>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1738">
+                Evaluate Taylor expansion of a derivative structure.                
+                <param>
+                    ds array holding the derivative structure                    
+                </param>
+                <param>
+                    dsOffset offset of the derivative structure in its array                    
+                </param>
+                <param>
+                    delta parameters offsets (&Delta;x, &Delta;y, ...)                    
+                </param>
+                <return>
+                    value of the Taylor expansion at x + &Delta;x, y + &Delta;y, ...                    
+                </return>
+                <throws>
+                    MathArithmeticException if factorials becomes too large                    
+                </throws>
+            </javadoc>
+            <method name="taylor" type="double" line="1746">
+                <params>
+                    <param name="ds" type="double[]"/>
+                    <param name="dsOffset" type="int"/>
+                    <param name="delta" type="double"/>
+                </params>
+                <comment line="1757">
+                    this cannot happen                    
+                </comment>
+                <declaration name="value" type="double" line="1747"/>
+                <scope line="1748">
+                    <declaration name="orders" type="int[]" line="1749"/>
+                    <declaration name="term" type="double" line="1750"/>
+                    <scope line="1751">
+                        <scope line="1752">
+                            <scope line="1753"/>
+                            <scope line="1756"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="1767">
+                Check rules set compatibility.                
+                <param>
+                    compiler other compiler to check against instance                    
+                </param>
+                <exception>
+                    DimensionMismatchException if number of free parameters or orders are inconsistent                    
+                </exception>
+            </javadoc>
+            <method name="checkCompatibility" type="void" line="1772">
+                <params>
+                    <param name="compiler" type="DSCompiler"/>
+                </params>
+                <scope line="1773"/>
+                <scope line="1776"/>
+            </method>
+        </class>
+    </source>

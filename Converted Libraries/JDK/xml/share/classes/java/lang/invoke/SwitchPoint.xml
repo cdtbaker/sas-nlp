@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="java.lang.invoke">
+        <class name="SwitchPoint" line="28">
+            <javadoc line="28">
+                &lt;p&gt;
+                  A {@code SwitchPoint} is an object which can publish state transitions to other threads.
+                  A switch point is initially in the &lt;em&gt;valid&lt;/em&gt; state, but may at any time be
+                  changed to the &lt;em&gt;invalid&lt;/em&gt; state.  Invalidation cannot be reversed.
+                  A switch point can combine a &lt;em&gt;guarded pair&lt;/em&gt; of method handles into a
+                  &lt;em&gt;guarded delegator&lt;/em&gt;.
+                  The guarded delegator is a method handle which delegates to one of the old method handles.
+                  The state of the switch point determines which of the two gets the delegation.
+                  &lt;p&gt;
+                  A single switch point may be used to control any number of method handles.
+                  (Indirectly, therefore, it can control any number of call sites.)
+                  This is done by using the single switch point as a factory for combining
+                  any number of guarded method handle pairs into guarded delegators.
+                  &lt;p&gt;
+                  When a guarded delegator is created from a guarded pair, the pair
+                  is wrapped in a new method handle {@code M},
+                  which is permanently associated with the switch point that created it.
+                  Each pair consists of a target {@code T} and a fallback {@code F}.
+                  While the switch point is valid, invocations to {@code M} are delegated to {@code T}.
+                  After it is invalidated, invocations are delegated to {@code F}.
+                  &lt;p&gt;
+                  Invalidation is global and immediate, as if the switch point contained a
+                  volatile boolean variable consulted on every call to {@code M}.
+                  The invalidation is also permanent, which means the switch point
+                  can change state only once.
+                  The switch point will always delegate to {@code F} after being invalidated.
+                  At that point {@code guardWithTest} may ignore {@code T} and return {@code F}.
+                  &lt;p&gt;
+                  Here is an example of a switch point in action:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  MethodHandle MH_strcat = MethodHandles.lookup()
+                  .findVirtual(String.class, &quot;concat&quot;, MethodType.methodType(String.class, String.class));
+                  SwitchPoint spt = new SwitchPoint();
+                  assert(!spt.hasBeenInvalidated());
+                  // the following steps may be repeated to re-use the same switch point:
+                  MethodHandle worker1 = MH_strcat;
+                  MethodHandle worker2 = MethodHandles.permuteArguments(MH_strcat, MH_strcat.type(), 1, 0);
+                  MethodHandle worker = spt.guardWithTest(worker1, worker2);
+                  assertEquals(&quot;method&quot;, (String) worker.invokeExact(&quot;met&quot;, &quot;hod&quot;));
+                  SwitchPoint.invalidateAll(new SwitchPoint[]{ spt });
+                  assert(spt.hasBeenInvalidated());
+                  assertEquals(&quot;hodmet&quot;, (String) worker.invokeExact(&quot;met&quot;, &quot;hod&quot;));
+                  &lt;/pre&gt;&lt;/blockquote&gt;
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  &lt;em&gt;Discussion:&lt;/em&gt;
+                  Switch points are useful without subclassing.  They may also be subclassed.
+                  This may be useful in order to associate application-specific invalidation logic
+                  with the switch point.
+                  Notice that there is no permanent association between a switch point and
+                  the method handles it produces and consumes.
+                  The garbage collector may collect method handles produced or consumed
+                  by a switch point independently of the lifetime of the switch point itself.
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  &lt;em&gt;Implementation Note:&lt;/em&gt;
+                  A switch point behaves as if implemented on top of {@link MutableCallSite},
+                  approximately as follows:
+                  &lt;blockquote&gt;&lt;pre&gt;
+                  public class SwitchPoint {
+                  private static final MethodHandle
+                  K_true  = MethodHandles.constant(boolean.class, true),
+                  K_false = MethodHandles.constant(boolean.class, false);
+                  private final MutableCallSite mcs;
+                  private final MethodHandle mcsInvoker;
+                  public SwitchPoint() {
+                  this.mcs = new MutableCallSite(K_true);
+                  this.mcsInvoker = mcs.dynamicInvoker();
+                  }
+                  public MethodHandle guardWithTest(
+                  MethodHandle target, MethodHandle fallback) {
+                  // Note:  mcsInvoker is of type ()boolean.
+                  // Target and fallback may take any arguments, but must have the same type.
+                  return MethodHandles.guardWithTest(this.mcsInvoker, target, fallback);
+                  }
+                  public static void invalidateAll(SwitchPoint[] spts) {
+                  List&amp;lt;MutableCallSite&amp;gt; mcss = new ArrayList&amp;lt;&amp;gt;();
+                  for (SwitchPoint spt : spts)  mcss.add(spt.mcs);
+                  for (MutableCallSite mcs : mcss)  mcs.setTarget(K_false);
+                  MutableCallSite.syncAll(mcss.toArray(new MutableCallSite[0]));
+                  }
+                  }
+                  &lt;/pre&gt;&lt;/blockquote&gt;                
+                <author>
+                    Remi Forax, JSR 292 EG                    
+                </author>
+            </javadoc>
+            <declaration name="K_true" type="MethodHandle" line="113"/>
+            <declaration name="mcs" type="MutableCallSite" line="117"/>
+            <declaration name="mcsInvoker" type="MethodHandle" line="118"/>
+            <javadoc line="120">
+                Creates a new switch point.                
+            </javadoc>
+            <method name="SwitchPoint" type="constructor" line="123"/>
+            <javadoc line="128">
+                Determines if this switch point has been invalidated yet.
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  &lt;em&gt;Discussion:&lt;/em&gt;
+                  Because of the one-way nature of invalidation, once a switch point begins
+                  to return true for {@code hasBeenInvalidated},
+                  it will always do so in the future.
+                  On the other hand, a valid switch point visible to other threads may
+                  be invalidated at any moment, due to a request by another thread.
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  Since invalidation is a global and immediate operation,
+                  the execution of this query, on a valid switchpoint,
+                  must be internally sequenced with any
+                  other threads that could cause invalidation.
+                  This query may therefore be expensive.
+                  The recommended way to build a boolean-valued method handle
+                  which queries the invalidation state of a switch point {@code s} is
+                  to call {@code s.guardWithTest} on{@link MethodHandles#constant constant} true and false method handles.                
+                <return>
+                    true if this switch point has been invalidated                    
+                </return>
+            </javadoc>
+            <method name="hasBeenInvalidated" type="boolean" line="151"/>
+            <javadoc line="155">
+                Returns a method handle which always delegates either to the target or the fallback.
+                  The method handle will delegate to the target exactly as long as the switch point is valid.
+                  After that, it will permanently delegate to the fallback.
+                  &lt;p&gt;
+                  The target and fallback must be of exactly the same method type,
+                  and the resulting combined method handle will also be of this type.                
+                <param>
+                    target the method handle selected by the switch point as long as it is valid                    
+                </param>
+                <param>
+                    fallback the method handle selected by the switch point after it is invalidated                    
+                </param>
+                <return>
+                    a combined method handle which always calls either the target or fallback                    
+                </return>
+                <throws>
+                    NullPointerException if either argument is null                    
+                </throws>
+                <throws>
+                    IllegalArgumentException if the two method types do not match                    
+                </throws>
+                <see>
+                    MethodHandles#guardWithTest                    
+                </see>
+            </javadoc>
+            <method name="guardWithTest" type="MethodHandle" line="170">
+                <params>
+                    <param name="target" type="MethodHandle"/>
+                    <param name="fallback" type="MethodHandle"/>
+                </params>
+                <comment line="172">
+                    already invalid                    
+                </comment>
+            </method>
+            <javadoc line="176">
+                Sets all of the given switch points into the invalid state.
+                  After this call executes, no thread will observe any of the
+                  switch points to be in a valid state.
+                  &lt;p&gt;
+                  This operation is likely to be expensive and should be used sparingly.
+                  If possible, it should be buffered for batch processing on sets of switch points.
+                  &lt;p&gt;
+                  If {@code switchPoints} contains a null element,
+                  a {@code NullPointerException} will be raised.
+                  In this case, some non-null elements in the array may be
+                  processed before the method returns abnormally.
+                  Which elements these are (if any) is implementation-dependent.
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  &lt;em&gt;Discussion:&lt;/em&gt;
+                  For performance reasons, {@code invalidateAll} is not a virtual method
+                  on a single switch point, but rather applies to a set of switch points.
+                  Some implementations may incur a large fixed overhead cost
+                  for processing one or more invalidation operations,
+                  but a small incremental cost for each additional invalidation.
+                  In any case, this operation is likely to be costly, since
+                  other threads may have to be somehow interrupted
+                  in order to make them notice the updated switch point state.
+                  However, it may be observed that a single call to invalidate
+                  several switch points has the same formal effect as many calls,
+                  each on just one of the switch points.
+                  &lt;p style=&quot;font-size:smaller;&quot;&gt;
+                  &lt;em&gt;Implementation Note:&lt;/em&gt;
+                  Simple implementations of {@code SwitchPoint} may use
+                  a private {@link MutableCallSite} to publish the state of a switch point.
+                  In such an implementation, the {@code invalidateAll} method can
+                  simply change the call site&apos;s target, and issue one call to{@linkplain MutableCallSite#syncAll synchronize} all the
+                  private call sites.                
+                <param>
+                    switchPoints an array of call sites to be synchronized                    
+                </param>
+                <throws>
+                    NullPointerException if the {@code switchPoints} array reference is null
+                      or the array contains a null                    
+                </throws>
+            </javadoc>
+            <method name="invalidateAll" type="void" line="217">
+                <params>
+                    <param name="switchPoints" type="SwitchPoint[]"/>
+                </params>
+                <comment line="222">
+                    MSC.syncAll will trigger a NPE                    
+                </comment>
+                <declaration name="sites" type="MutableCallSite[]" line="219"/>
+                <scope line="220">
+                    <declaration name="spt" type="SwitchPoint" line="221"/>
+                </scope>
+            </method>
+        </class>
+    </source>

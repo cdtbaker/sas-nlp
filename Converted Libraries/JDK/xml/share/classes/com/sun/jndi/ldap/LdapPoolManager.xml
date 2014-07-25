@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jndi.ldap">
+        <import package="java.io.PrintStream"/>
+        <import package="java.io.OutputStream"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.StringTokenizer"/>
+        <import package="javax.naming.ldap.Control"/>
+        <import package="javax.naming.NamingException"/>
+        <import package="javax.naming.CommunicationException"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="com.sun.jndi.ldap.pool.PoolCleaner"/>
+        <import package="com.sun.jndi.ldap.pool.Pool"/>
+        <class name="LdapPoolManager" line="42">
+            <comment line="67">
+                ---------- System properties for connection pooling                
+            </comment>
+            <comment line="69">
+                Authentication mechanisms of connections that may be pooled                
+            </comment>
+            <comment line="73">
+                Protocol types of connections that may be pooled                
+            </comment>
+            <comment line="77">
+                Maximum number of identical connections per pool                
+            </comment>
+            <comment line="81">
+                Preferred number of identical connections per pool                
+            </comment>
+            <comment line="85">
+                Initial number of identical connections per pool                
+            </comment>
+            <comment line="89">
+                Milliseconds to wait before closing idle connections                
+            </comment>
+            <comment line="93">
+                Properties for DIGEST                
+            </comment>
+            <comment line="97">
+                --------- Constants                
+            </comment>
+            <comment line="101">
+                no timeout                
+            </comment>
+            <comment line="105">
+                indices into pools                
+            </comment>
+            <comment line="109">
+                --------- static fields                
+            </comment>
+            <comment line="111">
+                max num of identical conns/pool                
+            </comment>
+            <comment line="112">
+                preferred num of identical conns/pool                
+            </comment>
+            <comment line="113">
+                initial num of identical conns/pool                
+            </comment>
+            <comment line="118">
+                List of pools used for different auth types                
+            </comment>
+            <comment line="174">
+                Cannot instantiate one of these                
+            </comment>
+            <javadoc line="42">
+                Contains utilities for managing connection pools of LdapClient.
+                  Contains method for
+                  - checking whether attempted connection creation may be pooled
+                  - creating a pooled connection
+                  - closing idle connections.
+                  If a timeout period has been configured, then it will automatically
+                  close and remove idle connections (those that have not been
+                  used for the duration of the timeout period).                
+                <author>
+                    Rosanna Lee                    
+                </author>
+            </javadoc>
+            <declaration name="DEBUG" type="String" line="57"/>
+            <declaration name="debug" type="boolean" line="60"/>
+            <declaration name="trace" type="boolean" line="63"/>
+            <declaration name="POOL_AUTH" type="String" line="69"/>
+            <declaration name="POOL_PROTOCOL" type="String" line="73"/>
+            <declaration name="MAX_POOL_SIZE" type="String" line="77"/>
+            <declaration name="PREF_POOL_SIZE" type="String" line="81"/>
+            <declaration name="INIT_POOL_SIZE" type="String" line="85"/>
+            <declaration name="POOL_TIMEOUT" type="String" line="89"/>
+            <declaration name="SASL_CALLBACK" type="String" line="93"/>
+            <declaration name="DEFAULT_MAX_POOL_SIZE" type="int" line="97"/>
+            <declaration name="DEFAULT_PREF_POOL_SIZE" type="int" line="98"/>
+            <declaration name="DEFAULT_INIT_POOL_SIZE" type="int" line="99"/>
+            <declaration name="DEFAULT_TIMEOUT" type="int" line="100"/>
+            <declaration name="DEFAULT_AUTH_MECHS" type="String" line="101"/>
+            <declaration name="DEFAULT_PROTOCOLS" type="String" line="102"/>
+            <declaration name="NONE" type="int" line="104"/>
+            <declaration name="SIMPLE" type="int" line="105"/>
+            <declaration name="DIGEST" type="int" line="106"/>
+            <declaration name="idleTimeout" type="long" line="109"/>
+            <declaration name="maxSize" type="int" line="110"/>
+            <declaration name="prefSize" type="int" line="111"/>
+            <declaration name="initSize" type="int" line="112"/>
+            <declaration name="supportPlainProtocol" type="boolean" line="114"/>
+            <declaration name="supportSslProtocol" type="boolean" line="115"/>
+            <declaration name="pools" type="Pool[]" line="118"/>
+            <scope line="120">
+                <declaration name="str" type="String" line="130"/>
+                <declaration name="parser" type="StringTokenizer" line="131"/>
+                <declaration name="count" type="int" line="132"/>
+                <declaration name="mech" type="String" line="133"/>
+                <declaration name="p" type="int" line="134"/>
+                <scope line="135">
+                    <scope line="137"/>
+                    <scope line="142"/>
+                </scope>
+                <declaration name="proto" type="String" line="151"/>
+                <scope line="152">
+                    <scope line="154"/>
+                    <scope line="156"/>
+                    <scope line="158"/>
+                </scope>
+                <scope line="163"/>
+                <scope line="168"/>
+            </scope>
+            <method name="LdapPoolManager" type="constructor" line="174"/>
+            <javadoc line="177">
+                Find the index of the pool for the specified mechanism. If not
+                  one of &quot;none&quot;, &quot;simple&quot;, &quot;DIGEST-MD5&quot;, or &quot;GSSAPI&quot;,
+                  return -1.                
+                <param>
+                    mech mechanism type                    
+                </param>
+            </javadoc>
+            <method name="findPool" type="int" line="183">
+                <params>
+                    <param name="mech" type="String"/>
+                </params>
+                <scope line="184"/>
+                <scope line="186"/>
+                <scope line="188"/>
+            </method>
+            <javadoc line="194">
+                Determines whether pooling is allowed given information on how
+                  the connection will be used.
+                  Non-configurable rejections:
+                  - nonstandard socketFactory has been specified: the pool manager
+                  cannot track input or parameters used by the socket factory and
+                  thus has no way of determining whether two connection requests
+                  are equivalent. Maybe in the future it might add a list of allowed
+                  socket factories to be configured
+                  - trace enabled (except when debugging)
+                  - for Digest authentication, if a callback handler has been specified:
+                  the pool manager cannot track input collected by the handler
+                  and thus has no way of determining whether two connection requests are
+                  equivalent. Maybe in the future it might add a list of allowed
+                  callback handlers.
+                  Configurable tests:
+                  - Pooling for the requested protocol (plain or ssl) is supported
+                  - Pooling for the requested authentication mechanism is supported                
+            </javadoc>
+            <method name="isPoolingAllowed" type="boolean" line="218">
+                <params>
+                    <param name="socketFactory" type="String"/>
+                    <param name="trace" type="OutputStream"/>
+                    <param name="authMech" type="String"/>
+                    <param name="protocol" type="String"/>
+                    <param name="env" type="Hashtable"/>
+                </params>
+                <comment line="222">
+                    Requesting plain protocol but it is not supported                    
+                </comment>
+                <comment line="225">
+                    Requesting ssl protocol but it is not supported                    
+                </comment>
+                <comment line="231">
+                    pooling of custom socket factory is possible only if the                    
+                </comment>
+                <comment line="232">
+                    socket factory interface implements java.util.comparator                    
+                </comment>
+                <comment line="255">
+                    Cannot use pooling if authMech is not a supported mechs                    
+                </comment>
+                <comment line="256">
+                    Cannot use pooling if authMech contains multiple mechs                    
+                </comment>
+                <comment line="272">
+                    Provider won&apos;t be able to determine connection identity                    
+                </comment>
+                <comment line="273">
+                    if an alternate callback handler is used                    
+                </comment>
+                <scope line="226"/>
+                <declaration name="COMPARATOR" type="String" line="233"/>
+                <declaration name="foundSockCmp" type="boolean" line="234"/>
+                <scope line="236">
+                    <scope line="237">
+                        <declaration name="socketFactoryClass" type="Class" line="238"/>
+                        <declaration name="interfaces" type="Class[]" line="239"/>
+                        <scope line="240">
+                            <scope line="241"/>
+                        </scope>
+                    </scope>
+                    <scope line="245">
+                        <declaration name="ce" type="CommunicationException" line="246"/>
+                    </scope>
+                    <scope line="251"/>
+                </scope>
+                <declaration name="p" type="int" line="257"/>
+                <scope line="258"/>
+            </method>
+            <javadoc line="279">
+                Obtains a pooled connection that either already exists or is
+                  newly created using the parameters supplied. If it is newly
+                  created, it needs to go through the authentication checks to
+                  determine whether an LDAP bind is necessary.
+                  Caller needs to invoke ldapClient.authenticateCalled() to
+                  determine whether ldapClient.authenticate() needs to be invoked.
+                  Caller has that responsibility because caller needs to deal
+                  with the LDAP bind response, which might involve referrals,
+                  response controls, errors, etc. This method is responsible only
+                  for establishing the connection.                
+                <return>
+                    an LdapClient that is pooled.                    
+                </return>
+            </javadoc>
+            <method name="getLdapClient" type="LdapClient" line="297">
+                <params>
+                    <param name="host" type="String"/>
+                    <param name="port" type="int"/>
+                    <param name="socketFactory" type="String"/>
+                    <param name="connTimeout" type="int"/>
+                    <param name="readTimeout" type="int"/>
+                    <param name="trace" type="OutputStream"/>
+                    <param name="version" type="int"/>
+                    <param name="authMech" type="String"/>
+                    <param name="ctls" type="Control[]"/>
+                    <param name="protocol" type="String"/>
+                    <param name="user" type="String"/>
+                    <param name="passwd" type="Object"/>
+                    <param name="env" type="Hashtable"/>
+                </params>
+                <comment line="299">
+                    Create base identity for LdapClient                    
+                </comment>
+                <comment line="316">
+                    Add identity information used in simple authentication                    
+                </comment>
+                <comment line="322">
+                    Add user/passwd/realm/authzid/qop/strength/maxbuf/mutual/policy*                    
+                </comment>
+                <declaration name="id" type="ClientId" line="300"/>
+                <declaration name="pool" type="Pool" line="301"/>
+                <declaration name="p" type="int" line="303"/>
+                <scope line="304"/>
+            </method>
+            <method name="showStats" type="void" line="333">
+                <params>
+                    <param name="out" type="PrintStream"/>
+                </params>
+                <scope line="346">
+                    <scope line="347"/>
+                </scope>
+            </method>
+            <javadoc line="359">
+                Closes idle connections idle since specified time.                
+                <param>
+                    threshold Close connections idle since this time, as
+                      specified in milliseconds since "the epoch".                    
+                </param>
+                <see>
+                    java.util.Date                    
+                </see>
+            </javadoc>
+            <method name="expire" type="void" line="366">
+                <params>
+                    <param name="threshold" type="long"/>
+                </params>
+                <scope line="367">
+                    <scope line="368"/>
+                </scope>
+            </method>
+            <method name="d" type="void" line="374">
+                <params>
+                    <param name="msg" type="String"/>
+                </params>
+                <scope line="375"/>
+            </method>
+            <method name="d" type="void" line="380">
+                <params>
+                    <param name="msg" type="String"/>
+                    <param name="o" type="String"/>
+                </params>
+                <scope line="381"/>
+            </method>
+            <method name="getProperty" type="String" line="387">
+                <params>
+                    <param name="propName" type="String"/>
+                    <param name="defVal" type="String"/>
+                </params>
+                <anonymous_class line="389">
+                    <method name="run" type="Object" line="390">
+                        <scope line="391"/>
+                        <scope line="393"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="getInteger" type="int" line="401">
+                <params>
+                    <param name="propName" type="String"/>
+                    <param name="defVal" type="int"/>
+                </params>
+                <anonymous_class line="403">
+                    <method name="run" type="Object" line="404">
+                        <scope line="405"/>
+                        <scope line="407"/>
+                    </method>
+                </anonymous_class>
+                <declaration name="val" type="Integer" line="402"/>
+            </method>
+            <method name="getLong" type="long" line="416">
+                <params>
+                    <param name="propName" type="String"/>
+                    <param name="defVal" type="long"/>
+                </params>
+                <anonymous_class line="418">
+                    <method name="run" type="Object" line="419">
+                        <scope line="420"/>
+                        <scope line="422"/>
+                    </method>
+                </anonymous_class>
+                <declaration name="val" type="Long" line="417"/>
+            </method>
+        </class>
+    </source>

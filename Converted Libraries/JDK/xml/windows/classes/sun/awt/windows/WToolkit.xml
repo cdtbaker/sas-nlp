@@ -1,0 +1,803 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="sun.awt.windows">
+        <import package="java.awt"/>
+        <import package="java.awt.im.InputMethodHighlight"/>
+        <import package="java.awt.im.spi.InputMethodDescriptor"/>
+        <import package="java.awt.image"/>
+        <import package="java.awt.peer"/>
+        <import package="java.awt.event.KeyEvent"/>
+        <import package="java.awt.datatransfer.Clipboard"/>
+        <import package="java.awt.TrayIcon"/>
+        <import package="java.beans.PropertyChangeListener"/>
+        <import package="java.security.AccessController"/>
+        <import package="java.security.PrivilegedAction"/>
+        <import package="sun.awt.AWTAutoShutdown"/>
+        <import package="sun.awt.SunToolkit"/>
+        <import package="sun.awt.Win32GraphicsDevice"/>
+        <import package="sun.awt.Win32GraphicsEnvironment"/>
+        <import package="sun.java2d.d3d.D3DRenderQueue"/>
+        <import package="sun.java2d.opengl.OGLRenderQueue"/>
+        <import package="sun.print.PrintJob2D"/>
+        <import package="java.awt.dnd.DragSource"/>
+        <import package="java.awt.dnd.DragGestureListener"/>
+        <import package="java.awt.dnd.DragGestureEvent"/>
+        <import package="java.awt.dnd.DragGestureRecognizer"/>
+        <import package="java.awt.dnd.MouseDragGestureRecognizer"/>
+        <import package="java.awt.dnd.InvalidDnDOperationException"/>
+        <import package="java.awt.dnd.peer.DragSourceContextPeer"/>
+        <import package="java.util.Hashtable"/>
+        <import package="java.util.Locale"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Properties"/>
+        <import package="sun.font.FontManager"/>
+        <import package="sun.font.FontManagerFactory"/>
+        <import package="sun.font.SunFontManager"/>
+        <import package="sun.misc.PerformanceLogger"/>
+        <import package="sun.util.logging.PlatformLogger"/>
+        <class name="WToolkit" line="67">
+            <extends class="SunToolkit"/>
+            <comment line="74">
+                System clipboard.                
+            </comment>
+            <comment line="77">
+                cache of font peers                
+            </comment>
+            <comment line="80">
+                Windows properties                
+            </comment>
+            <comment line="83">
+                Dynamic Layout Resize client code setting                
+            </comment>
+            <comment line="86">
+                Is it allowed to generate events assigned to extra mouse buttons.                
+            </comment>
+            <comment line="87">
+                Set to true by default.                
+            </comment>
+            <comment line="129">
+                Reset the static GraphicsConfiguration to the default.  Called on
+                 startup and when display settings have changed.                
+            </comment>
+            <comment line="144">
+                NOTE: The following embedded() methods are non-public API intended
+                 for internal use only.  The methods are unsupported and could go
+                 away in future releases.
+                
+                 New hook functions for using the AWT as an embedded service. These
+                 functions replace the global C function AwtInit() which was previously
+                 exported by awt.dll.
+                
+                 When used as an embedded service, the AWT does NOT have its own
+                 message pump. It instead relies on the parent application to provide
+                 this functionality. embeddedInit() assumes that the thread on which it
+                 is called is the message pumping thread. Violating this assumption
+                 will lead to undefined behavior.
+                
+                 embeddedInit must be called before the WToolkit() constructor.
+                 embeddedDispose should be called before the applicaton terminates the
+                 Java VM. It is currently unsafe to reinitialize the toolkit again
+                 after it has been disposed. Instead, awt.dll must be reloaded and the
+                 class loader which loaded WToolkit must be finalized before it is
+                 safe to reuse AWT. Dynamic reusability may be added to the toolkit in
+                 the future.                
+            </comment>
+            <comment line="304">
+                eventLoop() begins the native message pump which retrieves and processes
+                 native events.
+                
+                 When shutdown() is called by the ShutdownHook added in run(), a
+                 WM_QUIT message is posted to the Toolkit thread indicating that
+                 eventLoop() should Dispose the toolkit and exit.                
+            </comment>
+            <comment line="318">
+                Instead of blocking the &quot;AWT-Windows&quot; thread uselessly on a semaphore,
+                 use these functions. startSecondaryEventLoop() corresponds to wait()
+                 and quitSecondaryEventLoop() corresponds to notify.
+                
+                 These functions simulate blocking while allowing the AWT to continue
+                 processing native events, eliminating a potential deadlock situation
+                 with SendMessage.
+                
+                 WARNING: startSecondaryEventLoop must only be called from the &quot;AWT-
+                 Windows&quot; thread.                
+            </comment>
+            <comment line="333">
+                Create peer objects.                
+            </comment>
+            <comment line="525">
+                Called from lazilyLoadDynamicLayoutSupportedProperty because
+                 Windows doesn&apos;t always send WM_SETTINGCHANGE when it should.                
+            </comment>
+            <comment line="751">
+                Called from Toolkit native code when a WM_DISPLAYCHANGE occurs.
+                 Have Win32GraphicsEnvironment execute the display change code on the
+                 Event thread.                
+            </comment>
+            <comment line="828">
+                Called from lazilyLoadDesktopProperty because Windows doesn&apos;t
+                 always send WM_SETTINGCHANGE when it should.                
+            </comment>
+            <comment line="853">
+                Called from native toolkit code when WM_SETTINGCHANGE message received
+                 Also called from lazilyLoadDynamicLayoutSupportedProperty because
+                 Windows doesn&apos;t always send WM_SETTINGCHANGE when it should.                
+            </comment>
+            <comment line="894">
+                initialize only static props here and do not try to initialize props which depends on wprops,
+                 this should be done in lazilyLoadDesktopProperty() only.                
+            </comment>
+            <comment line="909">
+                This returns the value for the desktop property &quot;awt.font.desktophints&quot;
+                 This requires that the Windows properties have already been gathered.                
+            </comment>
+            <comment line="1028">
+                On MS Windows one must use the peer.updateWindow() to implement                
+            </comment>
+            <comment line="1029">
+                non-opaque windows.                
+            </comment>
+            <implements interface="Runnable"/>
+            <declaration name="log" type="PlatformLogger" line="69"/>
+            <declaration name="config" type="GraphicsConfiguration" line="71"/>
+            <declaration name="clipboard" type="WClipboard" line="74"/>
+            <declaration name="cacheFontPeer" type="Hashtable" line="77"/>
+            <declaration name="wprops" type="WDesktopProperties" line="80"/>
+            <declaration name="dynamicLayoutSetting" type="boolean" line="83"/>
+            <declaration name="areExtraMouseButtonsEnabled" type="boolean" line="87"/>
+            <method name="initIDs" type="void" line="89"/>
+            <javadoc line="89">
+                Initialize JNI field and method IDs                
+            </javadoc>
+            <declaration name="loaded" type="boolean" line="93"/>
+            <method name="loadLibraries" type="void" line="94">
+                <scope line="95"/>
+            </method>
+            <method name="getWindowsVersion" type="String" line="102"/>
+            <scope line="104">
+                <scope line="109"/>
+                <anonymous_class line="115">
+                    <method name="run" type="Object" line="116">
+                        <declaration name="browserProp" type="String" line="117"/>
+                        <scope line="118"/>
+                    </method>
+                </anonymous_class>
+            </scope>
+            <method name="disableCustomPalette" type="void" line="126"/>
+            <method name="resetGC" type="void" line="132">
+                <scope line="133"/>
+                <scope line="135"/>
+            </method>
+            <method name="embeddedInit" type="boolean" line="167"/>
+            <javadoc line="167">
+                Initializes the Toolkit for use in an embedded environment.                
+                <return>
+                    true if the the initialization succeeded; false if it failed.
+                      The function will fail if the Toolkit was already initialized.                    
+                </return>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="embeddedDispose" type="boolean" line="176"/>
+            <javadoc line="176">
+                Disposes the Toolkit in an embedded environment. This method should
+                  not be called on exit unless the Toolkit was constructed with
+                  embeddedInit.                
+                <return>
+                    true if the disposal succeeded; false if it failed. The
+                      function will fail if the calling thread is not the same
+                      thread which called embeddedInit(), or if the Toolkit was
+                      already disposed.                    
+                </return>
+                <since>
+                    1.3                    
+                </since>
+            </javadoc>
+            <method name="embeddedEventLoopIdleProcessing" type="void" line="189"/>
+            <javadoc line="189">
+                To be called after processing the event queue by users of the above
+                  embeddedInit() function.  The reason for this additional call is that
+                  there are some operations performed during idle time in the AwtToolkit
+                  event loop which should also be performed during idle time in any
+                  other native event loop.  Failure to do so could result in
+                  deadlocks.
+                  This method was added at the last minute of the jdk1.4 release
+                  to work around a specific customer problem.  As with the above
+                  embedded() class, this method is non-public and should not be
+                  used by external applications.
+                  See bug #4526587 for more information.                
+            </javadoc>
+            <declaration name="DATA_TRANSFERER_CLASS_NAME" type="String" line="206"/>
+            <class name="ToolkitDisposer" line="208">
+                <implements interface="sun.java2d.DisposerRecord"/>
+                <method name="dispose" type="void" line="209"/>
+            </class>
+            <declaration name="anchor" type="Object" line="214"/>
+            <method name="postDispose" type="void" line="216"/>
+            <method name="startToolkitThread" type="boolean" line="218"/>
+            <method name="WToolkit" type="constructor" line="220">
+                <comment line="221">
+                    Startup toolkit threads                    
+                </comment>
+                <comment line="228">
+                    Fix for 4701990.
+                     AWTAutoShutdown state must be changed before the toolkit thread
+                     starts to avoid race condition.                    
+                </comment>
+                <comment line="248">
+                    swallow the exception                    
+                </comment>
+                <comment line="253">
+                    Enabled &quot;live resizing&quot; by default.  It remains controlled                    
+                </comment>
+                <comment line="254">
+                    by the native system though.                    
+                </comment>
+                <comment line="258">
+                    set system property if not yet assigned                    
+                </comment>
+                <scope line="222"/>
+                <scope line="235">
+                    <declaration name="toolkitThread" type="Thread" line="236"/>
+                </scope>
+                <scope line="241">
+                    <scope line="242">
+                        <scope line="243"/>
+                    </scope>
+                </scope>
+                <scope line="247"/>
+            </method>
+            <method name="registerShutdownHook" type="void" line="263">
+                <anonymous_class line="264">
+                    <method name="run" type="Object" line="265">
+                        <declaration name="currentTG" type="ThreadGroup" line="266"/>
+                        <declaration name="parentTG" type="ThreadGroup" line="268"/>
+                        <scope line="269"/>
+                        <anonymous_class line="273">
+                            <method name="run" type="void" line="274"/>
+                        </anonymous_class>
+                        <declaration name="shutdown" type="Thread" line="273"/>
+                    </method>
+                </anonymous_class>
+            </method>
+            <method name="run" type="void" line="285">
+                <comment line="299">
+                    will Dispose Toolkit when shutdown hook executes                    
+                </comment>
+                <declaration name="startPump" type="boolean" line="287"/>
+                <scope line="289"/>
+                <scope line="293"/>
+                <scope line="298"/>
+            </method>
+            <method name="init" type="boolean" line="311"/>
+            <declaration name="inited" type="boolean" line="312"/>
+            <method name="eventLoop" type="void" line="314"/>
+            <method name="shutdown" type="void" line="315"/>
+            <method name="startSecondaryEventLoop" type="void" line="329"/>
+            <method name="quitSecondaryEventLoop" type="void" line="330"/>
+            <method name="createButton" type="ButtonPeer" line="336">
+                <params>
+                    <param name="target" type="Button"/>
+                </params>
+                <declaration name="peer" type="ButtonPeer" line="337"/>
+            </method>
+            <method name="createTextField" type="TextFieldPeer" line="342">
+                <params>
+                    <param name="target" type="TextField"/>
+                </params>
+                <declaration name="peer" type="TextFieldPeer" line="343"/>
+            </method>
+            <method name="createLabel" type="LabelPeer" line="348">
+                <params>
+                    <param name="target" type="Label"/>
+                </params>
+                <declaration name="peer" type="LabelPeer" line="349"/>
+            </method>
+            <method name="createList" type="ListPeer" line="354">
+                <params>
+                    <param name="target" type="List"/>
+                </params>
+                <declaration name="peer" type="ListPeer" line="355"/>
+            </method>
+            <method name="createCheckbox" type="CheckboxPeer" line="360">
+                <params>
+                    <param name="target" type="Checkbox"/>
+                </params>
+                <declaration name="peer" type="CheckboxPeer" line="361"/>
+            </method>
+            <method name="createScrollbar" type="ScrollbarPeer" line="366">
+                <params>
+                    <param name="target" type="Scrollbar"/>
+                </params>
+                <declaration name="peer" type="ScrollbarPeer" line="367"/>
+            </method>
+            <method name="createScrollPane" type="ScrollPanePeer" line="372">
+                <params>
+                    <param name="target" type="ScrollPane"/>
+                </params>
+                <declaration name="peer" type="ScrollPanePeer" line="373"/>
+            </method>
+            <method name="createTextArea" type="TextAreaPeer" line="378">
+                <params>
+                    <param name="target" type="TextArea"/>
+                </params>
+                <declaration name="peer" type="TextAreaPeer" line="379"/>
+            </method>
+            <method name="createChoice" type="ChoicePeer" line="384">
+                <params>
+                    <param name="target" type="Choice"/>
+                </params>
+                <declaration name="peer" type="ChoicePeer" line="385"/>
+            </method>
+            <method name="createFrame" type="FramePeer" line="390">
+                <params>
+                    <param name="target" type="Frame"/>
+                </params>
+                <declaration name="peer" type="FramePeer" line="391"/>
+            </method>
+            <method name="createCanvas" type="CanvasPeer" line="396">
+                <params>
+                    <param name="target" type="Canvas"/>
+                </params>
+                <declaration name="peer" type="CanvasPeer" line="397"/>
+            </method>
+            <method name="disableBackgroundErase" type="void" line="402">
+                <params>
+                    <param name="canvas" type="Canvas"/>
+                </params>
+                <declaration name="peer" type="WCanvasPeer" line="403"/>
+                <scope line="404"/>
+            </method>
+            <method name="createPanel" type="PanelPeer" line="410">
+                <params>
+                    <param name="target" type="Panel"/>
+                </params>
+                <declaration name="peer" type="PanelPeer" line="411"/>
+            </method>
+            <method name="createWindow" type="WindowPeer" line="416">
+                <params>
+                    <param name="target" type="Window"/>
+                </params>
+                <declaration name="peer" type="WindowPeer" line="417"/>
+            </method>
+            <method name="createDialog" type="DialogPeer" line="422">
+                <params>
+                    <param name="target" type="Dialog"/>
+                </params>
+                <declaration name="peer" type="DialogPeer" line="423"/>
+            </method>
+            <method name="createFileDialog" type="FileDialogPeer" line="428">
+                <params>
+                    <param name="target" type="FileDialog"/>
+                </params>
+                <declaration name="peer" type="FileDialogPeer" line="429"/>
+            </method>
+            <method name="createMenuBar" type="MenuBarPeer" line="434">
+                <params>
+                    <param name="target" type="MenuBar"/>
+                </params>
+                <declaration name="peer" type="MenuBarPeer" line="435"/>
+            </method>
+            <method name="createMenu" type="MenuPeer" line="440">
+                <params>
+                    <param name="target" type="Menu"/>
+                </params>
+                <declaration name="peer" type="MenuPeer" line="441"/>
+            </method>
+            <method name="createPopupMenu" type="PopupMenuPeer" line="446">
+                <params>
+                    <param name="target" type="PopupMenu"/>
+                </params>
+                <declaration name="peer" type="PopupMenuPeer" line="447"/>
+            </method>
+            <method name="createMenuItem" type="MenuItemPeer" line="452">
+                <params>
+                    <param name="target" type="MenuItem"/>
+                </params>
+                <declaration name="peer" type="MenuItemPeer" line="453"/>
+            </method>
+            <method name="createCheckboxMenuItem" type="CheckboxMenuItemPeer" line="458">
+                <params>
+                    <param name="target" type="CheckboxMenuItem"/>
+                </params>
+                <declaration name="peer" type="CheckboxMenuItemPeer" line="459"/>
+            </method>
+            <method name="createRobot" type="RobotPeer" line="464">
+                <params>
+                    <param name="target" type="Robot"/>
+                    <param name="screen" type="GraphicsDevice"/>
+                </params>
+                <comment line="465">
+                    (target is unused for now)                    
+                </comment>
+                <comment line="466">
+                    Robot&apos;s don&apos;t need to go in the peer map since                    
+                </comment>
+                <comment line="467">
+                    they&apos;re not Component&apos;s                    
+                </comment>
+            </method>
+            <method name="createEmbeddedFrame" type="WEmbeddedFramePeer" line="471">
+                <params>
+                    <param name="target" type="WEmbeddedFrame"/>
+                </params>
+                <declaration name="peer" type="WEmbeddedFramePeer" line="472"/>
+            </method>
+            <method name="createWPrintDialog" type="WPrintDialogPeer" line="477">
+                <params>
+                    <param name="target" type="WPrintDialog"/>
+                </params>
+                <declaration name="peer" type="WPrintDialogPeer" line="478"/>
+            </method>
+            <method name="createWPageDialog" type="WPageDialogPeer" line="483">
+                <params>
+                    <param name="target" type="WPageDialog"/>
+                </params>
+                <declaration name="peer" type="WPageDialogPeer" line="484"/>
+            </method>
+            <method name="createTrayIcon" type="TrayIconPeer" line="489">
+                <params>
+                    <param name="target" type="TrayIcon"/>
+                </params>
+                <declaration name="peer" type="WTrayIconPeer" line="490"/>
+            </method>
+            <method name="createSystemTray" type="SystemTrayPeer" line="495">
+                <params>
+                    <param name="target" type="SystemTray"/>
+                </params>
+            </method>
+            <method name="isTraySupported" type="boolean" line="499"/>
+            <method name="createKeyboardFocusManagerPeer" type="KeyboardFocusManagerPeer" line="505">
+                <params>
+                    <param name="manager" type="KeyboardFocusManager"/>
+                </params>
+            </method>
+            <method name="setDynamicLayoutNative" type="void" line="509"/>
+            <method name="setDynamicLayout" type="void" line="511">
+                <params>
+                    <param name="b" type="boolean"/>
+                </params>
+                <scope line="512"/>
+            </method>
+            <method name="isDynamicLayoutSet" type="boolean" line="520"/>
+            <method name="isDynamicLayoutSupportedNative" type="boolean" line="528"/>
+            <method name="isDynamicLayoutActive" type="boolean" line="530"/>
+            <javadoc line="534">
+                Returns &lt;code&gt;true&lt;/code&gt; if this frame state is supported.                
+            </javadoc>
+            <method name="isFrameStateSupported" type="boolean" line="537">
+                <params>
+                    <param name="state" type="int"/>
+                </params>
+            </method>
+            <method name="makeColorModel" type="ColorModel" line="548"/>
+            <declaration name="screenmodel" type="ColorModel" line="549"/>
+            <method name="getStaticColorModel" type="ColorModel" line="551">
+                <scope line="552"/>
+                <scope line="555"/>
+            </method>
+            <method name="getColorModel" type="ColorModel" line="561"/>
+            <method name="getScreenInsets" type="Insets" line="566">
+                <params>
+                    <param name="gc" type="GraphicsConfiguration"/>
+                </params>
+            </method>
+            <method name="getScreenResolution" type="int" line="570">
+                <declaration name="ge" type="Win32GraphicsEnvironment" line="571"/>
+            </method>
+            <method name="getScreenWidth" type="int" line="575"/>
+            <method name="getScreenHeight" type="int" line="576"/>
+            <method name="getScreenInsets" type="Insets" line="577"/>
+            <method name="getFontMetrics" type="FontMetrics" line="580">
+                <params>
+                    <param name="font" type="Font"/>
+                </params>
+                <comment line="581">
+                    This is an unsupported hack, but left in for a customer.                    
+                </comment>
+                <comment line="582">
+                    Do not remove.                    
+                </comment>
+                <declaration name="fm" type="FontManager" line="583"/>
+                <scope line="585"/>
+            </method>
+            <method name="getFontPeer" type="FontPeer" line="591">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="style" type="int"/>
+                </params>
+                <declaration name="retval" type="FontPeer" line="592"/>
+                <declaration name="lcName" type="String" line="593"/>
+                <scope line="594">
+                    <scope line="596"/>
+                </scope>
+                <scope line="601">
+                    <scope line="602"/>
+                    <scope line="605"/>
+                </scope>
+            </method>
+            <method name="nativeSync" type="void" line="612"/>
+            <method name="sync" type="void" line="614">
+                <comment line="615">
+                    flush the GDI/DD buffers                    
+                </comment>
+                <comment line="617">
+                    now flush the OGL pipeline (this is a no-op if OGL is not enabled)                    
+                </comment>
+                <comment line="619">
+                    now flush the D3D pipeline (this is a no-op if D3D is not enabled)                    
+                </comment>
+            </method>
+            <method name="getPrintJob" type="PrintJob" line="624">
+                <params>
+                    <param name="frame" type="Frame"/>
+                    <param name="doctitle" type="String"/>
+                    <param name="props" type="Properties"/>
+                </params>
+            </method>
+            <method name="getPrintJob" type="PrintJob" line="631">
+                <params>
+                    <param name="frame" type="Frame"/>
+                    <param name="doctitle" type="String"/>
+                    <param name="jobAttributes" type="JobAttributes"/>
+                    <param name="pageAttributes" type="PageAttributes"/>
+                </params>
+                <scope line="632"/>
+                <declaration name="printJob" type="PrintJob2D" line="636"/>
+                <scope line="639"/>
+            </method>
+            <method name="beep" type="void" line="646"/>
+            <method name="getLockingKeyState" type="boolean" line="648">
+                <params>
+                    <param name="key" type="int"/>
+                </params>
+                <scope line="650"/>
+            </method>
+            <method name="getLockingKeyStateNative" type="boolean" line="656"/>
+            <method name="setLockingKeyState" type="void" line="658">
+                <params>
+                    <param name="key" type="int"/>
+                    <param name="on" type="boolean"/>
+                </params>
+                <scope line="660"/>
+            </method>
+            <method name="setLockingKeyStateNative" type="void" line="666"/>
+            <method name="getSystemClipboard" type="Clipboard" line="668">
+                <declaration name="security" type="SecurityManager" line="669"/>
+                <scope line="670"/>
+                <scope line="673">
+                    <scope line="674"/>
+                </scope>
+            </method>
+            <method name="loadSystemColors" type="void" line="681"/>
+            <method name="targetToPeer" type="Object" line="683">
+                <params>
+                    <param name="target" type="Object"/>
+                </params>
+            </method>
+            <method name="targetDisposedPeer" type="void" line="687">
+                <params>
+                    <param name="target" type="Object"/>
+                    <param name="peer" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="691">
+                Returns a new input method adapter descriptor for native input methods.                
+            </javadoc>
+            <method name="getInputMethodAdapterDescriptor" type="InputMethodDescriptor" line="694"/>
+            <javadoc line="698">
+                Returns a style map for the input method highlight.                
+            </javadoc>
+            <method name="mapInputMethodHighlight" type="Map" line="701">
+                <params>
+                    <param name="highlight" type="InputMethodHighlight"/>
+                </params>
+            </method>
+            <javadoc line="705">
+                Returns whether enableInputMethods should be set to true for peered
+                  TextComponent instances on this platform.                
+            </javadoc>
+            <method name="enableInputMethodsForTextComponent" type="boolean" line="709"/>
+            <javadoc line="713">
+                Returns the default keyboard locale of the underlying operating system                
+            </javadoc>
+            <method name="getDefaultKeyboardLocale" type="Locale" line="716">
+                <declaration name="locale" type="Locale" line="717"/>
+                <scope line="719"/>
+                <scope line="721"/>
+            </method>
+            <javadoc line="726">
+                Returns a new custom cursor.                
+            </javadoc>
+            <method name="createCustomCursor" type="Cursor" line="730">
+                <params>
+                    <param name="cursor" type="Image"/>
+                    <param name="hotSpot" type="Point"/>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="734">
+                Returns the supported cursor size (Win32 only has one).                
+            </javadoc>
+            <method name="getBestCursorSize" type="Dimension" line="737">
+                <params>
+                    <param name="preferredWidth" type="int"/>
+                    <param name="preferredHeight" type="int"/>
+                </params>
+            </method>
+            <method name="getMaximumCursorColors" type="int" line="742"/>
+            <method name="paletteChanged" type="void" line="744"/>
+            <method name="displayChanged" type="void" line="755">
+                <anonymous_class line="756">
+                    <method name="run" type="void" line="757"/>
+                </anonymous_class>
+            </method>
+            <javadoc line="765">
+                create the peer for a DragSourceContext                
+            </javadoc>
+            <method name="createDragSourceContextPeer" type="DragSourceContextPeer" line="769">
+                <params>
+                    <param name="dge" type="DragGestureEvent"/>
+                </params>
+            </method>
+            <method name="createDragGestureRecognizer" type="T" line="777">
+                <params>
+                    <param name="abstractRecognizerClass" type="Class<T>"/>
+                    <param name="ds" type="DragSource"/>
+                    <param name="c" type="Component"/>
+                    <param name="srcActions" type="int"/>
+                    <param name="dgl" type="DragGestureListener"/>
+                </params>
+            </method>
+            <declaration name="prefix" type="String" line="784"/>
+            <javadoc line="784">
+                                
+            </javadoc>
+            <declaration name="postfix" type="String" line="789"/>
+            <declaration name="awtPrefix" type="String" line="790"/>
+            <declaration name="dndPrefix" type="String" line="791"/>
+            <method name="lazilyLoadDesktopProperty" type="Object" line="793">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+                <scope line="794">
+                    <declaration name="cursorName" type="String" line="795"/>
+                    <scope line="797"/>
+                    <scope line="799"/>
+                </scope>
+                <scope line="804"/>
+                <scope line="810">
+                    <scope line="811"/>
+                </scope>
+            </method>
+            <method name="lazilyInitWProps" type="void" line="820">
+                <scope line="821"/>
+            </method>
+            <method name="isDynamicLayoutSupported" type="boolean" line="831">
+                <comment line="843">
+                    We missed the WM_SETTINGCHANGE, so we pretend                    
+                </comment>
+                <comment line="844">
+                    we just got one - fire the propertyChange, etc.                    
+                </comment>
+                <declaration name="nativeDynamic" type="boolean" line="832"/>
+                <declaration name="prop" type="Boolean" line="834"/>
+                <scope line="836"/>
+                <scope line="842"/>
+            </method>
+            <method name="windowsSettingChange" type="void" line="857">
+                <anonymous_class line="858">
+                    <method name="run" type="void" line="859"/>
+                </anonymous_class>
+            </method>
+            <method name="updateProperties" type="void" line="865">
+                <comment line="867">
+                    wprops has not been initialized, so we have nothing to update                    
+                </comment>
+                <scope line="866"/>
+                <declaration name="props" type="Map&lt;String,Object&gt;" line="871"/>
+                <scope line="872">
+                    <declaration name="val" type="Object" line="873"/>
+                    <scope line="874"/>
+                </scope>
+            </method>
+            <method name="addPropertyChangeListener" type="void" line="881">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="pcl" type="PropertyChangeListener"/>
+                </params>
+                <comment line="886">
+                    someone is interested in Windows-specific desktop properties                    
+                </comment>
+                <comment line="887">
+                    we should initialize wprops                    
+                </comment>
+                <scope line="885"/>
+            </method>
+            <method name="initializeDesktopProperties" type="void" line="897"/>
+            <method name="getDesktopAAHints" type="RenderingHints" line="912">
+                <scope line="913"/>
+                <scope line="915"/>
+            </method>
+            <method name="isModalityTypeSupported" type="boolean" line="920">
+                <params>
+                    <param name="modalityType" type="Dialog.ModalityType"/>
+                </params>
+            </method>
+            <method name="isModalExclusionTypeSupported" type="boolean" line="928">
+                <params>
+                    <param name="exclusionType" type="Dialog.ModalExclusionType"/>
+                </params>
+            </method>
+            <method name="getWToolkit" type="WToolkit" line="935">
+                <declaration name="toolkit" type="WToolkit" line="936"/>
+            </method>
+            <javadoc line="940">
+                There are two reasons why we don&apos;t use buffer per window when
+                  Vista&apos;s DWM (aka Aero) is enabled:
+                  - since with DWM all windows are already double-buffered, the application
+                  doesn&apos;t get expose events so we don&apos;t get to use our true back-buffer,
+                  wasting memory and performance (this is valid for both d3d and gdi
+                  pipelines)
+                  - in some cases with buffer per window enabled it is possible for the
+                  paint manager to redirect rendering to the screen for some operations
+                  (like copyArea), and since bpw uses its own BufferStrategy the
+                  d3d onscreen rendering support is disabled and rendering goes through
+                  GDI. This doesn&apos;t work well with Vista&apos;s DWM since one
+                  can not perform GDI and D3D operations on the same surface
+                  (see 6630702 for more info)
+                  Note: even though DWM composition state can change during the lifetime
+                  of the application it is a rare event, and it is more often that it
+                  is temporarily disabled (because of some app) than it is getting
+                  permanently enabled so we can live with this approach without the
+                  complexity of dwm state listeners and such. This can be revisited if
+                  proved otherwise.                
+            </javadoc>
+            <method name="useBufferPerWindow" type="boolean" line="963"/>
+            <method name="grab" type="void" line="967">
+                <params>
+                    <param name="w" type="Window"/>
+                </params>
+                <scope line="968"/>
+            </method>
+            <method name="ungrab" type="void" line="973">
+                <params>
+                    <param name="w" type="Window"/>
+                </params>
+                <scope line="974"/>
+            </method>
+            <method name="syncNativeQueue" type="boolean" line="979"/>
+            <method name="isDesktopSupported" type="boolean" line="980"/>
+            <method name="createDesktopPeer" type="DesktopPeer" line="984">
+                <params>
+                    <param name="target" type="Desktop"/>
+                </params>
+            </method>
+            <method name="setExtraMouseButtonsEnabledNative" type="void" line="988"/>
+            <method name="areExtraMouseButtonsEnabled" type="boolean" line="990"/>
+            <method name="getNumberOfButtonsImpl" type="int" line="994"/>
+            <method name="getNumberOfButtons" type="int" line="997">
+                <scope line="998"/>
+            </method>
+            <method name="isWindowOpacitySupported" type="boolean" line="1005">
+                <comment line="1006">
+                    supported in Win2K and later                    
+                </comment>
+            </method>
+            <method name="isWindowShapingSupported" type="boolean" line="1011"/>
+            <method name="isWindowTranslucencySupported" type="boolean" line="1016">
+                <comment line="1017">
+                    supported in Win2K and later                    
+                </comment>
+            </method>
+            <method name="isTranslucencyCapable" type="boolean" line="1022">
+                <params>
+                    <param name="gc" type="GraphicsConfiguration"/>
+                </params>
+                <comment line="1023">
+                    XXX: worth checking if 8-bit? Anyway, it doesn&apos;t hurt.                    
+                </comment>
+            </method>
+            <method name="needUpdateWindow" type="boolean" line="1030"/>
+        </class>
+    </source>
