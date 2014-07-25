@@ -1,0 +1,238 @@
+package sanlp.nlp.core;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
+public class NGramParser {
+
+	private class Word {
+		private List<String> words = new ArrayList<String>();
+		private int type = 1; // 1 is text, 2 is number
+
+		public Word(String word, int type) {
+			this.words.add(word);
+			this.type = type;
+		}
+		
+		public Word(int type) {
+			this.type = type;
+		}
+
+		public void addValue(String value) {
+			this.words.add(value);
+		}
+	}
+
+	private class NGram {
+
+		private HashMap<Integer, Word> ngram = new HashMap<Integer, Word>();
+
+		public NGram() {
+
+		}
+
+		public String toString() {
+			StringBuilder sb = new StringBuilder();
+			for (Entry<Integer, Word> x : ngram.entrySet()) {
+				if (x.getKey() > 0) {
+					sb.append(" ");
+				}
+
+				if (x.getValue().type == 1) {
+					sb.append(x.getValue().words.get(0));
+				} else if (x.getValue().type == 2) {
+					sb.append("[num<");
+					int c = 0;
+					for (String s : x.getValue().words) {
+						if (s != null) {
+							sb.append(s);
+							if (c++ != x.getValue().words.size() - 1)
+								sb.append(",");
+						}
+					}
+					sb.append(">]");
+				}
+			}
+
+			return sb.toString();
+		}
+
+		public void add(Word w) {
+			ngram.put(ngram.size(), w);
+		}
+	}
+
+	private static NGram nGramExists(NGram needle, Map<NGram, Integer> ngrams) {
+		loop1: for (Entry<NGram, Integer> x : ngrams.entrySet()) {
+			int matches = 0;
+			for (Entry<Integer, Word> w : x.getKey().ngram.entrySet()) {
+				if (w.getValue().type == 2
+						&& needle.ngram.get(w.getKey()).type == 2) {
+					matches++;
+				} else if (needle.ngram.get(w.getKey()) == null ||
+						!w.getValue().words.get(0).equals(
+						needle.ngram.get(w.getKey())
+						.words
+						.get(0))) {
+					continue loop1;
+				} else {
+					matches++;
+				}
+			}
+
+			if (needle.ngram.size() == matches)
+				return x.getKey();
+		}
+
+		return null;
+	}
+
+	private int ngramLength = 2;
+	private int ngramCount = 0;
+
+	private Map<NGram, Integer> ngrams = new HashMap<NGram, Integer>();
+
+	public NGramParser(int nGramSize) {
+		this.ngramLength = nGramSize;
+	}
+
+	public void parse(List<String> wl, boolean withSentenceEndsStarts, int skips) {
+		
+			this.addListOfWords(wl, 0, withSentenceEndsStarts, skips);
+	}
+
+	public static boolean isInteger(String s) {
+		try {
+			Integer.parseInt(s);
+		} catch (NumberFormatException e) {
+			return false;
+		}
+		// only got here if we didn't return false
+		return true;
+	}
+
+	public void addListOfWords(List<String> list, int toSkip,
+			boolean withSentenceEndsStarts, int skips) {
+
+			for (int l = 0; l <= skips; l++) {
+				loopK : for (int i = ngramLength - 1; i < list.size(); i++) {
+					
+					if(i - (ngramLength + l - 1) < 0)
+					{
+						continue loopK;
+					}
+					NGram ngram = new NGram();
+
+					for (int j = (ngramLength + l - 1); j + l >= 0 && j >= 0; j--) {
+						 
+						if(i - j >= 0)
+						{
+							
+							String s = list.get(i - j);
+							if (!isInteger(s))
+								ngram.add(new Word(s, 1));
+							else
+								ngram.add(new Word(s, 2));
+						}
+						else
+						{
+							System.out.println("  Invalid");
+							ngram = new NGram();
+						}
+					}
+
+					System.out.println("> Built: " + ngram);
+					
+					if(ngram.ngram.size() == ngramLength)
+					{
+						storeNGram(ngram);
+					}
+					
+					for(int startingword = 1; startingword <= (ngramLength + l - 2); startingword++)
+					{
+						if(l == 1) {
+							System.out.println(startingword);
+							
+							storeNGram(   cloneAndSkipNGram(ngram, startingword)   );
+						}
+						
+						for(int remwords = startingword + 1; remwords <= (ngramLength + l - 2); remwords++)
+						{
+							if(l > 1) {
+								System.out.println(startingword + " and " + remwords);
+								storeNGram(   cloneAndSkipNGram(ngram, startingword, remwords)   );
+							}
+						}
+					}
+				}
+			
+		}
+	}
+	
+	public NGram cloneAndSkipNGram(NGram ngram, Integer...skips)
+	{
+		HashMap<Integer, Word> newNGram = new HashMap<Integer, Word>();
+		
+		int index = 0;
+		
+		for(int i = 0; i < ngram.ngram.size(); i++)
+		{
+			if(!Arrays.asList(skips).contains(index))
+			{
+				Word w = new Word(ngram.ngram.get(index).type);
+				for(String s : ngram.ngram.get(index).words)
+				{
+					w.words.add(s);
+				}
+				newNGram.put(index, w);
+			}
+			
+			index++;
+		}
+		
+		
+		NGram newn = new NGram();
+		newn.ngram = newNGram;
+
+		
+		return newn;
+	}
+	
+	public void storeNGram(NGram ngram) {
+		NGram existingngram = nGramExists(ngram, ngrams);
+		if (existingngram == null) {
+			ngrams.put(ngram, new Integer(0));
+		} else {
+			for (Entry<Integer, Word> x : existingngram.ngram
+					.entrySet()) {
+				if (x.getValue().type == 2) {
+					x.getValue().addValue(
+							ngram.ngram.get(x.getKey()).words
+									.get(0));
+				}
+			}
+
+			ngrams.put(existingngram, ngrams.get(existingngram) + 1);
+		}
+
+		ngramCount++;
+	}
+
+	public int getNgramCount() {
+		return ngramCount;
+	}
+
+	public Map<String, Integer> getNGramMap() {
+		Map<String, Integer> result = new HashMap<String, Integer>();
+
+		for (Entry<NGram, Integer> x : ngrams.entrySet()) {
+			result.put(x.getKey().toString(), x.getValue() + 1);
+		}
+
+		return result;
+	}
+}
