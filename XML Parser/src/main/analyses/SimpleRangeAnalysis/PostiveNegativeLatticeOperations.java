@@ -33,7 +33,7 @@ public class PostiveNegativeLatticeOperations extends
 			return l;
 		else if (l == PositiveNegativeLattice.BOTTOM)
 			return r;
-		else if (l == PositiveNegativeLattice.BOTTOM)
+		else if (r == PositiveNegativeLattice.BOTTOM)
 			return l;
 		else 
 			return PositiveNegativeLattice.NOT_SURE;
