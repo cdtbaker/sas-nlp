@@ -28,216 +28,93 @@
         <import package="javax.management.remote.TargetedNotification"/>
         <import package="com.sun.jmx.remote.util.EnvHelp"/>
         <import package="com.sun.jmx.remote.util.ClassLogger"/>
-        <class name="ArrayNotificationBuffer" line="60">
-            <comment line="62">
-                There is one instance of ArrayNotificationBuffer for every
-                MBeanServer object that has an attached ConnectorServer.  Then, for
-                every ConnectorServer attached to a given MBeanServer, there is an
-                instance of the inner class ShareBuffer.  So for example with two
-                ConnectorServers it looks like this:
-                
-                ConnectorServer1 -&gt; ShareBuffer1 -\
-                }-&gt; ArrayNotificationBuffer
-                ConnectorServer2 -&gt; ShareBuffer2 -              |
-                |
-                v
-                MBeanServer
-                
-                The ArrayNotificationBuffer has a circular buffer of
-                NamedNotification objects.  Each ConnectorServer defines a
-                notification buffer size, and this size is recorded by the
-                corresponding ShareBuffer.  The buffer size of the
-                ArrayNotificationBuffer is the maximum of all of its ShareBuffers.
-                When a ShareBuffer is added or removed, the ArrayNotificationBuffer
-                size is adjusted accordingly.
-                
-                An ArrayNotificationBuffer also has a BufferListener (which is a
-                NotificationListener) registered on every NotificationBroadcaster
-                MBean in the MBeanServer to which it is attached.  The cost of this
-                potentially large set of listeners is the principal motivation for
-                sharing the ArrayNotificationBuffer between ConnectorServers, and
-                also the reason that we are careful to discard the
-                ArrayNotificationBuffer (and its BufferListeners) when there are no
-                longer any ConnectorServers using it.
-                
-                The synchronization of this class is inherently complex.  In an attempt
-                to limit the complexity, we use just two locks:
-                
-                - globalLock controls access to the mapping between an MBeanServer
-                and its ArrayNotificationBuffer and to the set of ShareBuffers for
-                each ArrayNotificationBuffer.
-                
-                - the instance lock of each ArrayNotificationBuffer controls access
-                to the array of notifications, including its size, and to the
-                dispose flag of the ArrayNotificationBuffer.  The waitnotify
-                mechanism is used to indicate changes to the array.
-                
-                If both locks are held at the same time, the globalLock must be
-                taken first.
-                
-                Since adding or removing a BufferListener to an MBean can involve
-                calling user code, we are careful not to hold any locks while it is
-                done.                
-            </comment>
-            <comment line="115">
-                FACTORY STUFF, INCLUDING SHARING                
-            </comment>
-            <comment line="158">
-                Ensure that this buffer is no longer the one that will be returned by
-                 getNotificationBuffer.  This method is idempotent - calling it more
-                 than once has no effect beyond that of calling it once.                
-            </comment>
-            <comment line="244">
-                ARRAYNOTIFICATIONBUFFER IMPLEMENTATION                
-            </comment>
-            <comment line="266">
-                We no longer support calling this method from outside.
-                 The JDK doesn&apos;t contain any such calls and users are not
-                 supposed to be accessing this class.                
-            </comment>
-            <comment line="555">
-                Add our listener to every NotificationBroadcaster MBean
-                 currently in the MBean server and to every
-                 NotificationBroadcaster later created.
-                
-                 It would be really nice if we could just do
-                 mbs.addNotificationListener(new ObjectName(&quot;:&quot;), ...);
-                 Definitely something for the next version of JMX.
-                
-                 There is a nasty race condition that we must handle.  We
-                 first register for MBean-creation notifications so we can add
-                 listeners to new MBeans, then we query the existing MBeans to
-                 add listeners to them.  The problem is that a new MBean could
-                 arrive after we register for creations but before the query has
-                 completed.  Then we could see the MBean both in the query and
-                 in an MBean-creation notification, and we would end up
-                 registering our listener twice.
-                
-                 To solve this problem, we arrange for new MBeans that arrive
-                 while the query is being done to be added to the Set createdDuringQuery
-                 and we do not add a listener immediately.  When the query is done,
-                 we atomically turn off the addition of new names to createdDuringQuery
-                 and add all the names that were there to the result of the query.
-                 Since we are dealing with Sets, the result is the same whether or not
-                 the newly-created MBean was included in the query result.
-                
-                 It is important not to hold any locks during the operation of adding
-                 listeners to MBeans.  An MBean&apos;s addNotificationListener can be
-                 arbitrary user code, and this could deadlock with any locks we hold
-                 (see bug 6239400).  The corollary is that we must not do any operations
-                 in this method or the methods it calls that require locks.                
-            </comment>
-            <comment line="717">
-                This method must not be synchronized.  See the comment on the
-                 createListeners method.
-                
-                 The notification could arrive after our buffer has been destroyed
-                 or even during its destruction.  So we always add our listener
-                 (without synchronization), then we check if the buffer has been
-                 destroyed and if so remove the listener we just added.                
-            </comment>
+        <class name="ArrayNotificationBuffer" line="30">
             <implements interface="NotificationBuffer"/>
-            <javadoc line="60">
+            <javadoc line="30">
                 A circular buffer of notifications received from an MBean server.                
             </javadoc>
-            <declaration name="disposed" type="boolean" line="112"/>
-            <declaration name="globalLock" type="Object" line="116"/>
-            <declaration name="mbsToBuffer" type="HashMap&lt;MBeanServer,ArrayNotificationBuffer&gt;" line="117"/>
-            <declaration name="sharers" type="Collection&lt;ShareBuffer&gt;" line="120"/>
-            <method name="getNotificationBuffer" type="NotificationBuffer" line="123">
+            <declaration name="disposed" type="boolean" line="34"/>
+            <declaration name="globalLock" type="Object" line="35"/>
+            <declaration name="mbsToBuffer" type="HashMap&lt;MBeanServer,ArrayNotificationBuffer&gt;" line="36"/>
+            <declaration name="sharers" type="Collection&lt;ShareBuffer&gt;" line="37"/>
+            <method name="getNotificationBuffer" type="NotificationBuffer" line="38">
                 <params>
                     <param name="mbs" type="MBeanServer"/>
                     <param name="env" type="Map<String,?>"/>
                 </params>
-                <comment line="129">
-                    Find out queue size                    
-                </comment>
-                <comment line="144">
-                    We avoid holding any locks while calling createListeners.
-                     This prevents possible deadlocks involving user code, but
-                     does mean that a second ConnectorServer created and started
-                     in this window will return before all the listeners are ready,
-                     which could lead to surprising behaviour.  The alternative
-                     would be to block the second ConnectorServer until the first
-                     one has finished adding all the listeners, but that would then
-                     be subject to deadlock.                    
-                </comment>
-                <declaration name="queueSize" type="int" line="129"/>
-                <declaration name="buf" type="ArrayNotificationBuffer" line="131"/>
-                <declaration name="create" type="boolean" line="132"/>
-                <declaration name="sharer" type="NotificationBuffer" line="133"/>
-                <scope line="134">
-                    <scope line="137"/>
+                <declaration name="queueSize" type="int" line="40"/>
+                <declaration name="buf" type="ArrayNotificationBuffer" line="41"/>
+                <declaration name="create" type="boolean" line="42"/>
+                <declaration name="sharer" type="NotificationBuffer" line="43"/>
+                <scope line="44">
+                    <scope line="47"/>
                 </scope>
             </method>
-            <method name="removeNotificationBuffer" type="void" line="161">
+            <method name="removeNotificationBuffer" type="void" line="56">
                 <params>
                     <param name="mbs" type="MBeanServer"/>
                 </params>
-                <scope line="162"/>
+                <scope line="57"/>
             </method>
-            <method name="addSharer" type="void" line="167">
+            <method name="addSharer" type="void" line="61">
                 <params>
                     <param name="sharer" type="ShareBuffer"/>
                 </params>
-                <scope line="168">
-                    <scope line="169"/>
+                <scope line="62">
+                    <scope line="63"/>
                 </scope>
             </method>
-            <method name="removeSharer" type="void" line="177">
+            <method name="removeSharer" type="void" line="69">
                 <params>
                     <param name="sharer" type="ShareBuffer"/>
                 </params>
-                <comment line="199">
-                    Notify potential waiting fetchNotification call                    
-                </comment>
-                <declaration name="empty" type="boolean" line="178"/>
-                <scope line="179">
-                    <scope line="184">
-                        <declaration name="max" type="int" line="185"/>
-                        <scope line="186">
-                            <declaration name="bufsize" type="int" line="187"/>
+                <declaration name="empty" type="boolean" line="70"/>
+                <scope line="71">
+                    <scope line="75">
+                        <declaration name="max" type="int" line="76"/>
+                        <scope line="77">
+                            <declaration name="bufsize" type="int" line="78"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="195">
-                    <scope line="196"/>
+                <scope line="84">
+                    <scope line="85"/>
                 </scope>
             </method>
-            <method name="resize" type="void" line="205">
+            <method name="resize" type="void" line="92">
                 <params>
                     <param name="newSize" type="int"/>
                 </params>
             </method>
-            <class name="ShareBuffer" line="214">
+            <class name="ShareBuffer" line="98">
                 <implements interface="NotificationBuffer"/>
-                <method name="ShareBuffer" type="constructor" line="215">
+                <method name="ShareBuffer" type="constructor" line="99">
                     <params>
                         <param name="size" type="int"/>
                     </params>
                 </method>
-                <method name="fetchNotifications" type="NotificationResult" line="225">
+                <method name="fetchNotifications" type="NotificationResult" line="103">
                     <params>
                         <param name="filter" type="NotificationBufferFilter"/>
                         <param name="startSequenceNumber" type="long"/>
                         <param name="timeout" type="long"/>
                         <param name="maxNotifications" type="int"/>
                     </params>
-                    <declaration name="buf" type="NotificationBuffer" line="226"/>
+                    <declaration name="buf" type="NotificationBuffer" line="104"/>
                 </method>
-                <method name="dispose" type="void" line="231"/>
-                <method name="getSize" type="int" line="235"/>
-                <declaration name="size" type="int" line="239"/>
+                <method name="dispose" type="void" line="107"/>
+                <method name="getSize" type="int" line="110"/>
+                <declaration name="size" type="int" line="113"/>
             </class>
-            <method name="ArrayNotificationBuffer" type="constructor" line="245">
+            <method name="ArrayNotificationBuffer" type="constructor" line="115">
                 <params>
                     <param name="mbs" type="MBeanServer"/>
                     <param name="queueSize" type="int"/>
                 </params>
             </method>
-            <method name="isDisposed" type="boolean" line="261"/>
-            <method name="dispose" type="void" line="268"/>
-            <javadoc line="272">
+            <method name="isDisposed" type="boolean" line="125"/>
+            <method name="dispose" type="void" line="128"/>
+            <javadoc line="131">
                 &lt;p&gt;Fetch notifications that match the given listeners.&lt;/p&gt;
                   &lt;p&gt;The operation only considers notifications with a sequence
                   number at least &lt;code&gt;startSequenceNumber&lt;/code&gt;.  It will take
@@ -266,300 +143,235 @@
                       different notifications.                    
                 </param>
             </javadoc>
-            <method name="fetchNotifications" type="NotificationResult" line="304">
+            <method name="fetchNotifications" type="NotificationResult" line="152">
                 <params>
                     <param name="filter" type="NotificationBufferFilter"/>
                     <param name="startSequenceNumber" type="long"/>
                     <param name="timeout" type="long"/>
                     <param name="maxNotifications" type="int"/>
                 </params>
-                <comment line="317">
-                    Check arg validity                    
-                </comment>
-                <comment line="339">
-                    Determine the end time corresponding to the timeout value.
-                    Caller may legitimately supply Long.MAX_VALUE to indicate no
-                    timeout.  In that case the addition will overflow and produce
-                    a negative end time.  Set end time to Long.MAX_VALUE in that                    
-                </comment>
-                <comment line="345">
-                    overflow                    
-                </comment>
-                <comment line="351">
-                    We set earliestSeq the first time through the loop.  If we
-                    set it here, notifications could be dropped before we
-                    started examining them, so earliestSeq might not correspond                    
-                </comment>
-                <comment line="360">
-                    On exit from this loop, notifs, earliestSeq, and nextSeq must                    
-                </comment>
-                <comment line="367">
-                    Get the next available notification regardless of filters,                    
-                </comment>
-                <comment line="371">
-                    First time through.  The current earliestSequenceNumber                    
-                </comment>
-                <comment line="387">
-                    If many notifications have been dropped since the
-                    last time through, nextSeq could now be earlier
-                    than the current earliest.  If so, notifications
-                    may have been lost and we return now so the caller                    
-                </comment>
-                <comment line="408">
-                    nextSeq is the largest sequence number.  If we
-                    already got notifications, return them now.
-                    Otherwise wait for some to arrive, with                    
-                </comment>
-                <comment line="423">
-                                        
-                </comment>
-                <comment line="442">
-                    We have a candidate notification.  See if it matches
-                    our filters.  We do this outside the synchronized block
-                    so we don&apos;t hold up everyone accessing the buffer
-                    (including notification senders) while we evaluate                    
-                </comment>
-                <comment line="456">
-                    We only check the max size now, so that our
-                    returned nextSeq is as large as possible.  This
-                    prevents the caller from thinking it missed
-                    interesting notifications when in fact we knew they                    
-                </comment>
-                <comment line="474">
-                    end while                    
-                </comment>
-                <comment line="476">
-                                        
-                </comment>
-                <scope line="308">
-                    <scope line="309"/>
+                <scope line="154">
+                    <scope line="155"/>
                 </scope>
-                <scope line="319"/>
-                <scope line="324"/>
-                <scope line="331">
-                    <declaration name="msg" type="String" line="332"/>
+                <scope line="159"/>
+                <scope line="163"/>
+                <scope line="166">
+                    <declaration name="msg" type="String" line="167"/>
                 </scope>
-                <declaration name="endTime" type="long" line="343"/>
-                <declaration name="earliestSeq" type="long" line="354"/>
-                <declaration name="nextSeq" type="long" line="355"/>
-                <declaration name="notifs" type="List&lt;TargetedNotification&gt;" line="356"/>
-                <scope line="361">
-                    <declaration name="candidate" type="NamedNotification" line="364"/>
-                    <scope line="368">
-                        <scope line="372">
-                            <scope line="374"/>
-                            <scope line="378"/>
+                <declaration name="endTime" type="long" line="171"/>
+                <declaration name="earliestSeq" type="long" line="174"/>
+                <declaration name="nextSeq" type="long" line="175"/>
+                <declaration name="notifs" type="List&lt;TargetedNotification&gt;" line="176"/>
+                <scope line="177">
+                    <declaration name="candidate" type="NamedNotification" line="179"/>
+                    <scope line="180">
+                        <scope line="181">
+                            <scope line="183"/>
+                            <scope line="186"/>
                         </scope>
-                        <scope line="391"/>
-                        <scope line="398">
-                            <scope line="400"/>
+                        <scope line="192"/>
+                        <scope line="196">
+                            <scope line="198"/>
                         </scope>
-                        <scope line="406">
-                            <scope line="411"/>
-                            <declaration name="toWait" type="long" line="416"/>
-                            <scope line="417"/>
-                            <scope line="423"/>
+                        <scope line="203">
+                            <scope line="204"/>
+                            <declaration name="toWait" type="long" line="208"/>
+                            <scope line="209"/>
+                            <scope line="213"/>
                         </scope>
                     </scope>
-                    <declaration name="name" type="ObjectName" line="446"/>
-                    <declaration name="notif" type="Notification" line="447"/>
-                    <declaration name="matchedNotifs" type="List&lt;TargetedNotification&gt;" line="448"/>
-                    <scope line="454">
-                        <scope line="460"/>
+                    <declaration name="name" type="ObjectName" line="222"/>
+                    <declaration name="notif" type="Notification" line="223"/>
+                    <declaration name="matchedNotifs" type="List&lt;TargetedNotification&gt;" line="224"/>
+                    <scope line="227">
+                        <scope line="228"/>
                     </scope>
                 </scope>
-                <declaration name="nnotifs" type="int" line="476"/>
-                <declaration name="resultNotifs" type="TargetedNotification[]" line="477"/>
-                <declaration name="nr" type="NotificationResult" line="480"/>
+                <declaration name="nnotifs" type="int" line="238"/>
+                <declaration name="resultNotifs" type="TargetedNotification[]" line="239"/>
+                <declaration name="nr" type="NotificationResult" line="241"/>
             </method>
-            <method name="earliestSequenceNumber" type="long" line="489"/>
-            <method name="nextSequenceNumber" type="long" line="493"/>
-            <method name="addNotification" type="void" line="497">
+            <method name="earliestSequenceNumber" type="long" line="246"/>
+            <method name="nextSequenceNumber" type="long" line="249"/>
+            <method name="addNotification" type="void" line="252">
                 <params>
                     <param name="notif" type="NamedNotification"/>
                 </params>
-                <scope line="501">
-                    <scope line="503"/>
+                <scope line="254">
+                    <scope line="256"/>
                 </scope>
             </method>
-            <method name="dropNotification" type="void" line="516"/>
-            <method name="notificationAt" type="NamedNotification" line="521">
+            <method name="dropNotification" type="void" line="265"/>
+            <method name="notificationAt" type="NamedNotification" line="269">
                 <params>
                     <param name="seqNo" type="long"/>
                 </params>
-                <declaration name="index" type="long" line="522"/>
-                <scope line="523">
-                    <declaration name="msg" type="String" line="524"/>
+                <declaration name="index" type="long" line="270"/>
+                <scope line="271">
+                    <declaration name="msg" type="String" line="272"/>
                 </scope>
             </method>
-            <class name="NamedNotification" line="532">
-                <method name="NamedNotification" type="constructor" line="533">
+            <class name="NamedNotification" line="278">
+                <method name="NamedNotification" type="constructor" line="279">
                     <params>
                         <param name="sender" type="ObjectName"/>
                         <param name="notif" type="Notification"/>
                     </params>
                 </method>
-                <method name="getObjectName" type="ObjectName" line="538"/>
-                <method name="getNotification" type="Notification" line="542"/>
-                <method name="toString" type="String" line="546"/>
-                <declaration name="sender" type="ObjectName" line="550"/>
-                <declaration name="notification" type="Notification" line="551"/>
+                <method name="getObjectName" type="ObjectName" line="283"/>
+                <method name="getNotification" type="Notification" line="286"/>
+                <method name="toString" type="String" line="289"/>
+                <declaration name="sender" type="ObjectName" line="292"/>
+                <declaration name="notification" type="Notification" line="293"/>
             </class>
-            <method name="createListeners" type="void" line="586">
-                <comment line="607">
-                    Spec doesn&apos;t say whether Set returned by QueryNames can be modified                    
-                </comment>
-                <scope line="589"/>
-                <scope line="593"/>
-                <scope line="597">
-                    <declaration name="msg" type="String" line="598"/>
-                    <declaration name="re" type="RuntimeException" line="599"/>
+            <method name="createListeners" type="void" line="295">
+                <scope line="297"/>
+                <scope line="300"/>
+                <scope line="304">
+                    <declaration name="msg" type="String" line="305"/>
+                    <declaration name="re" type="RuntimeException" line="306"/>
                 </scope>
-                <declaration name="names" type="Set&lt;ObjectName&gt;" line="608"/>
-                <scope line="611"/>
+                <declaration name="names" type="Set&lt;ObjectName&gt;" line="312"/>
+                <scope line="314"/>
             </method>
-            <method name="addBufferListener" type="void" line="621">
+            <method name="addBufferListener" type="void" line="321">
                 <params>
                     <param name="name" type="ObjectName"/>
                 </params>
-                <comment line="630">
-                    This can happen if the MBean was unregistered just
-                    after the query.  Or user NotificationBroadcaster might                    
-                </comment>
-                <scope line="625"/>
-                <scope line="627"/>
+                <scope line="324"/>
+                <scope line="327"/>
             </method>
-            <method name="removeBufferListener" type="void" line="635">
+            <method name="removeBufferListener" type="void" line="331">
                 <params>
                     <param name="name" type="ObjectName"/>
                 </params>
-                <scope line="639"/>
-                <scope line="641"/>
+                <scope line="334"/>
+                <scope line="337"/>
             </method>
-            <method name="addNotificationListener" type="void" line="650">
+            <method name="addNotificationListener" type="void" line="341">
                 <params>
                     <param name="name" type="ObjectName"/>
                     <param name="listener" type="NotificationListener"/>
                     <param name="filter" type="NotificationFilter"/>
                     <param name="handback" type="Object"/>
                 </params>
-                <scope line="651">
-                    <anonymous_class line="652">
-                        <method name="run" type="Void" line="653"/>
+                <scope line="342">
+                    <anonymous_class line="343">
+                        <method name="run" type="Void" line="344"/>
                     </anonymous_class>
                 </scope>
-                <scope line="661"/>
+                <scope line="351"/>
             </method>
-            <method name="removeNotificationListener" type="void" line="668">
+            <method name="removeNotificationListener" type="void" line="355">
                 <params>
                     <param name="name" type="ObjectName"/>
                     <param name="listener" type="NotificationListener"/>
                 </params>
-                <scope line="669">
-                    <anonymous_class line="670">
-                        <method name="run" type="Void" line="671"/>
+                <scope line="356">
+                    <anonymous_class line="357">
+                        <method name="run" type="Void" line="358"/>
                     </anonymous_class>
                 </scope>
-                <scope line="676"/>
+                <scope line="365"/>
             </method>
-            <method name="queryNames" type="Set<ObjectName>" line="682">
+            <method name="queryNames" type="Set<ObjectName>" line="369">
                 <params>
                     <param name="name" type="ObjectName"/>
                     <param name="query" type="QueryExp"/>
                 </params>
-                <anonymous_class line="684">
-                    <method name="run" type="Set<ObjectName>" line="685"/>
+                <anonymous_class line="370">
+                    <method name="run" type="Set<ObjectName>" line="371"/>
                 </anonymous_class>
-                <declaration name="act" type="PrivilegedAction&lt;Set&lt;ObjectName&gt;&gt;" line="683"/>
-                <scope line="689"/>
-                <scope line="691"/>
+                <declaration name="act" type="PrivilegedAction&lt;Set&lt;ObjectName&gt;&gt;" line="370"/>
+                <scope line="376"/>
+                <scope line="379"/>
             </method>
-            <method name="isInstanceOf" type="boolean" line="700">
+            <method name="isInstanceOf" type="boolean" line="385">
                 <params>
                     <param name="mbs" type="MBeanServer"/>
                     <param name="name" type="ObjectName"/>
                     <param name="className" type="String"/>
                 </params>
-                <anonymous_class line="702">
-                    <method name="run" type="Boolean" line="703"/>
+                <anonymous_class line="386">
+                    <method name="run" type="Boolean" line="387"/>
                 </anonymous_class>
-                <declaration name="act" type="PrivilegedExceptionAction&lt;Boolean&gt;" line="701"/>
-                <scope line="707"/>
-                <scope line="709"/>
+                <declaration name="act" type="PrivilegedExceptionAction&lt;Boolean&gt;" line="386"/>
+                <scope line="392"/>
+                <scope line="395"/>
             </method>
-            <method name="createdNotification" type="void" line="724">
+            <method name="createdNotification" type="void" line="401">
                 <params>
                     <param name="n" type="MBeanServerNotification"/>
                 </params>
-                <declaration name="shouldEqual" type="String" line="725"/>
-                <scope line="727"/>
-                <declaration name="name" type="ObjectName" line="732"/>
-                <scope line="736">
-                    <scope line="737"/>
+                <declaration name="shouldEqual" type="String" line="402"/>
+                <scope line="403"/>
+                <declaration name="name" type="ObjectName" line="407"/>
+                <scope line="409">
+                    <scope line="410"/>
                 </scope>
-                <scope line="743"/>
+                <scope line="415"/>
             </method>
-            <class name="BufferListener" line="750">
+            <class name="BufferListener" line="420">
                 <implements interface="NotificationListener"/>
-                <method name="handleNotification" type="void" line="751">
+                <method name="handleNotification" type="void" line="421">
                     <params>
                         <param name="notif" type="Notification"/>
                         <param name="handback" type="Object"/>
                     </params>
-                    <scope line="752"/>
-                    <declaration name="name" type="ObjectName" line="756"/>
+                    <scope line="422"/>
+                    <declaration name="name" type="ObjectName" line="425"/>
                 </method>
             </class>
-            <declaration name="bufferListener" type="NotificationListener" line="761"/>
-            <class name="BroadcasterQuery" line="763">
+            <declaration name="bufferListener" type="NotificationListener" line="429"/>
+            <class name="BroadcasterQuery" line="430">
                 <extends class="QueryEval"/>
                 <implements interface="QueryExp"/>
-                <declaration name="serialVersionUID" type="long" line="765"/>
-                <method name="apply" type="boolean" line="767">
+                <declaration name="serialVersionUID" type="long" line="431"/>
+                <method name="apply" type="boolean" line="432">
                     <params>
                         <param name="name" type="ObjectName"/>
                     </params>
-                    <declaration name="mbs" type="MBeanServer" line="768"/>
+                    <declaration name="mbs" type="MBeanServer" line="433"/>
                 </method>
             </class>
-            <declaration name="broadcasterQuery" type="QueryExp" line="772"/>
-            <declaration name="creationFilter" type="NotificationFilter" line="774"/>
-            <scope line="775">
-                <declaration name="nfs" type="NotificationFilterSupport" line="776"/>
+            <declaration name="broadcasterQuery" type="QueryExp" line="437"/>
+            <declaration name="creationFilter" type="NotificationFilter" line="438"/>
+            <scope line="439">
+                <declaration name="nfs" type="NotificationFilterSupport" line="440"/>
             </scope>
-            <declaration name="creationListener" type="NotificationListener" line="781"/>
-            <anonymous_class line="782">
-                <method name="handleNotification" type="void" line="784">
+            <declaration name="creationListener" type="NotificationListener" line="444"/>
+            <anonymous_class line="444">
+                <method name="handleNotification" type="void" line="445">
                     <params>
                         <param name="notif" type="Notification"/>
                         <param name="handback" type="Object"/>
                     </params>
                 </method>
             </anonymous_class>
-            <method name="destroyListeners" type="void" line="790">
-                <scope line="793"/>
-                <scope line="796"/>
-                <declaration name="names" type="Set&lt;ObjectName&gt;" line="799"/>
-                <scope line="800"/>
+            <method name="destroyListeners" type="void" line="451">
+                <scope line="454"/>
+                <scope line="457"/>
+                <declaration name="names" type="Set&lt;ObjectName&gt;" line="460"/>
+                <scope line="461"/>
             </method>
-            <method name="checkNoLocks" type="void" line="809"/>
-            <javadoc line="814">
+            <method name="checkNoLocks" type="void" line="467"/>
+            <javadoc line="470">
                 Iterate until we extract the real exception
                   from a stack of PrivilegedActionExceptions.                
             </javadoc>
-            <method name="extractException" type="Exception" line="818">
+            <method name="extractException" type="Exception" line="474">
                 <params>
                     <param name="e" type="Exception"/>
                 </params>
-                <scope line="819"/>
+                <scope line="475"/>
             </method>
-            <declaration name="logger" type="ClassLogger" line="825"/>
-            <declaration name="mBeanServer" type="MBeanServer" line="829"/>
-            <declaration name="queue" type="ArrayQueue&lt;NamedNotification&gt;" line="830"/>
-            <declaration name="queueSize" type="int" line="831"/>
-            <declaration name="earliestSequenceNumber" type="long" line="832"/>
-            <declaration name="nextSequenceNumber" type="long" line="833"/>
-            <declaration name="createdDuringQuery" type="Set&lt;ObjectName&gt;" line="834"/>
-            <declaration name="broadcasterClass" type="String" line="836"/>
+            <declaration name="logger" type="ClassLogger" line="480"/>
+            <declaration name="mBeanServer" type="MBeanServer" line="481"/>
+            <declaration name="queue" type="ArrayQueue&lt;NamedNotification&gt;" line="482"/>
+            <declaration name="queueSize" type="int" line="483"/>
+            <declaration name="earliestSequenceNumber" type="long" line="484"/>
+            <declaration name="nextSequenceNumber" type="long" line="485"/>
+            <declaration name="createdDuringQuery" type="Set&lt;ObjectName&gt;" line="486"/>
+            <declaration name="broadcasterClass" type="String" line="487"/>
         </class>
     </source>

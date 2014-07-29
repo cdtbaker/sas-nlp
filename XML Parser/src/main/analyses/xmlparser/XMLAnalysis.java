@@ -28,7 +28,7 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 	public void beforeAllMethods(ITypeRoot rootNode,
 			CompilationUnit compilationUnit) {
 
-		/*// to file 
+		// to file
 		String path = "";
 		try {
 
@@ -38,7 +38,8 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			path = rootNode.getPath().toString().replaceAll("/src", "");
 			path = path.substring(1, path.indexOf(".java"));
 			path = path.replaceFirst("/", "/xml/");
-			path = "Converted Libraries/" + path;
+			path = "C:/Users/Danny/Converted Libraries/" + path;
+			
 			File dir = new File(path.substring(0, path.lastIndexOf('/')));
 
 			if (!dir.exists()) {
@@ -70,27 +71,32 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			bw.close();
 		} catch (IOException e) { // TODO Auto-generated catch block
 			e.printStackTrace();
-		}*/
+		}
 
 		// to console
 
 		/*
 		 * JMLElement r = null; try { r =
 		 * main.commentextraction.com.jml.builder.XMLFromSource.createXML(
-		 * compilationUnit, rootNode.getSource(), true,true); } catch
+		 * compilationUnit, rootNode.getSource(), true, true); } catch
 		 * (JavaModelException e) { e.printStackTrace(); }
 		 * main.commentextraction.com.jml.output.XMLOutputter o = new
 		 * main.commentextraction.com.jml.output.XMLOutputter( r);
 		 * System.out.println(o.getString());
-		 * 
-		 * /*PositiveNegitiveFlowAnalysis analysis = new
+		 */
+
+		/*
+		 * PositiveNegitiveFlowAnalysis analysis = new
 		 * PositiveNegitiveFlowAnalysis(); analysis.runAnalysis(getReporter(),
 		 * getInput(), rootNode, compilationUnit);
 		 */
 
-		PositiveNegativeFlowAnalysis analysis = new PositiveNegativeFlowAnalysis();
-		analysis.runAnalysis(getReporter(), getInput(), rootNode, compilationUnit);
-		
+		/*
+		 * PositiveNegativeFlowAnalysis analysis = new
+		 * PositiveNegativeFlowAnalysis(); analysis.runAnalysis(getReporter(),
+		 * getInput(), rootNode, compilationUnit);
+		 */
+
 	}
 
 	@Override

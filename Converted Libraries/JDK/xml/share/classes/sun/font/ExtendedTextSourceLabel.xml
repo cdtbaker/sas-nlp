@@ -13,260 +13,121 @@
         <import package="java.awt.geom.Point2D"/>
         <import package="java.awt.geom.Rectangle2D"/>
         <import package="java.util.Map"/>
-        <class name="ExtendedTextSourceLabel" line="49">
+        <class name="ExtendedTextSourceLabel" line="15">
             <extends class="ExtendedTextLabel"/>
-            <comment line="54">
-                {jbr} I made this class package-private to keep the
-                 Decoration.Label API package-private.                
-            </comment>
-            <comment line="57">
-                                
-            </comment>
-            <comment line="63">
-                caches                
-            </comment>
-            <comment line="117">
-                TextLabel API                
-            </comment>
-            <comment line="332">
-                ExtendedTextLabel API                
-            </comment>
-            <comment line="398">
-                public int hitTestChar(float x, float y) {
-                 !!! return index of char hit, for swing
-                 result is negative for trailing-edge hits
-                 no italics so no problem at margins.
-                 for now, ignore y since we assume horizontal text
-                
-                 find non-combining char origin to right of x
-                float[] charinfo = getCharinfo();
-                
-                int n = 0;
-                int e = source.getLength();
-                while (n &lt; e &amp;&amp; charinfo[n + advx] != 0 &amp;&amp; charinfo[n + posx] &gt; x) {
-                n += numvals;
-                }
-                float rightx = n &lt; e ? charinfo[n+posx] : charinfo[e - numvals + posx] + charinfo[e - numvals + advx];
-                
-                 find non-combining char to left of that char
-                n -= numvals;
-                while (n &gt;= 0 &amp;&amp; charinfo[n+advx] == 0) {
-                n -= numvals;
-                }
-                float leftx = n &gt;= 0 ? charinfo[n+posx] : 0;
-                float lefta = n &gt;= 0 ? charinfo[n+advx] : 0;
-                
-                n = numvals;
-                
-                boolean left = true;
-                if (x &lt; leftx + lefta  2f) {
-                 left of prev char
-                } else if (x &lt; (leftx + lefta + rightx)  2f) {
-                 right of prev char
-                left = false;
-                } else {
-                 left of follow char
-                n += 1;
-                }
-                
-                if ((source.getLayoutFlags() &amp; 0x1) != 0) {
-                n = getNumCharacters() - 1 - n;
-                left = !left;
-                }
-                
-                return left ? n : -n;
-                }                
-            </comment>
-            <comment line="515">
-                This takes the glyph info record obtained from the glyph vector and converts it into a similar record
-                 adjusted to represent character data instead.  For economy we don&apos;t use glyph info records in this processing.
-                
-                 Here are some constraints:
-                 - there can be more glyphs than characters (glyph insertion, perhaps based on normalization, has taken place)
-                 - there can not be fewer glyphs than characters (0xffff glyphs are inserted for characters ligaturized away)
-                 - each glyph maps to a single character, when multiple glyphs exist for a character they all map to it, but
-                   no two characters map to the same glyph
-                 - multiple glyphs mapping to the same character need not be in sequence (thai, tamil have split characters)
-                 - glyphs may be arbitrarily reordered (Indic reorders glyphs)
-                 - all glyphs share the same bidi level
-                 - all glyphs share the same horizontal (or vertical) baseline
-                 - combining marks visually follow their base character in the glyph array-- i.e. in an rtl gv they are
-                   to the left of their base character-- and have zero advance.
-                
-                 The output maps this to character positions, and therefore caret positions, via the following assumptions:
-                 - zero-advance glyphs do not contribute to the advance of their character (i.e. position is ignored), conversely
-                   if a glyph is to contribute to the advance of its character it must have a non-zero (float) advance
-                 - no carets can appear between a zero width character and its preceeding character, where &apos;preceeding&apos; is
-                   defined logically.
-                 - no carets can appear within a split character
-                 - no carets can appear within a local reordering (i.e. Indic reordering, or non-adjacent split characters)
-                 - all characters lie on the same baseline, and it is either horizontal or vertical
-                 - the charinfo is in uniform ltr or rtl order (visual order), since local reorderings and split characters are removed
-                
-                 The algorithm works in the following way:
-                 1) we scan the glyphs ltr or rtl based on the bidi run direction
-                 2) we can work in place, since we always consume a glyph for each char we write
-                    a) if the line is ltr, we start writing at position 0 until we finish, there may be leftver space
-                    b) if the line is rtl and 1-1, we start writing at position numCharsglyphs - 1 until we finish at 0
-                    c) otherwise if we don&apos;t finish at 0, we have to copy the data down
-                 3) we consume clusters in the following way:
-                    a) the first element is always consumed
-                    b) subsequent elements are consumed if:
-                       i) their advance is zero
-                       ii) their character index &lt;= the character index of any character seen in this cluster
-                       iii) the minimum character index seen in this cluster isn&apos;t adjacent to the previous cluster
-                    c) character data is written as follows for horizontal lines (xy and wh are exchanged on vertical lines)
-                       i) the x position is the position of the leftmost glyph whose advance is not zero
-                       ii)the y position is the baseline
-                       iii) the x advance is the distance to the maximum x + adv of all glyphs whose advance is not zero
-                       iv) the y advance is the baseline
-                       v) vis x,y,w,h tightly encloses the vis x,y,w,h of all the glyphs with nonzero w and h
-                 4) we can make some simple optimizations if we know some things:
-                    a) if the mapping is 1-1, unidirectional, and there are no zero-adv glyphs, we just return the glyphinfo
-                    b) if the mapping is 1-1, unidirectional, we just adjust the remaining glyphs to originate at rightleft of the base
-                    c) if the mapping is 1-1, we compute the base position and advance as we go, then go back to adjust the remaining glyphs
-                    d) otherwise we keep separate track of the write position as we do (c) since no glyph in the cluster may be in the
-                    position we are writing.
-                    e) most clusters are simply the single base glyph in the same position as its character, so we try to avoid
-                    copying its data unnecessarily.
-                 5) the glyph vector ought to provide access to these &apos;global&apos; attributes to enable these optimizations.  A single
-                    int with flags set is probably ok, we could also provide accessors for each attribute.  This doesn&apos;t map to
-                    the GlyphMetrics flags very well, so I won&apos;t attempt to keep them similar.  It might be useful to add those
-                    in addition to these.
-                    int FLAG_HAS_ZERO_ADVANCE_GLYPHS = 1;  set if there are zero-advance glyphs
-                    int FLAG_HAS_NONUNIFORM_ORDER = 2;  set if some glyphs are rearranged out of character visual order
-                    int FLAG_HAS_SPLIT_CHARACTERS = 4;  set if multiple glyphs per character
-                    int getDescriptionFlags();  return an int containing the above flags
-                    boolean hasZeroAdvanceGlyphs();
-                    boolean hasNonuniformOrder();
-                    boolean hasSplitCharacters();
-                    The optimized cases in (4) correspond to values 0, 1, 3, and 7 returned by getDescriptionFlags().                
-            </comment>
-            <comment line="885">
-                public static ExtendedTextLabel create(TextSource source) {
-                  return new ExtendedTextSourceLabel(source);
-                }                
-            </comment>
             <implements interface="Decoration.Label"/>
-            <javadoc line="49">
+            <javadoc line="15">
                 Default implementation of ExtendedTextLabel.                
             </javadoc>
-            <declaration name="source" type="TextSource" line="59"/>
-            <declaration name="decorator" type="Decoration" line="60"/>
-            <declaration name="font" type="Font" line="63"/>
-            <declaration name="baseTX" type="AffineTransform" line="64"/>
-            <declaration name="cm" type="CoreMetrics" line="65"/>
-            <declaration name="lb" type="Rectangle2D" line="67"/>
-            <declaration name="ab" type="Rectangle2D" line="68"/>
-            <declaration name="vb" type="Rectangle2D" line="69"/>
-            <declaration name="ib" type="Rectangle2D" line="70"/>
-            <declaration name="gv" type="StandardGlyphVector" line="71"/>
-            <declaration name="charinfo" type="float[]" line="72"/>
-            <javadoc line="74">
+            <declaration name="source" type="TextSource" line="19"/>
+            <declaration name="decorator" type="Decoration" line="20"/>
+            <declaration name="font" type="Font" line="21"/>
+            <declaration name="baseTX" type="AffineTransform" line="22"/>
+            <declaration name="cm" type="CoreMetrics" line="23"/>
+            <declaration name="lb" type="Rectangle2D" line="24"/>
+            <declaration name="ab" type="Rectangle2D" line="25"/>
+            <declaration name="vb" type="Rectangle2D" line="26"/>
+            <declaration name="ib" type="Rectangle2D" line="27"/>
+            <declaration name="gv" type="StandardGlyphVector" line="28"/>
+            <declaration name="charinfo" type="float[]" line="29"/>
+            <javadoc line="30">
                 Create from a TextSource.                
             </javadoc>
-            <method name="ExtendedTextSourceLabel" type="constructor" line="77">
+            <method name="ExtendedTextSourceLabel" type="constructor" line="33">
                 <params>
                     <param name="source" type="TextSource"/>
                     <param name="decorator" type="Decoration"/>
                 </params>
             </method>
-            <javadoc line="83">
+            <javadoc line="38">
                 Create from a TextSource, optionally using cached data from oldLabel starting at the offset.
                   If present oldLabel must have been created from a run of text that includes the text used in
                   the new label.  Start in source corresponds to logical character offset in oldLabel.                
             </javadoc>
-            <method name="ExtendedTextSourceLabel" type="constructor" line="88">
+            <method name="ExtendedTextSourceLabel" type="constructor" line="43">
                 <params>
                     <param name="source" type="TextSource"/>
                     <param name="oldLabel" type="ExtendedTextSourceLabel"/>
                     <param name="offset" type="int"/>
                 </params>
-                <comment line="90">
-                    currently no optimization.                    
-                </comment>
             </method>
-            <method name="finishInit" type="void" line="95">
-                <declaration name="atts" type="Map&lt;TextAttribute,?&gt;" line="98"/>
-                <scope line="100"/>
-                <scope line="102">
-                    <declaration name="charTX" type="AffineTransform" line="103"/>
-                    <scope line="104"/>
-                    <declaration name="lm" type="LineMetrics" line="109"/>
+            <method name="finishInit" type="void" line="48">
+                <declaration name="atts" type="Map&lt;TextAttribute,?&gt;" line="50"/>
+                <scope line="52"/>
+                <scope line="55">
+                    <declaration name="charTX" type="AffineTransform" line="56"/>
+                    <scope line="57"/>
+                    <declaration name="lm" type="LineMetrics" line="61"/>
                 </scope>
             </method>
-            <method name="getLogicalBounds" type="Rectangle2D" line="118"/>
-            <method name="getLogicalBounds" type="Rectangle2D" line="122">
+            <method name="getLogicalBounds" type="Rectangle2D" line="65"/>
+            <method name="getLogicalBounds" type="Rectangle2D" line="68">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
-                <scope line="123"/>
+                <scope line="69"/>
             </method>
-            <method name="getAdvance" type="float" line="132">
-                <scope line="133"/>
+            <method name="getAdvance" type="float" line="74">
+                <scope line="75"/>
             </method>
-            <method name="getVisualBounds" type="Rectangle2D" line="139">
+            <method name="getVisualBounds" type="Rectangle2D" line="80">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
-                <scope line="140"/>
+                <scope line="81"/>
             </method>
-            <method name="getAlignBounds" type="Rectangle2D" line="149">
+            <method name="getAlignBounds" type="Rectangle2D" line="86">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
-                <scope line="150"/>
+                <scope line="87"/>
             </method>
-            <method name="getItalicBounds" type="Rectangle2D" line="160">
+            <method name="getItalicBounds" type="Rectangle2D" line="92">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
-                <scope line="161"/>
+                <scope line="93"/>
             </method>
-            <method name="getPixelBounds" type="Rectangle" line="171">
+            <method name="getPixelBounds" type="Rectangle" line="98">
                 <params>
                     <param name="frc" type="FontRenderContext"/>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
             </method>
-            <method name="isSimple" type="boolean" line="175"/>
-            <method name="getBaselineTransform" type="AffineTransform" line="180">
-                <comment line="182">
-                    passing internal object, caller must not modify!                    
-                </comment>
-            </method>
-            <method name="handleGetOutline" type="Shape" line="184">
+            <method name="isSimple" type="boolean" line="101"/>
+            <method name="getBaselineTransform" type="AffineTransform" line="104"/>
+            <method name="handleGetOutline" type="Shape" line="107">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
             </method>
-            <method name="getOutline" type="Shape" line="188">
+            <method name="getOutline" type="Shape" line="110">
                 <params>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
             </method>
-            <method name="handleDraw" type="void" line="192">
+            <method name="handleDraw" type="void" line="113">
                 <params>
                     <param name="g" type="Graphics2D"/>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
             </method>
-            <method name="draw" type="void" line="196">
+            <method name="draw" type="void" line="116">
                 <params>
                     <param name="g" type="Graphics2D"/>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
             </method>
-            <javadoc line="200">
+            <javadoc line="119">
                 The logical bounds extends from the origin of the glyphvector to the
                   position at which a following glyphvector&apos;s origin should be placed.
                   We always assume glyph vectors are rendered from left to right, so
@@ -290,9 +151,9 @@
                   being the leftmost character.  However we can again rely on the leftmost
                   character origin and the rightmost character + advance.                
             </javadoc>
-            <method name="createLogicalBounds" type="Rectangle2D" line="224"/>
-            <method name="handleGetVisualBounds" type="Rectangle2D" line="228"/>
-            <javadoc line="232">
+            <method name="createLogicalBounds" type="Rectangle2D" line="143"/>
+            <method name="handleGetVisualBounds" type="Rectangle2D" line="146"/>
+            <javadoc line="149">
                 Like createLogicalBounds except ignore leading and logically trailing white space.
                   this assumes logically trailing whitespace is also visually trailing.
                   Whitespace is anything that has a zero visual width, regardless of its advance.
@@ -302,517 +163,287 @@
                   of the character to its left.  So we no longer need to skip chars with zero
                   advance, as their bounds (right and left) are already correct.                
             </javadoc>
-            <method name="createAlignBounds" type="Rectangle2D" line="242">
-                <comment line="269">
-                    boolean lineIsLTR = source.lineIsLTR();
-                    int rn = info.length - numvals;
-                    while (rn &gt; 0 &amp;&amp; ((info[rn+advx] == 0) || (lineIsLTR &amp;&amp; info[rn+visw] == 0))) {
-                    rn -= numvals;
-                    }
-                    
-                    if (rn &gt;= 0) {
-                    int ln = 0;
-                    while (ln &lt; rn &amp;&amp; ((info[ln+advx] == 0) || (!lineIsLTR &amp;&amp; info[ln+visw] == 0))) {
-                    ln += numvals;
-                    }
-                    
-                    al = Math.max(0f, info[ln+posx]);
-                    aw = info[rn+posx] + info[rn+advx] - al;
-                    }                    
-                </comment>
-                <declaration name="info" type="float[]" line="243"/>
-                <declaration name="al" type="float" line="245"/>
-                <declaration name="at" type="float" line="246"/>
-                <declaration name="aw" type="float" line="247"/>
-                <declaration name="ah" type="float" line="248"/>
-                <declaration name="lineIsLTR" type="boolean" line="250"/>
-                <declaration name="rn" type="int" line="251"/>
-                <scope line="252">
-                    <scope line="253"/>
+            <method name="createAlignBounds" type="Rectangle2D" line="159">
+                <declaration name="info" type="float[]" line="160"/>
+                <declaration name="al" type="float" line="161"/>
+                <declaration name="at" type="float" line="162"/>
+                <declaration name="aw" type="float" line="163"/>
+                <declaration name="ah" type="float" line="164"/>
+                <declaration name="lineIsLTR" type="boolean" line="165"/>
+                <declaration name="rn" type="int" line="166"/>
+                <scope line="167">
+                    <scope line="168"/>
                 </scope>
-                <scope line="258">
-                    <declaration name="ln" type="int" line="259"/>
-                    <scope line="260"/>
+                <scope line="172">
+                    <declaration name="ln" type="int" line="173"/>
+                    <scope line="174"/>
                 </scope>
             </method>
-            <method name="createItalicBounds" type="Rectangle2D" line="289">
-                <declaration name="ia" type="float" line="290"/>
-                <declaration name="lb" type="Rectangle2D" line="292"/>
-                <declaration name="l" type="float" line="293"/>
-                <declaration name="t" type="float" line="294"/>
-                <declaration name="r" type="float" line="295"/>
-                <declaration name="b" type="float" line="296"/>
-                <scope line="297">
-                    <scope line="298"/>
-                    <scope line="301"/>
+            <method name="createItalicBounds" type="Rectangle2D" line="182">
+                <declaration name="ia" type="float" line="183"/>
+                <declaration name="lb" type="Rectangle2D" line="184"/>
+                <declaration name="l" type="float" line="185"/>
+                <declaration name="t" type="float" line="186"/>
+                <declaration name="r" type="float" line="187"/>
+                <declaration name="b" type="float" line="188"/>
+                <scope line="189">
+                    <scope line="190"/>
+                    <scope line="194"/>
                 </scope>
             </method>
-            <method name="getGV" type="StandardGlyphVector" line="309">
-                <scope line="310"/>
+            <method name="getGV" type="StandardGlyphVector" line="201">
+                <scope line="202"/>
             </method>
-            <method name="createGV" type="StandardGlyphVector" line="317">
-                <comment line="325">
-                    !!! no custom layout engines                    
-                </comment>
-                <comment line="326">
-                    ??? use textsource                    
-                </comment>
-                <declaration name="frc" type="FontRenderContext" line="318"/>
-                <declaration name="flags" type="int" line="319"/>
-                <declaration name="context" type="char[]" line="320"/>
-                <declaration name="start" type="int" line="321"/>
-                <declaration name="length" type="int" line="322"/>
-                <declaration name="gl" type="GlyphLayout" line="324"/>
+            <method name="createGV" type="StandardGlyphVector" line="207">
+                <declaration name="frc" type="FontRenderContext" line="208"/>
+                <declaration name="flags" type="int" line="209"/>
+                <declaration name="context" type="char[]" line="210"/>
+                <declaration name="start" type="int" line="211"/>
+                <declaration name="length" type="int" line="212"/>
+                <declaration name="gl" type="GlyphLayout" line="213"/>
             </method>
-            <declaration name="posx" type="int" line="333"/>
-            <declaration name="numvals" type="int" line="341"/>
-            <method name="getNumCharacters" type="int" line="343"/>
-            <method name="getCoreMetrics" type="CoreMetrics" line="347"/>
-            <method name="getCharX" type="float" line="351">
+            <declaration name="posx" type="int" line="218"/>
+            <declaration name="numvals" type="int" line="219"/>
+            <method name="getNumCharacters" type="int" line="220"/>
+            <method name="getCoreMetrics" type="CoreMetrics" line="223"/>
+            <method name="getCharX" type="float" line="226">
                 <params>
                     <param name="index" type="int"/>
                 </params>
             </method>
-            <method name="getCharY" type="float" line="356">
+            <method name="getCharY" type="float" line="230">
                 <params>
                     <param name="index" type="int"/>
                 </params>
             </method>
-            <method name="getCharAdvance" type="float" line="361">
+            <method name="getCharAdvance" type="float" line="234">
                 <params>
                     <param name="index" type="int"/>
                 </params>
             </method>
-            <method name="handleGetCharVisualBounds" type="Rectangle2D" line="366">
+            <method name="handleGetCharVisualBounds" type="Rectangle2D" line="238">
                 <params>
                     <param name="index" type="int"/>
                 </params>
-                <declaration name="charinfo" type="float[]" line="368"/>
+                <declaration name="charinfo" type="float[]" line="240"/>
             </method>
-            <method name="getCharVisualBounds" type="Rectangle2D" line="377">
+            <method name="getCharVisualBounds" type="Rectangle2D" line="244">
                 <params>
                     <param name="index" type="int"/>
                     <param name="x" type="float"/>
                     <param name="y" type="float"/>
                 </params>
-                <declaration name="bounds" type="Rectangle2D" line="379"/>
-                <scope line="380"/>
+                <declaration name="bounds" type="Rectangle2D" line="245"/>
+                <scope line="246"/>
             </method>
-            <method name="validate" type="void" line="389">
+            <method name="validate" type="void" line="251">
                 <params>
                     <param name="index" type="int"/>
                 </params>
-                <scope line="390"/>
-                <scope line="392"/>
+                <scope line="252"/>
+                <scope line="255"/>
             </method>
-            <method name="logicalToVisual" type="int" line="444">
+            <method name="logicalToVisual" type="int" line="259">
                 <params>
                     <param name="logicalIndex" type="int"/>
                 </params>
             </method>
-            <method name="visualToLogical" type="int" line="449">
+            <method name="visualToLogical" type="int" line="263">
                 <params>
                     <param name="visualIndex" type="int"/>
                 </params>
             </method>
-            <method name="getLineBreakIndex" type="int" line="454">
+            <method name="getLineBreakIndex" type="int" line="267">
                 <params>
                     <param name="start" type="int"/>
                     <param name="width" type="float"/>
                 </params>
-                <declaration name="charinfo" type="float[]" line="455"/>
-                <declaration name="length" type="int" line="456"/>
-                <scope line="458">
-                    <declaration name="adv" type="float" line="459"/>
+                <declaration name="charinfo" type="float[]" line="268"/>
+                <declaration name="length" type="int" line="269"/>
+                <scope line="271">
+                    <declaration name="adv" type="float" line="272"/>
                 </scope>
             </method>
-            <method name="getAdvanceBetween" type="float" line="466">
+            <method name="getAdvanceBetween" type="float" line="277">
                 <params>
                     <param name="start" type="int"/>
                     <param name="limit" type="int"/>
                 </params>
-                <declaration name="a" type="float" line="467"/>
-                <declaration name="charinfo" type="float[]" line="469"/>
-                <scope line="471"/>
+                <declaration name="a" type="float" line="278"/>
+                <declaration name="charinfo" type="float[]" line="279"/>
+                <scope line="281"/>
             </method>
-            <method name="caretAtOffsetIsValid" type="boolean" line="478">
+            <method name="caretAtOffsetIsValid" type="boolean" line="286">
                 <params>
                     <param name="offset" type="int"/>
                 </params>
-                <comment line="480">
-                    REMIND: improve this implementation                    
-                </comment>
-                <comment line="482">
-                    Ligature formation can either be done in logical order,
-                     with the ligature glyph logically preceding the null
-                     chars;  or in visual order, with the ligature glyph to
-                     the left of the null chars.  This method&apos;s implementation
-                     must reflect which strategy is used.                    
-                </comment>
-                <comment line="492">
-                    hack                    
-                </comment>
-                <comment line="497">
-                    If ligatures are always to the left, do this stuff:
-                    if (!(source.getLayoutFlags() &amp; 0x1) == 0) {
-                        v += 1;
-                        if (v == source.getLength()) {
-                            return true;
-                        }
-                    }                    
-                </comment>
-                <scope line="487"/>
-                <declaration name="c" type="char" line="490"/>
-                <scope line="491"/>
-                <declaration name="v" type="int" line="494"/>
+                <scope line="287"/>
+                <declaration name="c" type="char" line="290"/>
+                <scope line="291"/>
+                <declaration name="v" type="int" line="294"/>
             </method>
-            <method name="getCharinfo" type="float[]" line="507">
-                <scope line="508"/>
+            <method name="getCharinfo" type="float[]" line="297">
+                <scope line="298"/>
             </method>
-            <method name="createCharinfo" type="float[]" line="579">
-                <comment line="590">
-                    if ((gv.getDescriptionFlags() &amp; 0x7) == 0) {
-                    return glyphinfo;
-                    }                    
-                </comment>
-                <comment line="610">
-                    smallest index seen this cluster                    
-                </comment>
-                <comment line="611">
-                    largest index seen this cluster                    
-                </comment>
-                <comment line="612">
-                    expected smallest index for this cluster                    
-                </comment>
-                <comment line="613">
-                    character position                    
-                </comment>
-                <comment line="614">
-                    character index (logical)                    
-                </comment>
-                <comment line="615">
-                    glyph position                    
-                </comment>
-                <comment line="616">
-                    glyph index (visual)                    
-                </comment>
-                <comment line="617">
-                    limit of gx, when we reach this we&apos;re done                    
-                </comment>
-                <comment line="618">
-                    delta for incrementing positions                    
-                </comment>
-                <comment line="619">
-                    delta for incrementing indices                    
-                </comment>
-                <comment line="625">
-                    still logical                    
-                </comment>
-                <comment line="627">
-                    still logical                    
-                </comment>
-                <comment line="635">
-                    to support vertical, use &apos;ixxxx&apos; indices and swap horiz and vertical components
-                    if (source.isVertical()) {
-                    iposx = posy;
-                    iposy = posx;
-                    iadvx = advy;
-                    iadvy = advx;
-                    ivisx = visy;
-                    ivisy = visx;
-                    ivish = visw;
-                    ivisw = vish;
-                    } else {
-                     use standard values
-                    }                    
-                </comment>
-                <comment line="651">
-                    use intermediates to reduce array access when we need to                    
-                </comment>
-                <comment line="655">
-                    record if we have to copy data even when no cluster                    
-                </comment>
-                <comment line="659">
-                    start of new cluster                    
-                </comment>
-                <comment line="666">
-                    advance to next glyph                    
-                </comment>
-                <comment line="670">
-                    while (gx != gxlimit &amp;&amp; (glyphinfo[gp + advx] == 0 ||
-                    minIndex != nextMin || indices[gx] &lt;= maxIndex)) {                    
-                </comment>
-                <comment line="679">
-                    initialize base data first time through, using base glyph                    
-                </comment>
-                <comment line="693">
-                    have an extra glyph in this cluster                    
-                </comment>
-                <comment line="696">
-                    adjust advance only if new glyph has non-zero advance                    
-                </comment>
-                <comment line="704">
-                    adjust visible bounds only if new glyph has non-empty bounds                    
-                </comment>
-                <comment line="715">
-                    adjust min, max index                    
-                </comment>
-                <comment line="719">
-                    get ready to examine next glyph                    
-                </comment>
-                <comment line="723">
-                    done with cluster, gx and gp are set for next glyph                    
-                </comment>
-                <comment line="731">
-                    do common character adjustments                    
-                </comment>
-                <comment line="736">
-                    save adjustments to the base character                    
-                </comment>
-                <comment line="744">
-                    compare number of chars read with number of glyphs read.
-                     if more glyphs than chars, set mustCopy to true, as we&apos;ll always have
-                     to copy the data from here on out.                    
-                </comment>
-                <comment line="751">
-                    Fix the characters that follow the base character.
-                     New values are all the same.  Note we fix the number of characters
-                     we saw, not the number of glyphs we saw.                    
-                </comment>
-                <comment line="756">
-                    if rtl, characters to left of base, else to right.  reuse cposr.                    
-                </comment>
-                <comment line="759">
-                    reuse, convert to deltas.                    
-                </comment>
-                <comment line="784">
-                    no longer using this copy                    
-                </comment>
-                <comment line="787">
-                    out of synch, so we have to copy all the time now                    
-                </comment>
-                <comment line="797">
-                    else glyphinfo is already at the correct character position, and is unchanged, so just leave it                    
-                </comment>
-                <comment line="799">
-                    reset for new cluster                    
-                </comment>
-                <comment line="805">
-                    data written to wrong end of array, need to shift down                    
-                </comment>
-                <comment line="807">
-                    undo last increment, get start of valid character data in array                    
-                </comment>
-                <declaration name="gv" type="StandardGlyphVector" line="580"/>
-                <declaration name="glyphinfo" type="float[]" line="581"/>
-                <scope line="582"/>
-                <scope line="585"/>
-                <declaration name="numGlyphs" type="int" line="595"/>
-                <declaration name="indices" type="int[]" line="596"/>
-                <declaration name="DEBUG" type="boolean" line="598"/>
-                <scope line="599">
-                    <scope line="601"/>
+            <method name="createCharinfo" type="float[]" line="303">
+                <declaration name="gv" type="StandardGlyphVector" line="304"/>
+                <declaration name="glyphinfo" type="float[]" line="305"/>
+                <scope line="306"/>
+                <scope line="309"/>
+                <declaration name="numGlyphs" type="int" line="312"/>
+                <declaration name="indices" type="int[]" line="313"/>
+                <declaration name="DEBUG" type="boolean" line="314"/>
+                <scope line="315">
+                    <scope line="317"/>
                 </scope>
-                <declaration name="minIndex" type="int" line="609"/>
-                <declaration name="maxIndex" type="int" line="610"/>
-                <declaration name="nextMin" type="int" line="611"/>
-                <declaration name="cp" type="int" line="612"/>
-                <declaration name="cx" type="int" line="613"/>
-                <declaration name="gp" type="int" line="614"/>
-                <declaration name="gx" type="int" line="615"/>
-                <declaration name="gxlimit" type="int" line="616"/>
-                <declaration name="pdelta" type="int" line="617"/>
-                <declaration name="xdelta" type="int" line="618"/>
-                <declaration name="ltr" type="boolean" line="620"/>
-                <scope line="621"/>
-                <declaration name="cposl" type="float" line="651"/>
-                <declaration name="baseline" type="float" line="652"/>
-                <declaration name="mustCopy" type="boolean" line="655"/>
-                <scope line="657">
-                    <declaration name="haveCopy" type="boolean" line="659"/>
-                    <declaration name="clusterExtraGlyphs" type="int" line="660"/>
-                    <scope line="677">
-                        <scope line="679">
-                            <declaration name="gps" type="int" line="680"/>
+                <declaration name="minIndex" type="int" line="321"/>
+                <declaration name="maxIndex" type="int" line="322"/>
+                <declaration name="nextMin" type="int" line="323"/>
+                <declaration name="cp" type="int" line="324"/>
+                <declaration name="cx" type="int" line="325"/>
+                <declaration name="gp" type="int" line="326"/>
+                <declaration name="gx" type="int" line="327"/>
+                <declaration name="gxlimit" type="int" line="328"/>
+                <declaration name="pdelta" type="int" line="329"/>
+                <declaration name="xdelta" type="int" line="330"/>
+                <declaration name="ltr" type="boolean" line="331"/>
+                <scope line="332"/>
+                <declaration name="cposl" type="float" line="344"/>
+                <declaration name="baseline" type="float" line="345"/>
+                <declaration name="mustCopy" type="boolean" line="346"/>
+                <scope line="347">
+                    <declaration name="haveCopy" type="boolean" line="348"/>
+                    <declaration name="clusterExtraGlyphs" type="int" line="349"/>
+                    <scope line="354">
+                        <scope line="355">
+                            <declaration name="gps" type="int" line="356"/>
                         </scope>
-                        <declaration name="radvx" type="float" line="696"/>
-                        <scope line="697">
-                            <declaration name="rposx" type="float" line="698"/>
+                        <declaration name="radvx" type="float" line="366"/>
+                        <scope line="367">
+                            <declaration name="rposx" type="float" line="368"/>
                         </scope>
-                        <declaration name="rvisw" type="float" line="704"/>
-                        <scope line="705">
-                            <declaration name="rvisx" type="float" line="706"/>
-                            <declaration name="rvisy" type="float" line="707"/>
+                        <declaration name="rvisw" type="float" line="372"/>
+                        <scope line="373">
+                            <declaration name="rvisx" type="float" line="374"/>
+                            <declaration name="rvisy" type="float" line="375"/>
                         </scope>
                     </scope>
-                    <scope line="724"/>
-                    <scope line="734">
-                        <scope line="746"/>
-                        <scope line="753">
-                            <scope line="754"/>
-                            <declaration name="iMinIndex" type="int" line="761"/>
-                            <scope line="763">
-                                <scope line="768"/>
+                    <scope line="386"/>
+                    <scope line="392">
+                        <scope line="399"/>
+                        <scope line="402">
+                            <scope line="403"/>
+                            <declaration name="iMinIndex" type="int" line="408"/>
+                            <scope line="409">
+                                <scope line="413"/>
                             </scope>
                         </scope>
                     </scope>
-                    <scope line="785">
-                        <declaration name="gpr" type="int" line="787"/>
+                    <scope line="428">
+                        <declaration name="gpr" type="int" line="429"/>
                     </scope>
                 </scope>
-                <scope line="803"/>
-                <scope line="810">
-                    <declaration name="chars" type="char[]" line="811"/>
-                    <declaration name="start" type="int" line="812"/>
-                    <declaration name="length" type="int" line="813"/>
-                    <scope line="815"/>
+                <scope line="440"/>
+                <scope line="444">
+                    <declaration name="chars" type="char[]" line="445"/>
+                    <declaration name="start" type="int" line="446"/>
+                    <declaration name="length" type="int" line="447"/>
+                    <scope line="449"/>
                 </scope>
             </method>
-            <javadoc line="831">
+            <javadoc line="455">
                 Map logical character index to visual character index.
                   &lt;p&gt;
                   This ignores hindi reordering.  @see createCharinfo                
             </javadoc>
-            <method name="l2v" type="int" line="836">
+            <method name="l2v" type="int" line="460">
                 <params>
                     <param name="index" type="int"/>
                 </params>
             </method>
-            <javadoc line="840">
+            <javadoc line="463">
                 Map visual character index to logical character index.
                   &lt;p&gt;
                   This ignores hindi reordering.  @see createCharinfo                
             </javadoc>
-            <method name="v2l" type="int" line="845">
+            <method name="v2l" type="int" line="468">
                 <params>
                     <param name="index" type="int"/>
                 </params>
             </method>
-            <method name="getSubset" type="TextLineComponent" line="849">
+            <method name="getSubset" type="TextLineComponent" line="471">
                 <params>
                     <param name="start" type="int"/>
                     <param name="limit" type="int"/>
                     <param name="dir" type="int"/>
                 </params>
             </method>
-            <method name="toString" type="String" line="853">
-                <scope line="854"/>
-                <declaration name="buf" type="StringBuffer" line="857"/>
-                <scope line="870"/>
-                <scope line="872">
-                    <scope line="874"/>
+            <method name="toString" type="String" line="474">
+                <scope line="475"/>
+                <declaration name="buf" type="StringBuffer" line="478"/>
+                <scope line="491"/>
+                <scope line="494">
+                    <scope line="496"/>
                 </scope>
             </method>
-            <method name="getNumJustificationInfos" type="int" line="888"/>
-            <method name="getJustificationInfos" type="void" line="893">
+            <method name="getNumJustificationInfos" type="int" line="504"/>
+            <method name="getJustificationInfos" type="void" line="507">
                 <params>
                     <param name="infos" type="GlyphJustificationInfo[]"/>
                     <param name="infoStart" type="int"/>
                     <param name="charStart" type="int"/>
                     <param name="charLimit" type="int"/>
                 </params>
-                <comment line="895">
-                    This simple implementation only uses spaces for justification.
-                     Since regular characters aren&apos;t justified, we don&apos;t need to deal with
-                     special infos for combining marks or ligature substitution glyphs.
-                     added character justification for kanjii only 2/22/98                    
-                </comment>
-                <comment line="924">
-                    assume data is 1-1 and either all rtl or all ltr, for now                    
-                </comment>
-                <comment line="943">
-                    combining marks don&apos;t justify                    
-                </comment>
-                <comment line="946">
-                    1-1 assumption again                    
-                </comment>
-                <comment line="950">
-                    CJK, Hangul, CJK Compatibility areas                    
-                </comment>
-                <declaration name="gv" type="StandardGlyphVector" line="899"/>
-                <declaration name="charinfo" type="float[]" line="901"/>
-                <declaration name="size" type="float" line="903"/>
-                <declaration name="nullInfo" type="GlyphJustificationInfo" line="905"/>
-                <declaration name="spaceInfo" type="GlyphJustificationInfo" line="910"/>
-                <declaration name="kanjiInfo" type="GlyphJustificationInfo" line="915"/>
-                <declaration name="chars" type="char[]" line="920"/>
-                <declaration name="offset" type="int" line="921"/>
-                <declaration name="numGlyphs" type="int" line="925"/>
-                <declaration name="minGlyph" type="int" line="926"/>
-                <declaration name="maxGlyph" type="int" line="927"/>
-                <declaration name="ltr" type="boolean" line="928"/>
-                <scope line="929">
-                    <scope line="930"/>
-                    <scope line="933"/>
+                <declaration name="gv" type="StandardGlyphVector" line="508"/>
+                <declaration name="charinfo" type="float[]" line="509"/>
+                <declaration name="size" type="float" line="510"/>
+                <declaration name="nullInfo" type="GlyphJustificationInfo" line="511"/>
+                <declaration name="spaceInfo" type="GlyphJustificationInfo" line="512"/>
+                <declaration name="kanjiInfo" type="GlyphJustificationInfo" line="513"/>
+                <declaration name="chars" type="char[]" line="514"/>
+                <declaration name="offset" type="int" line="515"/>
+                <declaration name="numGlyphs" type="int" line="516"/>
+                <declaration name="minGlyph" type="int" line="517"/>
+                <declaration name="maxGlyph" type="int" line="518"/>
+                <declaration name="ltr" type="boolean" line="519"/>
+                <scope line="520">
+                    <scope line="521"/>
+                    <scope line="525"/>
                 </scope>
-                <scope line="939">
-                    <declaration name="info" type="GlyphJustificationInfo" line="940"/>
-                    <scope line="941">
-                        <scope line="942"/>
-                        <scope line="944">
-                            <declaration name="ci" type="int" line="945"/>
-                            <declaration name="c" type="char" line="946"/>
-                            <scope line="947"/>
-                            <scope line="953"/>
-                            <scope line="955"/>
+                <scope line="530">
+                    <declaration name="info" type="GlyphJustificationInfo" line="531"/>
+                    <scope line="532">
+                        <scope line="533"/>
+                        <scope line="536">
+                            <declaration name="ci" type="int" line="537"/>
+                            <declaration name="c" type="char" line="538"/>
+                            <scope line="539"/>
+                            <scope line="542"/>
+                            <scope line="545"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <method name="applyJustificationDeltas" type="TextLineComponent" line="964">
+            <method name="applyJustificationDeltas" type="TextLineComponent" line="553">
                 <params>
                     <param name="deltas" type="float[]"/>
                     <param name="deltaStart" type="int"/>
                     <param name="flags" type="boolean[]"/>
                 </params>
-                <comment line="967">
-                    when we justify, we need to adjust the charinfo since spaces
-                     change their advances.  preserve the existing charinfo.                    
-                </comment>
-                <comment line="972">
-                    we only push spaces, so never need to rejustify                    
-                </comment>
-                <comment line="975">
-                    preserve the existing gv.                    
-                </comment>
-                <comment line="981">
-                    System.out.println(&quot;oldgv: &quot; + getGV() + &quot;, newgv: &quot; + newgv);
-                    System.out.println(&quot;newpositions: &quot; + newPositions);
-                    for (int i = 0; i &lt; newPositions.length; i += 2) {
-                    System.out.println(&quot;[&quot; + (i2) + &quot;] &quot; + newPositions[i] + &quot;, &quot; + newPositions[i+1]);
-                    }
-                    
-                    System.out.println(&quot;deltas: &quot; + deltas + &quot; start: &quot; + deltaStart);
-                    for (int i = deltaStart; i &lt; deltaStart + numGlyphs; i += 2) {
-                    System.out.println(&quot;[&quot; + (i2) + &quot;] &quot; + deltas[i] + &quot;, &quot; + deltas[i+1]);
-                    }                    
-                </comment>
-                <comment line="997">
-                    accumulate the deltas to adjust positions and advances.
-                     handle whitespace by modifying advance,
-                     handle everything else by modifying position before and after                    
-                </comment>
-                <comment line="1027">
-                    newPositions = newgv.getGlyphPositions(null);
-                    System.out.println(&quot;&gt;&gt; newpositions: &quot; + newPositions);
-                    for (int i = 0; i &lt; newPositions.length; i += 2) {
-                    System.out.println(&quot;[&quot; + (i2) + &quot;] &quot; + newPositions[i] + &quot;, &quot; + newPositions[i+1]);
-                    }                    
-                </comment>
-                <declaration name="newCharinfo" type="float[]" line="969"/>
-                <declaration name="newgv" type="StandardGlyphVector" line="976"/>
-                <declaration name="newPositions" type="float[]" line="977"/>
-                <declaration name="numGlyphs" type="int" line="978"/>
-                <declaration name="chars" type="char[]" line="993"/>
-                <declaration name="offset" type="int" line="994"/>
-                <declaration name="deltaPos" type="float" line="1000"/>
-                <scope line="1001">
-                    <scope line="1002">
-                        <declaration name="deltaAdv" type="float" line="1005"/>
+                <declaration name="newCharinfo" type="float[]" line="554"/>
+                <declaration name="newgv" type="StandardGlyphVector" line="556"/>
+                <declaration name="newPositions" type="float[]" line="557"/>
+                <declaration name="numGlyphs" type="int" line="558"/>
+                <declaration name="chars" type="char[]" line="559"/>
+                <declaration name="offset" type="int" line="560"/>
+                <declaration name="deltaPos" type="float" line="561"/>
+                <scope line="562">
+                    <scope line="563">
+                        <declaration name="deltaAdv" type="float" line="565"/>
                     </scope>
-                    <scope line="1012"/>
+                    <scope line="571"/>
                 </scope>
-                <declaration name="result" type="ExtendedTextSourceLabel" line="1034"/>
+                <declaration name="result" type="ExtendedTextSourceLabel" line="581"/>
             </method>
         </class>
     </source>
