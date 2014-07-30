@@ -24,1220 +24,538 @@
         <import package="java.util.Map"/>
         <import package="java.util.Set"/>
         <import package="com.sun.java.util.jar.pack.Constants"/>
-        <class name="PackageWriter" line="53">
+        <class name="PackageWriter" line="26">
             <extends class="BandStructure"/>
-            <comment line="115">
-                for the CP                
-            </comment>
-            <comment line="116">
-                for layout callables                
-            </comment>
-            <comment line="117">
-                count attr. occurences                
-            </comment>
-            <comment line="269">
-                Local routine used to format fixed-format scalars
-                 in the file_header:                
-            </comment>
-            <comment line="429">
-                (The following observations are out of date; they apply only to
-                 &quot;banding&quot; the constant pool itself.  Later revisions of this algorithm
-                 applied the banding technique to every part of the package file,
-                 applying the benefits more broadly.)                
-            </comment>
-            <comment line="434">
-                Note:  Keeping the data separate in passes (or &quot;bands&quot;) allows the
-                 compressor to issue significantly shorter indexes for repeated data.
-                 The difference in zipped size is 4%, which is remarkable since the
-                 unzipped sizes are the same (only the byte order differs).                
-            </comment>
-            <comment line="439">
-                After moving similar data into bands, it becomes natural to delta-encode
-                 each band.  (This is especially useful if we sort the constant pool first.)
-                 Delta encoding saves an extra 5% in the output size (13% of the CP itself).
-                 Because a typical delta usees much less data than a byte, the savings after
-                 zipping is even better:  A zipped delta-encoded package is 8% smaller than
-                 a zipped non-delta-encoded package.  Thus, in the zipped file, a banded,
-                 delta-encoded constant pool saves over 11% (of the total file size) compared
-                 with a zipped unbanded file.                
-            </comment>
-            <comment line="862">
-                Scratch variables for processing attributes and flags.                
-            </comment>
-            <comment line="1169">
-                Generic routines for writing attributes and flags of
-                 classes, fields, methods, and codes.                
-            </comment>
-            <comment line="1269">
-                temporary scratch variables for processing code blocks                
-            </comment>
-            <comment line="1285">
-                Return an _invokeinit_op variant, if the instruction matches one,
-                 else -1.                
-            </comment>
-            <comment line="1302">
-                Return a _self_linker_op variant, if the instruction matches one,
-                 else -1.                
-            </comment>
-            <javadoc line="53">
+            <javadoc line="26">
                 Writer for a package file.                
                 <author>
                     John Rose                    
                 </author>
             </javadoc>
-            <declaration name="pkg" type="Package" line="58"/>
-            <declaration name="finalOut" type="OutputStream" line="59"/>
-            <method name="PackageWriter" type="constructor" line="61">
+            <declaration name="pkg" type="Package" line="31"/>
+            <declaration name="finalOut" type="OutputStream" line="32"/>
+            <method name="PackageWriter" type="constructor" line="33">
                 <params>
                     <param name="pkg" type="Package"/>
                     <param name="out" type="OutputStream"/>
                 </params>
-                <comment line="65">
-                    Caller has specified archive version in the package:                    
-                </comment>
             </method>
-            <method name="write" type="void" line="68">
-                <comment line="81">
-                    writeFileHeader() is done last, since it has ultimate counts
-                     writeBandHeaders() is called after all other bands are done                    
-                </comment>
-                <comment line="92">
-                    choose codings (fill band_headers if needed)                    
-                </comment>
-                <comment line="98">
-                    now we can write the headers:                    
-                </comment>
-                <comment line="106">
-                    if (verbose &gt; 0)  ee.printStackTrace();
-                     Write partial output only if we are verbose.                    
-                </comment>
-                <declaration name="ok" type="boolean" line="69"/>
-                <scope line="70">
-                    <scope line="71"/>
-                    <scope line="76"/>
-                    <scope line="92"/>
+            <method name="write" type="void" line="38">
+                <declaration name="ok" type="boolean" line="39"/>
+                <scope line="40">
+                    <scope line="41"/>
+                    <scope line="45"/>
+                    <scope line="55"/>
+                </scope>
+                <scope line="63"/>
+            </method>
+            <declaration name="requiredEntries" type="Set&lt;Entry&gt;" line="71"/>
+            <declaration name="backCountTable" type="Map&lt;Attribute.Layout,int[]&gt;" line="72"/>
+            <declaration name="attrCounts" type="int[][]" line="73"/>
+            <method name="setup" type="void" line="74"/>
+            <method name="setArchiveOptions" type="void" line="84">
+                <declaration name="minModtime" type="int" line="85"/>
+                <declaration name="maxModtime" type="int" line="86"/>
+                <declaration name="minOptions" type="int" line="87"/>
+                <declaration name="maxOptions" type="int" line="88"/>
+                <scope line="90">
+                    <declaration name="modtime" type="int" line="91"/>
+                    <declaration name="options" type="int" line="92"/>
+                    <scope line="93"/>
+                    <scope line="96"/>
                 </scope>
                 <scope line="103"/>
-            </method>
-            <declaration name="requiredEntries" type="Set&lt;Entry&gt;" line="114"/>
-            <declaration name="backCountTable" type="Map&lt;Attribute.Layout,int[]&gt;" line="115"/>
-            <declaration name="attrCounts" type="int[][]" line="116"/>
-            <method name="setup" type="void" line="118"/>
-            <method name="setArchiveOptions" type="void" line="129">
-                <comment line="131">
-                    Decide on some archive options early.
-                     Does not decide on: AO_HAVE_SPECIAL_FORMATS,
-                     AO_HAVE_CP_NUMBERS, AO_HAVE_FILE_HEADERS.
-                     Also, AO_HAVE_FILE_OPTIONS may be forced on later.                    
-                </comment>
-                <comment line="140">
-                    Import defaults from package (deflate hint, etc.).                    
-                </comment>
-                <comment line="157">
-                    Make everything else be a positive offset from here.                    
-                </comment>
-                <comment line="161">
-                    Put them into a band.                    
-                </comment>
-                <comment line="164">
-                    If the archive deflation is set do not bother with each file.                    
-                </comment>
-                <comment line="167">
-                    Every file has the deflate_hint set.
-                     Set it for the whole archive, and omit options.                    
-                </comment>
-                <comment line="179">
-                    Decide on default version number (majority rule).                    
-                </comment>
-                <comment line="191">
-                    System.out.println(&quot;version=&quot;+version+&quot; count=&quot;+count);                    
-                </comment>
-                <comment line="198">
-                    degenerate case                    
-                </comment>
-                <comment line="210">
-                    Now add explicit pseudo-attrs. to classes with odd versions.                    
-                </comment>
-                <comment line="221">
-                    Note:  Does not add in &quot;natural&quot; order.  (Who cares?)                    
-                </comment>
-                <comment line="226">
-                    Decide if we are transmitting a huge resource file:                    
-                </comment>
-                <comment line="237">
-                    Decide if code attributes typically have sub-attributes.
-                     In that case, to preserve compact 1-byte code headers,
-                     we must declare unconditional presence of code flags.                    
-                </comment>
-                <comment line="246">
-                    cost of a useless unconditional flags byte                    
-                </comment>
-                <comment line="249">
-                    cost of inflating a short header                    
-                </comment>
-                <declaration name="minModtime" type="int" line="134"/>
-                <declaration name="maxModtime" type="int" line="135"/>
-                <declaration name="minOptions" type="int" line="136"/>
-                <declaration name="maxOptions" type="int" line="137"/>
-                <scope line="142">
-                    <declaration name="modtime" type="int" line="143"/>
-                    <declaration name="options" type="int" line="144"/>
-                    <scope line="146"/>
-                    <scope line="148"/>
+                <scope line="106"/>
+                <scope line="109">
+                    <scope line="110"/>
+                    <scope line="116"/>
                 </scope>
-                <scope line="155"/>
-                <scope line="159"/>
-                <scope line="164">
-                    <scope line="165"/>
-                    <scope line="174"/>
+                <declaration name="verCounts" type="Map&lt;Integer,int[]&gt;" line="120"/>
+                <declaration name="bestCount" type="int" line="121"/>
+                <declaration name="bestVersion" type="int" line="122"/>
+                <scope line="123">
+                    <declaration name="version" type="int" line="124"/>
+                    <declaration name="var" type="int[]" line="125"/>
+                    <scope line="126"/>
+                    <declaration name="count" type="int" line="130"/>
+                    <scope line="131"/>
                 </scope>
-                <declaration name="verCounts" type="Map&lt;Integer,int[]&gt;" line="179"/>
-                <declaration name="bestCount" type="int" line="180"/>
-                <declaration name="bestVersion" type="int" line="181"/>
-                <scope line="182">
-                    <declaration name="version" type="int" line="183"/>
-                    <declaration name="var" type="int[]" line="184"/>
-                    <scope line="185"/>
-                    <declaration name="count" type="int" line="189"/>
-                    <scope line="191"/>
-                </scope>
-                <declaration name="bestMajver" type="int" line="198"/>
-                <declaration name="bestMinver" type="int" line="199"/>
-                <declaration name="bestVerStr" type="String" line="202"/>
-                <scope line="210">
-                    <scope line="211">
-                        <declaration name="a" type="Attribute" line="212"/>
-                        <scope line="213">
-                            <declaration name="clsVer" type="String" line="214"/>
-                            <declaration name="pkgVer" type="String" line="215"/>
+                <declaration name="bestMajver" type="int" line="138"/>
+                <declaration name="bestMinver" type="int" line="139"/>
+                <declaration name="bestVerStr" type="String" line="142"/>
+                <scope line="145">
+                    <scope line="146">
+                        <declaration name="a" type="Attribute" line="147"/>
+                        <scope line="148">
+                            <declaration name="clsVer" type="String" line="149"/>
+                            <declaration name="pkgVer" type="String" line="150"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="226">
-                    <declaration name="len" type="long" line="227"/>
-                    <scope line="228"/>
+                <scope line="156">
+                    <declaration name="len" type="long" line="157"/>
+                    <scope line="158"/>
                 </scope>
-                <declaration name="cost0" type="int" line="239"/>
-                <declaration name="cost1" type="int" line="240"/>
-                <scope line="241">
-                    <scope line="242">
-                        <scope line="243">
-                            <scope line="244"/>
-                            <scope line="247"/>
+                <declaration name="cost0" type="int" line="164"/>
+                <declaration name="cost1" type="int" line="165"/>
+                <scope line="166">
+                    <scope line="167">
+                        <scope line="168">
+                            <scope line="169"/>
+                            <scope line="172"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="254"/>
+                <scope line="178"/>
             </method>
-            <method name="writeFileHeader" type="void" line="262"/>
-            <method name="putMagicInt32" type="void" line="270">
+            <method name="writeFileHeader" type="void" line="183"/>
+            <method name="putMagicInt32" type="void" line="188">
                 <params>
                     <param name="val" type="int"/>
                 </params>
-                <declaration name="res" type="int" line="271"/>
-                <scope line="272"/>
+                <declaration name="res" type="int" line="189"/>
+                <scope line="190"/>
             </method>
-            <method name="writeArchiveMagic" type="void" line="278"/>
-            <method name="writeArchiveHeader" type="void" line="282">
-                <comment line="284">
-                    for debug only:  number of words optimized away                    
-                </comment>
-                <comment line="287">
-                    AO_HAVE_SPECIAL_FORMATS is set if non-default
-                     coding techniques are used, or if there are
-                     compressor-defined attributes transmitted.                    
-                </comment>
-                <comment line="300">
-                    AO_HAVE_FILE_HEADERS is set if there is any
-                     file or segment envelope information present.                    
-                </comment>
-                <comment line="312">
-                    AO_HAVE_CP_NUMBERS is set if there are any numbers
-                     in the global constant pool.  (Numbers are in 15% of classes.)                    
-                </comment>
-                <comment line="323">
-                    caller must specify!                    
-                </comment>
-                <comment line="329">
-                    controls header format                    
-                </comment>
-                <comment line="335">
-                    (archiveSize1 &gt;&gt;&gt; 32)                    
-                </comment>
-                <comment line="337">
-                    (archiveSize1 &gt;&gt;&gt; 0)                    
-                </comment>
-                <comment line="341">
-                    Done with unsized part of header....                    
-                </comment>
-                <comment line="344">
-                    usually zero                    
-                </comment>
-                <comment line="366">
-                    Sanity:  Make sure we came out to 26 (less optional fields):                    
-                </comment>
-                <comment line="372">
-                    Figure out all the sizes now, first cut:                    
-                </comment>
-                <comment line="375">
-                    Second cut:                    
-                </comment>
-                <comment line="379">
-                    Make the adjustments:                    
-                </comment>
-                <comment line="382">
-                    Patch the header:                    
-                </comment>
-                <declaration name="headerDiscountForDebug" type="int" line="284"/>
-                <declaration name="haveSpecial" type="boolean" line="289"/>
-                <scope line="290"/>
-                <declaration name="haveFiles" type="boolean" line="301"/>
-                <scope line="302"/>
-                <declaration name="haveNumbers" type="boolean" line="313"/>
-                <scope line="314"/>
-                <declaration name="DUMMY" type="int" line="331"/>
-                <scope line="332"/>
-                <scope line="342"/>
-                <scope line="346"/>
-                <scope line="350"/>
-                <scope line="353"/>
-                <scope line="382">
-                    <declaration name="archiveSizeHi" type="int" line="383"/>
-                    <declaration name="archiveSizeLo" type="int" line="384"/>
-                    <declaration name="zeroLen" type="int" line="387"/>
+            <method name="writeArchiveMagic" type="void" line="195"/>
+            <method name="writeArchiveHeader" type="void" line="198">
+                <declaration name="headerDiscountForDebug" type="int" line="199"/>
+                <declaration name="haveSpecial" type="boolean" line="200"/>
+                <scope line="201"/>
+                <declaration name="haveFiles" type="boolean" line="207"/>
+                <scope line="208"/>
+                <declaration name="haveNumbers" type="boolean" line="214"/>
+                <scope line="215"/>
+                <declaration name="DUMMY" type="int" line="226"/>
+                <scope line="227"/>
+                <scope line="234"/>
+                <scope line="239"/>
+                <scope line="242"/>
+                <scope line="246"/>
+                <scope line="262">
+                    <declaration name="archiveSizeHi" type="int" line="263"/>
+                    <declaration name="archiveSizeLo" type="int" line="264"/>
+                    <declaration name="zeroLen" type="int" line="267"/>
                 </scope>
             </method>
-            <method name="writeConstantPoolCounts" type="void" line="397">
+            <method name="writeConstantPoolCounts" type="void" line="274">
                 <params>
                     <param name="haveNumbers" type="boolean"/>
                 </params>
-                <comment line="404">
-                    The null string is always first.                    
-                </comment>
-                <comment line="414">
-                    Omit counts for numbers if possible.                    
-                </comment>
-                <scope line="398">
-                    <declaration name="tag" type="byte" line="399"/>
-                    <declaration name="count" type="int" line="400"/>
-                    <scope line="414"/>
+                <scope line="275">
+                    <declaration name="tag" type="byte" line="276"/>
+                    <declaration name="count" type="int" line="277"/>
+                    <scope line="286"/>
                 </scope>
             </method>
-            <method name="getCPIndex" type="Index" line="424">
+            <method name="getCPIndex" type="Index" line="295">
                 <params>
                     <param name="tag" type="byte"/>
                 </params>
             </method>
-            <method name="writeConstantPool" type="void" line="447">
-                <declaration name="cp" type="IndexGroup" line="448"/>
-                <scope line="452">
-                    <declaration name="tag" type="byte" line="453"/>
-                    <declaration name="index" type="Index" line="454"/>
-                    <declaration name="cpMap" type="Entry[]" line="456"/>
-                    <scope line="460">
-                        <scope line="461"/>
-                    </scope>
-                    <scope line="471">
-                        <declaration name="e" type="NumberEntry" line="472"/>
-                        <declaration name="x" type="int" line="473"/>
-                    </scope>
-                    <scope line="478">
-                        <declaration name="e" type="NumberEntry" line="479"/>
-                        <declaration name="fx" type="float" line="480"/>
-                        <declaration name="x" type="int" line="481"/>
-                    </scope>
-                    <scope line="486">
-                        <declaration name="e" type="NumberEntry" line="487"/>
-                        <declaration name="x" type="long" line="488"/>
-                    </scope>
-                    <scope line="494">
-                        <declaration name="e" type="NumberEntry" line="495"/>
-                        <declaration name="dx" type="double" line="496"/>
-                        <declaration name="x" type="long" line="497"/>
-                    </scope>
-                    <scope line="503">
-                        <declaration name="e" type="StringEntry" line="504"/>
-                    </scope>
-                    <scope line="509">
-                        <declaration name="e" type="ClassEntry" line="510"/>
-                    </scope>
-                    <scope line="518">
-                        <declaration name="e" type="DescriptorEntry" line="519"/>
-                    </scope>
-                </scope>
-            </method>
-            <method name="writeUtf8Bands" type="void" line="539">
+            <method name="writeConstantPool" type="void" line="298"/>
+            <method name="writeUtf8Bands" type="void" line="383">
                 <params>
                     <param name="cpMap" type="Entry[]"/>
                 </params>
-                <comment line="542">
-                    nothing to write                    
-                </comment>
-                <comment line="544">
-                    The first element must always be the empty string.                    
-                </comment>
-                <comment line="549">
-                    Fetch the char arrays, first of all.                    
-                </comment>
-                <comment line="555">
-                    First band:  Write lengths of shared prefixes.                    
-                </comment>
-                <comment line="556">
-                    includes 2 skipped zeroes                    
-                </comment>
-                <comment line="572">
-                    Second band:  Write lengths of unshared suffixes.
-                     Third band:  Write the char values in the unshared suffixes.                    
-                </comment>
-                <comment line="580">
-                    Zero suffix length is special flag to indicate
-                     separate treatment in cp_Utf8_big bands.
-                     This suffix length never occurs naturally,
-                     except in the one case of a zero-length string.
-                     (If it occurs, it is the first, due to sorting.)
-                     The zero length string must, paradoxically, be
-                     encoded as a zero-length cp_Utf8_big band.
-                     This wastes exactly (&amp; tolerably) one null byte.                    
-                </comment>
-                <comment line="589">
-                    Do not bother to add an empty &quot;(Utf8_big_0)&quot; band.
-                     Also, the initial empty string does not require a band.                    
-                </comment>
-                <comment line="599">
-                    Try packing the chars with an alternate encoding.                    
-                </comment>
-                <comment line="604">
-                    No output.                    
-                </comment>
-                <comment line="608">
-                    Mark packed string with zero-length suffix count.
-                     This tells the unpacker to go elsewhere for the suffix bits.
-                     Fourth band:  Write unshared suffix with alternate coding.                    
-                </comment>
-                <comment line="614">
-                    would be ambiguous                    
-                </comment>
-                <comment line="615">
-                    Normal string.  Save suffix in third and fourth bands.                    
-                </comment>
-                <declaration name="SUFFIX_SKIP_1" type="int" line="545"/>
-                <declaration name="PREFIX_SKIP_2" type="int" line="546"/>
-                <declaration name="chars" type="char[][]" line="549"/>
-                <scope line="550"/>
-                <declaration name="prefixes" type="int[]" line="555"/>
-                <declaration name="prevChars" type="char[]" line="556"/>
-                <scope line="557">
-                    <declaration name="prefix" type="int" line="558"/>
-                    <declaration name="curChars" type="char[]" line="559"/>
-                    <declaration name="limit" type="int" line="560"/>
+                <declaration name="SUFFIX_SKIP_1" type="int" line="386"/>
+                <declaration name="PREFIX_SKIP_2" type="int" line="387"/>
+                <declaration name="chars" type="char[][]" line="388"/>
+                <scope line="389"/>
+                <declaration name="prefixes" type="int[]" line="392"/>
+                <declaration name="prevChars" type="char[]" line="393"/>
+                <scope line="394">
+                    <declaration name="prefix" type="int" line="395"/>
+                    <declaration name="curChars" type="char[]" line="396"/>
+                    <declaration name="limit" type="int" line="397"/>
                 </scope>
-                <scope line="573">
-                    <declaration name="str" type="char[]" line="574"/>
-                    <declaration name="prefix" type="int" line="575"/>
-                    <declaration name="suffix" type="int" line="576"/>
-                    <declaration name="isPacked" type="boolean" line="577"/>
-                    <scope line="578"/>
-                    <scope line="590">
-                        <declaration name="numWide" type="int" line="591"/>
-                        <scope line="592">
-                            <scope line="593"/>
+                <scope line="404">
+                    <declaration name="str" type="char[]" line="405"/>
+                    <declaration name="prefix" type="int" line="406"/>
+                    <declaration name="suffix" type="int" line="407"/>
+                    <declaration name="isPacked" type="boolean" line="408"/>
+                    <scope line="409"/>
+                    <scope line="412">
+                        <declaration name="numWide" type="int" line="413"/>
+                        <scope line="414">
+                            <scope line="415"/>
                         </scope>
-                        <scope line="597"/>
+                        <scope line="419"/>
                     </scope>
-                    <scope line="602"/>
-                    <scope line="606"/>
-                    <scope line="612">
-                        <scope line="616">
-                            <declaration name="ch" type="int" line="617"/>
+                    <scope line="423"/>
+                    <scope line="427"/>
+                    <scope line="431">
+                        <scope line="434">
+                            <declaration name="ch" type="int" line="435"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="622">
-                    <declaration name="normCharCount" type="int" line="623"/>
-                    <declaration name="packCharCount" type="int" line="624"/>
-                    <declaration name="charCount" type="int" line="625"/>
+                <scope line="440">
+                    <declaration name="normCharCount" type="int" line="441"/>
+                    <declaration name="packCharCount" type="int" line="442"/>
+                    <declaration name="charCount" type="int" line="443"/>
                 </scope>
             </method>
-            <method name="tryAlternateEncoding" type="boolean" line="631">
+            <method name="tryAlternateEncoding" type="boolean" line="447">
                 <params>
                     <param name="i" type="int"/>
                     <param name="numWide" type="int"/>
                     <param name="str" type="char[]"/>
                     <param name="prefix" type="int"/>
                 </params>
-                <declaration name="suffix" type="int" line="632"/>
-                <declaration name="cvals" type="int[]" line="633"/>
-                <scope line="634"/>
-                <declaration name="cc" type="CodingChooser" line="637"/>
-                <declaration name="bigRegular" type="Coding" line="638"/>
-                <declaration name="bandName" type="String" line="639"/>
-                <declaration name="sizes" type="int[]" line="640"/>
-                <declaration name="BYTE_SIZE" type="int" line="641"/>
-                <declaration name="ZIP_SIZE" type="int" line="642"/>
-                <scope line="643"/>
-                <declaration name="special" type="CodingMethod" line="646"/>
-                <declaration name="charRegular" type="Coding" line="647"/>
-                <scope line="650">
-                    <declaration name="specialZipSize" type="int" line="651"/>
-                    <declaration name="normalSizes" type="int[]" line="652"/>
-                    <declaration name="normalZipSize" type="int" line="653"/>
-                    <declaration name="minWin" type="int" line="654"/>
-                    <scope line="657">
-                        <declaration name="big" type="IntBand" line="658"/>
+                <declaration name="suffix" type="int" line="448"/>
+                <declaration name="cvals" type="int[]" line="449"/>
+                <scope line="450"/>
+                <declaration name="cc" type="CodingChooser" line="453"/>
+                <declaration name="bigRegular" type="Coding" line="454"/>
+                <declaration name="bandName" type="String" line="455"/>
+                <declaration name="sizes" type="int[]" line="456"/>
+                <declaration name="BYTE_SIZE" type="int" line="457"/>
+                <declaration name="ZIP_SIZE" type="int" line="458"/>
+                <scope line="459"/>
+                <declaration name="special" type="CodingMethod" line="462"/>
+                <declaration name="charRegular" type="Coding" line="463"/>
+                <scope line="465">
+                    <declaration name="specialZipSize" type="int" line="466"/>
+                    <declaration name="normalSizes" type="int[]" line="467"/>
+                    <declaration name="normalZipSize" type="int" line="468"/>
+                    <declaration name="minWin" type="int" line="469"/>
+                    <scope line="471">
+                        <declaration name="big" type="IntBand" line="472"/>
                     </scope>
                 </scope>
             </method>
-            <method name="writeSignatureBands" type="void" line="666">
+            <method name="writeSignatureBands" type="void" line="479">
                 <params>
                     <param name="cpMap" type="Entry[]"/>
                 </params>
-                <scope line="667">
-                    <declaration name="e" type="SignatureEntry" line="668"/>
-                    <scope line="670"/>
+                <scope line="480">
+                    <declaration name="e" type="SignatureEntry" line="481"/>
+                    <scope line="483"/>
                 </scope>
             </method>
-            <method name="writeMemberRefs" type="void" line="676">
+            <method name="writeMemberRefs" type="void" line="488">
                 <params>
                     <param name="tag" type="byte"/>
                     <param name="cpMap" type="Entry[]"/>
                     <param name="cp_class" type="CPRefBand"/>
                     <param name="cp_desc" type="CPRefBand"/>
                 </params>
-                <scope line="677">
-                    <declaration name="e" type="MemberEntry" line="678"/>
+                <scope line="489">
+                    <declaration name="e" type="MemberEntry" line="490"/>
                 </scope>
             </method>
-            <method name="writeFiles" type="void" line="684">
-                <declaration name="numFiles" type="int" line="685"/>
-                <declaration name="options" type="int" line="687"/>
-                <declaration name="haveSizeHi" type="boolean" line="688"/>
-                <declaration name="haveModtime" type="boolean" line="689"/>
-                <declaration name="haveOptions" type="boolean" line="690"/>
-                <scope line="691">
-                    <scope line="692">
-                        <scope line="693"/>
+            <method name="writeFiles" type="void" line="495">
+                <declaration name="numFiles" type="int" line="496"/>
+                <declaration name="options" type="int" line="498"/>
+                <declaration name="haveSizeHi" type="boolean" line="499"/>
+                <declaration name="haveModtime" type="boolean" line="500"/>
+                <declaration name="haveOptions" type="boolean" line="501"/>
+                <scope line="502">
+                    <scope line="503">
+                        <scope line="504"/>
                     </scope>
                 </scope>
-                <scope line="701"/>
-                <scope line="705">
-                    <declaration name="len" type="long" line="707"/>
+                <scope line="512"/>
+                <scope line="516">
+                    <declaration name="len" type="long" line="518"/>
                 </scope>
             </method>
-            <method name="collectAttributeLayouts" type="void" line="724">
-                <comment line="731">
-                    Collect maxFlags and allLayouts.                    
-                </comment>
-                <comment line="744">
-                    If there are many species of attributes, use 63-bit flags.                    
-                </comment>
-                <comment line="748">
-                                        
-                </comment>
-                <comment line="749">
-                                        
-                </comment>
-                <comment line="750">
-                                        
-                </comment>
-                <comment line="751">
-                    heuristic                    
-                </comment>
-                <comment line="766">
-                    Standard indexes can never conflict with flag bits.  Assert it.                    
-                </comment>
-                <comment line="770">
-                    Collect counts for both predefs. and custom defs.
-                     Decide on custom, local attribute definitions.                    
-                </comment>
-                <comment line="775">
-                    Now the remaining defs in allLayouts[i] need attr. indexes.
-                     Fill up unused flag bits with new defs.
-                     Unused bits are those which are not used by predefined attrs,
-                     and which are always clear in the classfiles.                    
-                </comment>
-                <comment line="781">
-                    all bits fit into a Java long                    
-                </comment>
-                <comment line="787">
-                    Sort by count, most frequent first.
-                     Predefs. participate in this sort, though it does not matter.                    
-                </comment>
-                <comment line="793">
-                    Primary sort key is count, reversed.                    
-                </comment>
-                <comment line="808">
-                    The index is already set.                    
-                </comment>
-                <comment line="815">
-                    clear low bit; we are using it now                    
-                </comment>
-                <comment line="816">
-                    Update attrIndexTable:                    
-                </comment>
-                <comment line="819">
-                    Update attrIndexTable:                    
-                </comment>
-                <comment line="823">
-                    Now that we know the index, record the count of this def.                    
-                </comment>
-                <comment line="826">
-                    For all callables in the def, keep a tally of back-calls.                    
-                </comment>
-                <comment line="832">
-                    no count to accumulate here                    
-                </comment>
-                <comment line="838">
-                    Make sure the package CP can name the local attribute.                    
-                </comment>
-                <comment line="853">
-                    Later, when emitting attr_definition_bands, we will look at
-                     attrDefSeen and attrDefs at position 32/63 and beyond.
-                     The attrIndexTable will provide elements of xxx_attr_indexes bands.                    
-                </comment>
-                <comment line="857">
-                    Done with scratch variables:                    
-                </comment>
-                <scope line="727"/>
-                <scope line="731">
-                    <scope line="733"/>
-                    <scope line="736">
-                        <scope line="738"/>
+            <method name="collectAttributeLayouts" type="void" line="528">
+                <scope line="531"/>
+                <scope line="534">
+                    <scope line="536"/>
+                    <scope line="539">
+                        <scope line="541"/>
                     </scope>
                 </scope>
-                <scope line="744">
-                    <declaration name="nl" type="int" line="745"/>
-                    <declaration name="haveLongFlags" type="boolean" line="746"/>
-                    <declaration name="TOO_MANY_ATTRS" type="int" line="747"/>
-                    <scope line="750">
-                        <declaration name="mask" type="int" line="751"/>
+                <scope line="546">
+                    <declaration name="nl" type="int" line="547"/>
+                    <declaration name="haveLongFlags" type="boolean" line="548"/>
+                    <declaration name="TOO_MANY_ATTRS" type="int" line="549"/>
+                    <scope line="550">
+                        <declaration name="mask" type="int" line="551"/>
                     </scope>
-                    <scope line="757"/>
+                    <scope line="556"/>
                 </scope>
-                <scope line="766"/>
-                <scope line="773">
-                    <declaration name="avHiBits" type="long" line="778"/>
-                    <declaration name="nextLoBit" type="int" line="782"/>
-                    <declaration name="defMap" type="Map&lt;Attribute.Layout,int[]&gt;" line="783"/>
-                    <declaration name="layoutsAndCounts" type="Map.Entry[]" line="784"/>
-                    <anonymous_class line="788">
-                        <method name="compare" type="int" line="789">
+                <scope line="563"/>
+                <scope line="568">
+                    <declaration name="avHiBits" type="long" line="569"/>
+                    <declaration name="nextLoBit" type="int" line="573"/>
+                    <declaration name="defMap" type="Map&lt;Attribute.Layout,int[]&gt;" line="574"/>
+                    <declaration name="layoutsAndCounts" type="Map.Entry[]" line="575"/>
+                    <anonymous_class line="577">
+                        <method name="compare" type="int" line="578">
                             <params>
                                 <param name="o0" type="Object"/>
                                 <param name="o1" type="Object"/>
                             </params>
-                            <comment line="793">
-                                Primary sort key is count, reversed.                                
-                            </comment>
-                            <declaration name="e0" type="Map.Entry" line="790"/>
-                            <declaration name="e1" type="Map.Entry" line="791"/>
-                            <declaration name="r" type="int" line="793"/>
+                            <declaration name="e0" type="Map.Entry" line="579"/>
+                            <declaration name="e1" type="Map.Entry" line="580"/>
+                            <declaration name="r" type="int" line="581"/>
                         </method>
                     </anonymous_class>
-                    <scope line="800">
-                        <declaration name="e" type="Map.Entry" line="801"/>
-                        <declaration name="def" type="Attribute.Layout" line="802"/>
-                        <declaration name="count" type="int" line="803"/>
-                        <declaration name="index" type="int" line="804"/>
-                        <declaration name="predefIndex" type="Integer" line="805"/>
-                        <scope line="806"/>
-                        <scope line="809">
-                            <scope line="810"/>
+                    <scope line="588">
+                        <declaration name="e" type="Map.Entry" line="589"/>
+                        <declaration name="def" type="Attribute.Layout" line="590"/>
+                        <declaration name="count" type="int" line="591"/>
+                        <declaration name="index" type="int" line="592"/>
+                        <declaration name="predefIndex" type="Integer" line="593"/>
+                        <scope line="594"/>
+                        <scope line="597">
+                            <scope line="598"/>
                         </scope>
-                        <scope line="817"/>
-                        <declaration name="cbles" type="Attribute.Layout.Element[]" line="826"/>
-                        <declaration name="bc" type="int[]" line="827"/>
-                        <scope line="828">
-                            <scope line="830"/>
+                        <scope line="605"/>
+                        <declaration name="cbles" type="Attribute.Layout.Element[]" line="609"/>
+                        <declaration name="bc" type="int[]" line="610"/>
+                        <scope line="611">
+                            <scope line="613"/>
                         </scope>
-                        <scope line="836">
-                            <declaration name="ne" type="Entry" line="838"/>
-                            <declaration name="layout" type="String" line="839"/>
-                            <declaration name="le" type="Entry" line="840"/>
-                            <scope line="843"/>
+                        <scope line="618">
+                            <declaration name="ne" type="Entry" line="619"/>
+                            <declaration name="layout" type="String" line="620"/>
+                            <declaration name="le" type="Entry" line="621"/>
+                            <scope line="624"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <declaration name="maxFlags" type="int[]" line="862"/>
-            <declaration name="allLayouts" type="List&lt;Map&lt;Attribute.Layout,int[]&gt;&gt;" line="863"/>
-            <method name="visitAttributeLayoutsIn" type="void" line="865">
+            <declaration name="maxFlags" type="int[]" line="634"/>
+            <declaration name="allLayouts" type="List&lt;Map&lt;Attribute.Layout,int[]&gt;&gt;" line="635"/>
+            <method name="visitAttributeLayoutsIn" type="void" line="636">
                 <params>
                     <param name="ctype" type="int"/>
                     <param name="h" type="Attribute.Holder"/>
                 </params>
-                <comment line="867">
-                    Make note of which flags appear in the class file.
-                     Set them in maxFlags.                    
-                </comment>
-                <scope line="869">
-                    <declaration name="def" type="Attribute.Layout" line="870"/>
-                    <declaration name="defMap" type="Map&lt;Attribute.Layout,int[]&gt;" line="871"/>
-                    <declaration name="count" type="int[]" line="872"/>
-                    <scope line="873"/>
-                    <scope line="876"/>
+                <scope line="638">
+                    <declaration name="def" type="Attribute.Layout" line="639"/>
+                    <declaration name="defMap" type="Map&lt;Attribute.Layout,int[]&gt;" line="640"/>
+                    <declaration name="count" type="int[]" line="641"/>
+                    <scope line="642"/>
+                    <scope line="645"/>
                 </scope>
             </method>
-            <declaration name="attrDefsWritten" type="Attribute.Layout[]" line="882"/>
-            <method name="writeAttrDefs" type="void" line="885">
-                <comment line="891">
-                    ctype                    
-                </comment>
-                <comment line="894">
-                    must fit into a byte                    
-                </comment>
-                <comment line="895">
-                    (...else header is simply ctype, with zero high bits.)                    
-                </comment>
-                <comment line="897">
-                    either undefined or predefined; nothing to write                    
-                </comment>
-                <comment line="906">
-                    Sort the new attr defs into some &quot;natural&quot; order.                    
-                </comment>
-                <comment line="914">
-                    Primary sort key is attr def header.                    
-                </comment>
-                <comment line="919">
-                    Secondary sort key is attribute index.
-                     (This must be so, in order to keep overflow attr order.)                    
-                </comment>
-                <comment line="940">
-                    Check that we are transmitting that correct attribute index:                    
-                </comment>
-                <declaration name="defList" type="List&lt;Object[]&gt;" line="886"/>
-                <scope line="887">
-                    <declaration name="limit" type="int" line="888"/>
-                    <scope line="889">
-                        <declaration name="header" type="int" line="890"/>
-                        <scope line="891">
-                            <scope line="895"/>
-                        </scope>
-                        <declaration name="def" type="Attribute.Layout" line="900"/>
-                    </scope>
-                </scope>
-                <declaration name="numAttrDefs" type="int" line="906"/>
-                <declaration name="defs" type="Object[][]" line="907"/>
-                <anonymous_class line="909">
-                    <method name="compare" type="int" line="910">
-                        <params>
-                            <param name="o0" type="Object"/>
-                            <param name="o1" type="Object"/>
-                        </params>
-                        <comment line="914">
-                            Primary sort key is attr def header.                            
-                        </comment>
-                        <comment line="919">
-                            Secondary sort key is attribute index.
-                             (This must be so, in order to keep overflow attr order.)                            
-                        </comment>
-                        <declaration name="a0" type="Object[]" line="911"/>
-                        <declaration name="a1" type="Object[]" line="912"/>
-                        <declaration name="r" type="int" line="914"/>
-                        <declaration name="ind0" type="Object" line="916"/>
-                        <declaration name="ind1" type="Object" line="917"/>
-                    </method>
-                </anonymous_class>
-                <scope line="928">
-                    <declaration name="indexForDebug" type="int[]" line="929"/>
-                    <scope line="930">
-                        <declaration name="header" type="int" line="931"/>
-                        <declaration name="def" type="Attribute.Layout" line="932"/>
-                        <declaration name="layout" type="String" line="937"/>
-                        <declaration name="debug" type="boolean" line="940"/>
-                        <scope line="942">
-                            <declaration name="hdrIndex" type="int" line="943"/>
-                            <declaration name="realIndex" type="int" line="945"/>
-                        </scope>
-                        <scope line="948">
-                            <declaration name="index" type="int" line="949"/>
-                        </scope>
-                    </scope>
-                </scope>
-            </method>
-            <method name="writeAttrCounts" type="void" line="956">
-                <comment line="958">
-                    Write the four xxx_attr_calls bands.                    
-                </comment>
-                <comment line="967">
-                    unused index                    
-                </comment>
-                <comment line="969">
-                    wrong pass                    
-                </comment>
-                <comment line="972">
-                    irrelevant                    
-                </comment>
-                <comment line="977">
-                    close out; do not collect further counts                    
-                </comment>
-                <scope line="958">
-                    <declaration name="xxx_attr_bands" type="MultiBand" line="959"/>
-                    <declaration name="xxx_attr_calls" type="IntBand" line="960"/>
-                    <declaration name="defs" type="Attribute.Layout[]" line="961"/>
-                    <scope line="963">
-                        <scope line="964">
-                            <declaration name="def" type="Attribute.Layout" line="965"/>
-                            <declaration name="totalCount" type="int" line="969"/>
-                            <declaration name="bc" type="int[]" line="972"/>
-                            <scope line="973">
-                                <scope line="974">
-                                    <declaration name="backCount" type="int" line="975"/>
+            <declaration name="attrDefsWritten" type="Attribute.Layout[]" line="650"/>
+            <method name="writeAttrDefs" type="void" line="651"/>
+            <method name="writeAttrCounts" type="void" line="713">
+                <scope line="714">
+                    <declaration name="xxx_attr_bands" type="MultiBand" line="715"/>
+                    <declaration name="xxx_attr_calls" type="IntBand" line="716"/>
+                    <declaration name="defs" type="Attribute.Layout[]" line="717"/>
+                    <scope line="719">
+                        <scope line="720">
+                            <declaration name="def" type="Attribute.Layout" line="721"/>
+                            <declaration name="totalCount" type="int" line="724"/>
+                            <declaration name="bc" type="int[]" line="726"/>
+                            <scope line="727">
+                                <scope line="728">
+                                    <declaration name="backCount" type="int" line="729"/>
                                 </scope>
-                                <scope line="979"/>
+                                <scope line="734"/>
                             </scope>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <method name="trimClassAttributes" type="void" line="989">
-                <comment line="992">
-                    Replace &quot;obvious&quot; SourceFile attrs by null.                    
-                </comment>
-                <scope line="990"/>
+            <method name="trimClassAttributes" type="void" line="743">
+                <scope line="744"/>
             </method>
-            <method name="collectInnerClasses" type="void" line="996">
-                <comment line="998">
-                    Capture inner classes, removing them from individual classes.
-                     Irregular inner classes must stay local, though.                    
-                </comment>
-                <comment line="1001">
-                    First, collect a consistent global set.                    
-                </comment>
-                <comment line="1007">
-                    Different ICs.  Choose the better to make global.                    
-                </comment>
-                <comment line="1015">
-                    done with it                    
-                </comment>
-                <comment line="1017">
-                    Note: The InnerClasses attribute must be in a valid order,
-                     so that A$B always occurs earlier than A$B$C.  This is an
-                     important side-effect of sorting lexically by class name.                    
-                </comment>
-                <comment line="1020">
-                    put in canonical order                    
-                </comment>
-                <comment line="1023">
-                    Next, empty out of every local set the consistent entries.
-                     Calculate whether there is any remaining need to have a local
-                     set, and whether it needs to be locked.                    
-                </comment>
-                <declaration name="allICMap" type="Map&lt;ClassEntry,InnerClass&gt;" line="999"/>
-                <scope line="1001">
-                    <scope line="1003">
-                        <declaration name="pic" type="InnerClass" line="1004"/>
-                        <scope line="1005"/>
+            <method name="collectInnerClasses" type="void" line="748">
+                <declaration name="allICMap" type="Map&lt;ClassEntry,InnerClass&gt;" line="749"/>
+                <scope line="750">
+                    <scope line="752">
+                        <declaration name="pic" type="InnerClass" line="753"/>
+                        <scope line="754"/>
                     </scope>
                 </scope>
-                <declaration name="allICs" type="InnerClass[]" line="1012"/>
-                <scope line="1025"/>
+                <declaration name="allICs" type="InnerClass[]" line="759"/>
+                <scope line="764"/>
             </method>
-            <method name="writeInnerClasses" type="void" line="1030">
-                <scope line="1031">
-                    <declaration name="flags" type="int" line="1032"/>
-                    <scope line="1034"/>
-                    <scope line="1039"/>
+            <method name="writeInnerClasses" type="void" line="768">
+                <scope line="769">
+                    <declaration name="flags" type="int" line="770"/>
+                    <scope line="772"/>
+                    <scope line="777"/>
                 </scope>
             </method>
-            <javadoc line="1046">
+            <javadoc line="783">
                 If there are any extra InnerClasses entries to write which are
                   not already implied by the global table, put them into a
                   local attribute.  This is expected to be rare.                
             </javadoc>
-            <method name="writeLocalInnerClasses" type="void" line="1050">
+            <method name="writeLocalInnerClasses" type="void" line="788">
                 <params>
                     <param name="cls" type="Class"/>
                 </params>
-                <comment line="1056">
-                    Is it redundant with the global version?                    
-                </comment>
-                <comment line="1058">
-                    A zero flag means copy a global IC here.                    
-                </comment>
-                <comment line="1063">
-                    force it to be non-zero                    
-                </comment>
-                <declaration name="localICs" type="List&lt;InnerClass&gt;" line="1051"/>
-                <scope line="1053">
-                    <scope line="1056"/>
-                    <scope line="1059">
-                        <declaration name="flags" type="int" line="1060"/>
+                <declaration name="localICs" type="List&lt;InnerClass&gt;" line="789"/>
+                <scope line="791">
+                    <scope line="793"/>
+                    <scope line="796">
+                        <declaration name="flags" type="int" line="797"/>
                     </scope>
                 </scope>
             </method>
-            <method name="writeClassesAndByteCodes" type="void" line="1070">
-                <comment line="1074">
-                    Note:  This code respects the order in which caller put classes.                    
-                </comment>
-                <comment line="1080">
-                    Collect the class body, sans bytecodes.                    
-                </comment>
-                <comment line="1088">
-                    Encode rare case of null superClass as thisClass:                    
-                </comment>
-                <comment line="1089">
-                    bad class file!?                    
-                </comment>
-                <declaration name="classes" type="Class[]" line="1071"/>
-                <declaration name="nwritten" type="int" line="1077"/>
-                <scope line="1078">
-                    <declaration name="cls" type="Class" line="1080"/>
-                    <declaration name="thisClass" type="ClassEntry" line="1084"/>
-                    <declaration name="superClass" type="ClassEntry" line="1085"/>
-                    <declaration name="interfaces" type="ClassEntry[]" line="1086"/>
-                    <scope line="1093"/>
+            <method name="writeClassesAndByteCodes" type="void" line="805">
+                <declaration name="classes" type="Class[]" line="806"/>
+                <declaration name="nwritten" type="int" line="809"/>
+                <scope line="810">
+                    <declaration name="cls" type="Class" line="811"/>
+                    <declaration name="thisClass" type="ClassEntry" line="813"/>
+                    <declaration name="superClass" type="ClassEntry" line="814"/>
+                    <declaration name="interfaces" type="ClassEntry[]" line="815"/>
+                    <scope line="821"/>
                 </scope>
             </method>
-            <method name="writeMembers" type="void" line="1106">
+            <method name="writeMembers" type="void" line="830">
                 <params>
                     <param name="cls" type="Class"/>
                 </params>
-                <declaration name="fields" type="List&lt;Class.Field&gt;" line="1107"/>
-                <scope line="1109"/>
-                <declaration name="methods" type="List&lt;Class.Method&gt;" line="1114"/>
-                <scope line="1116">
-                    <scope line="1120"/>
+                <declaration name="fields" type="List&lt;Class.Field&gt;" line="831"/>
+                <scope line="833"/>
+                <declaration name="methods" type="List&lt;Class.Method&gt;" line="837"/>
+                <scope line="839">
+                    <scope line="843"/>
                 </scope>
             </method>
-            <method name="writeCodeHeader" type="void" line="1127">
+            <method name="writeCodeHeader" type="void" line="849">
                 <params>
                     <param name="c" type="Code"/>
                 </params>
-                <comment line="1133">
-                    We must write flags, and can only do so for long headers.                    
-                </comment>
-                <declaration name="attrsOK" type="boolean" line="1128"/>
-                <declaration name="na" type="int" line="1129"/>
-                <declaration name="sc" type="int" line="1130"/>
-                <scope line="1134">
-                    <declaration name="siglen" type="int" line="1135"/>
+                <declaration name="attrsOK" type="boolean" line="850"/>
+                <declaration name="na" type="int" line="851"/>
+                <declaration name="sc" type="int" line="852"/>
+                <scope line="854">
+                    <declaration name="siglen" type="int" line="855"/>
                 </scope>
-                <scope line="1139"/>
-                <scope line="1143"/>
+                <scope line="859"/>
+                <scope line="864"/>
             </method>
-            <method name="writeCodeHandlers" type="void" line="1152">
+            <method name="writeCodeHandlers" type="void" line="871">
                 <params>
                     <param name="c" type="Code"/>
                 </params>
-                <comment line="1156">
-                    null OK                    
-                </comment>
-                <comment line="1157">
-                    Encode end as offset from start, and catch as offset from end,
-                     because they are strongly correlated.                    
-                </comment>
-                <declaration name="sum" type="int" line="1153"/>
-                <scope line="1154"/>
+                <declaration name="sum" type="int" line="872"/>
+                <scope line="873"/>
             </method>
-            <method name="writeAttrs" type="void" line="1172">
+            <method name="writeAttrs" type="void" line="884">
                 <params>
                     <param name="ctype" type="int"/>
                     <param name="h" type="Attribute.Holder"/>
                     <param name="cls" type="Class"/>
                 </params>
-                <comment line="1180">
-                    no extra bits to set here                    
-                </comment>
-                <comment line="1188">
-                    which flags are attr bits?                    
-                </comment>
-                <comment line="1202">
-                    do not use this bit twice here                    
-                </comment>
-                <comment line="1204">
-                    an overflow attr.                    
-                </comment>
-                <comment line="1211">
-                    System.out.println(&quot;overflow @&quot;+index);                    
-                </comment>
-                <comment line="1215">
-                    Special logic to write this attr.                    
-                </comment>
-                <comment line="1219">
-                    Empty attr; nothing more to write here.                    
-                </comment>
-                <comment line="1229">
-                    Write one attribute of type def into ab.                    
-                </comment>
-                <comment line="1250">
-                    clean up                    
-                </comment>
-                <declaration name="xxx_attr_bands" type="MultiBand" line="1173"/>
-                <declaration name="xxx_flags_hi" type="IntBand" line="1174"/>
-                <declaration name="xxx_flags_lo" type="IntBand" line="1175"/>
-                <declaration name="haveLongFlags" type="boolean" line="1176"/>
-                <scope line="1178"/>
-                <declaration name="flagMask" type="long" line="1187"/>
-                <declaration name="flagsToAdd" type="long" line="1188"/>
-                <declaration name="overflowCount" type="int" line="1189"/>
-                <scope line="1190">
-                    <declaration name="def" type="Attribute.Layout" line="1191"/>
-                    <declaration name="index" type="int" line="1192"/>
-                    <scope line="1196"/>
-                    <scope line="1202">
-                        <declaration name="xxx_attr_indexes" type="IntBand" line="1208"/>
-                    </scope>
-                    <scope line="1212">
-                        <scope line="1213"/>
-                    </scope>
-                    <declaration name="ab" type="Band[]" line="1222"/>
-                    <declaration name="bc" type="int[]" line="1225"/>
-                    <declaration name="isCV" type="boolean" line="1230"/>
-                    <anonymous_class line="1233">
-                        <method name="putInt" type="void" line="1234">
-                            <params>
-                                <param name="bandIndex" type="int"/>
-                                <param name="value" type="int"/>
-                            </params>
-                        </method>
-                        <method name="putRef" type="void" line="1237">
-                            <params>
-                                <param name="bandIndex" type="int"/>
-                                <param name="ref" type="Entry"/>
-                            </params>
-                        </method>
-                        <method name="encodeBCI" type="int" line="1240">
-                            <params>
-                                <param name="bci" type="int"/>
-                            </params>
-                            <declaration name="code" type="Code" line="1241"/>
-                        </method>
-                        <method name="noteBackCall" type="void" line="1244">
-                            <params>
-                                <param name="whichCallable" type="int"/>
-                            </params>
-                        </method>
-                    </anonymous_class>
-                </scope>
-                <scope line="1252">
-                    <declaration name="xxx_attr_count" type="IntBand" line="1253"/>
-                </scope>
             </method>
-            <declaration name="curCode" type="Code" line="1269"/>
-            <declaration name="curClass" type="Class" line="1270"/>
-            <declaration name="curCPMap" type="Entry[]" line="1271"/>
-            <method name="beginCode" type="void" line="1272">
+            <declaration name="curCode" type="Code" line="962"/>
+            <declaration name="curClass" type="Class" line="963"/>
+            <declaration name="curCPMap" type="Entry[]" line="964"/>
+            <method name="beginCode" type="void" line="965">
                 <params>
                     <param name="c" type="Code"/>
                 </params>
             </method>
-            <method name="endCode" type="void" line="1278"/>
-            <method name="initOpVariant" type="int" line="1286">
+            <method name="endCode" type="void" line="971"/>
+            <method name="initOpVariant" type="int" line="976">
                 <params>
                     <param name="i" type="Instruction"/>
                     <param name="newClass" type="Entry"/>
                 </params>
-                <declaration name="ref" type="MemberEntry" line="1288"/>
-                <declaration name="refClass" type="ClassEntry" line="1291"/>
+                <declaration name="ref" type="MemberEntry" line="978"/>
+                <declaration name="refClass" type="ClassEntry" line="980"/>
             </method>
-            <method name="selfOpVariant" type="int" line="1303">
+            <method name="selfOpVariant" type="int" line="986">
                 <params>
                     <param name="i" type="Instruction"/>
                 </params>
-                <declaration name="bc" type="int" line="1304"/>
-                <declaration name="ref" type="MemberEntry" line="1306"/>
-                <declaration name="refClass" type="ClassEntry" line="1307"/>
-                <declaration name="self_bc" type="int" line="1308"/>
+                <declaration name="bc" type="int" line="987"/>
+                <declaration name="ref" type="MemberEntry" line="989"/>
+                <declaration name="refClass" type="ClassEntry" line="990"/>
+                <declaration name="self_bc" type="int" line="991"/>
             </method>
-            <method name="writeByteCodes" type="void" line="1316">
+            <method name="writeByteCodes" type="void" line="996">
                 <params>
                     <param name="code" type="Code"/>
                 </params>
-                <comment line="1321">
-                    true if the previous instruction is an aload to absorb                    
-                </comment>
-                <comment line="1324">
-                    class of most recent new; helps compress &lt;init&gt; calls                    
-                </comment>
-                <comment line="1328">
-                    %%% Add a stress mode which issues _ref/_byte_escape.                    
-                </comment>
-                <comment line="1334">
-                    Crash and burn with a complaint if there are funny
-                     bytecodes in this class file.                    
-                </comment>
-                <comment line="1354">
-                    Begin &quot;bc_linker&quot; compression.                    
-                </comment>
-                <comment line="1356">
-                    Try to group aload_0 with a following operation.                    
-                </comment>
-                <comment line="1364">
-                    Test for &lt;init&gt; invocations:                    
-                </comment>
-                <comment line="1368">
-                    get rid of it                    
-                </comment>
-                <comment line="1371">
-                    used up                    
-                </comment>
-                <comment line="1373">
-                    Write special bytecode.                    
-                </comment>
-                <comment line="1377">
-                    Write operand to a separate band.                    
-                </comment>
-                <comment line="1388">
-                    used up                    
-                </comment>
-                <comment line="1391">
-                    Write special bytecode.                    
-                </comment>
-                <comment line="1394">
-                    Write field or method ref to a separate band.                    
-                </comment>
-                <comment line="1402">
-                    End &quot;bc_linker&quot; compression.                    
-                </comment>
-                <comment line="1404">
-                    Normal bytecode.                    
-                </comment>
-                <comment line="1407">
-                    apc:  (df, lo, hi, (hi-lo+1)*(label))                    
-                </comment>
-                <comment line="1408">
-                    apc:  (df, nc, nc*(case, label))                    
-                </comment>
-                <comment line="1411">
-                    Note that we do not write the alignment bytes.                    
-                </comment>
-                <comment line="1414">
-                    write a length specification into the bytecode stream                    
-                </comment>
-                <comment line="1421">
-                    Transmit case values in their own band.                    
-                </comment>
-                <comment line="1429">
-                    Done with the switch.                    
-                </comment>
-                <comment line="1434">
-                    %%% pretend this is invokedynamic                    
-                </comment>
-                <comment line="1439">
-                    transmit the opcode, carefully:                    
-                </comment>
-                <comment line="1441">
-                    one byte of opcode                    
-                </comment>
-                <comment line="1442">
-                    the opcode                    
-                </comment>
-                <comment line="1443">
-                    transmit the CP reference, carefully:                    
-                </comment>
-                <comment line="1445">
-                    two bytes of ref                    
-                </comment>
-                <comment line="1446">
-                    the ref                    
-                </comment>
-                <comment line="1514">
-                    Use a special shorthand for the current class:                    
-                </comment>
-                <comment line="1529">
-                    handle trailing junk                    
-                </comment>
-                <comment line="1532">
-                    Just dump the byte into the bipush pile                    
-                </comment>
-                <comment line="1536">
-                    Make sure the discarded bytes are sane:                    
-                </comment>
-                <comment line="1539">
-                    Make sure there is nothing else to write.                    
-                </comment>
-                <comment line="1560">
-                    Generic instruction.  Copy the body.                    
-                </comment>
-                <comment line="1565">
-                    Do a few remaining multi-byte instructions.                    
-                </comment>
-                <comment line="1577">
-                    that&apos;s it                    
-                </comment>
-                <declaration name="cp" type="IndexGroup" line="1318"/>
-                <declaration name="prevAload" type="boolean" line="1321"/>
-                <declaration name="newClass" type="Entry" line="1324"/>
-                <scope line="1326">
-                    <scope line="1332">
-                        <declaration name="complaint" type="String" line="1335"/>
+                <declaration name="cp" type="IndexGroup" line="998"/>
+                <declaration name="prevAload" type="boolean" line="999"/>
+                <declaration name="newClass" type="Entry" line="1000"/>
+                <scope line="1001">
+                    <scope line="1003">
+                        <declaration name="complaint" type="String" line="1004"/>
                     </scope>
-                    <scope line="1342">
-                        <scope line="1343"/>
+                    <scope line="1008">
+                        <scope line="1009"/>
                     </scope>
-                    <declaration name="bc" type="int" line="1351"/>
-                    <scope line="1354">
-                        <declaration name="ni" type="Instruction" line="1356"/>
-                        <scope line="1357"/>
+                    <declaration name="bc" type="int" line="1016"/>
+                    <scope line="1017">
+                        <declaration name="ni" type="Instruction" line="1018"/>
+                        <scope line="1019"/>
                     </scope>
-                    <declaration name="init_bc" type="int" line="1364"/>
-                    <scope line="1365">
-                        <scope line="1366"/>
-                        <declaration name="ref" type="MemberEntry" line="1375"/>
-                        <declaration name="coding" type="int" line="1377"/>
+                    <declaration name="init_bc" type="int" line="1024"/>
+                    <scope line="1025">
+                        <scope line="1026"/>
+                        <declaration name="ref" type="MemberEntry" line="1033"/>
+                        <declaration name="coding" type="int" line="1034"/>
                     </scope>
-                    <declaration name="self_bc" type="int" line="1382"/>
-                    <scope line="1383">
-                        <declaration name="isField" type="boolean" line="1384"/>
-                        <declaration name="isSuper" type="boolean" line="1385"/>
-                        <declaration name="isAload" type="boolean" line="1386"/>
-                        <declaration name="ref" type="MemberEntry" line="1394"/>
-                        <declaration name="bc_which" type="CPRefBand" line="1395"/>
-                        <declaration name="which_ix" type="Index" line="1396"/>
+                    <declaration name="self_bc" type="int" line="1038"/>
+                    <scope line="1039">
+                        <declaration name="isField" type="boolean" line="1040"/>
+                        <declaration name="isSuper" type="boolean" line="1041"/>
+                        <declaration name="isAload" type="boolean" line="1042"/>
+                        <declaration name="ref" type="MemberEntry" line="1047"/>
+                        <declaration name="bc_which" type="CPRefBand" line="1048"/>
+                        <declaration name="which_ix" type="Index" line="1049"/>
                     </scope>
-                    <declaration name="isw" type="Instruction.Switch" line="1409"/>
-                    <declaration name="apc" type="int" line="1411"/>
-                    <declaration name="npc" type="int" line="1412"/>
-                    <declaration name="caseCount" type="int" line="1414"/>
-                    <scope line="1417"/>
-                    <scope line="1421"/>
-                    <scope line="1423">
-                        <scope line="1424"/>
+                    <declaration name="isw" type="Instruction.Switch" line="1059"/>
+                    <declaration name="apc" type="int" line="1060"/>
+                    <declaration name="npc" type="int" line="1061"/>
+                    <declaration name="caseCount" type="int" line="1062"/>
+                    <scope line="1065"/>
+                    <scope line="1068"/>
+                    <scope line="1071">
+                        <scope line="1072"/>
                     </scope>
-                    <scope line="1434">
-                        <declaration name="refx" type="int" line="1436"/>
-                        <declaration name="ref" type="Entry" line="1437"/>
+                    <scope line="1080">
+                        <declaration name="refx" type="int" line="1082"/>
+                        <declaration name="ref" type="Entry" line="1083"/>
                     </scope>
-                    <declaration name="branch" type="int" line="1450"/>
-                    <scope line="1451"/>
-                    <declaration name="ref" type="Entry" line="1456"/>
-                    <scope line="1457">
-                        <declaration name="bc_which" type="CPRefBand" line="1460"/>
-                        <declaration name="vbc" type="int" line="1461"/>
-                        <scope line="1529"/>
-                        <scope line="1533"/>
-                        <scope line="1537"/>
+                    <declaration name="branch" type="int" line="1093"/>
+                    <scope line="1094"/>
+                    <declaration name="ref" type="Entry" line="1099"/>
+                    <scope line="1100">
+                        <declaration name="bc_which" type="CPRefBand" line="1103"/>
+                        <declaration name="vbc" type="int" line="1104"/>
+                        <scope line="1194"/>
+                        <scope line="1198"/>
+                        <scope line="1202"/>
                     </scope>
-                    <declaration name="slot" type="int" line="1543"/>
-                    <scope line="1544">
-                        <declaration name="con" type="int" line="1547"/>
-                        <scope line="1548">
-                            <scope line="1549"/>
-                            <scope line="1551"/>
+                    <declaration name="slot" type="int" line="1207"/>
+                    <scope line="1208">
+                        <declaration name="con" type="int" line="1211"/>
+                        <scope line="1212">
+                            <scope line="1213"/>
+                            <scope line="1216"/>
                         </scope>
-                        <scope line="1554"/>
+                        <scope line="1220"/>
                     </scope>
-                    <declaration name="pc" type="int" line="1561"/>
-                    <declaration name="npc" type="int" line="1562"/>
-                    <scope line="1563"/>
+                    <declaration name="pc" type="int" line="1226"/>
+                    <declaration name="npc" type="int" line="1227"/>
+                    <scope line="1228"/>
                 </scope>
             </method>
-            <declaration name="codeHist" type="int[]" line="1586"/>
-            <declaration name="ldcHist" type="int[]" line="1587"/>
-            <method name="printCodeHist" type="void" line="1588">
-                <declaration name="hist" type="String[]" line="1590"/>
-                <declaration name="totalBytes" type="int" line="1591"/>
-                <scope line="1592"/>
-                <scope line="1595">
-                    <scope line="1596"/>
-                    <declaration name="iname" type="String" line="1597"/>
-                    <declaration name="count" type="String" line="1598"/>
-                    <declaration name="pct" type="String" line="1600"/>
-                    <scope line="1601"/>
+            <declaration name="codeHist" type="int[]" line="1249"/>
+            <declaration name="ldcHist" type="int[]" line="1250"/>
+            <method name="printCodeHist" type="void" line="1251">
+                <declaration name="hist" type="String[]" line="1253"/>
+                <declaration name="totalBytes" type="int" line="1254"/>
+                <scope line="1255"/>
+                <scope line="1258">
+                    <scope line="1259"/>
+                    <declaration name="iname" type="String" line="1263"/>
+                    <declaration name="count" type="String" line="1264"/>
+                    <declaration name="pct" type="String" line="1266"/>
+                    <scope line="1267"/>
                 </scope>
-                <scope line="1609"/>
-                <scope line="1613">
-                    <declaration name="count" type="int" line="1614"/>
+                <scope line="1275"/>
+                <scope line="1279">
+                    <declaration name="count" type="int" line="1280"/>
                 </scope>
             </method>
         </class>

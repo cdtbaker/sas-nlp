@@ -1,6 +1,7 @@
 package main.commentextraction.com.jml.output;
 
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 
@@ -86,6 +87,10 @@ public class XMLOutputter {
 	}
 
 	public void toFile(String path) throws IOException {
+		File f = new File(path);
+		if(!f.exists()){
+			new File(path.substring(0,path.lastIndexOf('\\')+1)).mkdirs();
+		}
 		FileWriter fw = new FileWriter(path + ".xml");
 		BufferedWriter bw = new BufferedWriter(fw);
 
