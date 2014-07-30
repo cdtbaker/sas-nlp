@@ -18,300 +18,9 @@
         <import package="java.util.concurrent.locks.LockSupport"/>
         <import package="java.util.concurrent.locks.ReentrantLock"/>
         <import package="java.util.concurrent.locks.Condition"/>
-        <class name="ForkJoinPool" line="57">
+        <class name="ForkJoinPool" line="20">
             <extends class="AbstractExecutorService"/>
-            <comment line="157">
-                Implementation Overview
-                
-                 This class provides the central bookkeeping and control for a
-                 set of worker threads: Submissions from non-FJ threads enter
-                 into a submission queue. Workers take these tasks and typically
-                 split them into subtasks that may be stolen by other workers.
-                 Preference rules give first priority to processing tasks from
-                 their own queues (LIFO or FIFO, depending on mode), then to
-                 randomized FIFO steals of tasks in other worker queues, and
-                 lastly to new submissions.
-                
-                 The main throughput advantages of work-stealing stem from
-                 decentralized control -- workers mostly take tasks from
-                 themselves or each other. We cannot negate this in the
-                 implementation of other management responsibilities. The main
-                 tactic for avoiding bottlenecks is packing nearly all
-                 essentially atomic control state into a single 64bit volatile
-                 variable (&quot;ctl&quot;). This variable is read on the order of 10-100
-                 times as often as it is modified (always via CAS). (There is
-                 some additional control state, for example variable &quot;shutdown&quot;
-                 for which we can cope with uncoordinated updates.)  This
-                 streamlines synchronization and control at the expense of messy
-                 constructions needed to repack status bits upon updates.
-                 Updates tend not to contend with each other except during
-                 bursts while submitted tasks begin or end.  In some cases when
-                 they do contend, threads can instead do something else
-                 (usually, scan for tasks) until contention subsides.
-                
-                 To enable packing, we restrict maximum parallelism to (1&lt;&lt;15)-1
-                 (which is far in excess of normal operating range) to allow
-                 ids, counts, and their negations (used for thresholding) to fit
-                 into 16bit fields.
-                
-                 Recording Workers.  Workers are recorded in the &quot;workers&quot; array
-                 that is created upon pool construction and expanded if (rarely)
-                 necessary.  This is an array as opposed to some other data
-                 structure to support index-based random steals by workers.
-                 Updates to the array recording new workers and unrecording
-                 terminated ones are protected from each other by a seqLock
-                 (scanGuard) but the array is otherwise concurrently readable,
-                 and accessed directly by workers. To simplify index-based
-                 operations, the array size is always a power of two, and all
-                 readers must tolerate null slots. To avoid flailing during
-                 start-up, the array is presized to hold twice #parallelism
-                 workers (which is unlikely to need further resizing during
-                 execution). But to avoid dealing with so many null slots,
-                 variable scanGuard includes a mask for the nearest power of two
-                 that contains all current workers.  All worker thread creation
-                 is on-demand, triggered by task submissions, replacement of
-                 terminated workers, andor compensation for blocked
-                 workers. However, all other support code is set up to work with
-                 other policies.  To ensure that we do not hold on to worker
-                 references that would prevent GC, ALL accesses to workers are
-                 via indices into the workers array (which is one source of some
-                 of the messy code constructions here). In essence, the workers
-                 array serves as a weak reference mechanism. Thus for example
-                 the wait queue field of ctl stores worker indices, not worker
-                 references.  Access to the workers in associated methods (for
-                 example signalWork) must both index-check and null-check the
-                 IDs. All such accesses ignore bad IDs by returning out early
-                 from what they are doing, since this can only be associated
-                 with termination, in which case it is OK to give up.
-                
-                 All uses of the workers array, as well as queue arrays, check
-                 that the array is non-null (even if previously non-null). This
-                 allows nulling during termination, which is currently not
-                 necessary, but remains an option for resource-revocation-based
-                 shutdown schemes.
-                
-                 Wait Queuing. Unlike HPC work-stealing frameworks, we cannot
-                 let workers spin indefinitely scanning for tasks when none can
-                 be found immediately, and we cannot startresume workers unless
-                 there appear to be tasks available.  On the other hand, we must
-                 quickly prod them into action when new tasks are submitted or
-                 generated.  We parkunpark workers after placing in an event
-                 wait queue when they cannot find work. This &quot;queue&quot; is actually
-                 a simple Treiber stack, headed by the &quot;id&quot; field of ctl, plus a
-                 15bit counter value to both wake up waiters (by advancing their
-                 count) and avoid ABA effects. Successors are held in worker
-                 field &quot;nextWait&quot;.  Queuing deals with several intrinsic races,
-                 mainly that a task-producing thread can miss seeing (and
-                 signalling) another thread that gave up looking for work but
-                 has not yet entered the wait queue. We solve this by requiring
-                 a full sweep of all workers both before (in scan()) and after
-                 (in tryAwaitWork()) a newly waiting worker is added to the wait
-                 queue. During a rescan, the worker might release some other
-                 queued worker rather than itself, which has the same net
-                 effect. Because enqueued workers may actually be rescanning
-                 rather than waiting, we set and clear the &quot;parked&quot; field of
-                 ForkJoinWorkerThread to reduce unnecessary calls to unpark.
-                 (Use of the parked field requires a secondary recheck to avoid
-                 missed signals.)
-                
-                 Signalling.  We create or wake up workers only when there
-                 appears to be at least one task they might be able to find and
-                 execute.  When a submission is added or another worker adds a
-                 task to a queue that previously had two or fewer tasks, they
-                 signal waiting workers (or trigger creation of new ones if
-                 fewer than the given parallelism level -- see signalWork).
-                 These primary signals are buttressed by signals during rescans
-                 as well as those performed when a worker steals a task and
-                 notices that there are more tasks too; together these cover the
-                 signals needed in cases when more than two tasks are pushed
-                 but untaken.
-                
-                 Trimming workers. To release resources after periods of lack of
-                 use, a worker starting to wait when the pool is quiescent will
-                 time out and terminate if the pool has remained quiescent for
-                 SHRINK_RATE nanosecs. This will slowly propagate, eventually
-                 terminating all workers after long periods of non-use.
-                
-                 Submissions. External submissions are maintained in an
-                 array-based queue that is structured identically to
-                 ForkJoinWorkerThread queues except for the use of
-                 submissionLock in method addSubmission. Unlike the case for
-                 worker queues, multiple external threads can add new
-                 submissions, so adding requires a lock.
-                
-                 Compensation. Beyond work-stealing support and lifecycle
-                 control, the main responsibility of this framework is to take
-                 actions when one worker is waiting to join a task stolen (or
-                 always held by) another.  Because we are multiplexing many
-                 tasks on to a pool of workers, we can&apos;t just let them block (as
-                 in Thread.join).  We also cannot just reassign the joiner&apos;s
-                 run-time stack with another and replace it later, which would
-                 be a form of &quot;continuation&quot;, that even if possible is not
-                 necessarily a good idea since we sometimes need both an
-                 unblocked task and its continuation to progress. Instead we
-                 combine two tactics:
-                
-                   Helping: Arranging for the joiner to execute some task that it
-                      would be running if the steal had not occurred.  Method
-                      ForkJoinWorkerThread.joinTask tracks joining-&gt;stealing
-                      links to try to find such a task.
-                
-                   Compensating: Unless there are already enough live threads,
-                      method tryPreBlock() may create or re-activate a spare
-                      thread to compensate for blocked joiners until they
-                      unblock.
-                
-                 The ManagedBlocker extension API can&apos;t use helping so relies
-                 only on compensation in method awaitBlocker.
-                
-                 It is impossible to keep exactly the target parallelism number
-                 of threads running at any given time.  Determining the
-                 existence of conservatively safe helping targets, the
-                 availability of already-created spares, and the apparent need
-                 to create new spares are all racy and require heuristic
-                 guidance, so we rely on multiple retries of each.  Currently,
-                 in keeping with on-demand signalling policy, we compensate only
-                 if blocking would leave less than one active (non-waiting,
-                 non-blocked) worker. Additionally, to avoid some false alarms
-                 due to GC, lagging counters, system activity, etc, compensated
-                 blocking for joins is only attempted after rechecks stabilize
-                 (retries are interspersed with Thread.yield, for good
-                 citizenship).  The variable blockedCount, incremented before
-                 blocking and decremented after, is sometimes needed to
-                 distinguish cases of waiting for work vs blocking on joins or
-                 other managed sync. Both cases are equivalent for most pool
-                 control, so we can update non-atomically. (Additionally,
-                 contention on blockedCount alleviates some contention on ctl).
-                
-                 Shutdown and Termination. A call to shutdownNow atomically sets
-                 the ctl stop bit and then (non-atomically) sets each workers
-                 &quot;terminate&quot; status, cancels all unprocessed tasks, and wakes up
-                 all waiting workers.  Detecting whether termination should
-                 commence after a non-abrupt shutdown() call requires more work
-                 and bookkeeping. We need consensus about quiesence (i.e., that
-                 there is no more work) which is reflected in active counts so
-                 long as there are no current blockers, as well as possible
-                 re-evaluations during independent changes in blocking or
-                 quiescing workers.
-                
-                 Style notes: There is a lot of representation-level coupling
-                 among classes ForkJoinPool, ForkJoinWorkerThread, and
-                 ForkJoinTask.  Most fields of ForkJoinWorkerThread maintain
-                 data structures managed by ForkJoinPool, so are directly
-                 accessed.  Conversely we allow access to &quot;workers&quot; array by
-                 workers, and direct access to ForkJoinTask.status by both
-                 ForkJoinPool and ForkJoinWorkerThread.  There is little point
-                 trying to reduce this, since any associated future changes in
-                 representations will need to be accompanied by algorithmic
-                 changes anyway. All together, these low-level implementation
-                 choices produce as much as a factor of 4 performance
-                 improvement compared to naive implementations, and enable the
-                 processing of billions of tasks per second, at the expense of
-                 some ugliness.
-                
-                 Methods signalWork() and scan() are the main bottlenecks so are
-                 especially heavily micro-optimizedmangled.  There are lots of
-                 inline assignments (of form &quot;while ((local = field) != 0)&quot;)
-                 which are usually the simplest way to ensure the required read
-                 orderings (which are sometimes critical). This leads to a
-                 &quot;C&quot;-like style of listing declarations of these locals at the
-                 heads of methods or blocks.  There are several occurrences of
-                 the unusual &quot;do {} while (!cas...)&quot;  which is the simplest way
-                 to force an update of a CAS&apos;ed variable. There are also other
-                 coding oddities that help some methods perform reasonably even
-                 when interpreted (not compiled).
-                
-                 The order of declarations in this file is: (1) declarations of
-                 statics (2) fields (along with constants used when unpacking
-                 some of them), listed in an order that tends to reduce
-                 contention among them a bit under most JVMs.  (3) internal
-                 control methods (4) callbacks and other support for
-                 ForkJoinTask and ForkJoinWorkerThread classes, (5) exported
-                 methods (plus a few little helpers). (6) static block
-                 initializing all statics in a minimally dependent order.                
-            </comment>
-            <comment line="457">
-                16M                
-            </comment>
-            <comment line="520">
-                bit positions/shifts for fields                
-            </comment>
-            <comment line="526">
-                bounds                
-            </comment>
-            <comment line="527">
-                max poolIndex                
-            </comment>
-            <comment line="528">
-                mask short bits                
-            </comment>
-            <comment line="532">
-                masks                
-            </comment>
-            <comment line="537">
-                units for incrementing and decrementing                
-            </comment>
-            <comment line="541">
-                masks and units for dealing with u = (int)(ctl &gt;&gt;&gt; 32)                
-            </comment>
-            <comment line="549">
-                masks and units for dealing with e = (int)ctl                
-            </comment>
-            <comment line="550">
-                no STOP_BIT                
-            </comment>
-            <comment line="630">
-                4 seconds                
-            </comment>
-            <comment line="653">
-                Signalling                
-            </comment>
-            <comment line="724">
-                Scanning for tasks                
-            </comment>
-            <comment line="912">
-                Submissions                
-            </comment>
-            <comment line="938">
-                (pollSubmission is defined below with exported methods)                
-            </comment>
-            <comment line="966">
-                Blocking support                
-            </comment>
-            <comment line="1106">
-                Creating, registering and deregistring workers                
-            </comment>
-            <comment line="1246">
-                Shutdown and termination                
-            </comment>
-            <comment line="1354">
-                misc ForkJoinWorkerThread support                
-            </comment>
-            <comment line="1399">
-                Exported methods                
-            </comment>
-            <comment line="1401">
-                Constructors                
-            </comment>
-            <comment line="1493">
-                Execution methods                
-            </comment>
-            <comment line="1556">
-                AbstractExecutorService methods                
-            </comment>
-            <comment line="2122">
-                AbstractExecutorService overrides.  These rely on undocumented                
-            </comment>
-            <comment line="2123">
-                fact that ForkJoinTask.adapt returns ForkJoinTasks that also                
-            </comment>
-            <comment line="2124">
-                implement RunnableFuture.                
-            </comment>
-            <comment line="2134">
-                Unsafe mechanics                
-            </comment>
-            <javadoc line="57">
+            <javadoc line="20">
                 An {@link ExecutorService} for running {@link ForkJoinTask}s.
                   A {@code ForkJoinPool} provides the entry point for submissions
                   from non-{@code ForkJoinTask} clients, as well as management and
@@ -391,14 +100,14 @@
                 </author>
             </javadoc>
             <interface name="ForkJoinWorkerThreadFactory">
-                <javadoc line="367">
+                <javadoc line="96">
                     Factory for creating new {@link ForkJoinWorkerThread}s.
                       A {@code ForkJoinWorkerThreadFactory} must be defined and used
                       for {@code ForkJoinWorkerThread} subclasses that extend base
                       functionality or initialize threads with different contexts.                    
                 </javadoc>
-                <method name="newThread" type="ForkJoinWorkerThread" line="374"/>
-                <javadoc line="374">
+                <method name="newThread" type="ForkJoinWorkerThread" line="103"/>
+                <javadoc line="103">
                     Returns a new worker thread operating in the given pool.                    
                     <param>
                         pool the pool this thread works in                        
@@ -408,49 +117,49 @@
                     </throws>
                 </javadoc>
             </interface>
-            <class name="DefaultForkJoinWorkerThreadFactory" line="383">
+            <class name="DefaultForkJoinWorkerThreadFactory" line="110">
                 <implements interface="ForkJoinWorkerThreadFactory"/>
-                <javadoc line="383">
+                <javadoc line="110">
                     Default ForkJoinWorkerThreadFactory implementation; creates a
                       new ForkJoinWorkerThread.                    
                 </javadoc>
-                <method name="newThread" type="ForkJoinWorkerThread" line="389">
+                <method name="newThread" type="ForkJoinWorkerThread" line="115">
                     <params>
                         <param name="pool" type="ForkJoinPool"/>
                     </params>
                 </method>
             </class>
-            <declaration name="defaultForkJoinWorkerThreadFactory" type="ForkJoinWorkerThreadFactory" line="394"/>
-            <javadoc line="394">
+            <declaration name="defaultForkJoinWorkerThreadFactory" type="ForkJoinWorkerThreadFactory" line="119"/>
+            <javadoc line="119">
                 Creates a new ForkJoinWorkerThread. This factory is used unless
                   overridden in ForkJoinPool constructors.                
             </javadoc>
-            <declaration name="modifyThreadPermission" type="RuntimePermission" line="401"/>
-            <javadoc line="401">
+            <declaration name="modifyThreadPermission" type="RuntimePermission" line="124"/>
+            <javadoc line="124">
                 Permission required for callers of methods that may start or
                   kill threads.                
             </javadoc>
-            <javadoc line="407">
+            <javadoc line="129">
                 If there is a security manager, makes sure caller has
                   permission to modify threads.                
             </javadoc>
-            <method name="checkPermission" type="void" line="411">
-                <declaration name="security" type="SecurityManager" line="412"/>
+            <method name="checkPermission" type="void" line="133">
+                <declaration name="security" type="SecurityManager" line="134"/>
             </method>
-            <declaration name="poolNumberGenerator" type="AtomicInteger" line="417"/>
-            <javadoc line="417">
+            <declaration name="poolNumberGenerator" type="AtomicInteger" line="137"/>
+            <javadoc line="137">
                 Generator for assigning sequence numbers as pool names.                
             </javadoc>
-            <declaration name="workerSeedGenerator" type="Random" line="422"/>
-            <javadoc line="422">
+            <declaration name="workerSeedGenerator" type="Random" line="141"/>
+            <javadoc line="141">
                 Generator for initial random seeds for worker victim
                   selection. This is used only to create initial seeds. Random
                   steals use a cheaper xorshift generator per steal attempt. We
                   don&apos;t expect much contention on seedGenerator, so just use a
                   plain Random.                
             </javadoc>
-            <declaration name="workers" type="ForkJoinWorkerThread[]" line="431"/>
-            <javadoc line="431">
+            <declaration name="workers" type="ForkJoinWorkerThread[]" line="149"/>
+            <javadoc line="149">
                 Array holding all worker threads in the pool.  Initialized upon
                   construction. Array size must be a power of two.  Updates and
                   replacements are protected by scanGuard, but the array is
@@ -460,52 +169,52 @@
                   as reads memory-acquire by first reading ctl. All readers must
                   tolerate that some array slots may be null.                
             </javadoc>
-            <declaration name="INITIAL_QUEUE_CAPACITY" type="int" line="443"/>
-            <javadoc line="443">
+            <declaration name="INITIAL_QUEUE_CAPACITY" type="int" line="160"/>
+            <javadoc line="160">
                 Initial size for submission queue array. Must be a power of
                   two.  In many applications, these always stay small so we use a
                   small initial cap.                
             </javadoc>
-            <declaration name="MAXIMUM_QUEUE_CAPACITY" type="int" line="450"/>
-            <javadoc line="450">
+            <declaration name="MAXIMUM_QUEUE_CAPACITY" type="int" line="166"/>
+            <javadoc line="166">
                 Maximum size for submission queue array. Must be a power of two
                   less than or equal to 1 &lt;&lt; (31 - width of array entry) to
                   ensure lack of index wraparound, but is capped at a lower
                   value to help users trap runaway computations.                
             </javadoc>
-            <declaration name="submissionQueue" type="ForkJoinTask&lt;?&gt;[]" line="458"/>
-            <javadoc line="458">
+            <declaration name="submissionQueue" type="ForkJoinTask&lt;?&gt;[]" line="173"/>
+            <javadoc line="173">
                 Array serving as submission queue. Initialized upon construction.                
             </javadoc>
-            <declaration name="submissionLock" type="ReentrantLock" line="463"/>
-            <javadoc line="463">
+            <declaration name="submissionLock" type="ReentrantLock" line="177"/>
+            <javadoc line="177">
                 Lock protecting submissions array for addSubmission                
             </javadoc>
-            <declaration name="termination" type="Condition" line="468"/>
-            <javadoc line="468">
+            <declaration name="termination" type="Condition" line="181"/>
+            <javadoc line="181">
                 Condition for awaitTermination, using submissionLock for
                   convenience.                
             </javadoc>
-            <declaration name="factory" type="ForkJoinWorkerThreadFactory" line="474"/>
-            <javadoc line="474">
+            <declaration name="factory" type="ForkJoinWorkerThreadFactory" line="186"/>
+            <javadoc line="186">
                 Creation factory for worker threads.                
             </javadoc>
-            <declaration name="ueh" type="Thread.UncaughtExceptionHandler" line="479"/>
-            <javadoc line="479">
+            <declaration name="ueh" type="Thread.UncaughtExceptionHandler" line="190"/>
+            <javadoc line="190">
                 The uncaught exception handler used when any worker abruptly
                   terminates.                
             </javadoc>
-            <declaration name="workerNamePrefix" type="String" line="485"/>
-            <javadoc line="485">
+            <declaration name="workerNamePrefix" type="String" line="195"/>
+            <javadoc line="195">
                 Prefix for assigning names to worker threads                
             </javadoc>
-            <declaration name="stealCount" type="long" line="490"/>
-            <javadoc line="490">
+            <declaration name="stealCount" type="long" line="199"/>
+            <javadoc line="199">
                 Sum of per-thread steal counts, updated only when threads are
                   idle or terminating.                
             </javadoc>
-            <declaration name="ctl" type="long" line="496"/>
-            <javadoc line="496">
+            <declaration name="ctl" type="long" line="204"/>
+            <javadoc line="204">
                 Main pool control -- a long packed with:
                   AC: Number of active running workers minus target parallelism (16 bits)
                   TC: Number of total workers minus target parallelism (16bits)
@@ -525,74 +234,74 @@
                   negative fields, we use casts in and out of &quot;short&quot; and/or
                   signed shifts to maintain signedness.                
             </javadoc>
-            <declaration name="AC_SHIFT" type="int" line="520"/>
-            <declaration name="TC_SHIFT" type="int" line="521"/>
-            <declaration name="ST_SHIFT" type="int" line="522"/>
-            <declaration name="EC_SHIFT" type="int" line="523"/>
-            <declaration name="MAX_ID" type="int" line="526"/>
-            <declaration name="SMASK" type="int" line="527"/>
-            <declaration name="SHORT_SIGN" type="int" line="528"/>
-            <declaration name="INT_SIGN" type="int" line="529"/>
-            <declaration name="STOP_BIT" type="long" line="532"/>
-            <declaration name="AC_MASK" type="long" line="533"/>
-            <declaration name="TC_MASK" type="long" line="534"/>
-            <declaration name="TC_UNIT" type="long" line="537"/>
-            <declaration name="AC_UNIT" type="long" line="538"/>
-            <declaration name="UAC_SHIFT" type="int" line="541"/>
-            <declaration name="UTC_SHIFT" type="int" line="542"/>
-            <declaration name="UAC_MASK" type="int" line="543"/>
-            <declaration name="UTC_MASK" type="int" line="544"/>
-            <declaration name="UAC_UNIT" type="int" line="545"/>
-            <declaration name="UTC_UNIT" type="int" line="546"/>
-            <declaration name="E_MASK" type="int" line="549"/>
-            <declaration name="EC_UNIT" type="int" line="550"/>
-            <declaration name="parallelism" type="int" line="552"/>
-            <javadoc line="552">
+            <declaration name="AC_SHIFT" type="int" line="225"/>
+            <declaration name="TC_SHIFT" type="int" line="226"/>
+            <declaration name="ST_SHIFT" type="int" line="227"/>
+            <declaration name="EC_SHIFT" type="int" line="228"/>
+            <declaration name="MAX_ID" type="int" line="229"/>
+            <declaration name="SMASK" type="int" line="230"/>
+            <declaration name="SHORT_SIGN" type="int" line="231"/>
+            <declaration name="INT_SIGN" type="int" line="232"/>
+            <declaration name="STOP_BIT" type="long" line="233"/>
+            <declaration name="AC_MASK" type="long" line="234"/>
+            <declaration name="TC_MASK" type="long" line="235"/>
+            <declaration name="TC_UNIT" type="long" line="236"/>
+            <declaration name="AC_UNIT" type="long" line="237"/>
+            <declaration name="UAC_SHIFT" type="int" line="238"/>
+            <declaration name="UTC_SHIFT" type="int" line="239"/>
+            <declaration name="UAC_MASK" type="int" line="240"/>
+            <declaration name="UTC_MASK" type="int" line="241"/>
+            <declaration name="UAC_UNIT" type="int" line="242"/>
+            <declaration name="UTC_UNIT" type="int" line="243"/>
+            <declaration name="E_MASK" type="int" line="244"/>
+            <declaration name="EC_UNIT" type="int" line="245"/>
+            <declaration name="parallelism" type="int" line="246"/>
+            <javadoc line="246">
                 The target parallelism level.                
             </javadoc>
-            <declaration name="queueBase" type="int" line="557"/>
-            <javadoc line="557">
+            <declaration name="queueBase" type="int" line="250"/>
+            <javadoc line="250">
                 Index (mod submission queue length) of next element to take
                   from submission queue. Usage is identical to that for
                   per-worker queues -- see ForkJoinWorkerThread internal
                   documentation.                
             </javadoc>
-            <declaration name="queueTop" type="int" line="565"/>
-            <javadoc line="565">
+            <declaration name="queueTop" type="int" line="257"/>
+            <javadoc line="257">
                 Index (mod submission queue length) of next element to add
                   in submission queue. Usage is identical to that for
                   per-worker queues -- see ForkJoinWorkerThread internal
                   documentation.                
             </javadoc>
-            <declaration name="shutdown" type="boolean" line="573"/>
-            <javadoc line="573">
+            <declaration name="shutdown" type="boolean" line="264"/>
+            <javadoc line="264">
                 True when shutdown() has been called.                
             </javadoc>
-            <declaration name="locallyFifo" type="boolean" line="578"/>
-            <javadoc line="578">
+            <declaration name="locallyFifo" type="boolean" line="268"/>
+            <javadoc line="268">
                 True if use local fifo, not default lifo, for local polling
                   Read by, and replicated by ForkJoinWorkerThreads                
             </javadoc>
-            <declaration name="quiescerCount" type="int" line="584"/>
-            <javadoc line="584">
+            <declaration name="quiescerCount" type="int" line="273"/>
+            <javadoc line="273">
                 The number of threads in ForkJoinWorkerThreads.helpQuiescePool.
                   When non-zero, suppresses automatic shutdown when active
                   counts become zero.                
             </javadoc>
-            <declaration name="blockedCount" type="int" line="591"/>
-            <javadoc line="591">
+            <declaration name="blockedCount" type="int" line="279"/>
+            <javadoc line="279">
                 The number of threads blocked in join.                
             </javadoc>
-            <declaration name="nextWorkerNumber" type="int" line="596"/>
-            <javadoc line="596">
+            <declaration name="nextWorkerNumber" type="int" line="283"/>
+            <javadoc line="283">
                 Counter for worker Thread names (unrelated to their poolIndex)                
             </javadoc>
-            <declaration name="nextWorkerIndex" type="int" line="601"/>
-            <javadoc line="601">
+            <declaration name="nextWorkerIndex" type="int" line="287"/>
+            <javadoc line="287">
                 The index for the next created worker. Accessed under scanGuard.                
             </javadoc>
-            <declaration name="scanGuard" type="int" line="606"/>
-            <javadoc line="606">
+            <declaration name="scanGuard" type="int" line="291"/>
+            <javadoc line="291">
                 SeqLock and index masking for updates to workers array.  Locked
                   when SG_UNIT is set. Unlocking clears bit by adding
                   SG_UNIT. Staleness of read-only operations can be checked by
@@ -602,9 +311,9 @@
                   dealing with large numbers of null slots when the workers array
                   is overallocated.                
             </javadoc>
-            <declaration name="SG_UNIT" type="int" line="618"/>
-            <declaration name="SHRINK_RATE" type="long" line="620"/>
-            <javadoc line="620">
+            <declaration name="SG_UNIT" type="int" line="302"/>
+            <declaration name="SHRINK_RATE" type="long" line="303"/>
+            <javadoc line="303">
                 The wakeup interval (in nanoseconds) for a worker waiting for a
                   task when the pool is quiescent to instead try to shrink the
                   number of workers.  The exact value does not matter too
@@ -612,7 +321,7 @@
                   sustained periods of idleness, but not so short that threads
                   are continually re-created.                
             </javadoc>
-            <javadoc line="631">
+            <javadoc line="312">
                 Top-level loop for worker threads: On each step: if the
                   previous step swept through all queues and found no tasks, or
                   there are excess threads, then possibly blocks. Otherwise,
@@ -622,70 +331,50 @@
                     w the worker                    
                 </param>
             </javadoc>
-            <method name="work" type="void" line="640">
+            <method name="work" type="void" line="320">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                 </params>
-                <comment line="641">
-                    true on empty scans                    
-                </comment>
-                <comment line="644">
-                    active count                    
-                </comment>
-                <declaration name="swept" type="boolean" line="641"/>
-                <declaration name="c" type="long" line="642"/>
-                <scope line="643">
-                    <declaration name="a" type="int" line="644"/>
+                <declaration name="swept" type="boolean" line="321"/>
+                <declaration name="c" type="long" line="322"/>
+                <scope line="323">
+                    <declaration name="a" type="int" line="324"/>
                 </scope>
             </method>
-            <javadoc line="654">
+            <javadoc line="329">
                 Wakes up or creates a worker.                
             </javadoc>
-            <method name="signalWork" type="void" line="657">
-                <comment line="658">
-                    The while condition is true if: (there is are too few total
-                     workers OR there is at least one waiter) AND (there are too
-                     few active workers OR the pool is terminating).  The value
-                     of e distinguishes the remaining cases: zero (no waiters)
-                     for create, negative if terminating (in which case do
-                     nothing), else release a waiter. The secondary checks for
-                     release (non-null array etc) can fail if the pool begins
-                     terminating after the test, and don&apos;t impose any added cost
-                     because JVMs must perform null and bounds checks anyway.                    
-                </comment>
-                <comment line="672">
-                    release a waiting worker                    
-                </comment>
-                <declaration name="c" type="long" line="669"/>
-                <declaration name="e" type="int" line="669"/>
-                <scope line="671">
-                    <scope line="672">
-                        <declaration name="i" type="int" line="673"/>
-                        <declaration name="w" type="ForkJoinWorkerThread" line="673"/>
-                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="673"/>
-                        <declaration name="nc" type="long" line="678"/>
-                        <scope line="681"/>
+            <method name="signalWork" type="void" line="332">
+                <declaration name="c" type="long" line="333"/>
+                <declaration name="e" type="int" line="334"/>
+                <scope line="335">
+                    <scope line="336">
+                        <declaration name="i" type="int" line="337"/>
+                        <declaration name="w" type="ForkJoinWorkerThread" line="338"/>
+                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="339"/>
+                        <declaration name="nc" type="long" line="341"/>
+                        <scope line="342"/>
                     </scope>
-                    <scope line="691"/>
+                    <scope line="348"/>
                 </scope>
             </method>
-            <javadoc line="698">
+            <javadoc line="354">
                 Variant of signalWork to help release waiters on rescans.
                   Tries once to release a waiter if active count &lt; 0.                
                 <return>
                     false if failed due to contention, else true                    
                 </return>
             </javadoc>
-            <method name="tryReleaseWaiter" type="boolean" line="704">
-                <declaration name="c" type="long" line="705"/>
-                <declaration name="e" type="int" line="705"/>
-                <declaration name="w" type="ForkJoinWorkerThread" line="705"/>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="705"/>
-                <scope line="710">
-                    <declaration name="nc" type="long" line="711"/>
+            <method name="tryReleaseWaiter" type="boolean" line="359">
+                <declaration name="c" type="long" line="360"/>
+                <declaration name="e" type="int" line="361"/>
+                <declaration name="w" type="ForkJoinWorkerThread" line="362"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="363"/>
+                <scope line="364">
+                    <declaration name="nc" type="long" line="365"/>
                 </scope>
             </method>
-            <javadoc line="725">
+            <javadoc line="372">
                 Scans for and, if found, executes one task. Scans start at a
                   random index of workers array, and randomly select the first
                   (2#workers)-1 probes, and then, if all empty, resort to 2
@@ -709,62 +398,38 @@
                     true if swept all queues without finding a task                    
                 </return>
             </javadoc>
-            <method name="scan" type="boolean" line="744">
+            <method name="scan" type="boolean" line="390">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                     <param name="a" type="int"/>
                 </params>
-                <comment line="745">
-                    mask 0 avoids useless scans if only one active                    
-                </comment>
-                <comment line="748">
-                    staleness check                    
-                </comment>
-                <comment line="761">
-                    propagate if nonempty                    
-                </comment>
-                <comment line="765">
-                    store next seed                    
-                </comment>
-                <comment line="767">
-                    xorshift                    
-                </comment>
-                <comment line="773">
-                    staleness check                    
-                </comment>
-                <comment line="775">
-                    try to take submission                    
-                </comment>
-                <comment line="788">
-                    all queues empty                    
-                </comment>
-                <declaration name="g" type="int" line="745"/>
-                <declaration name="m" type="int" line="746"/>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="747"/>
-                <scope line="750">
-                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="751"/>
-                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="751"/>
-                    <declaration name="b" type="int" line="751"/>
-                    <declaration name="v" type="ForkJoinWorkerThread" line="752"/>
-                    <scope line="754">
-                        <declaration name="u" type="long" line="755"/>
-                        <scope line="757">
-                            <declaration name="d" type="int" line="758"/>
+                <declaration name="g" type="int" line="391"/>
+                <declaration name="m" type="int" line="392"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="393"/>
+                <scope line="395">
+                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="396"/>
+                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="397"/>
+                    <declaration name="b" type="int" line="398"/>
+                    <declaration name="v" type="ForkJoinWorkerThread" line="399"/>
+                    <scope line="400">
+                        <declaration name="u" type="long" line="401"/>
+                        <scope line="402">
+                            <declaration name="d" type="int" line="403"/>
                         </scope>
                     </scope>
-                    <scope line="767"/>
+                    <scope line="413"/>
                 </scope>
-                <scope line="775">
-                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="776"/>
-                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="776"/>
-                    <declaration name="b" type="int" line="776"/>
-                    <scope line="779">
-                        <declaration name="u" type="long" line="780"/>
-                        <scope line="782"/>
+                <scope line="421">
+                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="422"/>
+                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="423"/>
+                    <declaration name="b" type="int" line="424"/>
+                    <scope line="425">
+                        <declaration name="u" type="long" line="426"/>
+                        <scope line="427"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="792">
+            <javadoc line="436">
                 Tries to enqueue worker w in wait queue and await change in
                   worker&apos;s eventCount.  If the pool is quiescent and there is
                   more than one worker, possibly terminates worker upon exit.
@@ -789,66 +454,36 @@
                     true if waited or another thread was released upon enq                    
                 </return>
             </javadoc>
-            <method name="tryAwaitWork" type="boolean" line="812">
+            <method name="tryAwaitWork" type="boolean" line="455">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                     <param name="c" type="long"/>
                 </params>
-                <comment line="814">
-                    w&apos;s successor record                    
-                </comment>
-                <comment line="817">
-                    return true if lost to a deq, to force scan                    
-                </comment>
-                <comment line="820">
-                    accumulate stealCount                    
-                </comment>
-                <comment line="825">
-                    update next time                    
-                </comment>
-                <comment line="830">
-                    quiescent                    
-                </comment>
-                <comment line="844">
-                    contended                    
-                </comment>
-                <comment line="850">
-                    stale                    
-                </comment>
-                <comment line="854">
-                    reduce contention                    
-                </comment>
-                <comment line="856">
-                    clear before park                    
-                </comment>
-                <comment line="859">
-                    must recheck                    
-                </comment>
-                <declaration name="v" type="int" line="813"/>
-                <declaration name="nc" type="long" line="815"/>
-                <scope line="816">
-                    <declaration name="d" type="long" line="817"/>
+                <declaration name="v" type="int" line="456"/>
+                <declaration name="nc" type="long" line="458"/>
+                <scope line="459">
+                    <declaration name="d" type="long" line="460"/>
                 </scope>
-                <scope line="820">
-                    <declaration name="s" type="long" line="821"/>
+                <scope line="463">
+                    <declaration name="s" type="long" line="464"/>
                 </scope>
-                <scope line="831">
-                    <scope line="834">
-                        <declaration name="g" type="int" line="835"/>
-                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="836"/>
-                        <scope line="837">
-                            <scope line="839">
-                                <declaration name="u" type="ForkJoinWorkerThread" line="840"/>
-                                <scope line="841"/>
+                <scope line="469">
+                    <scope line="471">
+                        <declaration name="g" type="int" line="472"/>
+                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="473"/>
+                        <scope line="474">
+                            <scope line="476">
+                                <declaration name="u" type="ForkJoinWorkerThread" line="477"/>
+                                <scope line="478"/>
                             </scope>
                         </scope>
                     </scope>
-                    <scope line="858">
-                        <scope line="860"/>
+                    <scope line="488">
+                        <scope line="490"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="870">
+            <javadoc line="499">
                 If inactivating worker w has caused pool to become
                   quiescent, check for pool termination, and wait for event
                   for up to SHRINK_RATE nanosecs (rescans are unnecessary in
@@ -869,78 +504,60 @@
                     v the eventCount w awaits change                    
                 </param>
             </javadoc>
-            <method name="idleAwaitWork" type="void" line="885">
+            <method name="idleAwaitWork" type="void" line="512">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                     <param name="currentCtl" type="long"/>
                     <param name="prevCtl" type="long"/>
                     <param name="v" type="int"/>
                 </params>
-                <comment line="889">
-                    help clean weak refs                    
-                </comment>
-                <comment line="893">
-                    must recheck                    
-                </comment>
-                <comment line="899">
-                    timing slop                    
-                </comment>
-                <comment line="900">
-                    spurious wakeup                    
-                </comment>
-                <comment line="903">
-                    restore previous                    
-                </comment>
-                <scope line="886">
-                    <scope line="890">
-                        <declaration name="startTime" type="long" line="891"/>
-                        <scope line="902"/>
+                <scope line="513">
+                    <scope line="516">
+                        <declaration name="startTime" type="long" line="517"/>
+                        <scope line="523"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="913">
+            <javadoc line="531">
                 Enqueues the given task in the submissionQueue.  Same idea as
                   ForkJoinWorkerThread.pushTask except for use of submissionLock.                
                 <param>
                     t the task                    
                 </param>
             </javadoc>
-            <method name="addSubmission" type="void" line="919">
+            <method name="addSubmission" type="void" line="536">
                 <params>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="924">
-                    ignore if queue removed                    
-                </comment>
-                <declaration name="lock" type="ReentrantLock" line="920"/>
-                <scope line="922">
-                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="923"/>
-                    <declaration name="s" type="int" line="923"/>
-                    <scope line="924">
-                        <declaration name="u" type="long" line="925"/>
+                <declaration name="lock" type="ReentrantLock" line="537"/>
+                <scope line="539">
+                    <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="540"/>
+                    <declaration name="s" type="int" line="541"/>
+                    <scope line="542">
+                        <declaration name="u" type="long" line="543"/>
                     </scope>
                 </scope>
-                <scope line="931"/>
+                <scope line="549"/>
             </method>
-            <javadoc line="939">
+            <javadoc line="554">
                 Creates or doubles submissionQueue array.
                   Basically identical to ForkJoinWorkerThread version.                
             </javadoc>
-            <method name="growSubmissionQueue" type="void" line="943">
-                <declaration name="oldQ" type="ForkJoinTask&lt;?&gt;[]" line="944"/>
-                <declaration name="size" type="int" line="945"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="950"/>
-                <declaration name="mask" type="int" line="951"/>
-                <declaration name="top" type="int" line="952"/>
-                <declaration name="oldMask" type="int" line="953"/>
-                <scope line="954">
-                    <scope line="955">
-                        <declaration name="u" type="long" line="956"/>
-                        <declaration name="x" type="Object" line="957"/>
+            <method name="growSubmissionQueue" type="void" line="558">
+                <declaration name="oldQ" type="ForkJoinTask&lt;?&gt;[]" line="559"/>
+                <declaration name="size" type="int" line="560"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="563"/>
+                <declaration name="mask" type="int" line="564"/>
+                <declaration name="top" type="int" line="565"/>
+                <declaration name="oldMask" type="int" line="566"/>
+                <scope line="567">
+                    <scope line="568">
+                        <declaration name="u" type="long" line="569"/>
+                        <declaration name="x" type="Object" line="570"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="967">
+            <javadoc line="575">
                 Tries to increment blockedCount, decrement active count
                   (sometimes implicitly) and possibly release or create a
                   compensating worker in preparation for blocking. Fails
@@ -949,78 +566,57 @@
                     true if the caller can block, else should recheck and retry                    
                 </return>
             </javadoc>
-            <method name="tryPreBlock" type="boolean" line="975">
-                <comment line="985">
-                    skip -- terminating                    
-                </comment>
-                <comment line="998">
-                    release an idle worker                    
-                </comment>
-                <comment line="1004">
-                    no compensation needed                    
-                </comment>
-                <comment line="1010">
-                    create a replacement                    
-                </comment>
-                <comment line="1013">
-                    try to back out on any failure and let caller retry                    
-                </comment>
-                <declaration name="b" type="int" line="976"/>
-                <scope line="977">
-                    <declaration name="pc" type="int" line="978"/>
-                    <scope line="979">
-                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="980"/>
-                        <declaration name="w" type="ForkJoinWorkerThread" line="980"/>
-                        <declaration name="e" type="int" line="981"/>
-                        <declaration name="c" type="long" line="982"/>
-                        <declaration name="u" type="int" line="983"/>
-                        <scope line="984"/>
-                        <scope line="990">
-                            <declaration name="nc" type="long" line="991"/>
-                            <scope line="994"/>
+            <method name="tryPreBlock" type="boolean" line="582">
+                <declaration name="b" type="int" line="583"/>
+                <scope line="584">
+                    <declaration name="pc" type="int" line="585"/>
+                    <scope line="586">
+                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="587"/>
+                        <declaration name="w" type="ForkJoinWorkerThread" line="588"/>
+                        <declaration name="e" type="int" line="589"/>
+                        <declaration name="c" type="long" line="590"/>
+                        <declaration name="u" type="int" line="591"/>
+                        <scope line="592"/>
+                        <scope line="594">
+                            <declaration name="nc" type="long" line="595"/>
+                            <scope line="596"/>
                         </scope>
-                        <scope line="1001">
-                            <declaration name="nc" type="long" line="1002"/>
+                        <scope line="602">
+                            <declaration name="nc" type="long" line="603"/>
                         </scope>
-                        <scope line="1006">
-                            <declaration name="nc" type="long" line="1007"/>
-                            <scope line="1008"/>
+                        <scope line="606">
+                            <declaration name="nc" type="long" line="607"/>
+                            <scope line="608"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1020">
+            <javadoc line="618">
                 Decrements blockedCount and increments active count                
             </javadoc>
-            <method name="postBlock" type="void" line="1023">
-                <comment line="1025">
-                    no mask                    
-                </comment>
-                <declaration name="c" type="long" line="1024"/>
-                <scope line="1025"/>
-                <declaration name="b" type="int" line="1027"/>
-                <scope line="1028"/>
+            <method name="postBlock" type="void" line="621">
+                <declaration name="c" type="long" line="622"/>
+                <scope line="623"/>
+                <declaration name="b" type="int" line="626"/>
+                <scope line="627"/>
             </method>
-            <javadoc line="1032">
+            <javadoc line="631">
                 Possibly blocks waiting for the given task to complete, or
                   cancels the task if terminating.  Fails to wait if contended.                
                 <param>
                     joinMe the task                    
                 </param>
             </javadoc>
-            <method name="tryAwaitJoin" type="void" line="1038">
+            <method name="tryAwaitJoin" type="void" line="636">
                 <params>
                     <param name="joinMe" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="1040">
-                    clear interrupts before checking termination                    
-                </comment>
-                <declaration name="s" type="int" line="1039"/>
-                <scope line="1041">
-                    <scope line="1042"/>
+                <declaration name="s" type="int" line="637"/>
+                <scope line="639">
+                    <scope line="640"/>
                 </scope>
             </method>
-            <javadoc line="1051">
+            <javadoc line="647">
                 Possibly blocks the given worker waiting for joinMe to
                   complete or timeout                
                 <param>
@@ -1030,70 +626,61 @@
                     millis the wait time for underlying Object.wait                    
                 </param>
             </javadoc>
-            <method name="timedAwaitJoin" type="void" line="1058">
+            <method name="timedAwaitJoin" type="void" line="653">
                 <params>
                     <param name="joinMe" type="ForkJoinTask<?>"/>
                     <param name="nanos" type="long"/>
                 </params>
-                <scope line="1059">
-                    <scope line="1061"/>
-                    <scope line="1065">
-                        <declaration name="last" type="long" line="1066"/>
-                        <scope line="1067">
-                            <declaration name="millis" type="long" line="1068"/>
-                            <scope line="1074"/>
-                            <declaration name="now" type="long" line="1078"/>
+                <scope line="654">
+                    <scope line="656"/>
+                    <scope line="660">
+                        <declaration name="last" type="long" line="661"/>
+                        <scope line="662">
+                            <declaration name="millis" type="long" line="663"/>
+                            <scope line="667"/>
+                            <declaration name="now" type="long" line="671"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1088">
+            <javadoc line="680">
                 If necessary, compensates for blocker, and blocks                
             </javadoc>
-            <method name="awaitBlocker" type="void" line="1092">
+            <method name="awaitBlocker" type="void" line="683">
                 <params>
                     <param name="blocker" type="ManagedBlocker"/>
                 </params>
-                <scope line="1093">
-                    <scope line="1094">
-                        <scope line="1095">
-                            <scope line="1096"/>
+                <scope line="684">
+                    <scope line="685">
+                        <scope line="686">
+                            <scope line="687"/>
                         </scope>
-                        <scope line="1097"/>
+                        <scope line="691"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1107">
+            <javadoc line="698">
                 Tries to create and start a worker; minimally rolls back counts
                   on failure.                
             </javadoc>
-            <method name="addWorker" type="void" line="1111">
-                <comment line="1119">
-                    null or exceptional factory return                    
-                </comment>
-                <comment line="1120">
-                    adjust counts                    
-                </comment>
-                <comment line="1126">
-                    Propagate exception if originating from an external caller                    
-                </comment>
-                <declaration name="ex" type="Throwable" line="1112"/>
-                <declaration name="t" type="ForkJoinWorkerThread" line="1113"/>
-                <scope line="1114"/>
-                <scope line="1116"/>
-                <scope line="1119">
-                    <declaration name="c" type="long" line="1120"/>
-                    <scope line="1121"/>
+            <method name="addWorker" type="void" line="702">
+                <declaration name="ex" type="Throwable" line="703"/>
+                <declaration name="t" type="ForkJoinWorkerThread" line="704"/>
+                <scope line="705"/>
+                <scope line="708"/>
+                <scope line="711">
+                    <declaration name="c" type="long" line="712"/>
+                    <scope line="713"/>
                 </scope>
             </method>
-            <javadoc line="1135">
+            <javadoc line="720">
                 Callback from ForkJoinWorkerThread constructor to assign a
                   public name                
             </javadoc>
-            <method name="nextWorkerName" type="String" line="1139">
-                <scope line="1140"/>
+            <method name="nextWorkerName" type="String" line="724">
+                <scope line="725"/>
             </method>
-            <javadoc line="1147">
+            <javadoc line="729">
                 Callback from ForkJoinWorkerThread constructor to
                   determine its poolIndex and record in workers array.                
                 <param>
@@ -1103,45 +690,31 @@
                     the worker's pool index                    
                 </return>
             </javadoc>
-            <method name="registerWorker" type="int" line="1154">
+            <method name="registerWorker" type="int" line="735">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                 </params>
-                <comment line="1155">
-                    In the typical case, a new worker acquires the lock, uses
-                     next available index and returns quickly.  Since we should
-                     not block callers (ultimately from signalWork or
-                     tryPreBlock) waiting for the lock needed to do this, we
-                     instead help release other workers while waiting for the
-                     lock.                    
-                </comment>
-                <comment line="1170">
-                    ignore on shutdown                    
-                </comment>
-                <comment line="1188">
-                    help release others                    
-                </comment>
-                <scope line="1163">
-                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="1164"/>
-                    <scope line="1167">
-                        <declaration name="k" type="int" line="1168"/>
-                        <scope line="1169">
-                            <scope line="1170">
-                                <declaration name="n" type="int" line="1171"/>
-                                <scope line="1172"/>
-                                <declaration name="m" type="int" line="1180"/>
+                <scope line="736">
+                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="737"/>
+                    <scope line="738">
+                        <declaration name="k" type="int" line="739"/>
+                        <scope line="740">
+                            <scope line="741">
+                                <declaration name="n" type="int" line="742"/>
+                                <scope line="743"/>
+                                <declaration name="m" type="int" line="749"/>
                             </scope>
                         </scope>
-                        <scope line="1183"/>
+                        <scope line="753"/>
                     </scope>
-                    <scope line="1188">
-                        <scope line="1189">
-                            <scope line="1190"/>
+                    <scope line="758">
+                        <scope line="759">
+                            <scope line="760"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1199">
+            <javadoc line="767">
                 Final callback from terminating worker.  Removes record of
                   worker from array, and adjusts counts. If pool is shutting
                   down, tries to complete termination.                
@@ -1149,36 +722,24 @@
                     w the worker                    
                 </param>
             </javadoc>
-            <method name="deregisterWorker" type="void" line="1206">
+            <method name="deregisterWorker" type="void" line="773">
                 <params>
                     <param name="w" type="ForkJoinWorkerThread"/>
                     <param name="ex" type="Throwable"/>
                 </params>
-                <comment line="1210">
-                    Remove from array, adjust worker counts and collect steal count.                    
-                </comment>
-                <comment line="1211">
-                    We can intermix failed removes or adjusts with steal updates                    
-                </comment>
-                <comment line="1221">
-                    verify                    
-                </comment>
-                <comment line="1238">
-                    possibly replace if died abnormally                    
-                </comment>
-                <declaration name="idx" type="int" line="1207"/>
-                <declaration name="sc" type="int" line="1208"/>
-                <declaration name="steps" type="int" line="1209"/>
-                <scope line="1212">
-                    <declaration name="s" type="long" line="1213"/>
-                    <declaration name="g" type="int" line="1214"/>
-                    <scope line="1217">
-                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="1218"/>
+                <declaration name="idx" type="int" line="774"/>
+                <declaration name="sc" type="int" line="775"/>
+                <declaration name="steps" type="int" line="776"/>
+                <scope line="777">
+                    <declaration name="s" type="long" line="778"/>
+                    <declaration name="g" type="int" line="779"/>
+                    <scope line="780">
+                        <declaration name="ws" type="ForkJoinWorkerThread[]" line="781"/>
                     </scope>
                 </scope>
-                <scope line="1237"/>
+                <scope line="791"/>
             </method>
-            <javadoc line="1247">
+            <javadoc line="796">
                 Possibly initiates and/or completes termination.                
                 <param>
                     now if true, unconditionally terminate, else only
@@ -1188,29 +749,23 @@
                     true if now terminating or terminated                    
                 </return>
             </javadoc>
-            <method name="tryTerminate" type="boolean" line="1254">
+            <method name="tryTerminate" type="boolean" line="802">
                 <params>
                     <param name="now" type="boolean"/>
                 </params>
-                <comment line="1262">
-                    staleness check                    
-                </comment>
-                <comment line="1270">
-                    signal when 0 workers                    
-                </comment>
-                <declaration name="c" type="long" line="1255"/>
-                <scope line="1256">
-                    <scope line="1257">
-                        <scope line="1261"/>
+                <declaration name="c" type="long" line="803"/>
+                <scope line="804">
+                    <scope line="805">
+                        <scope line="807"/>
                     </scope>
                 </scope>
-                <scope line="1270">
-                    <declaration name="lock" type="ReentrantLock" line="1271"/>
-                    <scope line="1273"/>
-                    <scope line="1275"/>
+                <scope line="814">
+                    <declaration name="lock" type="ReentrantLock" line="815"/>
+                    <scope line="817"/>
+                    <scope line="820"/>
                 </scope>
             </method>
-            <javadoc line="1282">
+            <javadoc line="826">
                 Runs up to three passes through workers: (0) Setting
                   termination status for each worker, followed by wakeups up to
                   queued workers; (1) helping cancel tasks; (2) interrupting
@@ -1218,16 +773,16 @@
                   blocked in joins).  Each pass repeats previous steps because of
                   potential lagging thread creation.                
             </javadoc>
-            <method name="startTerminating" type="void" line="1290">
-                <scope line="1292">
-                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="1293"/>
-                    <scope line="1294">
-                        <scope line="1295">
-                            <scope line="1296">
-                                <scope line="1298">
-                                    <scope line="1300">
-                                        <scope line="1301"/>
-                                        <scope line="1303"/>
+            <method name="startTerminating" type="void" line="834">
+                <scope line="836">
+                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="837"/>
+                    <scope line="838">
+                        <scope line="839">
+                            <scope line="840">
+                                <scope line="842">
+                                    <scope line="844">
+                                        <scope line="845"/>
+                                        <scope line="848"/>
                                     </scope>
                                 </scope>
                             </scope>
@@ -1235,35 +790,35 @@
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1314">
+            <javadoc line="858">
                 Polls and cancels all submissions. Called only during termination.                
             </javadoc>
-            <method name="cancelSubmissions" type="void" line="1317">
-                <scope line="1318">
-                    <declaration name="task" type="ForkJoinTask&lt;?&gt;" line="1319"/>
-                    <scope line="1320">
-                        <scope line="1321"/>
-                        <scope line="1323"/>
+            <method name="cancelSubmissions" type="void" line="861">
+                <scope line="862">
+                    <declaration name="task" type="ForkJoinTask&lt;?&gt;" line="863"/>
+                    <scope line="864">
+                        <scope line="865"/>
+                        <scope line="868"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1329">
+            <javadoc line="873">
                 Tries to set the termination status of waiting workers, and
                   then wakes them up (after which they will terminate).                
             </javadoc>
-            <method name="terminateWaiters" type="void" line="1333">
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="1334"/>
-                <scope line="1335">
-                    <declaration name="w" type="ForkJoinWorkerThread" line="1336"/>
-                    <declaration name="c" type="long" line="1336"/>
-                    <declaration name="i" type="int" line="1336"/>
-                    <declaration name="n" type="int" line="1337"/>
-                    <scope line="1339">
-                        <scope line="1343"/>
+            <method name="terminateWaiters" type="void" line="877">
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="878"/>
+                <scope line="879">
+                    <declaration name="w" type="ForkJoinWorkerThread" line="880"/>
+                    <declaration name="c" type="long" line="881"/>
+                    <declaration name="i" type="int" line="882"/>
+                    <declaration name="n" type="int" line="883"/>
+                    <scope line="884">
+                        <scope line="885"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1355">
+            <javadoc line="893">
                 Increment or decrement quiescerCount. Needed only to prevent
                   triggering shutdown if a worker is transiently inactive while
                   checking quiescence.                
@@ -1271,14 +826,14 @@
                     delta 1 for increment, -1 for decrement                    
                 </param>
             </javadoc>
-            <method name="addQuiescerCount" type="void" line="1362">
+            <method name="addQuiescerCount" type="void" line="899">
                 <params>
                     <param name="delta" type="int"/>
                 </params>
-                <declaration name="c" type="int" line="1363"/>
-                <scope line="1364"/>
+                <declaration name="c" type="int" line="900"/>
+                <scope line="901"/>
             </method>
-            <javadoc line="1368">
+            <javadoc line="905">
                 Directly increment or decrement active count without
                   queuing. This method is used to transiently assert inactivation
                   while checking quiescence.                
@@ -1286,26 +841,23 @@
                     delta 1 for increment, -1 for decrement                    
                 </param>
             </javadoc>
-            <method name="addActiveCount" type="void" line="1375">
+            <method name="addActiveCount" type="void" line="911">
                 <params>
                     <param name="delta" type="int"/>
                 </params>
-                <declaration name="d" type="long" line="1376"/>
-                <declaration name="c" type="long" line="1377"/>
-                <scope line="1378"/>
+                <declaration name="d" type="long" line="912"/>
+                <declaration name="c" type="long" line="913"/>
+                <scope line="914"/>
             </method>
-            <javadoc line="1383">
+            <javadoc line="918">
                 Returns the approximate (non-atomic) number of idle threads per
                   active thread.                
             </javadoc>
-            <method name="idlePerActive" type="int" line="1387">
-                <comment line="1388">
-                    Approximate at powers of two for small values, saturate past 4                    
-                </comment>
-                <declaration name="p" type="int" line="1389"/>
-                <declaration name="a" type="int" line="1390"/>
+            <method name="idlePerActive" type="int" line="922">
+                <declaration name="p" type="int" line="923"/>
+                <declaration name="a" type="int" line="924"/>
             </method>
-            <javadoc line="1402">
+            <javadoc line="927">
                 Creates a {@code ForkJoinPool} with parallelism equal to {@link java.lang.Runtime#availableProcessors}, using the {@linkplain #defaultForkJoinWorkerThreadFactory default thread factory},
                   no UncaughtExceptionHandler, and non-async LIFO processing mode.                
                 <throws>
@@ -1314,8 +866,8 @@
                       because it does not hold {@link java.lang.RuntimePermission}{@code ("modifyThread")}                    
                 </throws>
             </javadoc>
-            <method name="ForkJoinPool" type="constructor" line="1413"/>
-            <javadoc line="1418">
+            <method name="ForkJoinPool" type="constructor" line="934"/>
+            <javadoc line="937">
                 Creates a {@code ForkJoinPool} with the indicated parallelism
                   level, the {@linkplain #defaultForkJoinWorkerThreadFactory default thread factory},
                   no UncaughtExceptionHandler, and non-async LIFO processing mode.                
@@ -1332,12 +884,12 @@
                       because it does not hold {@link java.lang.RuntimePermission}{@code ("modifyThread")}                    
                 </throws>
             </javadoc>
-            <method name="ForkJoinPool" type="constructor" line="1432">
+            <method name="ForkJoinPool" type="constructor" line="948">
                 <params>
                     <param name="parallelism" type="int"/>
                 </params>
             </method>
-            <javadoc line="1436">
+            <javadoc line="951">
                 Creates a {@code ForkJoinPool} with the given parameters.                
                 <param>
                     parallelism the parallelism level. For default value,
@@ -1373,28 +925,19 @@
                       because it does not hold {@link java.lang.RuntimePermission}{@code ("modifyThread")}                    
                 </throws>
             </javadoc>
-            <method name="ForkJoinPool" type="constructor" line="1463">
+            <method name="ForkJoinPool" type="constructor" line="973">
                 <params>
                     <param name="parallelism" type="int"/>
                     <param name="factory" type="ForkJoinWorkerThreadFactory"/>
                     <param name="handler" type="Thread.UncaughtExceptionHandler"/>
                     <param name="asyncMode" type="boolean"/>
                 </params>
-                <comment line="1473">
-                    offset ctl counts                    
-                </comment>
-                <comment line="1476">
-                    initialize workers array with room for 2*parallelism if possible                    
-                </comment>
-                <comment line="1480">
-                    See Hackers Delight, sec 3.2, where n &lt; (1 &lt;&lt; 16)                    
-                </comment>
-                <declaration name="np" type="long" line="1473"/>
-                <declaration name="n" type="int" line="1477"/>
-                <scope line="1480"/>
-                <declaration name="sb" type="StringBuilder" line="1486"/>
+                <declaration name="np" type="long" line="981"/>
+                <declaration name="n" type="int" line="984"/>
+                <scope line="986"/>
+                <declaration name="sb" type="StringBuilder" line="995"/>
             </method>
-            <javadoc line="1494">
+            <javadoc line="1000">
                 Performs the given task, returning its result upon completion.
                   If the computation encounters an unchecked Exception or Error,
                   it is rethrown as the outcome of this invocation.  Rethrown
@@ -1417,28 +960,25 @@
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="invoke" type="T" line="1510">
+            <method name="invoke" type="T" line="1015">
                 <params>
                     <param name="task" type="ForkJoinTask<T>"/>
                 </params>
-                <comment line="1518">
-                    bypass submit if in same pool                    
-                </comment>
-                <declaration name="t" type="Thread" line="1511"/>
-                <scope line="1519"/>
+                <declaration name="t" type="Thread" line="1016"/>
+                <scope line="1020"/>
             </method>
-            <javadoc line="1525">
+            <javadoc line="1025">
                 Unless terminating, forks task if within an ongoing FJ
                   computation in the current pool, else submits as external task.                
             </javadoc>
-            <method name="forkOrSubmit" type="void" line="1529">
+            <method name="forkOrSubmit" type="void" line="1029">
                 <params>
                     <param name="task" type="ForkJoinTask<T>"/>
                 </params>
-                <declaration name="w" type="ForkJoinWorkerThread" line="1530"/>
-                <declaration name="t" type="Thread" line="1531"/>
+                <declaration name="w" type="ForkJoinWorkerThread" line="1030"/>
+                <declaration name="t" type="Thread" line="1031"/>
             </method>
-            <javadoc line="1541">
+            <javadoc line="1036">
                 Arranges for (asynchronous) execution of the given task.                
                 <param>
                     task the task                    
@@ -1451,28 +991,25 @@
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="execute" type="void" line="1549">
+            <method name="execute" type="void" line="1043">
                 <params>
                     <param name="task" type="ForkJoinTask<?>"/>
                 </params>
             </method>
-            <javadoc line="1557">
+            <javadoc line="1047">
                 @throws NullPointerException if the task is null                
                 <throws>
                     RejectedExecutionException if the task cannot be
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="execute" type="void" line="1562">
+            <method name="execute" type="void" line="1052">
                 <params>
                     <param name="task" type="Runnable"/>
                 </params>
-                <comment line="1566">
-                    avoid re-wrap                    
-                </comment>
-                <declaration name="job" type="ForkJoinTask&lt;?&gt;" line="1565"/>
+                <declaration name="job" type="ForkJoinTask&lt;?&gt;" line="1054"/>
             </method>
-            <javadoc line="1573">
+            <javadoc line="1059">
                 Submits a ForkJoinTask for execution.                
                 <param>
                     task the task to submit                    
@@ -1488,107 +1025,104 @@
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="submit" type="ForkJoinTask<T>" line="1582">
+            <method name="submit" type="ForkJoinTask<T>" line="1067">
                 <params>
                     <param name="task" type="ForkJoinTask<T>"/>
                 </params>
             </method>
-            <javadoc line="1589">
+            <javadoc line="1072">
                 @throws NullPointerException if the task is null                
                 <throws>
                     RejectedExecutionException if the task cannot be
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="submit" type="ForkJoinTask<T>" line="1594">
+            <method name="submit" type="ForkJoinTask<T>" line="1077">
                 <params>
                     <param name="task" type="Callable<T>"/>
                 </params>
-                <declaration name="job" type="ForkJoinTask&lt;T&gt;" line="1597"/>
+                <declaration name="job" type="ForkJoinTask&lt;T&gt;" line="1079"/>
             </method>
-            <javadoc line="1602">
+            <javadoc line="1083">
                 @throws NullPointerException if the task is null                
                 <throws>
                     RejectedExecutionException if the task cannot be
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="submit" type="ForkJoinTask<T>" line="1607">
+            <method name="submit" type="ForkJoinTask<T>" line="1088">
                 <params>
                     <param name="task" type="Runnable"/>
                     <param name="result" type="T"/>
                 </params>
-                <declaration name="job" type="ForkJoinTask&lt;T&gt;" line="1610"/>
+                <declaration name="job" type="ForkJoinTask&lt;T&gt;" line="1090"/>
             </method>
-            <javadoc line="1615">
+            <javadoc line="1094">
                 @throws NullPointerException if the task is null                
                 <throws>
                     RejectedExecutionException if the task cannot be
                       scheduled for execution                    
                 </throws>
             </javadoc>
-            <method name="submit" type="ForkJoinTask<?>" line="1620">
+            <method name="submit" type="ForkJoinTask<?>" line="1099">
                 <params>
                     <param name="task" type="Runnable"/>
                 </params>
-                <comment line="1624">
-                    avoid re-wrap                    
-                </comment>
-                <declaration name="job" type="ForkJoinTask&lt;?&gt;" line="1623"/>
+                <declaration name="job" type="ForkJoinTask&lt;?&gt;" line="1101"/>
             </method>
-            <javadoc line="1632">
+            <javadoc line="1107">
                 @throws NullPointerException       {@inheritDoc}                
                 <throws>
                     RejectedExecutionException {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="invokeAll" type="List<Future<T>>" line="1636">
+            <method name="invokeAll" type="List<Future<T>>" line="1111">
                 <params>
                     <param name="tasks" type="Collection<? extends Callable<T>>"/>
                 </params>
-                <declaration name="forkJoinTasks" type="ArrayList&lt;ForkJoinTask&lt;T&gt;&gt;" line="1637"/>
-                <declaration name="futures" type="List&lt;Future&lt;T&gt;&gt;" line="1643"/>
+                <declaration name="forkJoinTasks" type="ArrayList&lt;ForkJoinTask&lt;T&gt;&gt;" line="1112"/>
+                <declaration name="futures" type="List&lt;Future&lt;T&gt;&gt;" line="1115"/>
             </method>
-            <class name="InvokeAll" line="1648">
+            <class name="InvokeAll" line="1118">
                 <type_params>
                     <type_param name="T"/>
                 </type_params>
                 <extends class="RecursiveAction"/>
-                <declaration name="tasks" type="ArrayList&lt;ForkJoinTask&lt;T&gt;&gt;" line="1649"/>
-                <method name="InvokeAll" type="constructor" line="1650">
+                <declaration name="tasks" type="ArrayList&lt;ForkJoinTask&lt;T&gt;&gt;" line="1119"/>
+                <method name="InvokeAll" type="constructor" line="1120">
                     <params>
                         <param name="tasks" type="ArrayList<ForkJoinTask<T>>"/>
                     </params>
                 </method>
-                <method name="compute" type="void" line="1651">
-                    <scope line="1652"/>
-                    <scope line="1653"/>
+                <method name="compute" type="void" line="1123">
+                    <scope line="1124"/>
+                    <scope line="1127"/>
                 </method>
-                <declaration name="serialVersionUID" type="long" line="1655"/>
+                <declaration name="serialVersionUID" type="long" line="1130"/>
             </class>
-            <javadoc line="1658">
+            <javadoc line="1132">
                 Returns the factory used for constructing new workers.                
                 <return>
                     the factory used for constructing new workers                    
                 </return>
             </javadoc>
-            <method name="getFactory" type="ForkJoinWorkerThreadFactory" line="1663"/>
-            <javadoc line="1667">
+            <method name="getFactory" type="ForkJoinWorkerThreadFactory" line="1136"/>
+            <javadoc line="1139">
                 Returns the handler for internal worker threads that terminate
                   due to unrecoverable errors encountered while executing tasks.                
                 <return>
                     the handler, or {@code null} if none                    
                 </return>
             </javadoc>
-            <method name="getUncaughtExceptionHandler" type="Thread.UncaughtExceptionHandler" line="1673"/>
-            <javadoc line="1677">
+            <method name="getUncaughtExceptionHandler" type="Thread.UncaughtExceptionHandler" line="1144"/>
+            <javadoc line="1147">
                 Returns the targeted parallelism level of this pool.                
                 <return>
                     the targeted parallelism level of this pool                    
                 </return>
             </javadoc>
-            <method name="getParallelism" type="int" line="1682"/>
-            <javadoc line="1686">
+            <method name="getParallelism" type="int" line="1151"/>
+            <javadoc line="1154">
                 Returns the number of worker threads that have started but not
                   yet terminated.  The result returned by this method may differ
                   from {@link #getParallelism} when threads are created to
@@ -1597,16 +1131,16 @@
                     the number of worker threads                    
                 </return>
             </javadoc>
-            <method name="getPoolSize" type="int" line="1694"/>
-            <javadoc line="1698">
+            <method name="getPoolSize" type="int" line="1161"/>
+            <javadoc line="1164">
                 Returns {@code true} if this pool uses local first-in-first-out
                   scheduling mode for forked tasks that are never joined.                
                 <return>
                     {@code true} if this pool uses async mode                    
                 </return>
             </javadoc>
-            <method name="getAsyncMode" type="boolean" line="1704"/>
-            <javadoc line="1708">
+            <method name="getAsyncMode" type="boolean" line="1169"/>
+            <javadoc line="1172">
                 Returns an estimate of the number of worker threads that are
                   not blocked waiting to join tasks or for other managed
                   synchronization. This method may overestimate the
@@ -1615,13 +1149,10 @@
                     the number of worker threads                    
                 </return>
             </javadoc>
-            <method name="getRunningThreadCount" type="int" line="1716">
-                <comment line="1718">
-                    suppress momentarily negative values                    
-                </comment>
-                <declaration name="r" type="int" line="1717"/>
+            <method name="getRunningThreadCount" type="int" line="1179">
+                <declaration name="r" type="int" line="1180"/>
             </method>
-            <javadoc line="1721">
+            <javadoc line="1183">
                 Returns an estimate of the number of threads that are currently
                   stealing or executing tasks. This method may overestimate the
                   number of active threads.                
@@ -1629,13 +1160,10 @@
                     the number of active threads                    
                 </return>
             </javadoc>
-            <method name="getActiveThreadCount" type="int" line="1728">
-                <comment line="1730">
-                    suppress momentarily negative values                    
-                </comment>
-                <declaration name="r" type="int" line="1729"/>
+            <method name="getActiveThreadCount" type="int" line="1189">
+                <declaration name="r" type="int" line="1190"/>
             </method>
-            <javadoc line="1733">
+            <javadoc line="1193">
                 Returns {@code true} if all worker threads are currently idle.
                   An idle worker is one that cannot obtain a task to execute
                   because none are available to steal from other threads, and
@@ -1647,8 +1175,8 @@
                     {@code true} if all threads are currently idle                    
                 </return>
             </javadoc>
-            <method name="isQuiescent" type="boolean" line="1744"/>
-            <javadoc line="1748">
+            <method name="isQuiescent" type="boolean" line="1203"/>
+            <javadoc line="1206">
                 Returns an estimate of the total number of tasks stolen from
                   one thread&apos;s work queue by another. The reported value
                   underestimates the actual total number of steals when the pool
@@ -1660,8 +1188,8 @@
                     the number of steals                    
                 </return>
             </javadoc>
-            <method name="getStealCount" type="long" line="1759"/>
-            <javadoc line="1763">
+            <method name="getStealCount" type="long" line="1216"/>
+            <javadoc line="1219">
                 Returns an estimate of the total number of tasks currently held
                   in queues by worker threads (but not including tasks submitted
                   to the pool that have not begun executing). This value is only
@@ -1672,15 +1200,12 @@
                     the number of queued tasks                    
                 </return>
             </javadoc>
-            <method name="getQueuedTaskCount" type="long" line="1773">
-                <comment line="1780">
-                    must read base first                    
-                </comment>
-                <declaration name="count" type="long" line="1774"/>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="1775"/>
-                <scope line="1777"/>
+            <method name="getQueuedTaskCount" type="long" line="1228">
+                <declaration name="count" type="long" line="1229"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="1230"/>
+                <scope line="1231"/>
             </method>
-            <javadoc line="1785">
+            <javadoc line="1236">
                 Returns an estimate of the number of tasks submitted to this
                   pool that have not yet begun executing.  This method may take
                   time proportional to the number of submissions.                
@@ -1688,16 +1213,16 @@
                     the number of queued submissions                    
                 </return>
             </javadoc>
-            <method name="getQueuedSubmissionCount" type="int" line="1792"/>
-            <javadoc line="1796">
+            <method name="getQueuedSubmissionCount" type="int" line="1242"/>
+            <javadoc line="1245">
                 Returns {@code true} if there are any tasks submitted to this
                   pool that have not yet begun executing.                
                 <return>
                     {@code true} if there are any queued submissions                    
                 </return>
             </javadoc>
-            <method name="hasQueuedSubmissions" type="boolean" line="1802"/>
-            <javadoc line="1806">
+            <method name="hasQueuedSubmissions" type="boolean" line="1250"/>
+            <javadoc line="1253">
                 Removes and returns the next unexecuted submission if one is
                   available.  This method may be useful in extensions to this
                   class that re-assign work in systems with multiple pools.                
@@ -1705,16 +1230,16 @@
                     the next submission, or {@code null} if none                    
                 </return>
             </javadoc>
-            <method name="pollSubmission" type="ForkJoinTask<?>" line="1813">
-                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="1814"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="1814"/>
-                <declaration name="b" type="int" line="1814"/>
-                <scope line="1817">
-                    <declaration name="u" type="long" line="1818"/>
-                    <scope line="1821"/>
+            <method name="pollSubmission" type="ForkJoinTask<?>" line="1259">
+                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="1260"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="1261"/>
+                <declaration name="b" type="int" line="1262"/>
+                <scope line="1263">
+                    <declaration name="u" type="long" line="1264"/>
+                    <scope line="1265"/>
                 </scope>
             </method>
-            <javadoc line="1829">
+            <javadoc line="1272">
                 Removes all available unexecuted submitted and forked tasks
                   from scheduling queues and adds them to the given collection,
                   without altering their execution status. These may include
@@ -1734,19 +1259,19 @@
                     the number of elements transferred                    
                 </return>
             </javadoc>
-            <method name="drainTasksTo" type="int" line="1846">
+            <method name="drainTasksTo" type="int" line="1288">
                 <params>
                     <param name="c" type="Collection<? super ForkJoinTask<?>>"/>
                 </params>
-                <declaration name="count" type="int" line="1847"/>
-                <scope line="1848">
-                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="1849"/>
-                    <scope line="1850"/>
+                <declaration name="count" type="int" line="1289"/>
+                <scope line="1290">
+                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="1291"/>
+                    <scope line="1292"/>
                 </scope>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="1855"/>
-                <scope line="1857"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="1297"/>
+                <scope line="1298"/>
             </method>
-            <javadoc line="1865">
+            <javadoc line="1303">
                 Returns a string identifying this pool, as well as its state,
                   including indications of run state, parallelism level, and
                   worker and task counts.                
@@ -1754,21 +1279,18 @@
                     a string identifying this pool, as well as its state                    
                 </return>
             </javadoc>
-            <method name="toString" type="String" line="1872">
-                <comment line="1880">
-                    ignore transient negative                    
-                </comment>
-                <declaration name="st" type="long" line="1873"/>
-                <declaration name="qt" type="long" line="1874"/>
-                <declaration name="qs" type="long" line="1875"/>
-                <declaration name="pc" type="int" line="1876"/>
-                <declaration name="c" type="long" line="1877"/>
-                <declaration name="tc" type="int" line="1878"/>
-                <declaration name="rc" type="int" line="1879"/>
-                <declaration name="ac" type="int" line="1882"/>
-                <declaration name="level" type="String" line="1883"/>
+            <method name="toString" type="String" line="1309">
+                <declaration name="st" type="long" line="1310"/>
+                <declaration name="qt" type="long" line="1311"/>
+                <declaration name="qs" type="long" line="1312"/>
+                <declaration name="pc" type="int" line="1313"/>
+                <declaration name="c" type="long" line="1314"/>
+                <declaration name="tc" type="int" line="1315"/>
+                <declaration name="rc" type="int" line="1316"/>
+                <declaration name="ac" type="int" line="1318"/>
+                <declaration name="level" type="String" line="1319"/>
             </method>
-            <javadoc line="1900">
+            <javadoc line="1324">
                 Initiates an orderly shutdown in which previously submitted
                   tasks are executed, but no new tasks will be accepted.
                   Invocation has no additional effect if already shut down.
@@ -1780,8 +1302,8 @@
                       because it does not hold {@link java.lang.RuntimePermission}{@code ("modifyThread")}                    
                 </throws>
             </javadoc>
-            <method name="shutdown" type="void" line="1912"/>
-            <javadoc line="1918">
+            <method name="shutdown" type="void" line="1334"/>
+            <javadoc line="1339">
                 Attempts to cancel and/or stop all tasks, and reject all
                   subsequently submitted tasks.  Tasks that are in the process of
                   being submitted or executed concurrently during the course of
@@ -1799,17 +1321,17 @@
                       because it does not hold {@link java.lang.RuntimePermission}{@code ("modifyThread")}                    
                 </throws>
             </javadoc>
-            <method name="shutdownNow" type="List<Runnable>" line="1934"/>
-            <javadoc line="1941">
+            <method name="shutdownNow" type="List<Runnable>" line="1353"/>
+            <javadoc line="1359">
                 Returns {@code true} if all tasks have completed following shut down.                
                 <return>
                     {@code true} if all tasks have completed following shut down                    
                 </return>
             </javadoc>
-            <method name="isTerminated" type="boolean" line="1946">
-                <declaration name="c" type="long" line="1947"/>
+            <method name="isTerminated" type="boolean" line="1363">
+                <declaration name="c" type="long" line="1364"/>
             </method>
-            <javadoc line="1952">
+            <javadoc line="1367">
                 Returns {@code true} if the process of termination has
                   commenced but not yet completed.  This method may be useful for
                   debugging. A return of {@code true} reported a sufficient
@@ -1823,21 +1345,21 @@
                     {@code true} if terminating but not yet terminated                    
                 </return>
             </javadoc>
-            <method name="isTerminating" type="boolean" line="1965">
-                <declaration name="c" type="long" line="1966"/>
+            <method name="isTerminating" type="boolean" line="1379">
+                <declaration name="c" type="long" line="1380"/>
             </method>
-            <javadoc line="1971">
+            <javadoc line="1383">
                 Returns true if terminating or terminated. Used by ForkJoinWorkerThread.                
             </javadoc>
-            <method name="isAtLeastTerminating" type="boolean" line="1974"/>
-            <javadoc line="1978">
+            <method name="isAtLeastTerminating" type="boolean" line="1386"/>
+            <javadoc line="1389">
                 Returns {@code true} if this pool has been shut down.                
                 <return>
                     {@code true} if this pool has been shut down                    
                 </return>
             </javadoc>
-            <method name="isShutdown" type="boolean" line="1983"/>
-            <javadoc line="1987">
+            <method name="isShutdown" type="boolean" line="1393"/>
+            <javadoc line="1396">
                 Blocks until all tasks have completed execution after a shutdown
                   request, or the timeout occurs, or the current thread is
                   interrupted, whichever happens first.                
@@ -1854,20 +1376,20 @@
                     InterruptedException if interrupted while waiting                    
                 </throws>
             </javadoc>
-            <method name="awaitTermination" type="boolean" line="1999">
+            <method name="awaitTermination" type="boolean" line="1405">
                 <params>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
-                <declaration name="nanos" type="long" line="2000"/>
-                <declaration name="lock" type="ReentrantLock" line="2001"/>
-                <scope line="2003">
-                    <scope line="2004"/>
+                <declaration name="nanos" type="long" line="1406"/>
+                <declaration name="lock" type="ReentrantLock" line="1407"/>
+                <scope line="1409">
+                    <scope line="1410"/>
                 </scope>
-                <scope line="2011"/>
+                <scope line="1416"/>
             </method>
             <interface name="ManagedBlocker">
-                <javadoc line="2016">
+                <javadoc line="1420">
                     Interface for extending managed parallelism for tasks running
                       in {@link ForkJoinPool}s.
                       &lt;p&gt;A {@code ManagedBlocker} provides two methods.  Method{@code isReleasable} must return {@code true} if blocking is
@@ -1915,8 +1437,8 @@
                       }
                       }}&lt;/pre&gt;                    
                 </javadoc>
-                <method name="block" type="boolean" line="2072"/>
-                <javadoc line="2072">
+                <method name="block" type="boolean" line="1469"/>
+                <javadoc line="1469">
                     Possibly blocks the current thread, for example waiting for
                       a lock or condition.                    
                     <return>
@@ -1928,12 +1450,12 @@
                           (the method is not required to do so, but is allowed to)                        
                     </throws>
                 </javadoc>
-                <method name="isReleasable" type="boolean" line="2083"/>
-                <javadoc line="2083">
+                <method name="isReleasable" type="boolean" line="1478"/>
+                <javadoc line="1478">
                     Returns {@code true} if blocking is unnecessary.                    
                 </javadoc>
             </interface>
-            <javadoc line="2089">
+            <javadoc line="1483">
                 Blocks in accord with the given blocker.  If the current thread
                   is a {@link ForkJoinWorkerThread}, this method possibly
                   arranges for a spare thread to be activated if necessary to
@@ -1952,45 +1474,45 @@
                     InterruptedException if blocker.block did so                    
                 </throws>
             </javadoc>
-            <method name="managedBlock" type="void" line="2110">
+            <method name="managedBlock" type="void" line="1498">
                 <params>
                     <param name="blocker" type="ManagedBlocker"/>
                 </params>
-                <declaration name="t" type="Thread" line="2111"/>
-                <scope line="2112">
-                    <declaration name="w" type="ForkJoinWorkerThread" line="2113"/>
+                <declaration name="t" type="Thread" line="1499"/>
+                <scope line="1500">
+                    <declaration name="w" type="ForkJoinWorkerThread" line="1501"/>
                 </scope>
-                <scope line="2116">
-                    <scope line="2117"/>
+                <scope line="1504">
+                    <scope line="1505"/>
                 </scope>
             </method>
-            <method name="newTaskFor" type="RunnableFuture<T>" line="2125">
+            <method name="newTaskFor" type="RunnableFuture<T>" line="1510">
                 <params>
                     <param name="runnable" type="Runnable"/>
                     <param name="value" type="T"/>
                 </params>
             </method>
-            <method name="newTaskFor" type="RunnableFuture<T>" line="2129">
+            <method name="newTaskFor" type="RunnableFuture<T>" line="1513">
                 <params>
                     <param name="callable" type="Callable<T>"/>
                 </params>
             </method>
-            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="2134"/>
-            <declaration name="ctlOffset" type="long" line="2135"/>
-            <declaration name="stealCountOffset" type="long" line="2136"/>
-            <declaration name="blockedCountOffset" type="long" line="2137"/>
-            <declaration name="quiescerCountOffset" type="long" line="2138"/>
-            <declaration name="scanGuardOffset" type="long" line="2139"/>
-            <declaration name="nextWorkerNumberOffset" type="long" line="2140"/>
-            <declaration name="ABASE" type="long" line="2141"/>
-            <declaration name="ASHIFT" type="int" line="2142"/>
-            <scope line="2144">
-                <declaration name="s" type="int" line="2150"/>
-                <scope line="2151">
-                    <declaration name="k" type="Class" line="2153"/>
-                    <declaration name="a" type="Class" line="2166"/>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="1516"/>
+            <declaration name="ctlOffset" type="long" line="1517"/>
+            <declaration name="stealCountOffset" type="long" line="1518"/>
+            <declaration name="blockedCountOffset" type="long" line="1519"/>
+            <declaration name="quiescerCountOffset" type="long" line="1520"/>
+            <declaration name="scanGuardOffset" type="long" line="1521"/>
+            <declaration name="nextWorkerNumberOffset" type="long" line="1522"/>
+            <declaration name="ABASE" type="long" line="1523"/>
+            <declaration name="ASHIFT" type="int" line="1524"/>
+            <scope line="1525">
+                <declaration name="s" type="int" line="1530"/>
+                <scope line="1531">
+                    <declaration name="k" type="Class" line="1533"/>
+                    <declaration name="a" type="Class" line="1540"/>
                 </scope>
-                <scope line="2169"/>
+                <scope line="1544"/>
             </scope>
         </class>
     </source>

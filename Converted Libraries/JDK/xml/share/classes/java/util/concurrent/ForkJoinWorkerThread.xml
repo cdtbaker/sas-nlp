@@ -2,175 +2,9 @@
     <source package="java.util.concurrent">
         <import package="java.util.Collection"/>
         <import package="java.util.concurrent.RejectedExecutionException"/>
-        <class name="ForkJoinWorkerThread" line="41">
+        <class name="ForkJoinWorkerThread" line="4">
             <extends class="Thread"/>
-            <comment line="57">
-                Overview:
-                
-                 ForkJoinWorkerThreads are managed by ForkJoinPools and perform
-                 ForkJoinTasks. This class includes bookkeeping in support of
-                 worker activation, suspension, and lifecycle control described
-                 in more detail in the internal documentation of class
-                 ForkJoinPool. And as described further below, this class also
-                 includes special-cased support for some ForkJoinTask
-                 methods. But the main mechanics involve work-stealing:
-                
-                 Work-stealing queues are special forms of Deques that support
-                 only three of the four possible end-operations -- push, pop,
-                 and deq (aka steal), under the further constraints that push
-                 and pop are called only from the owning thread, while deq may
-                 be called from other threads.  (If you are unfamiliar with
-                 them, you probably want to read Herlihy and Shavit&apos;s book &quot;The
-                 Art of Multiprocessor programming&quot;, chapter 16 describing these
-                 in more detail before proceeding.)  The main work-stealing
-                 queue design is roughly similar to those in the papers &quot;Dynamic
-                 Circular Work-Stealing Deque&quot; by Chase and Lev, SPAA 2005
-                 (http:research.sun.comscalablepubsindex.html) and
-                 &quot;Idempotent work stealing&quot; by Michael, Saraswat, and Vechev,
-                 PPoPP 2009 (http:portal.acm.orgcitation.cfm?id=1504186).
-                 The main differences ultimately stem from gc requirements that
-                 we null out taken slots as soon as we can, to maintain as small
-                 a footprint as possible even in programs generating huge
-                 numbers of tasks. To accomplish this, we shift the CAS
-                 arbitrating pop vs deq (steal) from being on the indices
-                 (&quot;queueBase&quot; and &quot;queueTop&quot;) to the slots themselves (mainly
-                 via method &quot;casSlotNull()&quot;). So, both a successful pop and deq
-                 mainly entail a CAS of a slot from non-null to null.  Because
-                 we rely on CASes of references, we do not need tag bits on
-                 queueBase or queueTop.  They are simple ints as used in any
-                 circular array-based queue (see for example ArrayDeque).
-                 Updates to the indices must still be ordered in a way that
-                 guarantees that queueTop == queueBase means the queue is empty,
-                 but otherwise may err on the side of possibly making the queue
-                 appear nonempty when a push, pop, or deq have not fully
-                 committed. Note that this means that the deq operation,
-                 considered individually, is not wait-free. One thief cannot
-                 successfully continue until another in-progress one (or, if
-                 previously empty, a push) completes.  However, in the
-                 aggregate, we ensure at least probabilistic non-blockingness.
-                 If an attempted steal fails, a thief always chooses a different
-                 random victim target to try next. So, in order for one thief to
-                 progress, it suffices for any in-progress deq or new push on
-                 any empty queue to complete.
-                
-                 This approach also enables support for &quot;async mode&quot; where local
-                 task processing is in FIFO, not LIFO order; simply by using a
-                 version of deq rather than pop when locallyFifo is true (as set
-                 by the ForkJoinPool).  This allows use in message-passing
-                 frameworks in which tasks are never joined.  However neither
-                 mode considers affinities, loads, cache localities, etc, so
-                 rarely provide the best possible performance on a given
-                 machine, but portably provide good throughput by averaging over
-                 these factors.  (Further, even if we did try to use such
-                 information, we do not usually have a basis for exploiting
-                 it. For example, some sets of tasks profit from cache
-                 affinities, but others are harmed by cache pollution effects.)
-                
-                 When a worker would otherwise be blocked waiting to join a
-                 task, it first tries a form of linear helping: Each worker
-                 records (in field currentSteal) the most recent task it stole
-                 from some other worker. Plus, it records (in field currentJoin)
-                 the task it is currently actively joining. Method joinTask uses
-                 these markers to try to find a worker to help (i.e., steal back
-                 a task from and execute it) that could hasten completion of the
-                 actively joined task. In essence, the joiner executes a task
-                 that would be on its own local deque had the to-be-joined task
-                 not been stolen. This may be seen as a conservative variant of
-                 the approach in Wagner &amp; Calder &quot;Leapfrogging: a portable
-                 technique for implementing efficient futures&quot; SIGPLAN Notices,
-                 1993 (http:portal.acm.orgcitation.cfm?id=155354). It differs
-                 in that: (1) We only maintain dependency links across workers
-                 upon steals, rather than use per-task bookkeeping.  This may
-                 require a linear scan of workers array to locate stealers, but
-                 usually doesn&apos;t because stealers leave hints (that may become
-                 stalewrong) of where to locate them. This isolates cost to
-                 when it is needed, rather than adding to per-task overhead.
-                 (2) It is &quot;shallow&quot;, ignoring nesting and potentially cyclic
-                 mutual steals.  (3) It is intentionally racy: field currentJoin
-                 is updated only while actively joining, which means that we
-                 miss links in the chain during long-lived tasks, GC stalls etc
-                 (which is OK since blocking in such cases is usually a good
-                 idea).  (4) We bound the number of attempts to find work (see
-                 MAX_HELP) and fall back to suspending the worker and if
-                 necessary replacing it with another.
-                
-                 Efficient implementation of these algorithms currently relies
-                 on an uncomfortable amount of &quot;Unsafe&quot; mechanics. To maintain
-                 correct orderings, reads and writes of variable queueBase
-                 require volatile ordering.  Variable queueTop need not be
-                 volatile because non-local reads always follow those of
-                 queueBase.  Similarly, because they are protected by volatile
-                 queueBase reads, reads of the queue array and its slots by
-                 other threads do not need volatile load semantics, but writes
-                 (in push) require store order and CASes (in pop and deq)
-                 require (volatile) CAS semantics.  (Michael, Saraswat, and
-                 Vechev&apos;s algorithm has similar properties, but without support
-                 for nulling slots.)  Since these combinations aren&apos;t supported
-                 using ordinary volatiles, the only way to accomplish these
-                 efficiently is to use direct Unsafe calls. (Using external
-                 AtomicIntegers and AtomicReferenceArrays for the indices and
-                 array is significantly slower because of memory locality and
-                 indirection effects.)
-                
-                 Further, performance on most platforms is very sensitive to
-                 placement and sizing of the (resizable) queue array.  Even
-                 though these queues don&apos;t usually become all that big, the
-                 initial size must be large enough to counteract cache
-                 contention effects across multiple queues (especially in the
-                 presence of GC cardmarking). Also, to improve thread-locality,
-                 queues are initialized after starting.                
-            </comment>
-            <comment line="192">
-                16M                
-            </comment>
-            <comment line="310">
-                Public methods                
-            </comment>
-            <comment line="334">
-                Randomization                
-            </comment>
-            <comment line="351">
-                Run State management                
-            </comment>
-            <comment line="407">
-                Intrinsics-based atomic writes for queue slots. These are
-                 basically the same as methods in AtomicReferenceArray, but
-                 specialized for (1) ForkJoinTask elements (2) requirement that
-                 nullness and bounds checks have already been performed by
-                 callers and (3) effective offsets are known not to overflow
-                 from int to long (because of MAXIMUM_QUEUE_CAPACITY). We don&apos;t
-                 need corresponding version for reads: plain array reads are OK
-                 because they are protected by other volatile reads and are
-                 confirmed by CASes.
-                
-                 Most uses don&apos;t actually call these methods, but instead
-                 contain inlined forms that enable more predictable
-                 optimization.  We don&apos;t define the version of write used in
-                 pushTask at all, but instead inline there a store-fenced array
-                 slot write.
-                
-                 Also in most methods, as a performance (not correctness) issue,
-                 we&apos;d like to encourage compilers not to arbitrarily postpone
-                 setting queueTop after writing slot.  Currently there is no
-                 intrinsic for arranging this, but using Unsafe putOrderedInt
-                 may be a preferable strategy on some compilers even though its
-                 main effect is a pre-, not post- fence. To simplify possible
-                 changes, the option is left in comments next to the associated
-                 assignments.                
-            </comment>
-            <comment line="453">
-                queue methods                
-            </comment>
-            <comment line="596">
-                Support methods for ForkJoinPool                
-            </comment>
-            <comment line="649">
-                Support methods for ForkJoinTask                
-            </comment>
-            <comment line="979">
-                Unsafe mechanics                
-            </comment>
-            <javadoc line="41">
+            <javadoc line="4">
                 A thread managed by a {@link ForkJoinPool}, which executes{@link ForkJoinTask}s.
                   This class is subclassable solely for the sake of adding
                   functionality -- there are no overridable methods dealing with
@@ -186,106 +20,106 @@
                     Doug Lea                    
                 </author>
             </javadoc>
-            <declaration name="SMASK" type="int" line="173"/>
-            <javadoc line="173">
+            <declaration name="SMASK" type="int" line="17"/>
+            <javadoc line="17">
                 Mask for pool indices encoded as shorts                
             </javadoc>
-            <declaration name="INITIAL_QUEUE_CAPACITY" type="int" line="178"/>
-            <javadoc line="178">
+            <declaration name="INITIAL_QUEUE_CAPACITY" type="int" line="21"/>
+            <javadoc line="21">
                 Capacity of work-stealing queue array upon initialization.
                   Must be a power of two. Initial size must be at least 4, but is
                   padded to minimize cache effects.                
             </javadoc>
-            <declaration name="MAXIMUM_QUEUE_CAPACITY" type="int" line="185"/>
-            <javadoc line="185">
+            <declaration name="MAXIMUM_QUEUE_CAPACITY" type="int" line="27"/>
+            <javadoc line="27">
                 Maximum size for queue array. Must be a power of two
                   less than or equal to 1 &lt;&lt; (31 - width of array entry) to
                   ensure lack of index wraparound, but is capped at a lower
                   value to help users trap runaway computations.                
             </javadoc>
-            <declaration name="queue" type="ForkJoinTask&lt;?&gt;[]" line="193"/>
-            <javadoc line="193">
+            <declaration name="queue" type="ForkJoinTask&lt;?&gt;[]" line="34"/>
+            <javadoc line="34">
                 The work-stealing queue array. Size must be a power of two.
                   Initialized when started (as oposed to when constructed), to
                   improve memory locality.                
             </javadoc>
-            <declaration name="pool" type="ForkJoinPool" line="200"/>
-            <javadoc line="200">
+            <declaration name="pool" type="ForkJoinPool" line="40"/>
+            <javadoc line="40">
                 The pool this thread works in. Accessed directly by ForkJoinTask.                
             </javadoc>
-            <declaration name="queueTop" type="int" line="205"/>
-            <javadoc line="205">
+            <declaration name="queueTop" type="int" line="44"/>
+            <javadoc line="44">
                 Index (mod queue.length) of next queue slot to push to or pop
                   from. It is written only by owner thread, and accessed by other
                   threads only after reading (volatile) queueBase.  Both queueTop
                   and queueBase are allowed to wrap around on overflow, but
                   (queueTop - queueBase) still estimates size.                
             </javadoc>
-            <declaration name="queueBase" type="int" line="214"/>
-            <javadoc line="214">
+            <declaration name="queueBase" type="int" line="52"/>
+            <javadoc line="52">
                 Index (mod queue.length) of least valid queue slot, which is
                   always the next position to steal from if nonempty.                
             </javadoc>
-            <declaration name="stealHint" type="int" line="220"/>
-            <javadoc line="220">
+            <declaration name="stealHint" type="int" line="57"/>
+            <javadoc line="57">
                 The index of most recent stealer, used as a hint to avoid
                   traversal in method helpJoinTask. This is only a hint because a
                   worker might have had multiple steals and this only holds one
                   of them (usually the most current). Declared non-volatile,
                   relying on other prevailing sync to keep reasonably current.                
             </javadoc>
-            <declaration name="poolIndex" type="int" line="229"/>
-            <javadoc line="229">
+            <declaration name="poolIndex" type="int" line="65"/>
+            <javadoc line="65">
                 Index of this worker in pool array. Set once by pool before
                   running, and accessed directly by pool to locate this worker in
                   its workers array.                
             </javadoc>
-            <declaration name="nextWait" type="int" line="236"/>
-            <javadoc line="236">
+            <declaration name="nextWait" type="int" line="71"/>
+            <javadoc line="71">
                 Encoded record for pool task waits. Usages are always
                   surrounded by volatile reads/writes                
             </javadoc>
-            <declaration name="eventCount" type="int" line="242"/>
-            <javadoc line="242">
+            <declaration name="eventCount" type="int" line="76"/>
+            <javadoc line="76">
                 Complement of poolIndex, offset by count of entries of task
                   waits. Accessed by ForkJoinPool to manage event waiters.                
             </javadoc>
-            <declaration name="seed" type="int" line="248"/>
-            <javadoc line="248">
+            <declaration name="seed" type="int" line="81"/>
+            <javadoc line="81">
                 Seed for random number generator for choosing steal victims.
                   Uses Marsaglia xorshift. Must be initialized as nonzero.                
             </javadoc>
-            <declaration name="stealCount" type="int" line="254"/>
-            <javadoc line="254">
+            <declaration name="stealCount" type="int" line="86"/>
+            <javadoc line="86">
                 Number of steals. Directly accessed (and reset) by pool when
                   idle.                
             </javadoc>
-            <declaration name="terminate" type="boolean" line="260"/>
-            <javadoc line="260">
+            <declaration name="terminate" type="boolean" line="91"/>
+            <javadoc line="91">
                 True if this worker should or did terminate                
             </javadoc>
-            <declaration name="parked" type="boolean" line="265"/>
-            <javadoc line="265">
+            <declaration name="parked" type="boolean" line="95"/>
+            <javadoc line="95">
                 Set to true before LockSupport.park; false on return                
             </javadoc>
-            <declaration name="locallyFifo" type="boolean" line="270"/>
-            <javadoc line="270">
+            <declaration name="locallyFifo" type="boolean" line="99"/>
+            <javadoc line="99">
                 True if use local fifo, not default lifo, for local polling.
                   Shadows value from ForkJoinPool.                
             </javadoc>
-            <declaration name="currentSteal" type="ForkJoinTask&lt;?&gt;" line="276"/>
-            <javadoc line="276">
+            <declaration name="currentSteal" type="ForkJoinTask&lt;?&gt;" line="104"/>
+            <javadoc line="104">
                 The task most recently stolen from another worker (or
                   submission queue).  All uses are surrounded by enough volatile
                   reads/writes to maintain as non-volatile.                
             </javadoc>
-            <declaration name="currentJoin" type="ForkJoinTask&lt;?&gt;" line="283"/>
-            <javadoc line="283">
+            <declaration name="currentJoin" type="ForkJoinTask&lt;?&gt;" line="110"/>
+            <javadoc line="110">
                 The task currently being joined, set only when actively trying
                   to help other stealers in helpJoinTask. All uses are surrounded
                   by enough volatile reads/writes to maintain as non-volatile.                
             </javadoc>
-            <javadoc line="290">
+            <javadoc line="116">
                 Creates a ForkJoinWorkerThread operating in the given pool.                
                 <param>
                     pool the pool this thread works in                    
@@ -294,24 +128,21 @@
                     NullPointerException if pool is null                    
                 </throws>
             </javadoc>
-            <method name="ForkJoinWorkerThread" type="constructor" line="296">
+            <method name="ForkJoinWorkerThread" type="constructor" line="121">
                 <params>
                     <param name="pool" type="ForkJoinPool"/>
                 </params>
-                <comment line="301">
-                    clear wait count                    
-                </comment>
-                <declaration name="k" type="int" line="299"/>
-                <declaration name="ueh" type="Thread.UncaughtExceptionHandler" line="303"/>
+                <declaration name="k" type="int" line="124"/>
+                <declaration name="ueh" type="Thread.UncaughtExceptionHandler" line="128"/>
             </method>
-            <javadoc line="311">
+            <javadoc line="132">
                 Returns the pool hosting this thread.                
                 <return>
                     the pool                    
                 </return>
             </javadoc>
-            <method name="getPool" type="ForkJoinPool" line="316"/>
-            <javadoc line="320">
+            <method name="getPool" type="ForkJoinPool" line="136"/>
+            <javadoc line="139">
                 Returns the index number of this thread in its pool.  The
                   returned value ranges from zero to the maximum number of
                   threads (minus one) that have ever been created in the pool.
@@ -321,18 +152,18 @@
                     the index number                    
                 </return>
             </javadoc>
-            <method name="getPoolIndex" type="int" line="329"/>
-            <javadoc line="335">
+            <method name="getPoolIndex" type="int" line="147"/>
+            <javadoc line="150">
                 Computes next value for random victim probes and backoffs.
                   Scans don&apos;t require a very high quality generator, but also not
                   a crummy one.  Marsaglia xor-shift is cheap and works well
                   enough.  Note: This is manually inlined in FJP.scan() to avoid
                   writes inside busy loops.                
             </javadoc>
-            <method name="nextSeed" type="int" line="342">
-                <declaration name="r" type="int" line="343"/>
+            <method name="nextSeed" type="int" line="157">
+                <declaration name="r" type="int" line="158"/>
             </method>
-            <javadoc line="352">
+            <javadoc line="164">
                 Initializes internal state after construction but before
                   processing any tasks. If you override this method, you must
                   invoke {@code super.onStart()} at the beginning of the method.
@@ -341,13 +172,10 @@
                   threads work correctly even before this thread starts
                   processing tasks.                
             </javadoc>
-            <method name="onStart" type="void" line="361">
-                <comment line="364">
-                    must be nonzero                    
-                </comment>
-                <declaration name="r" type="int" line="363"/>
+            <method name="onStart" type="void" line="173">
+                <declaration name="r" type="int" line="175"/>
             </method>
-            <javadoc line="367">
+            <javadoc line="178">
                 Performs cleanup associated with termination of this worker
                   thread.  If you override this method, you must invoke{@code super.onTermination} at the end of the overridden method.                
                 <param>
@@ -355,95 +183,83 @@
                       to an unrecoverable error, or {@code null} if completed normally                    
                 </param>
             </javadoc>
-            <method name="onTermination" type="void" line="375">
+            <method name="onTermination" type="void" line="184">
                 <params>
                     <param name="exception" type="Throwable"/>
                 </params>
-                <comment line="380">
-                    Shouldn&apos;t ever happen                    
-                </comment>
-                <comment line="381">
-                    but if so, at least rethrown                    
-                </comment>
-                <scope line="376"/>
-                <scope line="380"/>
-                <scope line="383"/>
+                <scope line="185"/>
+                <scope line="190"/>
+                <scope line="193"/>
             </method>
-            <javadoc line="389">
+            <javadoc line="197">
                 This method is required to be public, but should never be
                   called explicitly. It performs the main run loop to execute{@link ForkJoinTask}s.                
             </javadoc>
-            <method name="run" type="void" line="394">
-                <declaration name="exception" type="Throwable" line="395"/>
-                <scope line="396"/>
-                <scope line="399"/>
-                <scope line="401"/>
+            <method name="run" type="void" line="201">
+                <declaration name="exception" type="Throwable" line="202"/>
+                <scope line="203"/>
+                <scope line="207"/>
+                <scope line="210"/>
             </method>
-            <javadoc line="433">
+            <javadoc line="214">
                 CASes slot i of array q from t to null. Caller must ensure q is
                   non-null and index is in range.                
             </javadoc>
-            <method name="casSlotNull" type="boolean" line="438">
+            <method name="casSlotNull" type="boolean" line="218">
                 <params>
                     <param name="q" type="ForkJoinTask<?>[]"/>
                     <param name="i" type="int"/>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
             </method>
-            <javadoc line="442">
+            <javadoc line="221">
                 Performs a volatile write of the given task at given slot of
                   array q.  Caller must ensure q is non-null and index is in
                   range. This method is used only during resets and backouts.                
             </javadoc>
-            <method name="writeSlot" type="void" line="448">
+            <method name="writeSlot" type="void" line="226">
                 <params>
                     <param name="q" type="ForkJoinTask<?>[]"/>
                     <param name="i" type="int"/>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
             </method>
-            <javadoc line="454">
+            <javadoc line="229">
                 Pushes a task. Call only from this thread.                
                 <param>
                     t the task. Caller must ensure non-null.                    
                 </param>
             </javadoc>
-            <method name="pushTask" type="void" line="459">
+            <method name="pushTask" type="void" line="233">
                 <params>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="461">
-                    ignore if queue removed                    
-                </comment>
-                <comment line="464">
-                    or use putOrderedInt                    
-                </comment>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="460"/>
-                <declaration name="s" type="int" line="460"/>
-                <scope line="461">
-                    <declaration name="u" type="long" line="462"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="234"/>
+                <declaration name="s" type="int" line="235"/>
+                <scope line="236">
+                    <declaration name="u" type="long" line="237"/>
                 </scope>
             </method>
-            <javadoc line="472">
+            <javadoc line="244">
                 Creates or doubles queue array.  Transfers elements by
                   emulating steals (deqs) from old array and placing, oldest
                   first, into new array.                
             </javadoc>
-            <method name="growQueue" type="void" line="477">
-                <declaration name="oldQ" type="ForkJoinTask&lt;?&gt;[]" line="478"/>
-                <declaration name="size" type="int" line="479"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="484"/>
-                <declaration name="mask" type="int" line="485"/>
-                <declaration name="top" type="int" line="486"/>
-                <declaration name="oldMask" type="int" line="487"/>
-                <scope line="488">
-                    <scope line="489">
-                        <declaration name="u" type="long" line="490"/>
-                        <declaration name="x" type="Object" line="491"/>
+            <method name="growQueue" type="void" line="249">
+                <declaration name="oldQ" type="ForkJoinTask&lt;?&gt;[]" line="250"/>
+                <declaration name="size" type="int" line="251"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="254"/>
+                <declaration name="mask" type="int" line="255"/>
+                <declaration name="top" type="int" line="256"/>
+                <declaration name="oldMask" type="int" line="257"/>
+                <scope line="258">
+                    <scope line="259">
+                        <declaration name="u" type="long" line="260"/>
+                        <declaration name="x" type="Object" line="261"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="499">
+            <javadoc line="266">
                 Tries to take a task from the base of the queue, failing if
                   empty or contended. Note: Specializations of this code appear
                   in locallyDeqTask and elsewhere.                
@@ -451,156 +267,135 @@
                     a task, or null if none or contended                    
                 </return>
             </javadoc>
-            <method name="deqTask" type="ForkJoinTask<?>" line="506">
-                <comment line="509">
-                    must read q after b                    
-                </comment>
-                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="507"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="507"/>
-                <declaration name="b" type="int" line="507"/>
-                <scope line="512"/>
+            <method name="deqTask" type="ForkJoinTask<?>" line="272">
+                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="273"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="274"/>
+                <declaration name="b" type="int" line="275"/>
+                <scope line="276"/>
             </method>
-            <javadoc line="519">
+            <javadoc line="282">
                 Tries to take a task from the base of own queue.  Called only
                   by this thread.                
                 <return>
                     a task, or null if none                    
                 </return>
             </javadoc>
-            <method name="locallyDeqTask" type="ForkJoinTask<?>" line="525">
-                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="526"/>
-                <declaration name="m" type="int" line="526"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="527"/>
-                <scope line="528">
-                    <scope line="529">
-                        <scope line="533"/>
+            <method name="locallyDeqTask" type="ForkJoinTask<?>" line="287">
+                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="288"/>
+                <declaration name="m" type="int" line="289"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="290"/>
+                <scope line="291">
+                    <scope line="292">
+                        <scope line="293"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="542">
+            <javadoc line="301">
                 Returns a popped task, or null if empty.
                   Called only by this thread.                
             </javadoc>
-            <method name="popTask" type="ForkJoinTask<?>" line="546">
-                <comment line="552">
-                    raw offset                    
-                </comment>
-                <comment line="554">
-                    lost to stealer                    
-                </comment>
-                <comment line="557">
-                    or putOrderedInt                    
-                </comment>
-                <declaration name="m" type="int" line="547"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="548"/>
-                <scope line="549">
-                    <scope line="550">
-                        <declaration name="i" type="int" line="551"/>
-                        <declaration name="u" type="long" line="552"/>
-                        <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="553"/>
-                        <scope line="556"/>
+            <method name="popTask" type="ForkJoinTask<?>" line="305">
+                <declaration name="m" type="int" line="306"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="307"/>
+                <scope line="308">
+                    <scope line="309">
+                        <declaration name="i" type="int" line="310"/>
+                        <declaration name="u" type="long" line="311"/>
+                        <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="312"/>
+                        <scope line="314"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="565">
+            <javadoc line="322">
                 Specialized version of popTask to pop only if topmost element
                   is the given task. Called only by this thread.                
                 <param>
                     t the task. Caller must ensure non-null.                    
                 </param>
             </javadoc>
-            <method name="unpushTask" type="boolean" line="571">
+            <method name="unpushTask" type="boolean" line="327">
                 <params>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="577">
-                    or putOrderedInt                    
-                </comment>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="572"/>
-                <declaration name="s" type="int" line="573"/>
-                <scope line="576"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="328"/>
+                <declaration name="s" type="int" line="329"/>
+                <scope line="330"/>
             </method>
-            <javadoc line="583">
+            <javadoc line="336">
                 Returns next task, or null if empty or contended.                
             </javadoc>
-            <method name="peekTask" type="ForkJoinTask<?>" line="586">
-                <declaration name="m" type="int" line="587"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="588"/>
-                <declaration name="i" type="int" line="591"/>
+            <method name="peekTask" type="ForkJoinTask<?>" line="339">
+                <declaration name="m" type="int" line="340"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="341"/>
+                <declaration name="i" type="int" line="343"/>
             </method>
-            <javadoc line="597">
+            <javadoc line="346">
                 Runs the given task, plus any local tasks until queue is empty                
             </javadoc>
-            <method name="execTask" type="void" line="600">
+            <method name="execTask" type="void" line="349">
                 <params>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
-                <scope line="602"/>
+                <scope line="351"/>
             </method>
-            <javadoc line="613">
+            <javadoc line="359">
                 Removes and cancels all tasks in queue.  Can be called from any
                   thread.                
             </javadoc>
-            <method name="cancelTasks" type="void" line="617">
-                <comment line="618">
-                    try to cancel ongoing tasks                    
-                </comment>
-                <declaration name="cj" type="ForkJoinTask&lt;?&gt;" line="618"/>
-                <declaration name="cs" type="ForkJoinTask&lt;?&gt;" line="621"/>
-                <scope line="624">
-                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="625"/>
+            <method name="cancelTasks" type="void" line="363">
+                <declaration name="cj" type="ForkJoinTask&lt;?&gt;" line="364"/>
+                <declaration name="cs" type="ForkJoinTask&lt;?&gt;" line="366"/>
+                <scope line="368">
+                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="369"/>
                 </scope>
             </method>
-            <javadoc line="631">
+            <javadoc line="373">
                 Drains tasks to given collection c.                
                 <return>
                     the number of tasks drained                    
                 </return>
             </javadoc>
-            <method name="drainTasksTo" type="int" line="636">
+            <method name="drainTasksTo" type="int" line="377">
                 <params>
                     <param name="c" type="Collection<? super ForkJoinTask<?>>"/>
                 </params>
-                <declaration name="n" type="int" line="637"/>
-                <scope line="638">
-                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="639"/>
-                    <scope line="640"/>
+                <declaration name="n" type="int" line="378"/>
+                <scope line="379">
+                    <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="380"/>
+                    <scope line="381"/>
                 </scope>
             </method>
-            <javadoc line="650">
+            <javadoc line="388">
                 Returns an estimate of the number of tasks in the queue.                
             </javadoc>
-            <method name="getQueueSize" type="int" line="653"/>
-            <javadoc line="657">
+            <method name="getQueueSize" type="int" line="391"/>
+            <javadoc line="394">
                 Gets and removes a local task.                
                 <return>
                     a task, if available                    
                 </return>
             </javadoc>
-            <method name="pollLocalTask" type="ForkJoinTask<?>" line="662"/>
-            <javadoc line="666">
+            <method name="pollLocalTask" type="ForkJoinTask<?>" line="398"/>
+            <javadoc line="401">
                 Gets and removes a local or stolen task.                
                 <return>
                     a task, if available                    
                 </return>
             </javadoc>
-            <method name="pollTask" type="ForkJoinTask<?>" line="671">
-                <comment line="676">
-                    cheap version of FJP.scan                    
-                </comment>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="672"/>
-                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="673"/>
-                <declaration name="n" type="int" line="676"/>
-                <declaration name="steps" type="int" line="677"/>
-                <declaration name="r" type="int" line="678"/>
-                <declaration name="i" type="int" line="679"/>
-                <scope line="680">
-                    <declaration name="w" type="ForkJoinWorkerThread" line="681"/>
-                    <scope line="682"/>
+            <method name="pollTask" type="ForkJoinTask<?>" line="405">
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="406"/>
+                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="407"/>
+                <declaration name="n" type="int" line="409"/>
+                <declaration name="steps" type="int" line="410"/>
+                <declaration name="r" type="int" line="411"/>
+                <declaration name="i" type="int" line="412"/>
+                <scope line="413">
+                    <declaration name="w" type="ForkJoinWorkerThread" line="414"/>
+                    <scope line="415"/>
                 </scope>
             </method>
-            <declaration name="MAX_HELP" type="int" line="691"/>
-            <javadoc line="691">
+            <declaration name="MAX_HELP" type="int" line="422"/>
+            <javadoc line="422">
                 The maximum stolen-&gt;joining link depth allowed in helpJoinTask,
                   as well as the maximum number of retries (allowing on average
                   one staleness retry per level) per attempt to instead try
@@ -609,7 +404,7 @@
                   and bound staleness of traversal parameters at the expense of
                   sometimes blocking when we could be helping.                
             </javadoc>
-            <javadoc line="702">
+            <javadoc line="432">
                 Possibly runs some tasks and/or blocks, until joinMe is done.                
                 <param>
                     joinMe the task to join                    
@@ -618,54 +413,39 @@
                     completion status on exit                    
                 </return>
             </javadoc>
-            <method name="joinTask" type="int" line="708">
+            <method name="joinTask" type="int" line="437">
                 <params>
                     <param name="joinMe" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="719">
-                    cannot help                    
-                </comment>
-                <comment line="722">
-                    check uncommon case                    
-                </comment>
-                <comment line="724">
-                    for politeness                    
-                </comment>
-                <comment line="730">
-                    restart if not done                    
-                </comment>
-                <declaration name="prevJoin" type="ForkJoinTask&lt;?&gt;" line="709"/>
-                <scope line="711">
-                    <scope line="712"/>
-                    <scope line="716">
-                        <scope line="717"/>
-                        <scope line="721"/>
+                <declaration name="prevJoin" type="ForkJoinTask&lt;?&gt;" line="438"/>
+                <scope line="440">
+                    <scope line="441"/>
+                    <scope line="445">
+                        <scope line="446"/>
+                        <scope line="449"/>
                     </scope>
-                    <scope line="729"/>
+                    <scope line="455"/>
                 </scope>
             </method>
-            <javadoc line="736">
+            <javadoc line="461">
                 If present, pops and executes the given task, or any other
                   cancelled task                
                 <return>
                     false if any other non-cancelled task exists in local queue                    
                 </return>
             </javadoc>
-            <method name="localHelpJoinTask" type="boolean" line="742">
+            <method name="localHelpJoinTask" type="boolean" line="466">
                 <params>
                     <param name="joinMe" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="751">
-                    or putOrderedInt                    
-                </comment>
-                <declaration name="s" type="int" line="743"/>
-                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="743"/>
-                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="743"/>
-                <scope line="746">
-                    <scope line="750"/>
+                <declaration name="s" type="int" line="467"/>
+                <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="468"/>
+                <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="469"/>
+                <scope line="470">
+                    <scope line="472"/>
                 </scope>
             </method>
-            <javadoc line="758">
+            <javadoc line="479">
                 Tries to locate and execute tasks for a stealer of the given
                   task, or in turn one of its stealers, Traces
                   currentSteal-&gt;currentJoin links looking for a thread working on
@@ -685,71 +465,38 @@
                     true if ran a task                    
                 </return>
             </javadoc>
-            <method name="helpJoinTask" type="boolean" line="773">
+            <method name="helpJoinTask" type="boolean" line="493">
                 <params>
                     <param name="joinMe" type="ForkJoinTask<?>"/>
                 </params>
-                <comment line="778">
-                    remaining chain length                    
-                </comment>
-                <comment line="779">
-                    base of chain                    
-                </comment>
-                <comment line="781">
-                    Try to find v, the stealer of task, by first using hint                    
-                </comment>
-                <comment line="784">
-                    search array                    
-                </comment>
-                <comment line="787">
-                    save hint for next time                    
-                </comment>
-                <comment line="790">
-                    can&apos;t find stealer                    
-                </comment>
-                <comment line="793">
-                    Try to help v, using specialized form of deqTask                    
-                </comment>
-                <comment line="801">
-                    empty                    
-                </comment>
-                <comment line="805">
-                    stale                    
-                </comment>
-                <comment line="817">
-                    Try to descend to find v&apos;s stealer                    
-                </comment>
-                <comment line="825">
-                    max levels, stale, dead-end, or cyclic                    
-                </comment>
-                <declaration name="helped" type="boolean" line="774"/>
-                <declaration name="m" type="int" line="775"/>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="776"/>
-                <scope line="777">
-                    <declaration name="levels" type="int" line="778"/>
-                    <declaration name="task" type="ForkJoinTask&lt;?&gt;" line="779"/>
-                    <scope line="780">
-                        <declaration name="v" type="ForkJoinWorkerThread" line="782"/>
-                        <scope line="783">
-                            <scope line="784">
-                                <scope line="785"/>
+                <declaration name="helped" type="boolean" line="494"/>
+                <declaration name="m" type="int" line="495"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="496"/>
+                <scope line="497">
+                    <declaration name="levels" type="int" line="498"/>
+                    <declaration name="task" type="ForkJoinTask&lt;?&gt;" line="499"/>
+                    <scope line="500">
+                        <declaration name="v" type="ForkJoinWorkerThread" line="501"/>
+                        <scope line="502">
+                            <scope line="503">
+                                <scope line="504"/>
                             </scope>
                         </scope>
-                        <scope line="794">
-                            <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="795"/>
-                            <declaration name="b" type="int" line="795"/>
-                            <declaration name="u" type="long" line="802"/>
-                            <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="803"/>
-                            <scope line="807">
-                                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="810"/>
+                        <scope line="511">
+                            <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="512"/>
+                            <declaration name="b" type="int" line="513"/>
+                            <declaration name="u" type="long" line="516"/>
+                            <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="517"/>
+                            <scope line="519">
+                                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="522"/>
                             </scope>
                         </scope>
-                        <declaration name="next" type="ForkJoinTask&lt;?&gt;" line="818"/>
-                        <scope line="820"/>
+                        <declaration name="next" type="ForkJoinTask&lt;?&gt;" line="529"/>
+                        <scope line="530"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="831">
+            <javadoc line="539">
                 Performs an uncommon case for joinTask: If task t is at base of
                   some workers queue, steals and executes it.                
                 <param>
@@ -759,27 +506,27 @@
                     t's status                    
                 </return>
             </javadoc>
-            <method name="tryDeqAndExec" type="int" line="838">
+            <method name="tryDeqAndExec" type="int" line="545">
                 <params>
                     <param name="t" type="ForkJoinTask<?>"/>
                 </params>
-                <declaration name="m" type="int" line="839"/>
-                <declaration name="ws" type="ForkJoinWorkerThread[]" line="840"/>
-                <scope line="841">
-                    <scope line="842">
-                        <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="843"/>
-                        <declaration name="b" type="int" line="843"/>
-                        <declaration name="v" type="ForkJoinWorkerThread" line="844"/>
-                        <scope line="849">
-                            <declaration name="u" type="long" line="850"/>
-                            <scope line="852">
-                                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="855"/>
+                <declaration name="m" type="int" line="546"/>
+                <declaration name="ws" type="ForkJoinWorkerThread[]" line="547"/>
+                <scope line="548">
+                    <scope line="549">
+                        <declaration name="q" type="ForkJoinTask&lt;?&gt;[]" line="550"/>
+                        <declaration name="b" type="int" line="551"/>
+                        <declaration name="v" type="ForkJoinWorkerThread" line="552"/>
+                        <scope line="553">
+                            <declaration name="u" type="long" line="554"/>
+                            <scope line="555">
+                                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="558"/>
                             </scope>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="867">
+            <javadoc line="569">
                 Implements ForkJoinTask.getSurplusQueuedTaskCount().  Returns
                   an estimate of the number of tasks, offset by a function of
                   number of idle workers.
@@ -822,8 +569,8 @@
                   known to have zero queued tasks, so compensate by a factor of
                   (#idle/#active) threads.                
             </javadoc>
-            <method name="getEstimatedSurplusTaskCount" type="int" line="915"/>
-            <javadoc line="919">
+            <method name="getEstimatedSurplusTaskCount" type="int" line="612"/>
+            <javadoc line="615">
                 Runs tasks until {@code pool.isQuiescent()}. We piggyback on
                   pool&apos;s active count ctl maintenance, but rather than blocking
                   when tasks cannot be found, we rescan until all others cannot
@@ -832,48 +579,42 @@
                   otherwise prematurely terminate the pool because all threads
                   appear to be inactive.                
             </javadoc>
-            <method name="helpQuiescePool" type="void" line="928">
-                <comment line="930">
-                    to restore below                    
-                </comment>
-                <comment line="941">
-                    cheap version of FJP.scan                    
-                </comment>
-                <declaration name="active" type="boolean" line="929"/>
-                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="930"/>
-                <declaration name="p" type="ForkJoinPool" line="931"/>
-                <scope line="933">
-                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="934"/>
-                    <declaration name="v" type="ForkJoinWorkerThread" line="935"/>
-                    <declaration name="n" type="int" line="936"/>
-                    <scope line="939">
-                        <declaration name="w" type="ForkJoinWorkerThread" line="940"/>
-                        <declaration name="r" type="int" line="941"/>
-                        <declaration name="steps" type="int" line="942"/>
-                        <scope line="943">
-                            <scope line="945"/>
+            <method name="helpQuiescePool" type="void" line="624">
+                <declaration name="active" type="boolean" line="625"/>
+                <declaration name="ps" type="ForkJoinTask&lt;?&gt;" line="626"/>
+                <declaration name="p" type="ForkJoinPool" line="627"/>
+                <scope line="629">
+                    <declaration name="ws" type="ForkJoinWorkerThread[]" line="630"/>
+                    <declaration name="v" type="ForkJoinWorkerThread" line="631"/>
+                    <declaration name="n" type="int" line="632"/>
+                    <scope line="634">
+                        <declaration name="w" type="ForkJoinWorkerThread" line="635"/>
+                        <declaration name="r" type="int" line="636"/>
+                        <declaration name="steps" type="int" line="637"/>
+                        <scope line="638">
+                            <scope line="639"/>
                         </scope>
                     </scope>
-                    <scope line="951">
-                        <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="952"/>
-                        <scope line="953"/>
-                        <scope line="958"/>
+                    <scope line="645">
+                        <declaration name="t" type="ForkJoinTask&lt;?&gt;" line="646"/>
+                        <scope line="647"/>
+                        <scope line="651"/>
                     </scope>
-                    <scope line="964">
-                        <scope line="965"/>
-                        <scope line="969"/>
+                    <scope line="657">
+                        <scope line="658"/>
+                        <scope line="662"/>
                     </scope>
                 </scope>
             </method>
-            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="979"/>
-            <declaration name="ABASE" type="long" line="980"/>
-            <declaration name="ASHIFT" type="int" line="981"/>
-            <scope line="983">
-                <declaration name="s" type="int" line="984"/>
-                <scope line="985">
-                    <declaration name="a" type="Class" line="987"/>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="670"/>
+            <declaration name="ABASE" type="long" line="671"/>
+            <declaration name="ASHIFT" type="int" line="672"/>
+            <scope line="673">
+                <declaration name="s" type="int" line="674"/>
+                <scope line="675">
+                    <declaration name="a" type="Class" line="677"/>
                 </scope>
-                <scope line="990"/>
+                <scope line="681"/>
             </scope>
         </class>
     </source>

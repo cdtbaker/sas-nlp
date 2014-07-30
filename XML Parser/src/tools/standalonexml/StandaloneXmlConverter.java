@@ -12,16 +12,22 @@ import main.commentextraction.com.jml.output.XMLOutputter;
 public class StandaloneXmlConverter {
 
 	public static void main (String[] args){
-		String path = args[0];
+		String path ="C:/Users/Danny/Desktop/Converted Libraries";
+		
 		for(File f : getJavaFiles(path)){
 			XMLOutputter output = new XMLOutputter(XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,true));//change last boolean to false if comments do 
 																												 //not have to be in line to be a block
 			try {
-				output.toFile(path+"/"+f.getName().substring(0, f.getName().indexOf('.')));
+				String pathO = f.getAbsolutePath().substring(0, f.getAbsolutePath().indexOf('.'));
+				pathO = pathO.replace("\\source\\", "\\xml\\");
+
+				output.toFile(pathO);
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
+		
+		System.out.println("Converted");
 	}
 
 	public static List<File> getJavaFiles(String path) {
