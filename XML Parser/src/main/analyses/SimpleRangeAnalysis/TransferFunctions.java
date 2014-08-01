@@ -1,15 +1,25 @@
 package main.analyses.SimpleRangeAnalysis;
 
+import java.util.List;
+
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 
+import edu.cmu.cs.crystal.bridge.LatticeElement;
+import edu.cmu.cs.crystal.flow.ILabel;
 import edu.cmu.cs.crystal.flow.ILatticeOperations;
+import edu.cmu.cs.crystal.flow.IResult;
 import edu.cmu.cs.crystal.simple.AbstractingTransferFunction;
 import edu.cmu.cs.crystal.simple.TupleLatticeElement;
 import edu.cmu.cs.crystal.simple.TupleLatticeOperations;
+import edu.cmu.cs.crystal.tac.ITACBranchSensitiveTransferFunction;
+import edu.cmu.cs.crystal.tac.ITACTransferFunction;
+import edu.cmu.cs.crystal.tac.model.AssignmentInstruction;
 import edu.cmu.cs.crystal.tac.model.BinaryOperation;
 import edu.cmu.cs.crystal.tac.model.BinaryOperator;
-import edu.cmu.cs.crystal.tac.model.LoadLiteralInstruction;
+import edu.cmu.cs.crystal.tac.model.CopyInstruction;
 import edu.cmu.cs.crystal.tac.model.Variable;
 
 public class TransferFunctions
@@ -26,7 +36,7 @@ public class TransferFunctions
 		TupleLatticeElement<Variable, PositiveNegativeLattice> def = ops
 				.getDefault();
 		Variable thisVar = getAnalysisContext().getThisVariable();
-		def.put(thisVar, PositiveNegativeLattice.NEG);
+		// def.put(thisVar, PositiveNegativeLattice.NEG);
 		return def;
 	}
 
@@ -38,81 +48,110 @@ public class TransferFunctions
 
 	@Override
 	public TupleLatticeElement<Variable, PositiveNegativeLattice> transfer(
-			LoadLiteralInstruction instr,
+			AssignmentInstruction instr,
 			TupleLatticeElement<Variable, PositiveNegativeLattice> value) {
 
-		if (instr.isNumber()) {
-			if (Integer.parseInt((String) instr.getLiteral()) > 0) {
-				value.put(instr.getTarget(), PositiveNegativeLattice.POS);
-				System.out.println(instr.getTarget());
-
-			}
-		}
-
-		return value;
+		return super.transfer(instr, value);
 	}
 
-	@Override
-	public TupleLatticeElement<Variable, PositiveNegativeLattice> transfer(
-			BinaryOperation binop,
-			TupleLatticeElement<Variable, PositiveNegativeLattice> value) {
+	private PositiveNegativeLattice copyInstr(CopyInstruction copy,
+			TupleLatticeElement<Variable, PositiveNegativeLattice> le) {
+		return le.get(copy.getOperand());
+	}
 
-		
-		System.out.println("OP1=" + binop.getOperand1());
-		System.out.println("OP2=" + binop.getOperand2());
-		BinaryOperator operator = binop.getOperator();
-		double op1 = Double.parseDouble(binop.getOperand1().toString());
-		double op2 = Double.parseDouble(binop.getOperand2().toString());
+	private PositiveNegativeLattice basicAssignment(AssignmentInstruction instr) {
+		String expression = ((Assignment) instr.getNode()).getRightHandSide()
+				.toString().trim();
 
-		Variable target = binop.getTarget();
-
-		if (operator == BinaryOperator.ARIT_MULTIPLY
-				|| operator == BinaryOperator.ARIT_DIVIDE) {
-			if (op1 < 0 ^ op2 < 0) {
-				value.put(target, PositiveNegativeLattice.NEG);
-			} else if (op1 > 0 ^ op2 > 0) {
-				value.put(target, PositiveNegativeLattice.POS);
+		try {
+			double d = Double.parseDouble(expression);
+			if (d < 0) {
+				return PositiveNegativeLattice.NEG;
+			} else if (d > 0) {
+				return PositiveNegativeLattice.POS;
 			} else {
-				value.put(target, PositiveNegativeLattice.ZERO);
+				return PositiveNegativeLattice.ZERO;
 			}
+
+		} catch (Exception e) {
+			return PositiveNegativeLattice.NOT_SURE;
+		}
+	}
+
+	private PositiveNegativeLattice getBinOp(Variable v, BinaryOperation binop,
+			TupleLatticeElement<Variable, PositiveNegativeLattice> le) {
+
+		String expression = binop.getNode().toString();
+		BinaryOperator operator = binop.getOperator();
+
+		PositiveNegativeLattice op1 = getOperandState(operator,
+				binop.getOperand1(), expression, le, true);
+		PositiveNegativeLattice op2 = getOperandState(operator,
+				binop.getOperand2(), expression, le, false);
+
+		if (operator == BinaryOperator.ARIT_DIVIDE
+				|| operator == BinaryOperator.ARIT_MULTIPLY) {
+			if (op1 == PositiveNegativeLattice.NEG
+					^ op2 == PositiveNegativeLattice.NEG) {
+				return PositiveNegativeLattice.NEG;
+			}
+		} else if ((op1 == PositiveNegativeLattice.POS && op2 == PositiveNegativeLattice.POS)
+				|| (op1 == PositiveNegativeLattice.NEG && op2 == PositiveNegativeLattice.NEG)) {
+			return PositiveNegativeLattice.POS;
+		} else {
+			return PositiveNegativeLattice.ZERO;
 		}
 
 		if (operator == BinaryOperator.ARIT_MODULO) {
-			if (op1 > 0) {
-				value.put(binop.getTarget(), PositiveNegativeLattice.POS);
-			} else if (op1 < 0) {
-				value.put(binop.getTarget(), PositiveNegativeLattice.NEG);
+			if (op1 == PositiveNegativeLattice.POS) {
+				return PositiveNegativeLattice.POS;
+			} else if (op1 == PositiveNegativeLattice.NEG) {
+				return PositiveNegativeLattice.NEG;
 			} else {
-				value.put(binop.getTarget(), PositiveNegativeLattice.ZERO);
+				return PositiveNegativeLattice.ZERO;
 			}
 		}
 
 		if (binop.getOperator() == BinaryOperator.ARIT_ADD) {
-			if (value.get(target) == PositiveNegativeLattice.POS) {
-				if (op1 + op1 >= 0) {
-					value.put(target, PositiveNegativeLattice.POS);
-				}else{
-					value.put(target, PositiveNegativeLattice.NOT_SURE);
-				}
+			if (op1 == PositiveNegativeLattice.POS
+					&& op2 == PositiveNegativeLattice.POS) {
+				return PositiveNegativeLattice.POS;
+			} else if (op1 == PositiveNegativeLattice.NEG
+					&& op2 == PositiveNegativeLattice.NEG) {
+				return PositiveNegativeLattice.NEG;
 			}
 		}
 
-		return value;
+		return PositiveNegativeLattice.NOT_SURE;
+
 	}
 
-	/*
-	 * @Override public TupleLatticeElement<Variable, PositiveNegativeLattice>
-	 * transfer( CopyInstruction instr, TupleLatticeElement<Variable,
-	 * PositiveNegativeLattice> value) {
-	 * System.out.println("Copy instr: operand=" + instr.getOperand()+
-	 * " value="+value.toString())); return super.transfer(instr, value); }
-	 * 
-	 * @Override public TupleLatticeElement<Variable, PositiveNegativeLattice>
-	 * transfer( TACInstruction instr, TupleLatticeElement<Variable,
-	 * PositiveNegativeLattice> value) {
-	 * 
-	 * 
-	 * return super.transfer(instr, value); }
-	 */
+	private PositiveNegativeLattice getOperandState(BinaryOperator b,
+			Variable v, String expression,
+			TupleLatticeElement<Variable, PositiveNegativeLattice> le,
+			boolean first) {
+		try {
+			double d;
+			if (first) {
+				d = Double.parseDouble(expression.substring(0,
+						expression.indexOf(b.token)).trim());
+			} else {
+				d = Double.parseDouble(expression.substring(
+						expression.indexOf(b.token), expression.length())
+						.trim());
+			}
+
+			if (d > 0) {
+				return PositiveNegativeLattice.POS;
+			} else if (d < 0) {
+				return PositiveNegativeLattice.NEG;
+			} else {
+				return PositiveNegativeLattice.ZERO;
+			}
+
+		} catch (Exception e) {
+			return le.get(v);
+		}
+	}
 
 }

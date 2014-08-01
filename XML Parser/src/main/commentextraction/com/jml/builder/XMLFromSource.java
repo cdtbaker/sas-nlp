@@ -454,9 +454,9 @@ public class XMLFromSource {
 				}
 				for (int i = 1; i < tags.size(); i++) {
 					j.addContent(new JavadocTag(tags.get(i).getTagName()
-							.substring(1), tags.get(i).toString().trim()
+							.substring(1), StringEscapeUtils.escapeXml(tags.get(i).toString().trim()
 							.substring(2 + tags.get(i).getTagName().length())
-							.replaceAll("\\*", "")));
+							.replaceAll("\\*", ""))));
 
 				}
 				j.addAttribute("line", String.valueOf(c.getLineNumber(node

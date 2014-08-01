@@ -14,9 +14,9 @@
         <import package="java.security.PrivilegedAction"/>
         <import package="sun.net.NetProperties"/>
         <import package="sun.net.SocksProxy"/>
-        <class name="DefaultProxySelector" line="16">
+        <class name="DefaultProxySelector" line="43">
             <extends class="ProxySelector"/>
-            <javadoc line="16">
+            <javadoc line="43">
                 Supports proxy settings using system properties This proxy selector
                   provides backward compatibility with the old http protocol handler
                   as far as how proxy is set
@@ -25,8 +25,8 @@
                   proxyHost, proxyPort, and http/https/ftp.nonProxyHost, and socks.
                   NOTE: need to do gopher as well                
             </javadoc>
-            <declaration name="props" type="String[][]" line="26"/>
-            <javadoc line="26">
+            <declaration name="props" type="String[][]" line="56"/>
+            <javadoc line="56">
                 This is where we define all the valid System Properties we have to
                   support for each given protocol.
                   The format of this 2 dimensional array is :
@@ -43,32 +43,36 @@
                   + socksProxyHost &amp; socksProxyPort
                   Note that the socksProxy should always be the last on the list                
             </javadoc>
-            <declaration name="SOCKS_PROXY_VERSION" type="String" line="44"/>
-            <declaration name="hasSystemProxies" type="boolean" line="45"/>
-            <scope line="46">
-                <declaration name="key" type="String" line="47"/>
-                <anonymous_class line="48">
-                    <method name="run" type="Boolean" line="49"/>
+            <declaration name="SOCKS_PROXY_VERSION" type="String" line="85"/>
+            <declaration name="hasSystemProxies" type="boolean" line="87"/>
+            <scope line="89">
+                <declaration name="key" type="String" line="90"/>
+                <anonymous_class line="92">
+                    <method name="run" type="Boolean" line="93"/>
                 </anonymous_class>
-                <declaration name="b" type="Boolean" line="48"/>
-                <scope line="54"/>
+                <declaration name="b" type="Boolean" line="91"/>
+                <scope line="96"/>
             </scope>
-            <class name="NonProxyInfo" line="59">
-                <javadoc line="59">
+            <class name="NonProxyInfo" line="103">
+                <comment line="113">
+                    Default value for nonProxyHosts, this provides backward compatibility
+                     by excluding localhost and its litteral notations.                    
+                </comment>
+                <javadoc line="103">
                     How to deal with &quot;non proxy hosts&quot;:
                       since we do have to generate a RegexpPool we don&apos;t want to do that if
                       it&apos;s not necessary. Therefore we do cache the result, on a per-protocol
                       basis, and change it only when the &quot;source&quot;, i.e. the system property,
                       did change.                    
                 </javadoc>
-                <declaration name="defStringVal" type="String" line="67"/>
-                <declaration name="hostsSource" type="String" line="68"/>
-                <declaration name="hostsPool" type="RegexpPool" line="69"/>
-                <declaration name="property" type="String" line="70"/>
-                <declaration name="defaultVal" type="String" line="71"/>
-                <declaration name="ftpNonProxyInfo" type="NonProxyInfo" line="72"/>
-                <declaration name="httpNonProxyInfo" type="NonProxyInfo" line="73"/>
-                <method name="NonProxyInfo" type="constructor" line="74">
+                <declaration name="defStringVal" type="String" line="114"/>
+                <declaration name="hostsSource" type="String" line="116"/>
+                <declaration name="hostsPool" type="RegexpPool" line="117"/>
+                <declaration name="property" type="String" line="118"/>
+                <declaration name="defaultVal" type="String" line="119"/>
+                <declaration name="ftpNonProxyInfo" type="NonProxyInfo" line="120"/>
+                <declaration name="httpNonProxyInfo" type="NonProxyInfo" line="121"/>
+                <method name="NonProxyInfo" type="constructor" line="123">
                     <params>
                         <param name="p" type="String"/>
                         <param name="s" type="String"/>
@@ -77,107 +81,216 @@
                     </params>
                 </method>
             </class>
-            <javadoc line="81">
+            <javadoc line="132">
                 select() method. Where all the hard work is done.
                   Build a list of proxies depending on URI.
                   Since we&apos;re only providing compatibility with the system properties
                   from previous releases (see list above), that list will always
                   contain 1 single proxy, default being NO_PROXY.                
             </javadoc>
-            <method name="select" type="java.util.List<Proxy>" line="88">
+            <method name="select" type="java.util.List<Proxy>" line="139">
                 <params>
                     <param name="uri" type="URI"/>
                 </params>
-                <scope line="89"/>
-                <declaration name="protocol" type="String" line="92"/>
-                <declaration name="host" type="String" line="93"/>
-                <scope line="94">
-                    <declaration name="auth" type="String" line="95"/>
-                    <scope line="96">
-                        <declaration name="i" type="int" line="97"/>
-                        <scope line="99"/>
-                        <scope line="103"/>
+                <comment line="148">
+                    This is a hack to ensure backward compatibility in two
+                     cases: 1. hostnames contain non-ascii characters,
+                     internationalized domain names. in which case, URI will
+                     return null, see BugID 4957669; 2. Some hostnames can
+                     contain &apos;_&apos; chars even though it&apos;s not supposed to be
+                     legal, in which case URI will return null for getHost,
+                     but not for getAuthority() See BugID 4913253                    
+                </comment>
+                <comment line="180">
+                    HTTPS uses the same property as HTTP, for backward
+                     compatibility                    
+                </comment>
+                <comment line="187">
+                    Let&apos;s check the System properties for that protocol                    
+                </comment>
+                <comment line="194">
+                    This is one big doPrivileged call, but we&apos;re trying to optimize
+                     the code as much as possible. Since we&apos;re checking quite a few
+                     System properties it does help having only 1 call to doPrivileged.
+                     Be mindful what you do in here though!                    
+                </comment>
+                <comment line="209">
+                    Then let&apos;s walk the list of protocols in our array                    
+                </comment>
+                <comment line="213">
+                    System.getProp() will give us an empty
+                     String, &quot;&quot; for a defined but &quot;empty&quot;
+                     property.                    
+                </comment>
+                <comment line="222">
+                    No system property defined for that
+                     protocol. Let&apos;s check System Proxy
+                     settings (Gnome &amp; Windows) if we were
+                     instructed to.                    
+                </comment>
+                <comment line="241">
+                    If a Proxy Host is defined for that protocol
+                     Let&apos;s get the NonProxyHosts property                    
+                </comment>
+                <comment line="274">
+                    We got a host, let&apos;s check for port                    
+                </comment>
+                <comment line="278">
+                    Can&apos;t find a port with same prefix as Host
+                     AND it&apos;s not a SOCKS proxy
+                     Let&apos;s try the other prefixes for that proto                    
+                </comment>
+                <comment line="287">
+                    Still couldn&apos;t find a port, let&apos;s use default                    
+                </comment>
+                <comment line="289">
+                    SOCKS                    
+                </comment>
+                <comment line="294">
+                    We did find a proxy definition.
+                     Let&apos;s create the address, but don&apos;t resolve it
+                     as this will be done at connection time                    
+                </comment>
+                <comment line="298">
+                    Socks is *always* the last on the list.                    
+                </comment>
+                <comment line="312">
+                    If no specific property was set for that URI, we should be
+                     returning an iterator to an empty List.                    
+                </comment>
+                <scope line="140"/>
+                <declaration name="protocol" type="String" line="143"/>
+                <declaration name="host" type="String" line="144"/>
+                <scope line="146">
+                    <declaration name="auth" type="String" line="154"/>
+                    <scope line="155">
+                        <declaration name="i" type="int" line="156"/>
+                        <scope line="158"/>
+                        <scope line="162"/>
                     </scope>
                 </scope>
-                <scope line="109"/>
-                <declaration name="proxyl" type="List&lt;Proxy&gt;" line="112"/>
-                <declaration name="pinfo" type="NonProxyInfo" line="113"/>
-                <scope line="114"/>
-                <scope line="117"/>
-                <scope line="120"/>
-                <declaration name="proto" type="String" line="123"/>
-                <declaration name="nprop" type="NonProxyInfo" line="124"/>
-                <declaration name="urlhost" type="String" line="125"/>
-                <anonymous_class line="126">
-                    <method name="run" type="Proxy" line="127">
-                        <declaration name="i" type="int" line="128"/>
-                        <declaration name="phost" type="String" line="129"/>
-                        <declaration name="pport" type="int" line="130"/>
-                        <declaration name="nphosts" type="String" line="131"/>
-                        <declaration name="saddr" type="InetSocketAddress" line="132"/>
-                        <scope line="133">
-                            <scope line="134">
-                                <scope line="135"/>
-                                <scope line="139">
-                                    <scope line="140">
-                                        <declaration name="sproto" type="String" line="141"/>
-                                        <declaration name="sproxy" type="Proxy" line="144"/>
-                                        <scope line="145"/>
+                <scope line="169"/>
+                <declaration name="proxyl" type="List&lt;Proxy&gt;" line="172"/>
+                <declaration name="pinfo" type="NonProxyInfo" line="174"/>
+                <scope line="176"/>
+                <scope line="178"/>
+                <scope line="182"/>
+                <declaration name="proto" type="String" line="186"/>
+                <declaration name="nprop" type="NonProxyInfo" line="190"/>
+                <declaration name="urlhost" type="String" line="191"/>
+                <anonymous_class line="200">
+                    <method name="run" type="Proxy" line="201">
+                        <comment line="209">
+                            Then let&apos;s walk the list of protocols in our array                            
+                        </comment>
+                        <comment line="213">
+                            System.getProp() will give us an empty
+                             String, &quot;&quot; for a defined but &quot;empty&quot;
+                             property.                            
+                        </comment>
+                        <comment line="222">
+                            No system property defined for that
+                             protocol. Let&apos;s check System Proxy
+                             settings (Gnome &amp; Windows) if we were
+                             instructed to.                            
+                        </comment>
+                        <comment line="241">
+                            If a Proxy Host is defined for that protocol
+                             Let&apos;s get the NonProxyHosts property                            
+                        </comment>
+                        <comment line="274">
+                            We got a host, let&apos;s check for port                            
+                        </comment>
+                        <comment line="278">
+                            Can&apos;t find a port with same prefix as Host
+                             AND it&apos;s not a SOCKS proxy
+                             Let&apos;s try the other prefixes for that proto                            
+                        </comment>
+                        <comment line="287">
+                            Still couldn&apos;t find a port, let&apos;s use default                            
+                        </comment>
+                        <comment line="289">
+                            SOCKS                            
+                        </comment>
+                        <comment line="294">
+                            We did find a proxy definition.
+                             Let&apos;s create the address, but don&apos;t resolve it
+                             as this will be done at connection time                            
+                        </comment>
+                        <comment line="298">
+                            Socks is *always* the last on the list.                            
+                        </comment>
+                        <declaration name="i" type="int" line="202"/>
+                        <declaration name="phost" type="String" line="203"/>
+                        <declaration name="pport" type="int" line="204"/>
+                        <declaration name="nphosts" type="String" line="205"/>
+                        <declaration name="saddr" type="InetSocketAddress" line="206"/>
+                        <scope line="209">
+                            <scope line="210">
+                                <scope line="211"/>
+                                <scope line="220">
+                                    <scope line="227">
+                                        <declaration name="sproto" type="String" line="228"/>
+                                        <declaration name="sproxy" type="Proxy" line="233"/>
+                                        <scope line="234"/>
                                     </scope>
                                 </scope>
-                                <scope line="151">
-                                    <scope line="153">
-                                        <scope line="154">
-                                            <scope line="155"/>
-                                            <scope line="158"/>
+                                <scope line="242">
+                                    <scope line="244">
+                                        <scope line="245">
+                                            <scope line="246"/>
+                                            <scope line="248"/>
                                         </scope>
-                                        <scope line="163">
-                                            <scope line="164">
-                                                <declaration name="pool" type="RegexpPool" line="165"/>
-                                                <declaration name="st" type="StringTokenizer" line="166"/>
-                                                <scope line="167">
-                                                    <scope line="168"/>
+                                        <scope line="253">
+                                            <scope line="254">
+                                                <declaration name="pool" type="RegexpPool" line="255"/>
+                                                <declaration name="st" type="StringTokenizer" line="256"/>
+                                                <scope line="257">
+                                                    <scope line="258"/>
                                                 </scope>
-                                                <scope line="172"/>
+                                                <scope line="261"/>
                                             </scope>
                                         </scope>
-                                        <scope line="178"/>
+                                        <scope line="268"/>
                                     </scope>
                                 </scope>
-                                <scope line="184">
-                                    <scope line="185"/>
+                                <scope line="276">
+                                    <scope line="280"/>
                                 </scope>
-                                <scope line="189"/>
-                                <scope line="194">
-                                    <declaration name="version" type="int" line="195"/>
+                                <scope line="287"/>
+                                <scope line="298">
+                                    <declaration name="version" type="int" line="299"/>
                                 </scope>
-                                <scope line="198"/>
+                                <scope line="301"/>
                             </scope>
                         </scope>
                     </method>
                 </anonymous_class>
-                <declaration name="p" type="Proxy" line="126"/>
+                <declaration name="p" type="Proxy" line="199"/>
             </method>
-            <method name="connectFailed" type="void" line="210">
+            <method name="connectFailed" type="void" line="318">
                 <params>
                     <param name="uri" type="URI"/>
                     <param name="sa" type="SocketAddress"/>
                     <param name="ioe" type="IOException"/>
                 </params>
-                <scope line="211"/>
+                <comment line="323">
+                    ignored                    
+                </comment>
+                <scope line="319"/>
             </method>
-            <method name="defaultPort" type="int" line="215">
+            <method name="defaultPort" type="int" line="326">
                 <params>
                     <param name="protocol" type="String"/>
                 </params>
-                <scope line="216"/>
-                <scope line="219"/>
-                <scope line="222"/>
-                <scope line="225"/>
-                <scope line="228"/>
-                <scope line="231"/>
+                <scope line="327"/>
+                <scope line="329"/>
+                <scope line="331"/>
+                <scope line="333"/>
+                <scope line="335"/>
+                <scope line="337"/>
             </method>
-            <method name="init" type="boolean" line="235"/>
-            <method name="getSystemProxy" type="Proxy" line="236"/>
+            <method name="init" type="boolean" line="342"/>
+            <method name="getSystemProxy" type="Proxy" line="343"/>
         </class>
     </source>

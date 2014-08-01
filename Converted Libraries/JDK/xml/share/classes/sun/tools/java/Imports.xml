@@ -6,9 +6,15 @@
         <import package="java.util.List"/>
         <import package="java.util.Collections"/>
         <import package="java.io.IOException"/>
-        <class name="Imports" line="8">
+        <class name="Imports" line="35">
+            <comment line="407">
+                for compatibility                
+            </comment>
+            <comment line="437">
+                for compatibility                
+            </comment>
             <implements interface="Constants"/>
-            <javadoc line="8">
+            <javadoc line="35">
                 This class describes the classes and packages imported
                   from a source file. A Hashtable called bindings is maintained
                   to quickly map symbol names to classes. This table is flushed
@@ -23,242 +29,415 @@
                   supported API.  Code that depends on them does so at its own risk:
                   they are subject to change or removal without notice.                
             </javadoc>
-            <declaration name="currentPackage" type="Identifier" line="24"/>
-            <javadoc line="24">
+            <declaration name="currentPackage" type="Identifier" line="55"/>
+            <javadoc line="55">
                 The current package, which is implicitly imported,
                   and has precedence over other imported packages.                
             </javadoc>
-            <declaration name="currentPackageWhere" type="long" line="29"/>
-            <javadoc line="29">
+            <declaration name="currentPackageWhere" type="long" line="61"/>
+            <javadoc line="61">
                 A location for the current package declaration.  Used to
                   report errors against the current package.                
             </javadoc>
-            <declaration name="classes" type="Hashtable" line="34"/>
-            <javadoc line="34">
+            <declaration name="classes" type="Hashtable" line="67"/>
+            <javadoc line="67">
                 The imported classes, including memoized imports from packages.                
             </javadoc>
-            <declaration name="packages" type="Vector" line="38"/>
-            <javadoc line="38">
+            <declaration name="packages" type="Vector" line="72"/>
+            <javadoc line="72">
                 The imported package identifiers.  This will not contain duplicate
                   imports for the same package.  It will also not contain the
                   current package.                
             </javadoc>
-            <declaration name="singles" type="Vector" line="44"/>
-            <javadoc line="44">
+            <declaration name="singles" type="Vector" line="79"/>
+            <javadoc line="79">
                 The (originally) imported classes.
                   A vector of IdentifierToken.                
             </javadoc>
-            <declaration name="checked" type="int" line="49"/>
-            <javadoc line="49">
+            <declaration name="checked" type="int" line="85"/>
+            <javadoc line="85">
                 Are the import names checked yet?                
             </javadoc>
-            <javadoc line="53">
+            <javadoc line="90">
                 Constructor, always import java.lang.                
             </javadoc>
-            <method name="Imports" type="constructor" line="56">
+            <method name="Imports" type="constructor" line="93">
                 <params>
                     <param name="env" type="Environment"/>
                 </params>
             </method>
-            <javadoc line="59">
+            <javadoc line="97">
                 Check the names of the imports.                
             </javadoc>
-            <method name="resolve" type="void" line="62">
+            <method name="resolve" type="void" line="100">
                 <params>
                     <param name="env" type="Environment"/>
                 </params>
-                <scope line="63"/>
-                <declaration name="resolvedPackages" type="Vector" line="67"/>
-                <scope line="68">
-                    <declaration name="t" type="IdentifierToken" line="69"/>
-                    <declaration name="nm" type="Identifier" line="70"/>
-                    <declaration name="where" type="long" line="71"/>
-                    <scope line="72"/>
-                    <scope line="76">
-                        <declaration name="rnm" type="Identifier" line="77"/>
-                        <scope line="78">
-                            <scope line="79"/>
+                <comment line="107">
+                    After all class information has been read, now we can
+                     safely inspect import information for errors.
+                     If we did this before all parsing was finished,
+                     we could get vicious circularities, since files can
+                     import each others&apos; classes.                    
+                </comment>
+                <comment line="113">
+                    A note: the resolution of the package java.lang takes place
+                     in the sun.tools.javac.BatchEnvironment#setExemptPackages().                    
+                </comment>
+                <comment line="116">
+                    Make sure that the current package&apos;s name does not collide
+                     with the name of an existing class. (bug 4101529)
+                    
+                     This change has been backed out because, on WIN32, it
+                     failed to distinguish between java.awt.event and
+                     java.awt.Event when looking for a directory.  We will
+                     add this back in later.
+                    
+                     if (currentPackage != idNull) {
+                        Identifier resolvedName =
+                          env.resolvePackageQualifiedName(currentPackage);
+                    
+                       Identifier className = resolvedName.getTopName();
+                    
+                       if (importable(className, env)) {
+                           The name of the current package is also the name
+                           of a class.
+                          env.error(currentPackageWhere, &quot;package.class.conflict&quot;,
+                                    currentPackage, className);
+                         }
+                     }                    
+                </comment>
+                <comment line="144">
+                    Check to see if this package is exempt from the &quot;exists&quot;
+                     check.  See the note in
+                     sun.tools.javac.BatchEnvironment#setExemptPackages()
+                     for more information.                    
+                </comment>
+                <comment line="153">
+                    (Note: This code is moved from BatchParser.importPackage().)                    
+                </comment>
+                <comment line="157">
+                    This name is a real class; better not be a package too.                    
+                </comment>
+                <comment line="162">
+                    Pass an &quot;inner&quot; name to the imports.                    
+                </comment>
+                <comment line="169">
+                    nm exists, and rnm.getTopName() is a parent package                    
+                </comment>
+                <comment line="185">
+                    (Note: This code is moved from BatchParser.importClass().)                    
+                </comment>
+                <comment line="191">
+                    (Note: This code is moved from Imports.addClass().)                    
+                </comment>
+                <comment line="194">
+                    make sure it isn&apos;t already imported explicitly                    
+                </comment>
+                <comment line="208">
+                    The code here needs to check to see, if we
+                     are importing an inner class, that all of its
+                     enclosing classes are visible to us.  To check this,
+                     we need to construct a definition for the class.
+                     The code here used to call...
+                    
+                         ClassDefinition def = env.getClassDefinition(nm);
+                    
+                     ...but that interfered with the basicCheck()&apos;ing of
+                     interfaces in certain cases (bug no. 4086139).  Never
+                     fear.  Instead we load the class with a call to the
+                     new getClassDefinitionNoCheck() which does no basicCheck() and
+                     lets us answer the questions we are interested in w/o
+                     interfering with the demand-driven nature of basicCheck().                    
+                </comment>
+                <comment line="224">
+                    Get a declaration                    
+                </comment>
+                <comment line="227">
+                    Get the definition (no env argument)                    
+                </comment>
+                <comment line="230">
+                    Get the true name of the package containing this class.
+                     `pkg&apos; from above is insufficient.  It includes the
+                     names of our enclosing classes.  Fix for 4086815.                    
+                </comment>
+                <comment line="235">
+                    Walk out the outerClass chain, ensuring that each level
+                     is visible from our perspective.                    
+                </comment>
+                <scope line="101"/>
+                <declaration name="resolvedPackages" type="Vector" line="137"/>
+                <scope line="138">
+                    <declaration name="t" type="IdentifierToken" line="139"/>
+                    <declaration name="nm" type="Identifier" line="140"/>
+                    <declaration name="where" type="long" line="141"/>
+                    <scope line="147"/>
+                    <scope line="153">
+                        <declaration name="rnm" type="Identifier" line="154"/>
+                        <scope line="155">
+                            <scope line="157"/>
                         </scope>
-                        <scope line="85"/>
-                        <scope line="88"/>
+                        <scope line="165"/>
+                        <scope line="167"/>
                     </scope>
-                    <scope line="93"/>
+                    <scope line="172"/>
                 </scope>
-                <scope line="98">
-                    <declaration name="t" type="IdentifierToken" line="99"/>
-                    <declaration name="nm" type="Identifier" line="100"/>
-                    <declaration name="where" type="long" line="101"/>
-                    <declaration name="pkg" type="Identifier" line="102"/>
-                    <scope line="104"/>
-                    <declaration name="snm" type="Identifier" line="107"/>
-                    <declaration name="className" type="Identifier" line="108"/>
-                    <scope line="109">
-                        <declaration name="f1" type="Identifier" line="110"/>
-                        <declaration name="f2" type="Identifier" line="111"/>
-                        <scope line="112"/>
+                <scope line="178">
+                    <declaration name="t" type="IdentifierToken" line="179"/>
+                    <declaration name="nm" type="Identifier" line="180"/>
+                    <declaration name="where" type="long" line="181"/>
+                    <declaration name="pkg" type="Identifier" line="182"/>
+                    <scope line="186"/>
+                    <declaration name="snm" type="Identifier" line="191"/>
+                    <declaration name="className" type="Identifier" line="194"/>
+                    <scope line="195">
+                        <declaration name="f1" type="Identifier" line="196"/>
+                        <declaration name="f2" type="Identifier" line="198"/>
+                        <scope line="200"/>
                     </scope>
-                    <scope line="117">
-                        <declaration name="decl" type="ClassDeclaration" line="118"/>
-                        <declaration name="def" type="ClassDefinition" line="119"/>
-                        <declaration name="importedPackage" type="Identifier" line="120"/>
-                        <scope line="121">
-                            <scope line="122"/>
+                    <scope line="222">
+                        <declaration name="decl" type="ClassDeclaration" line="224"/>
+                        <declaration name="def" type="ClassDefinition" line="227"/>
+                        <declaration name="importedPackage" type="Identifier" line="232"/>
+                        <scope line="236">
+                            <scope line="239"/>
                         </scope>
                     </scope>
-                    <scope line="128"/>
-                    <scope line="131"/>
+                    <scope line="244"/>
+                    <scope line="246"/>
                 </scope>
             </method>
-            <javadoc line="137">
+            <javadoc line="253">
                 Lookup a class, given the current set of imports,
                   AmbiguousClass exception is thrown if the name can be
                   resolved in more than one way. A ClassNotFound exception
                   is thrown if the class is not found in the imported classes
                   and packages.                
             </javadoc>
-            <method name="resolve" type="Identifier" line="144">
+            <method name="resolve" type="Identifier" line="260">
                 <params>
                     <param name="env" type="Environment"/>
                     <param name="nm" type="Identifier"/>
                 </params>
-                <scope line="146"/>
-                <scope line="149"/>
-                <scope line="153"/>
-                <declaration name="className" type="Identifier" line="157"/>
-                <scope line="158"/>
-                <declaration name="id" type="Identifier" line="162"/>
-                <scope line="163"/>
-                <scope line="166">
-                    <declaration name="e" type="Enumeration" line="167"/>
-                    <scope line="168">
-                        <declaration name="t" type="IdentifierToken" line="169"/>
-                        <scope line="171">
-                            <scope line="172"/>
-                            <scope line="175"/>
+                <comment line="264">
+                    If the class has the special ambiguous prefix, then we will
+                     get the original AmbiguousClass exception by removing the
+                     prefix and proceeding in the normal fashion.
+                     (part of solution for 4059855)                    
+                </comment>
+                <comment line="273">
+                    Don&apos;t bother it is already qualified                    
+                </comment>
+                <comment line="283">
+                    Check if it was imported before                    
+                </comment>
+                <comment line="290">
+                    Note: the section below has changed a bit during the fix
+                     for bug 4093217.  The current package is no longer grouped
+                     with the rest of the import-on-demands; it is now checked
+                     separately.  Also, the list of import-on-demands is now
+                     guarranteed to be duplicate-free, so the code below can afford
+                     to be a bit simpler.                    
+                </comment>
+                <comment line="297">
+                    First we look in the current package.  The current package
+                     is given precedence over the rest of the import-on-demands,
+                     which means, among other things, that a class in the current
+                     package cannot be ambiguous.                    
+                </comment>
+                <comment line="305">
+                    If it isn&apos;t in the current package, try to find it in
+                     our import-on-demands.                    
+                </comment>
+                <comment line="314">
+                    We haven&apos;t found any other matching classes yet.
+                     Set className to what we&apos;ve found and continue
+                     looking for an ambiguity.                    
+                </comment>
+                <comment line="322">
+                    We&apos;ve found an ambiguity.                    
+                </comment>
+                <comment line="329">
+                    Make sure a class was found                    
+                </comment>
+                <comment line="335">
+                    Remember the binding                    
+                </comment>
+                <scope line="267"/>
+                <scope line="271"/>
+                <scope line="277"/>
+                <declaration name="className" type="Identifier" line="283"/>
+                <scope line="284"/>
+                <declaration name="id" type="Identifier" line="300"/>
+                <scope line="301"/>
+                <scope line="303">
+                    <declaration name="e" type="Enumeration" line="306"/>
+                    <scope line="307">
+                        <declaration name="t" type="IdentifierToken" line="308"/>
+                        <scope line="311">
+                            <scope line="312"/>
+                            <scope line="317"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="182"/>
+                <scope line="329"/>
             </method>
-            <javadoc line="190">
+            <javadoc line="340">
                 Check to see if &apos;id&apos; names an importable class in `env&apos;.
                   This method was made public and static for utility.                
             </javadoc>
-            <method name="importable" type="boolean" line="194">
+            <method name="importable" type="boolean" line="344">
                 <params>
                     <param name="id" type="Identifier"/>
                     <param name="env" type="Environment"/>
                 </params>
-                <scope line="195"/>
-                <scope line="198"/>
-                <scope line="201">
-                    <scope line="202">
-                        <declaration name="decl" type="ClassDeclaration" line="203"/>
-                        <declaration name="c" type="ClassDefinition" line="204"/>
+                <comment line="351">
+                    load the top class and look inside it                    
+                </comment>
+                <comment line="353">
+                    There used to be a call to...
+                        env.getClassDeclaration(id.getTopName());
+                     ...here.  It has been replaced with the
+                     two statements below.  These should be functionally
+                     the same except for the fact that
+                     getClassDefinitionNoCheck() does not call
+                     basicCheck().  This allows us to avoid a circular
+                     need to do basicChecking that can arise with
+                     certain patterns of importing and inheritance.
+                     This is a fix for a variant of bug 4086139.
+                    
+                     Note: the special case code in env.getClassDefinition()
+                     which handles inner class names is not replicated below.
+                     This should be okay, as we are looking up id.getTopName(),
+                     not id.                    
+                </comment>
+                <scope line="345"/>
+                <scope line="347"/>
+                <scope line="349">
+                    <scope line="351">
+                        <declaration name="decl" type="ClassDeclaration" line="367"/>
+                        <declaration name="c" type="ClassDefinition" line="369"/>
                     </scope>
-                    <scope line="207"/>
+                    <scope line="373"/>
                 </scope>
             </method>
-            <javadoc line="212">
+            <javadoc line="379">
                 Suppose a resolve() call has failed.
                   This routine can be used silently to give a reasonable
                   default qualification (the current package) to the identifier.
                   This decision is recorded for future reference.                
             </javadoc>
-            <method name="forceResolve" type="Identifier" line="218">
+            <method name="forceResolve" type="Identifier" line="385">
                 <params>
                     <param name="env" type="Environment"/>
                     <param name="nm" type="Identifier"/>
                 </params>
-                <declaration name="className" type="Identifier" line="220"/>
-                <scope line="221"/>
+                <declaration name="className" type="Identifier" line="389"/>
+                <scope line="390"/>
             </method>
-            <javadoc line="228">
+            <javadoc line="400">
                 Add a class import                
             </javadoc>
-            <method name="addClass" type="void" line="231">
+            <method name="addClass" type="void" line="403">
                 <params>
                     <param name="t" type="IdentifierToken"/>
                 </params>
             </method>
-            <method name="addClass" type="void" line="234">
+            <method name="addClass" type="void" line="407">
                 <params>
                     <param name="nm" type="Identifier"/>
                 </params>
             </method>
-            <javadoc line="237">
+            <javadoc line="411">
                 Add a package import, or perhaps an inner class scope.
                   Ignore any duplicate imports.                
             </javadoc>
-            <method name="addPackage" type="void" line="241">
+            <method name="addPackage" type="void" line="415">
                 <params>
                     <param name="t" type="IdentifierToken"/>
                 </params>
-                <declaration name="name" type="Identifier" line="242"/>
-                <scope line="243"/>
-                <declaration name="size" type="int" line="246"/>
-                <scope line="247">
-                    <scope line="248"/>
+                <comment line="419">
+                    If this is a duplicate import for the current package,
+                     ignore it.                    
+                </comment>
+                <comment line="425">
+                    If this is a duplicate of a package which has already been
+                     added to the list, ignore it.                    
+                </comment>
+                <comment line="434">
+                    Add the package to the list.                    
+                </comment>
+                <declaration name="name" type="Identifier" line="416"/>
+                <scope line="420"/>
+                <declaration name="size" type="int" line="426"/>
+                <scope line="427">
+                    <scope line="428"/>
                 </scope>
             </method>
-            <method name="addPackage" type="void" line="254">
+            <method name="addPackage" type="void" line="437">
                 <params>
                     <param name="id" type="Identifier"/>
                 </params>
             </method>
-            <javadoc line="257">
+            <javadoc line="441">
                 Specify the current package with an IdentifierToken.                
             </javadoc>
-            <method name="setCurrentPackage" type="void" line="260">
+            <method name="setCurrentPackage" type="void" line="444">
                 <params>
                     <param name="t" type="IdentifierToken"/>
                 </params>
             </method>
-            <javadoc line="264">
+            <javadoc line="449">
                 Specify the current package                
             </javadoc>
-            <method name="setCurrentPackage" type="void" line="267">
+            <method name="setCurrentPackage" type="void" line="452">
                 <params>
                     <param name="id" type="Identifier"/>
                 </params>
             </method>
-            <javadoc line="270">
+            <javadoc line="456">
                 Report the current package                
             </javadoc>
-            <method name="getCurrentPackage" type="Identifier" line="273"/>
-            <javadoc line="276">
+            <method name="getCurrentPackage" type="Identifier" line="459"/>
+            <javadoc line="463">
                 Return an unmodifiable list of IdentifierToken representing
                   packages specified as imports.                
             </javadoc>
-            <method name="getImportedPackages" type="List" line="280"/>
-            <javadoc line="283">
+            <method name="getImportedPackages" type="List" line="467"/>
+            <javadoc line="471">
                 Return an unmodifiable list of IdentifierToken representing
                   classes specified as imports.                
             </javadoc>
-            <method name="getImportedClasses" type="List" line="287"/>
-            <javadoc line="290">
+            <method name="getImportedClasses" type="List" line="475"/>
+            <javadoc line="479">
                 Extend an environment with my resolve() method.                
             </javadoc>
-            <method name="newEnvironment" type="Environment" line="293">
+            <method name="newEnvironment" type="Environment" line="482">
                 <params>
                     <param name="env" type="Environment"/>
                 </params>
             </method>
         </class>
-        <class name="ImportEnvironment" line="297">
+        <class name="ImportEnvironment" line="487">
             <extends class="Environment"/>
-            <declaration name="imports" type="Imports" line="298"/>
-            <method name="ImportEnvironment" type="constructor" line="299">
+            <comment line="407">
+                for compatibility                
+            </comment>
+            <comment line="437">
+                for compatibility                
+            </comment>
+            <declaration name="imports" type="Imports" line="489"/>
+            <method name="ImportEnvironment" type="constructor" line="491">
                 <params>
                     <param name="env" type="Environment"/>
                     <param name="imports" type="Imports"/>
                 </params>
             </method>
-            <method name="resolve" type="Identifier" line="303">
+            <method name="resolve" type="Identifier" line="496">
                 <params>
                     <param name="nm" type="Identifier"/>
                 </params>
             </method>
-            <method name="getImports" type="Imports" line="306"/>
+            <method name="getImports" type="Imports" line="500"/>
         </class>
     </source>

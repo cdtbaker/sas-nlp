@@ -9,9 +9,281 @@
         <import package="javax.net.ssl"/>
         <import package="javax.net.ssl.SSLEngineResult"/>
         <import package="com.sun.net.ssl.internal.ssl.X509ExtendedTrustManager"/>
-        <class name="SSLEngineImpl" line="11">
+        <class name="SSLEngineImpl" line="41">
             <extends class="SSLEngine"/>
-            <javadoc line="11">
+            <comment line="116">
+                Fields and global comments                
+            </comment>
+            <comment line="120">
+                There&apos;s a state machine associated with each connection, which
+                 among other roles serves to negotiate session changes.
+                
+                 - START with constructor, until the TCP connection&apos;s around.
+                 - HANDSHAKE picks session parameters before allowing traffic.
+                          There are many substates due to sequencing requirements
+                          for handshake messages.
+                 - DATA may be transmitted.
+                 - RENEGOTIATE state allows concurrent data and handshaking
+                          traffic (&quot;same&quot; substates as HANDSHAKE), and terminates
+                          in selection of new session (and connection) parameters
+                 - ERROR state immediately precedes abortive disconnect.
+                 - CLOSED when one side closes down, used to start the shutdown
+                          process.  SSL connection objects are not reused.
+                
+                 State affects what SSL record types may legally be sent:
+                
+                 - Handshake ... only in HANDSHAKE and RENEGOTIATE states
+                 - App Data ... only in DATA and RENEGOTIATE states
+                 - Alert ... in HANDSHAKE, DATA, RENEGOTIATE
+                
+                 Re what may be received:  same as what may be sent, except that
+                 HandshakeRequest handshaking messages can come from servers even
+                 in the application data state, to request entry to RENEGOTIATE.
+                
+                 The state machine within HANDSHAKE and RENEGOTIATE states controls
+                 the pending session, not the connection state, until the change
+                 cipher spec and &quot;Finished&quot; handshake messages are processed and
+                 make the &quot;new&quot; session become the current one.
+                
+                 NOTE: details of the SMs always need to be nailed down better.
+                 The text above illustrates the core ideas.
+                
+                                +----&gt;-------+------&gt;---------&gt;-------+
+                                |            |                        |
+                     &lt;-----&lt;    ^            ^  &lt;-----&lt;               |
+                START&gt;-----&gt;HANDSHAKE&gt;-----&gt;DATA&gt;-----&gt;RENEGOTIATE    |
+                                v            v               v        |
+                                |            |               |        |
+                                +------------+---------------+        |
+                                |                                     |
+                                v                                     |
+                               ERROR&gt;------&gt;-----&gt;CLOSED&lt;--------&lt;----+
+                
+                 ALSO, note that the the purpose of handshaking (renegotiation is
+                 included) is to assign a different, and perhaps new, session to
+                 the connection.  The SSLv3 spec is a bit confusing on that new
+                 protocol feature.                
+            </comment>
+            <comment line="179">
+                Once we&apos;re in state cs_CLOSED, we can continue to
+                 wrapunwrap until we finish sendingreceiving the messages
+                 for close_notify.  EngineWriter handles outboundDone.                
+            </comment>
+            <comment line="188">
+                The authentication context holds all information used to establish
+                 who this end of the connection is (certificate chains, private keys,
+                 etc) and who is trusted (e.g. as CAs or websites).                
+            </comment>
+            <comment line="195">
+                This connection is one of (potentially) many associated with
+                 any given session.  The output of the handshake protocol is a
+                 new session ... although all the protocol description talks
+                 about changing the cipher spec (and it does change), in fact
+                 that&apos;s incidental since it&apos;s done by changing everything that
+                 is associated with a session at the same time.  (TLSIETF may
+                 change that to add client authentication wo new key exchg.)                
+            </comment>
+            <comment line="209">
+                Client authentication be off, requested, or required.
+                
+                 This will be used by both this class and SSLSocket&apos;s variants.                
+            </comment>
+            <comment line="218">
+                Flag indicating if the next record we receive MUST be a Finished
+                 message. Temporarily set during the handshake to ensure that
+                 a change cipher spec message is followed by a finished message.                
+            </comment>
+            <comment line="226">
+                If someone tries to closeInbound() (say at End-Of-Stream)
+                 our engine having received a close_notify, we need to
+                 notify the app that we may have a truncation attack underway.                
+            </comment>
+            <comment line="233">
+                For improved diagnostics, we detail connection closure
+                 If the engine is closed (connectionState &gt;= cs_ERROR),
+                 closeReason != null indicates if the engine was closed
+                 because of an error or because or normal shutdown.                
+            </comment>
+            <comment line="241">
+                Per-connection private state that doesn&apos;t change when the
+                 session is changed.                
+            </comment>
+            <comment line="251">
+                The cipher suites enabled for use on this connection.                
+            </comment>
+            <comment line="254">
+                the endpoint identification protocol                
+            </comment>
+            <comment line="257">
+                The cryptographic algorithm constraints                
+            </comment>
+            <comment line="260">
+                Have we been told whether we&apos;re client or server?                
+            </comment>
+            <comment line="264">
+                The protocol versions enabled for use on this connection.
+                
+                 Note: we support a pseudo protocol called SSLv2Hello which when
+                 set will result in an SSL v2 Hello being sent with SSL (version 3.0)
+                 or TLS (version 3.1, 3.2, etc.) version info.                
+            </comment>
+            <comment line="273">
+                The SSL version associated with this connection.                
+            </comment>
+            <comment line="278">
+                Crypto state that&apos;s reinitialized when the session changes.                
+            </comment>
+            <comment line="283">
+                NOTE: compression state would be saved here                
+            </comment>
+            <comment line="285">
+                security parameters for secure renegotiation.                
+            </comment>
+            <comment line="292">
+                READ ME  READ ME  READ ME  READ ME  READ ME  READ ME 
+                 IMPORTANT STUFF TO UNDERSTANDING THE SYNCHRONIZATION ISSUES.
+                 READ ME  READ ME  READ ME  READ ME  READ ME  READ ME 
+                
+                 There are several locks here.
+                
+                 The primary lock is the per-instance lock used by
+                 synchronized(this) and the synchronized methods.  It controls all
+                 access to things such as the connection state and variables which
+                 affect handshaking.  If we are inside a synchronized method, we
+                 can access the state directly, otherwise, we must use the
+                 synchronized equivalents.
+                
+                 Note that we must never acquire the &lt;code&gt;this&lt;code&gt; lock after
+                 &lt;code&gt;writeLock&lt;code&gt; or run the risk of deadlock.
+                
+                 Grab some coffee, and be careful with any code changes.                
+            </comment>
+            <comment line="315">
+                Class and subclass dynamic debugging support                
+            </comment>
+            <comment line="320">
+                Initialization/Constructors                
+            </comment>
+            <comment line="471">
+                Report the current status of the Handshaker                
+            </comment>
+            <comment line="513">
+                Handshaking and connection state code                
+            </comment>
+            <comment line="517">
+                Provides &quot;this&quot; synchronization for connection state.
+                 Otherwise, you can access it directly.                
+            </comment>
+            <comment line="529">
+                Get the Access Control Context.
+                
+                 Used for a known context to
+                 run tasks in, and for determining which credentials
+                 to use for Subject-based (JAAS) decisions.                
+            </comment>
+            <comment line="540">
+                Is a handshake currently underway?                
+            </comment>
+            <comment line="547">
+                When a connection finishes handshaking by enabling use of a newly
+                 negotiated session, each end learns about it in two halves (read,
+                 and write).  When both read and write ciphers have changed, and the
+                 last handshake message has been read, the connection has joined
+                 (rejoined) the new session.
+                
+                 NOTE:  The SSLv3 spec is rather unclear on the concepts here.
+                 Sessions don&apos;t change once they&apos;re established (including cipher
+                 suite and master secret) but connections can join them (and leave
+                 them).  They&apos;re created by handshaking, though sometime handshaking
+                 causes connections to join up with pre-established sessions.
+                
+                 Synchronized on &quot;this&quot; from readRecord.                
+            </comment>
+            <comment line="593">
+                used by Handshaker to change the active write cipher, follows
+                 the output of the CCS message.
+                
+                 Also synchronized on &quot;this&quot; from readRecorddelegatedTask.                
+            </comment>
+            <comment line="623">
+                Updates the SSL version associated with this connection.
+                 Called from Handshaker once it has determined the negotiated version.                
+            </comment>
+            <comment line="722">
+                Start a SSLEngine handshake                
+            </comment>
+            <comment line="735">
+                Read/unwrap side                
+            </comment>
+            <comment line="771">
+                Makes additional checks for unwrap, but this time more
+                 specific to this packet and the current state of the machine.                
+            </comment>
+            <comment line="903">
+                Actually do the read record processing.
+                
+                 Returns a Status if it can make specific determinations
+                 of the engine state.  In particular, we need to signal
+                 that a handshake just completed.
+                
+                 It would be nice to be symmetrical with the write side and move
+                 the majority of this to EngineInputRecord, but there&apos;s too much
+                 SSLEngine state to do that cleanly.  It must still live here.                
+            </comment>
+            <comment line="1136">
+                write/wrap side                
+            </comment>
+            <comment line="1178">
+                Makes additional checks for unwrap, but this time more
+                 specific to this packet and the current state of the machine.                
+            </comment>
+            <comment line="1270">
+                Central point to writeget all of the outgoing data.                
+            </comment>
+            <comment line="1302">
+                Non-application OutputRecords go through here.                
+            </comment>
+            <comment line="1325">
+                Close code                
+            </comment>
+            <comment line="1483">
+                Close the inbound side of the connection.  We grab the
+                 lock here, and do the real work in the internal verison.
+                 We do check for truncation attacks.                
+            </comment>
+            <comment line="1524">
+                Misc stuff                
+            </comment>
+            <comment line="1561">
+                EXCEPTION AND ALERT HANDLING                
+            </comment>
+            <comment line="1565">
+                Send a warning alert.                
+            </comment>
+            <comment line="1582">
+                We&apos;ve got a fatal error here, so start the shutdown process.
+                
+                 Because of the way the code was written, we have some code
+                 calling fatal directly when the &quot;description&quot; is known
+                 and some throwing Exceptions which are then caught by higher
+                 levels which then call here.  This code needs to determine
+                 if one of the lower levels has already started the process.
+                
+                 We won&apos;t worry about Error&apos;s, if we have one of those,
+                 we&apos;re in worse trouble.  Note:  the networking code doesn&apos;t
+                 deal with Errors either.                
+            </comment>
+            <comment line="1689">
+                Process an incoming alert ... caller must already have synchronized
+                 access to &quot;this&quot;.                
+            </comment>
+            <comment line="1748">
+                Emit alerts.  Caller must have synchronized with &quot;this&quot;.                
+            </comment>
+            <comment line="1797">
+                VARIOUS OTHER METHODS (COMMON TO SSLSocket)                
+            </comment>
+            <javadoc line="41">
                 Implementation of an non-blocking SSLEngine.
                   Currently, the SSLEngine code exists in parallel with the current
                   SSLSocket.  As such, the current implementation is using legacy code
@@ -72,76 +344,102 @@
                     Brad Wetmore                    
                 </author>
             </javadoc>
-            <declaration name="connectionState" type="int" line="71"/>
-            <declaration name="cs_START" type="int" line="72"/>
-            <declaration name="cs_HANDSHAKE" type="int" line="73"/>
-            <declaration name="cs_DATA" type="int" line="74"/>
-            <declaration name="cs_RENEGOTIATE" type="int" line="75"/>
-            <declaration name="cs_ERROR" type="int" line="76"/>
-            <declaration name="cs_CLOSED" type="int" line="77"/>
-            <declaration name="inboundDone" type="boolean" line="78"/>
-            <declaration name="writer" type="EngineWriter" line="79"/>
-            <declaration name="sslContext" type="SSLContextImpl" line="80"/>
-            <declaration name="handshaker" type="Handshaker" line="81"/>
-            <declaration name="sess" type="SSLSessionImpl" line="82"/>
-            <declaration name="handshakeSession" type="SSLSessionImpl" line="83"/>
-            <declaration name="clauth_none" type="byte" line="84"/>
-            <declaration name="clauth_requested" type="byte" line="85"/>
-            <declaration name="clauth_required" type="byte" line="86"/>
-            <declaration name="expectingFinished" type="boolean" line="87"/>
-            <declaration name="recvCN" type="boolean" line="88"/>
-            <declaration name="closeReason" type="SSLException" line="89"/>
-            <declaration name="doClientAuth" type="byte" line="90"/>
-            <declaration name="enableSessionCreation" type="boolean" line="91"/>
-            <declaration name="inputRecord" type="EngineInputRecord" line="92"/>
-            <declaration name="outputRecord" type="EngineOutputRecord" line="93"/>
-            <declaration name="acc" type="AccessControlContext" line="94"/>
-            <declaration name="enabledCipherSuites" type="CipherSuiteList" line="95"/>
-            <declaration name="identificationProtocol" type="String" line="96"/>
-            <declaration name="algorithmConstraints" type="AlgorithmConstraints" line="97"/>
-            <declaration name="serverModeSet" type="boolean" line="98"/>
-            <declaration name="roleIsServer" type="boolean" line="99"/>
-            <declaration name="enabledProtocols" type="ProtocolList" line="100"/>
-            <declaration name="protocolVersion" type="ProtocolVersion" line="101"/>
-            <declaration name="readMAC" type="MAC" line="102"/>
-            <declaration name="readCipher" type="CipherBox" line="103"/>
-            <declaration name="secureRenegotiation" type="boolean" line="104"/>
-            <declaration name="clientVerifyData" type="byte[]" line="105"/>
-            <declaration name="serverVerifyData" type="byte[]" line="106"/>
-            <declaration name="wrapLock" type="Object" line="107"/>
-            <declaration name="unwrapLock" type="Object" line="108"/>
-            <declaration name="writeLock" type="Object" line="109"/>
-            <declaration name="debug" type="Debug" line="110"/>
-            <javadoc line="111">
+            <declaration name="connectionState" type="int" line="169"/>
+            <declaration name="cs_START" type="int" line="171"/>
+            <declaration name="cs_HANDSHAKE" type="int" line="172"/>
+            <declaration name="cs_DATA" type="int" line="173"/>
+            <declaration name="cs_RENEGOTIATE" type="int" line="174"/>
+            <declaration name="cs_ERROR" type="int" line="175"/>
+            <declaration name="cs_CLOSED" type="int" line="176"/>
+            <declaration name="inboundDone" type="boolean" line="183"/>
+            <declaration name="writer" type="EngineWriter" line="185"/>
+            <declaration name="sslContext" type="SSLContextImpl" line="192"/>
+            <declaration name="handshaker" type="Handshaker" line="203"/>
+            <declaration name="sess" type="SSLSessionImpl" line="204"/>
+            <declaration name="handshakeSession" type="SSLSessionImpl" line="205"/>
+            <declaration name="clauth_none" type="byte" line="213"/>
+            <declaration name="clauth_requested" type="byte" line="214"/>
+            <declaration name="clauth_required" type="byte" line="215"/>
+            <declaration name="expectingFinished" type="boolean" line="222"/>
+            <declaration name="recvCN" type="boolean" line="230"/>
+            <declaration name="closeReason" type="SSLException" line="238"/>
+            <declaration name="doClientAuth" type="byte" line="244"/>
+            <declaration name="enableSessionCreation" type="boolean" line="245"/>
+            <declaration name="inputRecord" type="EngineInputRecord" line="246"/>
+            <declaration name="outputRecord" type="EngineOutputRecord" line="247"/>
+            <declaration name="acc" type="AccessControlContext" line="248"/>
+            <declaration name="enabledCipherSuites" type="CipherSuiteList" line="251"/>
+            <declaration name="identificationProtocol" type="String" line="254"/>
+            <declaration name="algorithmConstraints" type="AlgorithmConstraints" line="257"/>
+            <declaration name="serverModeSet" type="boolean" line="260"/>
+            <declaration name="roleIsServer" type="boolean" line="261"/>
+            <declaration name="enabledProtocols" type="ProtocolList" line="270"/>
+            <declaration name="protocolVersion" type="ProtocolVersion" line="275"/>
+            <declaration name="readMAC" type="MAC" line="280"/>
+            <declaration name="readCipher" type="CipherBox" line="281"/>
+            <declaration name="secureRenegotiation" type="boolean" line="287"/>
+            <declaration name="clientVerifyData" type="byte[]" line="288"/>
+            <declaration name="serverVerifyData" type="byte[]" line="289"/>
+            <declaration name="wrapLock" type="Object" line="310"/>
+            <declaration name="unwrapLock" type="Object" line="311"/>
+            <declaration name="writeLock" type="Object" line="312"/>
+            <declaration name="debug" type="Debug" line="317"/>
+            <javadoc line="323">
                 Constructor for an SSLEngine from SSLContext, without
                   host/port hints.  This Engine will not be able to cache
                   sessions, but must renegotiate everything by hand.                
             </javadoc>
-            <method name="SSLEngineImpl" type="constructor" line="116">
+            <method name="SSLEngineImpl" type="constructor" line="328">
                 <params>
                     <param name="ctx" type="SSLContextImpl"/>
                 </params>
             </method>
-            <javadoc line="120">
+            <javadoc line="333">
                 Constructor for an SSLEngine from SSLContext.                
             </javadoc>
-            <method name="SSLEngineImpl" type="constructor" line="123">
+            <method name="SSLEngineImpl" type="constructor" line="336">
                 <params>
                     <param name="ctx" type="SSLContextImpl"/>
                     <param name="host" type="String"/>
                     <param name="port" type="int"/>
                 </params>
             </method>
-            <javadoc line="127">
+            <javadoc line="341">
                 Initializes the Engine                
             </javadoc>
-            <method name="init" type="void" line="130">
+            <method name="init" type="void" line="344">
                 <params>
                     <param name="ctx" type="SSLContextImpl"/>
                 </params>
-                <scope line="131"/>
+                <comment line="354">
+                    State is cs_START until we initialize the handshaker.
+                    
+                     Apps using SSLEngine are probably going to be server.
+                     Somewhat arbitrary choice.                    
+                </comment>
+                <comment line="363">
+                    default read and write side cipher and MAC support
+                    
+                     Note:  compression support would go here too                    
+                </comment>
+                <comment line="373">
+                    default security parameters for secure renegotiation                    
+                </comment>
+                <comment line="387">
+                    Save the Access Control Context.  This will be used later
+                     for a couple of things, including providing a context to
+                     run tasks in, and for determining which credentials
+                     to use for Subject based (JAAS) decisions                    
+                </comment>
+                <comment line="395">
+                    All outbound application data goes through this OutputRecord,
+                     other data goes through their respective records created
+                     elsewhere.  All inbound data goes through this one
+                     input record.                    
+                </comment>
+                <scope line="345"/>
             </method>
-            <javadoc line="157">
+            <javadoc line="408">
                 Initialize the handshaker object. This means:
                   . if a handshake is already in progress (state is cs_HANDSHAKE
                   or cs_RENEGOTIATE), do nothing and return
@@ -153,57 +451,107 @@
                   starting renegotiation, or when changing client/server mode of the
                   engine.                
             </javadoc>
-            <method name="initHandshaker" type="void" line="169">
-                <scope line="180"/>
-                <scope line="183"/>
-                <scope line="186"/>
-                <scope line="189"/>
+            <method name="initHandshaker" type="void" line="424">
+                <comment line="428">
+                    Starting a new handshake.                    
+                </comment>
+                <comment line="435">
+                    We&apos;re already in the middle of a handshake.                    
+                </comment>
+                <comment line="442">
+                    Anyone allowed to call this routine is required to
+                     do so ONLY if the connection state is reasonable...                    
+                </comment>
+                <comment line="450">
+                    state is either cs_START or cs_DATA                    
+                </comment>
+                <comment line="453">
+                    cs_DATA                    
+                </comment>
+                <scope line="450"/>
+                <scope line="452"/>
+                <scope line="455"/>
+                <scope line="460"/>
             </method>
-            <method name="getHSStatus" type="HandshakeStatus" line="195">
+            <method name="getHSStatus" type="HandshakeStatus" line="473">
                 <params>
                     <param name="hss" type="HandshakeStatus"/>
                 </params>
-                <scope line="196"/>
-                <scope line="199">
-                    <scope line="200"/>
-                    <scope line="203">
-                        <scope line="204"/>
-                        <scope line="207"/>
+                <comment line="490">
+                    Special case where we&apos;re closing, but
+                     still need the close_notify before we
+                     can officially be closed.
+                    
+                     Note isOutboundDone is taken care of by
+                     hasOutboundData() above.                    
+                </comment>
+                <comment line="500">
+                    else not handshaking                    
+                </comment>
+                <scope line="475"/>
+                <scope line="479">
+                    <scope line="480"/>
+                    <scope line="482">
+                        <scope line="483"/>
+                        <scope line="485"/>
                     </scope>
-                    <scope line="211">
-                        <scope line="212"/>
+                    <scope line="488">
+                        <scope line="497"/>
                     </scope>
                 </scope>
             </method>
-            <method name="checkTaskThrown" type="void" line="219">
-                <scope line="220"/>
+            <method name="checkTaskThrown" type="void" line="506">
+                <scope line="507"/>
             </method>
-            <method name="getConnectionState" type="int" line="224"/>
-            <method name="setConnectionState" type="void" line="227">
+            <method name="getConnectionState" type="int" line="520"/>
+            <method name="setConnectionState" type="void" line="524">
                 <params>
                     <param name="state" type="int"/>
                 </params>
             </method>
-            <method name="getAcc" type="AccessControlContext" line="230"/>
-            <method name="getHandshakeStatus" type="SSLEngineResult.HandshakeStatus" line="233"/>
-            <method name="changeReadCiphers" type="void" line="236">
-                <scope line="237"/>
-                <declaration name="oldCipher" type="CipherBox" line="240"/>
-                <scope line="241"/>
-                <scope line="245"/>
+            <method name="getAcc" type="AccessControlContext" line="535"/>
+            <method name="getHandshakeStatus" type="SSLEngineResult.HandshakeStatus" line="542"/>
+            <method name="changeReadCiphers" type="void" line="561">
+                <comment line="569">
+                    ... create decompressor                    
+                </comment>
+                <comment line="577">
+                    &quot;can&apos;t happen&quot;                    
+                </comment>
+                <comment line="582">
+                    Dispose of any intermediate state in the underlying cipher.
+                     For PKCS11 ciphers, this will release any attached sessions,
+                     and thus make finalization faster.
+                    
+                     Since MAC&apos;s doFinal() is called for every SSLTLS packet, it&apos;s
+                     not necessary to do the same with MAC&apos;s.                    
+                </comment>
+                <scope line="563"/>
+                <declaration name="oldCipher" type="CipherBox" line="570"/>
+                <scope line="572"/>
+                <scope line="575"/>
             </method>
-            <method name="changeWriteCiphers" type="void" line="250">
-                <scope line="251"/>
-                <declaration name="oldCipher" type="CipherBox" line="254"/>
-                <scope line="255"/>
-                <scope line="259"/>
+            <method name="changeWriteCiphers" type="void" line="598">
+                <comment line="606">
+                    ... create compressor                    
+                </comment>
+                <comment line="614">
+                    &quot;can&apos;t happen&quot;                    
+                </comment>
+                <comment line="619">
+                    See comment above.                    
+                </comment>
+                <scope line="600"/>
+                <declaration name="oldCipher" type="CipherBox" line="607"/>
+                <scope line="609"/>
+                <scope line="612"/>
             </method>
-            <method name="setVersion" type="void" line="264">
+            <method name="setVersion" type="void" line="626">
                 <params>
                     <param name="protocolVersion" type="ProtocolVersion"/>
                 </params>
             </method>
-            <javadoc line="268">
+            <javadoc line="632">
                 Kickstart the handshake if it is not already in progress.
                   This means:
                   . if handshaking is already underway, do nothing and return
@@ -214,170 +562,469 @@
                   handshaking message if appropriate (always on clients and
                   on servers when renegotiating).                
             </javadoc>
-            <method name="kickstartHandshake" type="void" line="279">
-                <scope line="282"/>
-                <scope line="290"/>
-                <scope line="293">
-                    <scope line="294"/>
+            <method name="kickstartHandshake" type="void" line="646">
+                <comment line="659">
+                    handshaker already setup, proceed                    
+                </comment>
+                <comment line="675">
+                    initialize the handshaker, move to cs_RENEGOTIATE                    
+                </comment>
+                <comment line="680">
+                    handshaking already in progress, return                    
+                </comment>
+                <comment line="684">
+                    cs_ERROR/cs_CLOSED                    
+                </comment>
+                <comment line="688">
+                    Kickstart handshake state machine if we need to ...
+                    
+                     Note that handshaker.kickstart() writes the message
+                     to its HandshakeOutStream, which calls back into
+                     SSLSocketImpl.writeRecord() to send it.                    
+                </comment>
+                <comment line="696">
+                    prior to handshaking, activate the handshake                    
+                </comment>
+                <comment line="698">
+                    don&apos;t use SSLv2Hello when renegotiating                    
+                </comment>
+                <comment line="705">
+                    send client hello                    
+                </comment>
+                <comment line="707">
+                    instanceof ServerHandshaker                    
+                </comment>
+                <comment line="709">
+                    initial handshake, no kickstart message to send                    
+                </comment>
+                <comment line="711">
+                    we want to renegotiate, send hello request                    
+                </comment>
+                <comment line="714">
+                    hello request is not included in the handshake
+                     hashes, reset them                    
+                </comment>
+                <scope line="650"/>
+                <scope line="662"/>
+                <scope line="667">
+                    <scope line="668"/>
                 </scope>
-                <scope line="305">
-                    <scope line="306"/>
-                    <scope line="309"/>
-                    <scope line="312"/>
-                    <scope line="315">
-                        <scope line="316"/>
-                        <scope line="318"/>
+                <scope line="694">
+                    <scope line="696"/>
+                    <scope line="699"/>
+                    <scope line="703"/>
+                    <scope line="706">
+                        <scope line="707"/>
+                        <scope line="709"/>
                     </scope>
                 </scope>
             </method>
-            <method name="beginHandshake" type="void" line="325">
-                <scope line="326"/>
-                <scope line="329"/>
+            <method name="beginHandshake" type="void" line="724">
+                <scope line="725"/>
+                <scope line="727"/>
             </method>
-            <javadoc line="333">
+            <javadoc line="739">
                 Unwraps a buffer.  Does a variety of checks before grabbing
                   the unwrapLock, which blocks multiple unwraps from occuring.                
             </javadoc>
-            <method name="unwrap" type="SSLEngineResult" line="337">
+            <method name="unwrap" type="SSLEngineResult" line="744">
                 <params>
                     <param name="netData" type="ByteBuffer"/>
                     <param name="appData" type="ByteBuffer[]"/>
                     <param name="offset" type="int"/>
                     <param name="length" type="int"/>
                 </params>
-                <declaration name="ea" type="EngineArgs" line="338"/>
-                <scope line="339">
-                    <scope line="340"/>
+                <comment line="754">
+                    Don&apos;t reset position so it looks like we didn&apos;t
+                     consume anything.  We did consume something, and it
+                     got us into this situation, so report that much back.
+                     Our days of consuming are now over anyway.                    
+                </comment>
+                <comment line="762">
+                    make compiler happy                    
+                </comment>
+                <comment line="764">
+                    Just in case something failed to reset limits properly.                    
+                </comment>
+                <declaration name="ea" type="EngineArgs" line="746"/>
+                <scope line="748">
+                    <scope line="749"/>
                 </scope>
-                <scope line="344"/>
-                <scope line="348"/>
+                <scope line="752"/>
+                <scope line="762"/>
             </method>
-            <method name="readNetRecord" type="SSLEngineResult" line="352">
+            <method name="readNetRecord" type="SSLEngineResult" line="774">
                 <params>
                     <param name="ea" type="EngineArgs"/>
                 </params>
-                <declaration name="status" type="Status" line="353"/>
-                <declaration name="hsStatus" type="HandshakeStatus" line="354"/>
-                <scope line="356"/>
-                <scope line="359">
-                    <scope line="360">
-                        <scope line="363"/>
+                <comment line="780">
+                    See if the handshaker needs to report back some SSLException.                    
+                </comment>
+                <comment line="785">
+                    Check if we are closingclosed.                    
+                </comment>
+                <comment line="792">
+                    If we&apos;re still in cs_HANDSHAKE, make sure it&apos;s been
+                     started.                    
+                </comment>
+                <comment line="801">
+                    If there&apos;s still outbound data to flush, we
+                     can return without trying to unwrap anything.                    
+                </comment>
+                <comment line="813">
+                    Grab a copy of this if it doesn&apos;t already exist,
+                     and we can use it several places before anything major
+                     happens on this side.  Races aren&apos;t critical
+                     here.                    
+                </comment>
+                <comment line="823">
+                    If we have a task outstanding, this MUST be done before
+                     doing any more unwrapping, because we could be in the middle
+                     of receiving a handshake message, for example, a finished
+                     message which would change the ciphers.                    
+                </comment>
+                <comment line="834">
+                    Check the packet to make sure enough is here.
+                     This will also indirectly check for 0 len packets.                    
+                </comment>
+                <comment line="840">
+                    Is this packet bigger than SSL/TLS normally allows?                    
+                </comment>
+                <comment line="848">
+                    Expand the expected maximum packet/application buffer
+                     sizes.                    
+                </comment>
+                <comment line="854">
+                    Check for OVERFLOW.
+                    
+                     To be considered: We could delay enforcing the application buffer
+                     free space requirement until after the initial handshaking.                    
+                </comment>
+                <comment line="864">
+                    check for UNDERFLOW.                    
+                </comment>
+                <comment line="870">
+                    We&apos;re now ready to actually do the read.
+                     The only result code we really need to be exactly
+                     right is the HS finished, for signaling to
+                     HandshakeCompletedListeners.                    
+                </comment>
+                <comment line="886">
+                    Check the various condition that we could be reporting.
+                    
+                     It&apos;s possible something might have happened between the
+                     above and now, but it was better to minimally lock &quot;this&quot;
+                     during the read process.  We&apos;ll return the current
+                     status, which is more representative of the current state.
+                    
+                     status above should cover:  FINISHED, NEED_TASK                    
+                </comment>
+                <declaration name="status" type="Status" line="776"/>
+                <declaration name="hsStatus" type="HandshakeStatus" line="777"/>
+                <scope line="787"/>
+                <scope line="795">
+                    <scope line="797">
+                        <scope line="806"/>
                     </scope>
                 </scope>
-                <scope line="368"/>
-                <scope line="371"/>
-                <declaration name="packetLen" type="int" line="374"/>
-                <scope line="375">
-                    <scope line="376"/>
-                    <scope line="379"/>
+                <scope line="818"/>
+                <scope line="828"/>
+                <declaration name="packetLen" type="int" line="837"/>
+                <scope line="840">
+                    <scope line="841"/>
+                    <scope line="846"/>
                 </scope>
-                <scope line="383"/>
-                <scope line="386"/>
-                <scope line="389"/>
-                <scope line="392"/>
-                <scope line="395">
-                    <declaration name="ex" type="SSLException" line="396"/>
+                <scope line="859"/>
+                <scope line="864"/>
+                <scope line="875"/>
+                <scope line="877"/>
+                <scope line="879">
+                    <declaration name="ex" type="SSLException" line="880"/>
                 </scope>
             </method>
-            <method name="readRecord" type="HandshakeStatus" line="404">
+            <method name="readRecord" type="HandshakeStatus" line="913">
                 <params>
                     <param name="ea" type="EngineArgs"/>
                 </params>
-                <declaration name="hsStatus" type="HandshakeStatus" line="405"/>
-                <declaration name="readBB" type="ByteBuffer" line="406"/>
-                <declaration name="decryptedBB" type="ByteBuffer" line="407"/>
-                <scope line="408">
-                    <scope line="409"/>
-                    <scope line="412"/>
-                    <scope line="415"/>
-                    <scope line="418">
-                        <declaration name="alertType" type="byte" line="421"/>
+                <comment line="918">
+                    The various operations will return new sliced BB&apos;s,
+                     this will avoid having to worry about positions and
+                     limits in the netBB.                    
+                </comment>
+                <comment line="928">
+                    Read a record ... maybe emitting an alert if we get a
+                     comprehensible but unsupported &quot;hello&quot; message during
+                     format checking (e.g. V2).                    
+                </comment>
+                <comment line="939">
+                    The basic SSLv3 record protection involves (optional)
+                     encryption for privacy, and an integrity check ensuring
+                     data origin authentication.  We do them both here, and
+                     throw a fatal alert if the integrity check fails.                    
+                </comment>
+                <comment line="948">
+                    RFC 2246 states that decryption_failed should be used
+                     for this purpose. However, that allows certain attacks,
+                     so we just send bad record MAC. We also need to make
+                     sure to always check the MAC to avoid a timing attack
+                     for the same issue. See paper by Vaudenay et al.
+                    
+                     rewind the BB if necessary.                    
+                </comment>
+                <comment line="959">
+                    use the same alert types as for MAC failure below                    
+                </comment>
+                <comment line="976">
+                    if (!inputRecord.decompress(c))
+                         fatal(Alerts.alert_decompression_failure,
+                         &quot;decompression failure&quot;);                    
+                </comment>
+                <comment line="981">
+                    Process the record.                    
+                </comment>
+                <comment line="988">
+                    Handshake messages always go to a pending session
+                     handshaker ... if there isn&apos;t one, create one.  This
+                     must work asynchronously, for renegotiation.
+                    
+                     NOTE that handshaking will either resume a session
+                     which was in the cache (and which might have other
+                     connections in it already), or else will start a new
+                     session (new keys exchanged) with just this connection
+                     in it.                    
+                </comment>
+                <comment line="1001">
+                    prior to handshaking, activate the handshake                    
+                </comment>
+                <comment line="1003">
+                    don&apos;t use SSLv2Hello when renegotiating                    
+                </comment>
+                <comment line="1010">
+                    process the handshake record ... may contain just
+                     a partial handshake message or multiple messages.
+                    
+                     The handshaker state machine will ensure that it&apos;s
+                     a finished message.                    
+                </comment>
+                <comment line="1022">
+                    if state is cs_RENEGOTIATE, revert it to cs_DATA                    
+                </comment>
+                <comment line="1027">
+                    reset the parameters for secure renegotiation.                    
+                </comment>
+                <comment line="1041">
+                    No handshakeListeners here.  That&apos;s a
+                     SSLSocket thing.                    
+                </comment>
+                <comment line="1049">
+                    Pass this right back up to the application.                    
+                </comment>
+                <comment line="1063">
+                    Don&apos;t return data once the inbound side is
+                     closed.                    
+                </comment>
+                <comment line="1086">
+                    The first message after a change_cipher_spec
+                     record MUST be a &quot;Finished&quot; handshake record,
+                     else it&apos;s a protocol violation.  We force this
+                     to be checked by a minor tweak to the state
+                     machine.                    
+                </comment>
+                <comment line="1094">
+                    next message MUST be a finished message                    
+                </comment>
+                <comment line="1099">
+                    TLS requires that unrecognized records be ignored.                    
+                </comment>
+                <comment line="1108">
+                    switch                    
+                </comment>
+                <comment line="1110">
+                    We only need to check the sequence number state for
+                     non-handshaking record.
+                    
+                     Note that in order to maintain the handshake status
+                     properly, we check the sequence number after the last
+                     record reading process. As we request renegotiation
+                     or close the connection for wrapped sequence number
+                     when there is enough sequence number space left to
+                     handle a few more records, so the sequence number
+                     of the last record cannot be wrapped.                    
+                </comment>
+                <comment line="1129">
+                    synchronized (this)                    
+                </comment>
+                <declaration name="hsStatus" type="HandshakeStatus" line="915"/>
+                <declaration name="readBB" type="ByteBuffer" line="922"/>
+                <declaration name="decryptedBB" type="ByteBuffer" line="923"/>
+                <scope line="925">
+                    <scope line="932"/>
+                    <scope line="934"/>
+                    <scope line="944"/>
+                    <scope line="946">
+                        <declaration name="alertType" type="byte" line="959"/>
                     </scope>
-                    <scope line="424">
-                        <scope line="425"/>
-                        <scope line="428"/>
+                    <scope line="966">
+                        <scope line="967"/>
+                        <scope line="970"/>
                     </scope>
-                    <scope line="432">
-                        <scope line="436">
-                            <scope line="437"/>
-                            <scope line="440"/>
+                    <scope line="984">
+                        <scope line="999">
+                            <scope line="1001"/>
+                            <scope line="1004"/>
                         </scope>
-                        <scope line="446">
-                            <scope line="448"/>
+                        <scope line="1019">
+                            <scope line="1022"/>
                         </scope>
-                        <scope line="452">
-                            <scope line="458"/>
+                        <scope line="1025">
+                            <scope line="1034"/>
                         </scope>
-                        <scope line="464"/>
-                        <scope line="469"/>
-                        <scope line="472"/>
-                        <scope line="475"/>
-                        <scope line="483"/>
-                        <scope line="490"/>
-                        <scope line="495">
-                            <scope line="496"/>
+                        <scope line="1042"/>
+                        <scope line="1051"/>
+                        <scope line="1057"/>
+                        <scope line="1066"/>
+                        <scope line="1079"/>
+                        <scope line="1101"/>
+                        <scope line="1122">
+                            <scope line="1124"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="504">
+            <javadoc line="1140">
                 Wraps a buffer.  Does a variety of checks before grabbing
                   the wrapLock, which blocks multiple wraps from occuring.                
             </javadoc>
-            <method name="wrap" type="SSLEngineResult" line="508">
+            <method name="wrap" type="SSLEngineResult" line="1145">
                 <params>
                     <param name="appData" type="ByteBuffer[]"/>
                     <param name="offset" type="int"/>
                     <param name="length" type="int"/>
                     <param name="netData" type="ByteBuffer"/>
                 </params>
-                <declaration name="ea" type="EngineArgs" line="509"/>
-                <scope line="510"/>
-                <scope line="513">
-                    <scope line="514"/>
+                <comment line="1150">
+                    We can be smarter about using smaller buffer sizes later.
+                     For now, force it to be large enough to handle any
+                     valid SSLTLS record.                    
+                </comment>
+                <comment line="1169">
+                    make compiler happy                    
+                </comment>
+                <comment line="1171">
+                    Just in case something didn&apos;t reset limits properly.                    
+                </comment>
+                <declaration name="ea" type="EngineArgs" line="1147"/>
+                <scope line="1154"/>
+                <scope line="1159">
+                    <scope line="1160"/>
                 </scope>
-                <scope line="518"/>
-                <scope line="523"/>
+                <scope line="1163"/>
+                <scope line="1169"/>
             </method>
-            <method name="writeAppRecord" type="SSLEngineResult" line="527">
+            <method name="writeAppRecord" type="SSLEngineResult" line="1181">
                 <params>
                     <param name="ea" type="EngineArgs"/>
                 </params>
-                <declaration name="status" type="Status" line="528"/>
-                <declaration name="hsStatus" type="HandshakeStatus" line="529"/>
-                <scope line="531"/>
-                <scope line="534">
-                    <scope line="535">
-                        <scope line="538"/>
+                <comment line="1187">
+                    See if the handshaker needs to report back some SSLException.                    
+                </comment>
+                <comment line="1192">
+                    short circuit if we&apos;re closedclosing.                    
+                </comment>
+                <comment line="1199">
+                    If we&apos;re still in cs_HANDSHAKE, make sure it&apos;s been
+                     started.                    
+                </comment>
+                <comment line="1208">
+                    If there&apos;s no HS data available to write, we can return
+                     without trying to wrap anything.                    
+                </comment>
+                <comment line="1220">
+                    Grab a copy of this if it doesn&apos;t already exist,
+                     and we can use it several places before anything major
+                     happens on this side.  Races aren&apos;t critical
+                     here.                    
+                </comment>
+                <comment line="1230">
+                    If we have a task outstanding, this MUST be done before
+                     doing any more wrapping, because we could be in the middle
+                     of receiving a handshake message, for example, a finished
+                     message which would change the ciphers.                    
+                </comment>
+                <comment line="1241">
+                    This will obtain any waiting outbound data, or will
+                     process the outbound appData.                    
+                </comment>
+                <comment line="1257">
+                    writeRecord might have reported some status.
+                     Now check for the remaining cases.
+                    
+                     status above should cover:  NEED_WRAPFINISHED                    
+                </comment>
+                <declaration name="status" type="Status" line="1183"/>
+                <declaration name="hsStatus" type="HandshakeStatus" line="1184"/>
+                <scope line="1194"/>
+                <scope line="1202">
+                    <scope line="1204">
+                        <scope line="1213"/>
                     </scope>
                 </scope>
-                <scope line="543"/>
-                <scope line="546"/>
-                <scope line="549">
-                    <scope line="550"/>
+                <scope line="1225"/>
+                <scope line="1235"/>
+                <scope line="1244">
+                    <scope line="1245"/>
                 </scope>
-                <scope line="554"/>
-                <scope line="557">
-                    <declaration name="ex" type="SSLException" line="558"/>
+                <scope line="1248"/>
+                <scope line="1250">
+                    <declaration name="ex" type="SSLException" line="1251"/>
                 </scope>
             </method>
-            <method name="writeRecord" type="HandshakeStatus" line="566">
+            <method name="writeRecord" type="HandshakeStatus" line="1273">
                 <params>
                     <param name="eor" type="EngineOutputRecord"/>
                     <param name="ea" type="EngineArgs"/>
                 </params>
-                <declaration name="hsStatus" type="HandshakeStatus" line="567"/>
-                <scope line="568">
-                    <scope line="569"/>
+                <comment line="1276">
+                    eventually compress as well.                    
+                </comment>
+                <comment line="1280">
+                    We only need to check the sequence number state for
+                     non-handshaking record.
+                    
+                     Note that in order to maintain the handshake status
+                     properly, we check the sequence number after the last
+                     record writing process. As we request renegotiation
+                     or close the connection for wrapped sequence number
+                     when there is enough sequence number space left to
+                     handle a few more records, so the sequence number
+                     of the last record cannot be wrapped.                    
+                </comment>
+                <declaration name="hsStatus" type="HandshakeStatus" line="1276"/>
+                <scope line="1292">
+                    <scope line="1293"/>
                 </scope>
             </method>
-            <method name="writeRecord" type="void" line="575">
+            <method name="writeRecord" type="void" line="1304">
                 <params>
                     <param name="eor" type="EngineOutputRecord"/>
                 </params>
-                <scope line="577"/>
+                <comment line="1306">
+                    eventually compress as well.                    
+                </comment>
+                <comment line="1309">
+                    Check the sequence number state
+                    
+                     Note that in order to maintain the connection IO
+                     properly, we check the sequence number after the last
+                     record writing process. As we request renegotiation
+                     or close the connection for wrapped sequence number
+                     when there is enough sequence number space left to
+                     handle a few more records, so the sequence number
+                     of the last record cannot be wrapped.                    
+                </comment>
+                <scope line="1319"/>
             </method>
-            <javadoc line="581">
+            <javadoc line="1328">
                 Check the sequence number state
                   RFC 4346 states that, &quot;Sequence numbers are of type uint64 and
                   may not exceed 2^64-1.  Sequence numbers do not wrap. If a TLS
@@ -385,223 +1032,363 @@
                   renegotiate instead.&quot;
                   Return true if the handshake status may be changed.                
             </javadoc>
-            <method name="checkSequenceNumber" type="boolean" line="589">
+            <method name="checkSequenceNumber" type="boolean" line="1339">
                 <params>
                     <param name="mac" type="MAC"/>
                     <param name="type" type="byte"/>
                 </params>
-                <scope line="590"/>
-                <scope line="593">
-                    <scope line="594"/>
+                <comment line="1342">
+                    Don&apos;t bother to check the sequence number for error or
+                     closed connections, or NULL MAC                    
+                </comment>
+                <comment line="1350">
+                    Conservatively, close the connection immediately when the
+                     sequence number is close to overflow                    
+                </comment>
+                <comment line="1355">
+                    TLS protocols do not define a error alert for sequence
+                     number overflow. We use handshake_failure error alert
+                     for handshaking and bad_record_mac for other records.                    
+                </comment>
+                <comment line="1368">
+                    make the compiler happy                    
+                </comment>
+                <comment line="1371">
+                    Ask for renegotiation when need to renew sequence number.
+                    
+                     Don&apos;t bother to kickstart the renegotiation when the local is
+                     asking for it.                    
+                </comment>
+                <scope line="1345"/>
+                <scope line="1353">
+                    <scope line="1359"/>
                 </scope>
-                <scope line="600">
-                    <scope line="601"/>
+                <scope line="1376">
+                    <scope line="1377"/>
                 </scope>
             </method>
-            <javadoc line="609">
+            <javadoc line="1389">
                 Signals that no more outbound application data will be sent
                   on this &lt;code&gt;SSLEngine&lt;/code&gt;.                
             </javadoc>
-            <method name="closeOutboundInternal" type="void" line="613">
-                <scope line="614"/>
-                <scope line="617"/>
+            <method name="closeOutboundInternal" type="void" line="1393">
+                <comment line="1400">
+                    Already closed, ignore                    
+                </comment>
+                <comment line="1409">
+                    If we haven&apos;t even started yet, don&apos;t bother reading inbound.                    
+                </comment>
+                <comment line="1421">
+                    Otherwise we indicate clean termination.                    
+                </comment>
+                <comment line="1424">
+                    case cs_HANDSHAKE:
+                     case cs_DATA:
+                     case cs_RENEGOTIATE:                    
+                </comment>
+                <comment line="1433">
+                    See comment in changeReadCiphers()                    
+                </comment>
+                <scope line="1395"/>
+                <scope line="1402"/>
             </method>
-            <method name="closeOutbound" type="void" line="636">
-                <scope line="637"/>
+            <method name="closeOutbound" type="void" line="1438">
+                <comment line="1440">
+                    Dump out a close_notify to the remote side                    
+                </comment>
+                <scope line="1442"/>
             </method>
-            <javadoc line="642">
+            <javadoc line="1449">
                 Returns the outbound application data closure state                
             </javadoc>
-            <method name="isOutboundDone" type="boolean" line="645"/>
-            <javadoc line="648">
+            <method name="isOutboundDone" type="boolean" line="1452"/>
+            <javadoc line="1456">
                 Signals that no more inbound network data will be sent
                   to this &lt;code&gt;SSLEngine&lt;/code&gt;.                
             </javadoc>
-            <method name="closeInboundInternal" type="void" line="652">
-                <scope line="653"/>
-                <scope line="656"/>
+            <method name="closeInboundInternal" type="void" line="1460">
+                <comment line="1467">
+                    Already closed, ignore                    
+                </comment>
+                <comment line="1477">
+                    See comment in changeReadCiphers()                    
+                </comment>
+                <scope line="1462"/>
+                <scope line="1469"/>
             </method>
-            <method name="closeInbound" type="void" line="664">
-                <scope line="665"/>
-                <scope line="668"/>
-                <scope line="672"/>
+            <method name="closeInbound" type="void" line="1487">
+                <comment line="1489">
+                    Currently closes the outbound side as well.  The IETF TLS
+                     working group has expressed the opinion that 12 open
+                     connections are not allowed by the spec.  May change
+                     someday in the future.                    
+                </comment>
+                <comment line="1499">
+                    No need to throw an Exception if we haven&apos;t even started yet.                    
+                </comment>
+                <comment line="1503">
+                    Only receive the Exception once                    
+                </comment>
+                <comment line="1508">
+                    Currently, this is a no-op, but in case we change
+                     the close inbound code later.                    
+                </comment>
+                <scope line="1494"/>
+                <scope line="1501"/>
+                <scope line="1506"/>
             </method>
-            <javadoc line="676">
+            <javadoc line="1515">
                 Returns the network inbound data closure state                
             </javadoc>
-            <method name="isInboundDone" type="boolean" line="679"/>
-            <javadoc line="682">
+            <method name="isInboundDone" type="boolean" line="1518"/>
+            <javadoc line="1528">
                 Returns the current &lt;code&gt;SSLSession&lt;/code&gt; for this
                   &lt;code&gt;SSLEngine&lt;/code&gt;
                   &lt;P&gt;
                   These can be long lived, and frequently correspond to an
                   entire login session for some user.                
             </javadoc>
-            <method name="getSession" type="SSLSession" line="689"/>
-            <method name="getHandshakeSession" type="SSLSession" line="692"/>
-            <method name="setHandshakeSession" type="void" line="695">
+            <method name="getSession" type="SSLSession" line="1535"/>
+            <method name="getHandshakeSession" type="SSLSession" line="1540"/>
+            <method name="setHandshakeSession" type="void" line="1544">
                 <params>
                     <param name="session" type="SSLSessionImpl"/>
                 </params>
             </method>
-            <javadoc line="698">
+            <javadoc line="1548">
                 Returns a delegated &lt;code&gt;Runnable&lt;/code&gt; task for
                   this &lt;code&gt;SSLEngine&lt;/code&gt;.                
             </javadoc>
-            <method name="getDelegatedTask" type="Runnable" line="702">
-                <scope line="703"/>
+            <method name="getDelegatedTask" type="Runnable" line="1552">
+                <scope line="1553"/>
             </method>
-            <method name="warning" type="void" line="708">
+            <method name="warning" type="void" line="1567">
                 <params>
                     <param name="description" type="byte"/>
                 </params>
             </method>
-            <method name="fatal" type="void" line="711">
+            <method name="fatal" type="void" line="1572">
                 <params>
                     <param name="description" type="byte"/>
                     <param name="diagnostic" type="String"/>
                 </params>
             </method>
-            <method name="fatal" type="void" line="714">
+            <method name="fatal" type="void" line="1577">
                 <params>
                     <param name="description" type="byte"/>
                     <param name="cause" type="Throwable"/>
                 </params>
             </method>
-            <method name="fatal" type="void" line="717">
+            <method name="fatal" type="void" line="1595">
                 <params>
                     <param name="description" type="byte"/>
                     <param name="diagnostic" type="String"/>
                     <param name="cause" type="Throwable"/>
                 </params>
-                <scope line="718"/>
-                <scope line="721"/>
-                <scope line="724">
-                    <scope line="725"/>
-                    <scope line="728"/>
-                    <scope line="731"/>
-                    <scope line="734">
-                        <declaration name="ssle" type="SSLException" line="735"/>
+                <comment line="1598">
+                    If we have no further information, make a general-purpose
+                     message for folks to see.  We generally have one or the other.                    
+                </comment>
+                <comment line="1609">
+                    If we&apos;ve already shutdown because of an error,
+                     there is nothing we can do except rethrow the exception.
+                    
+                     Most exceptions seen here will be SSLExceptions.
+                     We may find the occasional Exception which hasn&apos;t been
+                     converted to a SSLException, so we&apos;ll do it here.                    
+                </comment>
+                <comment line="1641">
+                    Ok, this engine&apos;s going down.                    
+                </comment>
+                <comment line="1654">
+                    If we haven&apos;t even started handshaking yet, no need
+                     to generate the fatal close alert.                    
+                </comment>
+                <comment line="1662">
+                    only true if != null                    
+                </comment>
+                <comment line="1665">
+                    Including RuntimeExceptions, but we&apos;ll throw those
+                     down below.  The closeReason isn&apos;t used again,
+                     except for null checks.                    
+                </comment>
+                <comment line="1678">
+                    See comment in changeReadCiphers()                    
+                </comment>
+                <scope line="1601"/>
+                <scope line="1604"/>
+                <scope line="1616">
+                    <scope line="1617"/>
+                    <scope line="1622"/>
+                    <scope line="1624"/>
+                    <scope line="1626">
+                        <declaration name="ssle" type="SSLException" line="1627"/>
                     </scope>
                 </scope>
-                <scope line="740"/>
-                <declaration name="oldState" type="int" line="743"/>
-                <scope line="747"/>
-                <scope line="750"/>
-                <scope line="753"/>
-                <scope line="756"/>
-                <scope line="763"/>
-                <scope line="766"/>
+                <scope line="1634"/>
+                <declaration name="oldState" type="int" line="1643"/>
+                <scope line="1649"/>
+                <scope line="1657"/>
+                <scope line="1661"/>
+                <scope line="1663"/>
+                <scope line="1681"/>
+                <scope line="1683"/>
             </method>
-            <method name="recvAlert" type="void" line="770">
-                <declaration name="level" type="byte" line="771"/>
-                <declaration name="description" type="byte" line="772"/>
-                <scope line="773"/>
-                <scope line="776">
-                    <scope line="777">
-                        <scope line="780"/>
-                        <scope line="783"/>
-                        <scope line="786"/>
+            <method name="recvAlert" type="void" line="1692">
+                <comment line="1696">
+                    check for short message                    
+                </comment>
+                <comment line="1723">
+                    reply to close                    
+                </comment>
+                <comment line="1727">
+                    The other legal warnings relate to certificates,
+                     e.g. no_certificate, bad_certificate, etc; these
+                     are important to the handshaking code, which can
+                     also handle illegal protocol alerts if needed.                    
+                </comment>
+                <comment line="1737">
+                    fatal or unknown level                    
+                </comment>
+                <declaration name="level" type="byte" line="1693"/>
+                <declaration name="description" type="byte" line="1694"/>
+                <scope line="1695"/>
+                <scope line="1700">
+                    <scope line="1701">
+                        <scope line="1704"/>
+                        <scope line="1706"/>
+                        <scope line="1708"/>
                     </scope>
                 </scope>
-                <scope line="792">
-                    <scope line="793">
-                        <scope line="794"/>
-                        <scope line="797"/>
+                <scope line="1715">
+                    <scope line="1716">
+                        <scope line="1717"/>
+                        <scope line="1720"/>
                     </scope>
-                    <scope line="802">
-                        <scope line="803"/>
+                    <scope line="1724">
+                        <scope line="1732"/>
                     </scope>
                 </scope>
-                <scope line="808">
-                    <declaration name="reason" type="String" line="809"/>
-                    <scope line="810"/>
+                <scope line="1736">
+                    <declaration name="reason" type="String" line="1737"/>
+                    <scope line="1739"/>
                 </scope>
             </method>
-            <method name="sendAlert" type="void" line="816">
+            <method name="sendAlert" type="void" line="1750">
                 <params>
                     <param name="level" type="byte"/>
                     <param name="description" type="byte"/>
                 </params>
-                <scope line="817"/>
-                <scope line="820"/>
-                <declaration name="r" type="EngineOutputRecord" line="823"/>
-                <declaration name="useDebug" type="boolean" line="825"/>
-                <scope line="826">
-                    <scope line="827">
-                        <scope line="830"/>
-                        <scope line="833"/>
-                        <scope line="836"/>
+                <comment line="1752">
+                    the connectionState cannot be cs_START                    
+                </comment>
+                <comment line="1757">
+                    For initial handshaking, don&apos;t send alert message to peer if
+                     handshaker has not started.                    
+                </comment>
+                <scope line="1752"/>
+                <scope line="1759"/>
+                <declaration name="r" type="EngineOutputRecord" line="1763"/>
+                <declaration name="useDebug" type="boolean" line="1766"/>
+                <scope line="1767">
+                    <scope line="1768">
+                        <scope line="1771"/>
+                        <scope line="1773"/>
+                        <scope line="1775"/>
                     </scope>
                 </scope>
-                <scope line="844"/>
-                <scope line="847">
-                    <scope line="848"/>
+                <scope line="1785"/>
+                <scope line="1787">
+                    <scope line="1788"/>
                 </scope>
             </method>
-            <javadoc line="853">
+            <javadoc line="1801">
                 Controls whether new connections may cause creation of new SSL
                   sessions.
                   As long as handshaking has not started, we can change
                   whether we enable session creations.  Otherwise,
                   we will need to wait for the next handshake.                
             </javadoc>
-            <method name="setEnableSessionCreation" type="void" line="860">
+            <method name="setEnableSessionCreation" type="void" line="1809">
                 <params>
                     <param name="flag" type="boolean"/>
                 </params>
-                <scope line="862"/>
+                <scope line="1812"/>
             </method>
-            <javadoc line="866">
+            <javadoc line="1817">
                 Returns true if new connections may cause creation of new SSL
                   sessions.                
             </javadoc>
-            <method name="getEnableSessionCreation" type="boolean" line="870"/>
-            <javadoc line="873">
+            <method name="getEnableSessionCreation" type="boolean" line="1821"/>
+            <javadoc line="1826">
                 Sets the flag controlling whether a server mode engine
                   REQUIRES SSL client authentication.
                   As long as handshaking has not started, we can change
                   whether client authentication is needed.  Otherwise,
                   we will need to wait for the next handshake.                
             </javadoc>
-            <method name="setNeedClientAuth" type="void" line="880">
+            <method name="setNeedClientAuth" type="void" line="1834">
                 <params>
                     <param name="flag" type="boolean"/>
                 </params>
-                <scope line="882"/>
+                <scope line="1840"/>
             </method>
-            <method name="getNeedClientAuth" type="boolean" line="886"/>
-            <javadoc line="889">
+            <method name="getNeedClientAuth" type="boolean" line="1845"/>
+            <javadoc line="1849">
                 Sets the flag controlling whether a server mode engine
                   REQUESTS SSL client authentication.
                   As long as handshaking has not started, we can change
                   whether client authentication is requested.  Otherwise,
                   we will need to wait for the next handshake.                
             </javadoc>
-            <method name="setWantClientAuth" type="void" line="896">
+            <method name="setWantClientAuth" type="void" line="1857">
                 <params>
                     <param name="flag" type="boolean"/>
                 </params>
-                <scope line="898"/>
+                <scope line="1863"/>
             </method>
-            <method name="getWantClientAuth" type="boolean" line="902"/>
-            <javadoc line="905">
+            <method name="getWantClientAuth" type="boolean" line="1868"/>
+            <javadoc line="1873">
                 Sets the flag controlling whether the engine is in SSL
                   client or server mode.  Must be called before any SSL
                   traffic has started.                
             </javadoc>
-            <method name="setUseClientMode" type="void" line="910">
+            <method name="setUseClientMode" type="void" line="1878">
                 <params>
                     <param name="flag" type="boolean"/>
                 </params>
-                <scope line="913"/>
-                <scope line="921">
-                    <scope line="922"/>
+                <comment line="1883">
+                    If we need to change the engine mode and the enabled
+                     protocols haven&apos;t specifically been set by the user,
+                     change them to the corresponding default ones.                    
+                </comment>
+                <comment line="1898">
+                    If we have a handshaker, but haven&apos;t started
+                     SSL traffic, we can throw away our current
+                     handshaker, and start from scratch.  Don&apos;t
+                     need to call doneConnect() again, we already
+                     have the streams.                    
+                </comment>
+                <comment line="1907">
+                    If we need to change the engine mode and the enabled
+                     protocols haven&apos;t specifically been set by the user,
+                     change them to the corresponding default ones.                    
+                </comment>
+                <comment line="1923">
+                    If handshake has started, that&apos;s an error.  Fall through...                    
+                </comment>
+                <comment line="1932">
+                    We can let them continue if they catch this correctly,
+                     we don&apos;t need to shut this down.                    
+                </comment>
+                <scope line="1888"/>
+                <scope line="1905">
+                    <scope line="1912"/>
                 </scope>
-                <scope line="931"/>
+                <scope line="1925"/>
             </method>
-            <method name="getUseClientMode" type="boolean" line="937"/>
-            <javadoc line="940">
+            <method name="getUseClientMode" type="boolean" line="1940"/>
+            <javadoc line="1945">
                 Returns the names of the cipher suites which could be enabled for use
                   on an SSL connection.  Normally, only a subset of these will actually
                   be enabled by default, since this list may include cipher suites which
@@ -612,8 +1399,8 @@
                     an array of cipher suite names                    
                 </return>
             </javadoc>
-            <method name="getSupportedCipherSuites" type="String[]" line="949"/>
-            <javadoc line="952">
+            <method name="getSupportedCipherSuites" type="String[]" line="1955"/>
+            <javadoc line="1959">
                 Controls which particular cipher suites are enabled for use on
                   this connection.  The cipher suites must have been listed by
                   getCipherSuites() as being supported.  Even if a suite has been
@@ -623,13 +1410,13 @@
                     suites Names of all the cipher suites to enable.                    
                 </param>
             </javadoc>
-            <method name="setEnabledCipherSuites" type="void" line="960">
+            <method name="setEnabledCipherSuites" type="void" line="1968">
                 <params>
                     <param name="suites" type="String[]"/>
                 </params>
-                <scope line="962"/>
+                <scope line="1970"/>
             </method>
-            <javadoc line="966">
+            <javadoc line="1975">
                 Returns the names of the SSL cipher suites which are currently enabled
                   for use on this connection.  When an SSL engine is first created,
                   all enabled cipher suites &lt;em&gt;(a)&lt;/em&gt; protect data confidentiality,
@@ -640,16 +1427,16 @@
                     an array of cipher suite names                    
                 </return>
             </javadoc>
-            <method name="getEnabledCipherSuites" type="String[]" line="975"/>
-            <javadoc line="978">
+            <method name="getEnabledCipherSuites" type="String[]" line="1985"/>
+            <javadoc line="1990">
                 Returns the protocols that are supported by this implementation.
                   A subset of the supported protocols may be enabled for this connection                
                 <return>
                     an array of protocol names.                    
                 </return>
             </javadoc>
-            <method name="getSupportedProtocols" type="String[]" line="983"/>
-            <javadoc line="986">
+            <method name="getSupportedProtocols" type="String[]" line="1995"/>
+            <javadoc line="1999">
                 Controls which protocols are enabled for use on
                   this connection.  The protocols must have been listed by
                   getSupportedProtocols() as being supported.                
@@ -661,38 +1448,44 @@
                       named by the parameter is not supported.                    
                 </exception>
             </javadoc>
-            <method name="setEnabledProtocols" type="void" line="994">
+            <method name="setEnabledProtocols" type="void" line="2008">
                 <params>
                     <param name="protocols" type="String[]"/>
                 </params>
-                <scope line="996"/>
+                <scope line="2010"/>
             </method>
-            <method name="getEnabledProtocols" type="String[]" line="1000"/>
-            <javadoc line="1003">
+            <method name="getEnabledProtocols" type="String[]" line="2015"/>
+            <javadoc line="2019">
                 Returns the SSLParameters in effect for this SSLEngine.                
             </javadoc>
-            <method name="getSSLParameters" type="SSLParameters" line="1006">
-                <declaration name="params" type="SSLParameters" line="1007"/>
+            <method name="getSSLParameters" type="SSLParameters" line="2022">
+                <comment line="2026">
+                    the super implementation does not handle the following parameters                    
+                </comment>
+                <declaration name="params" type="SSLParameters" line="2023"/>
             </method>
-            <javadoc line="1012">
+            <javadoc line="2032">
                 Applies SSLParameters to this engine.                
             </javadoc>
-            <method name="setSSLParameters" type="void" line="1015">
+            <method name="setSSLParameters" type="void" line="2035">
                 <params>
                     <param name="params" type="SSLParameters"/>
                 </params>
-                <scope line="1019"/>
+                <comment line="2039">
+                    the super implementation does not handle the following parameters                    
+                </comment>
+                <scope line="2041"/>
             </method>
-            <javadoc line="1024">
+            <javadoc line="2047">
                 Return the name of the current thread. Utility method.                
             </javadoc>
-            <method name="threadName" type="String" line="1027"/>
-            <javadoc line="1030">
+            <method name="threadName" type="String" line="2050"/>
+            <javadoc line="2054">
                 Returns a printable representation of this end of the connection.                
             </javadoc>
-            <method name="toString" type="String" line="1033">
-                <declaration name="retval" type="StringBuilder" line="1034"/>
-                <declaration name="host" type="String" line="1038"/>
+            <method name="toString" type="String" line="2057">
+                <declaration name="retval" type="StringBuilder" line="2058"/>
+                <declaration name="host" type="String" line="2063"/>
             </method>
         </class>
     </source>

@@ -12,6 +12,7 @@ import main.commentextraction.com.jml.builder.XMLFromSource;
 import main.commentextraction.com.jml.objects.framework.JMLElement;
 import main.commentextraction.com.jml.output.XMLOutputter;
 
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -29,16 +30,17 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			CompilationUnit compilationUnit) {
 
 		// to file
-		String path = "";
+	/*	String path = "";
 		try {
 
 			JMLElement r = XMLFromSource.createXML(compilationUnit,
 					rootNode.getSource(), true, true);
 			XMLOutputter o = new XMLOutputter(r);
-			path = rootNode.getPath().toString().replaceAll("/src", "");
+		
+			path = path +rootNode.getPath().toString().replaceAll("/src", "");
 			path = path.substring(1, path.indexOf(".java"));
 			path = path.replaceFirst("/", "/xml/");
-			path = "C:/Users/Danny/Converted Libraries/" + path;
+			path = "Converted Libraries/" + path;
 			
 			File dir = new File(path.substring(0, path.lastIndexOf('/')));
 
@@ -91,11 +93,11 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		 * getInput(), rootNode, compilationUnit);
 		 */
 
-		/*
-		 * PositiveNegativeFlowAnalysis analysis = new
-		 * PositiveNegativeFlowAnalysis(); analysis.runAnalysis(getReporter(),
-		 * getInput(), rootNode, compilationUnit);
-		 */
+		
+		 PositiveNegativeFlowAnalysis analysis = new
+		 PositiveNegativeFlowAnalysis(); analysis.runAnalysis(getReporter(),
+		 getInput(), rootNode, compilationUnit);
+		 
 
 	}
 

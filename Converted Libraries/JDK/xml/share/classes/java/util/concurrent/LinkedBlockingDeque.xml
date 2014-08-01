@@ -6,7 +6,7 @@
         <import package="java.util.NoSuchElementException"/>
         <import package="java.util.concurrent.locks.Condition"/>
         <import package="java.util.concurrent.locks.ReentrantLock"/>
-        <class name="LinkedBlockingDeque" line="8">
+        <class name="LinkedBlockingDeque" line="45">
             <type_params>
                 <type_param name="E"/>
             </type_params>
@@ -15,13 +15,93 @@
                     <type_param name="E"/>
                 </type_params>
             </extends>
+            <comment line="79">
+                Implemented as a simple doubly-linked list protected by a
+                 single lock and using conditions to manage blocking.
+                
+                 To implement weakly consistent iterators, it appears we need to
+                 keep all Nodes GC-reachable from a predecessor dequeued Node.
+                 That would cause two problems:
+                 - allow a rogue Iterator to cause unbounded memory retention
+                 - cause cross-generational linking of old Nodes to new Nodes if
+                   a Node was tenured while live, which generational GCs have a
+                   hard time dealing with, causing repeated major collections.
+                 However, only non-deleted Nodes need to be reachable from
+                 dequeued Nodes, and reachability does not necessarily have to
+                 be of the kind understood by the GC.  We use the trick of
+                 linking a Node that has just been dequeued to itself.  Such a
+                 self-link implicitly means to jump to &quot;first&quot; (for next links)
+                 or &quot;last&quot; (for prev links).                
+            </comment>
+            <comment line="98">
+                We have &quot;diamond&quot; multiple interfaceabstract class inheritance
+                 here, and that introduces ambiguities. Often we want the
+                 BlockingDeque javadoc combined with the AbstractQueue
+                 implementation, so a lot of method specs are duplicated here.                
+            </comment>
+            <comment line="210">
+                Basic linking and unlinking operations, called only while holding lock                
+            </comment>
+            <comment line="316">
+                BlockingDeque methods                
+            </comment>
+            <comment line="618">
+                BlockingQueue methods                
+            </comment>
+            <comment line="760">
+                Stack methods                
+            </comment>
+            <comment line="777">
+                Collection methods                
+            </comment>
+            <comment line="834">
+                TODO: Add support for more efficient bulk operations.
+                
+                 We don&apos;t want to acquire the lock for every iteration, but we
+                 also want other threads a chance to interact with the
+                 collection, especially when count is close to capacity.                
+            </comment>
+            <comment line="842">
+                /**
+                      * Adds all of the elements in the specified collection to this
+                      * queue.  Attempts to addAll of a queue to itself result in
+                      * {@code IllegalArgumentException}. Further, the behavior of
+                      * this operation is undefined if the specified collection is
+                      * modified while the operation is in progress.
+                      *
+                      * @param c collection containing elements to be added to this queue
+                      * @return {@code true} if this queue changed as a result of the call
+                      * @throws ClassCastException            {@inheritDoc}
+                      * @throws NullPointerException          {@inheritDoc}
+                      * @throws IllegalArgumentException      {@inheritDoc}
+                      * @throws IllegalStateException         {@inheritDoc}
+                      * @see #add(Object)
+                      */
+                     public boolean addAll(Collection&lt;? extends E&gt; c) {
+                         if (c == null)
+                             throw new NullPointerException();
+                         if (c == this)
+                             throw new IllegalArgumentException();
+                         final ReentrantLock lock = this.lock;
+                         lock.lock();
+                         try {
+                             boolean modified = false;
+                             for (E e : c)
+                                 if (linkLast(e))
+                                     modified = true;
+                             return modified;
+                         } finally {
+                             lock.unlock();
+                         }
+                     }                
+            </comment>
             <implements interface="BlockingDeque">
                 <type_params>
                     <type_param name="E"/>
                 </type_params>
             </implements>
             <implements interface="java.io.Serializable"/>
-            <javadoc line="8">
+            <javadoc line="45">
                 An optionally-bounded {@linkplain BlockingDeque blocking deque} based on
                   linked nodes.
                   &lt;p&gt; The optional capacity bound constructor argument serves as a
@@ -44,79 +124,79 @@
                     Doug Lea                    
                 </author>
                 <param>
-                    <E>
-                      the type of elements held in this collection                    
+                    &lt;E&gt;
+                       the type of elements held in this collection                    
                 </param>
             </javadoc>
-            <declaration name="serialVersionUID" type="long" line="30"/>
-            <class name="Node" line="31">
+            <declaration name="serialVersionUID" type="long" line="104"/>
+            <class name="Node" line="106">
                 <type_params>
                     <type_param name="E"/>
                 </type_params>
-                <javadoc line="31">
+                <javadoc line="106">
                     Doubly-linked list node class                    
                 </javadoc>
-                <declaration name="item" type="E" line="35"/>
-                <javadoc line="35">
+                <declaration name="item" type="E" line="108"/>
+                <javadoc line="108">
                     The item, or null if this node has been removed.                    
                 </javadoc>
-                <declaration name="prev" type="Node&lt;E&gt;" line="39"/>
-                <javadoc line="39">
+                <declaration name="prev" type="Node&lt;E&gt;" line="113"/>
+                <javadoc line="113">
                     One of:
                       - the real predecessor Node
                       - this Node, meaning the predecessor is tail
                       - null, meaning there is no predecessor                    
                 </javadoc>
-                <declaration name="next" type="Node&lt;E&gt;" line="46"/>
-                <javadoc line="46">
+                <declaration name="next" type="Node&lt;E&gt;" line="121"/>
+                <javadoc line="121">
                     One of:
                       - the real successor Node
                       - this Node, meaning the successor is head
                       - null, meaning there is no successor                    
                 </javadoc>
-                <method name="Node" type="constructor" line="53">
+                <method name="Node" type="constructor" line="129">
                     <params>
                         <param name="x" type="E"/>
                     </params>
                 </method>
             </class>
-            <declaration name="first" type="Node&lt;E&gt;" line="57"/>
-            <javadoc line="57">
+            <declaration name="first" type="Node&lt;E&gt;" line="134"/>
+            <javadoc line="134">
                 Pointer to first node.
                   Invariant: (first == null &amp;&amp; last == null) ||
                   (first.prev == null &amp;&amp; first.item != null)                
             </javadoc>
-            <declaration name="last" type="Node&lt;E&gt;" line="63"/>
-            <javadoc line="63">
+            <declaration name="last" type="Node&lt;E&gt;" line="141"/>
+            <javadoc line="141">
                 Pointer to last node.
                   Invariant: (first == null &amp;&amp; last == null) ||
                   (last.next == null &amp;&amp; last.item != null)                
             </javadoc>
-            <declaration name="count" type="int" line="69"/>
-            <javadoc line="69">
+            <declaration name="count" type="int" line="148"/>
+            <javadoc line="148">
                 Number of items in the deque                
             </javadoc>
-            <declaration name="capacity" type="int" line="73"/>
-            <javadoc line="73">
+            <declaration name="capacity" type="int" line="151"/>
+            <javadoc line="151">
                 Maximum number of items in the deque                
             </javadoc>
-            <declaration name="lock" type="ReentrantLock" line="77"/>
-            <javadoc line="77">
+            <declaration name="lock" type="ReentrantLock" line="154"/>
+            <javadoc line="154">
                 Main lock guarding all access                
             </javadoc>
-            <declaration name="notEmpty" type="Condition" line="81"/>
-            <javadoc line="81">
+            <declaration name="notEmpty" type="Condition" line="157"/>
+            <javadoc line="157">
                 Condition for waiting takes                
             </javadoc>
-            <declaration name="notFull" type="Condition" line="85"/>
-            <javadoc line="85">
+            <declaration name="notFull" type="Condition" line="160"/>
+            <javadoc line="160">
                 Condition for waiting puts                
             </javadoc>
-            <javadoc line="89">
+            <javadoc line="163">
                 Creates a {@code LinkedBlockingDeque} with a capacity of{@link Integer#MAX_VALUE}.                
             </javadoc>
-            <method name="LinkedBlockingDeque" type="constructor" line="92"/>
-            <javadoc line="95">
+            <method name="LinkedBlockingDeque" type="constructor" line="167"/>
+            <javadoc line="171">
                 Creates a {@code LinkedBlockingDeque} with the given (fixed) capacity.                
                 <param>
                     capacity the capacity of this deque                    
@@ -125,12 +205,12 @@
                     IllegalArgumentException if {@code capacity} is less than 1                    
                 </throws>
             </javadoc>
-            <method name="LinkedBlockingDeque" type="constructor" line="100">
+            <method name="LinkedBlockingDeque" type="constructor" line="177">
                 <params>
                     <param name="capacity" type="int"/>
                 </params>
             </method>
-            <javadoc line="104">
+            <javadoc line="182">
                 Creates a {@code LinkedBlockingDeque} with a capacity of{@link Integer#MAX_VALUE}, initially containing the elements of
                   the given collection, added in traversal order of the
                   collection&apos;s iterator.                
@@ -142,288 +222,316 @@
                       of its elements are null                    
                 </throws>
             </javadoc>
-            <method name="LinkedBlockingDeque" type="constructor" line="112">
+            <method name="LinkedBlockingDeque" type="constructor" line="192">
                 <params>
                     <param name="c" type="Collection<? extends E>"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="114"/>
-                <scope line="116">
-                    <scope line="117"/>
+                <comment line="196">
+                    Never contended, but necessary for visibility                    
+                </comment>
+                <declaration name="lock" type="ReentrantLock" line="194"/>
+                <scope line="196">
+                    <scope line="197"/>
                 </scope>
-                <scope line="122"/>
+                <scope line="203"/>
             </method>
-            <javadoc line="126">
+            <javadoc line="211">
                 Links node as first element, or returns false if full.                
             </javadoc>
-            <method name="linkFirst" type="boolean" line="129">
+            <method name="linkFirst" type="boolean" line="214">
                 <params>
                     <param name="node" type="Node<E>"/>
                 </params>
-                <declaration name="f" type="Node&lt;E&gt;" line="131"/>
+                <comment line="216">
+                    assert lock.isHeldByCurrentThread();                    
+                </comment>
+                <declaration name="f" type="Node&lt;E&gt;" line="218"/>
             </method>
-            <javadoc line="140">
+            <javadoc line="230">
                 Links node as last element, or returns false if full.                
             </javadoc>
-            <method name="linkLast" type="boolean" line="143">
+            <method name="linkLast" type="boolean" line="233">
                 <params>
                     <param name="node" type="Node<E>"/>
                 </params>
-                <declaration name="l" type="Node&lt;E&gt;" line="145"/>
+                <comment line="235">
+                    assert lock.isHeldByCurrentThread();                    
+                </comment>
+                <declaration name="l" type="Node&lt;E&gt;" line="237"/>
             </method>
-            <javadoc line="154">
+            <javadoc line="249">
                 Removes and returns first element, or null if empty.                
             </javadoc>
-            <method name="unlinkFirst" type="E" line="157">
-                <declaration name="f" type="Node&lt;E&gt;" line="158"/>
-                <declaration name="n" type="Node&lt;E&gt;" line="160"/>
-                <declaration name="item" type="E" line="161"/>
+            <method name="unlinkFirst" type="E" line="252">
+                <comment line="254">
+                    assert lock.isHeldByCurrentThread();                    
+                </comment>
+                <comment line="261">
+                    help GC                    
+                </comment>
+                <declaration name="f" type="Node&lt;E&gt;" line="254"/>
+                <declaration name="n" type="Node&lt;E&gt;" line="257"/>
+                <declaration name="item" type="E" line="258"/>
             </method>
-            <javadoc line="171">
+            <javadoc line="271">
                 Removes and returns last element, or null if empty.                
             </javadoc>
-            <method name="unlinkLast" type="E" line="174">
-                <declaration name="l" type="Node&lt;E&gt;" line="175"/>
-                <declaration name="p" type="Node&lt;E&gt;" line="177"/>
-                <declaration name="item" type="E" line="178"/>
+            <method name="unlinkLast" type="E" line="274">
+                <comment line="276">
+                    assert lock.isHeldByCurrentThread();                    
+                </comment>
+                <comment line="283">
+                    help GC                    
+                </comment>
+                <declaration name="l" type="Node&lt;E&gt;" line="276"/>
+                <declaration name="p" type="Node&lt;E&gt;" line="279"/>
+                <declaration name="item" type="E" line="280"/>
             </method>
-            <javadoc line="188">
+            <javadoc line="293">
                 Unlinks x.                
             </javadoc>
-            <method name="unlink" type="void" line="191">
+            <method name="unlink" type="void" line="296">
                 <params>
                     <param name="x" type="Node<E>"/>
                 </params>
-                <declaration name="p" type="Node&lt;E&gt;" line="192"/>
-                <declaration name="n" type="Node&lt;E&gt;" line="193"/>
-                <scope line="194"/>
-                <scope line="197"/>
-                <scope line="200"/>
+                <comment line="298">
+                    assert lock.isHeldByCurrentThread();                    
+                </comment>
+                <comment line="309">
+                    Don&apos;t mess with x&apos;s links.  They may still be in use by
+                     an iterator.                    
+                </comment>
+                <declaration name="p" type="Node&lt;E&gt;" line="298"/>
+                <declaration name="n" type="Node&lt;E&gt;" line="299"/>
+                <scope line="300"/>
+                <scope line="302"/>
+                <scope line="304"/>
             </method>
-            <javadoc line="208">
+            <javadoc line="317">
                 @throws IllegalStateException {@inheritDoc}                
                 <throws>
                     NullPointerException  {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="addFirst" type="void" line="212">
+            <method name="addFirst" type="void" line="321">
                 <params>
                     <param name="e" type="E"/>
                 </params>
-            </method>
-            <javadoc line="215">
-                @throws IllegalStateException {@inheritDoc}                
-                <throws>
-                    NullPointerException  {@inheritDoc}                    
-                </throws>
-            </javadoc>
-            <method name="addLast" type="void" line="219">
-                <params>
-                    <param name="e" type="E"/>
-                </params>
-            </method>
-            <javadoc line="222">
-                @throws NullPointerException {@inheritDoc}                
-            </javadoc>
-            <method name="offerFirst" type="boolean" line="225">
-                <params>
-                    <param name="e" type="E"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="227"/>
-                <declaration name="lock" type="ReentrantLock" line="228"/>
-                <scope line="230"/>
-                <scope line="233"/>
-            </method>
-            <javadoc line="237">
-                @throws NullPointerException {@inheritDoc}                
-            </javadoc>
-            <method name="offerLast" type="boolean" line="240">
-                <params>
-                    <param name="e" type="E"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="242"/>
-                <declaration name="lock" type="ReentrantLock" line="243"/>
-                <scope line="245"/>
-                <scope line="248"/>
-            </method>
-            <javadoc line="252">
-                @throws NullPointerException {@inheritDoc}                
-                <throws>
-                    InterruptedException {@inheritDoc}                    
-                </throws>
-            </javadoc>
-            <method name="putFirst" type="void" line="256">
-                <params>
-                    <param name="e" type="E"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="258"/>
-                <declaration name="lock" type="ReentrantLock" line="259"/>
-                <scope line="261"/>
-                <scope line="264"/>
-            </method>
-            <javadoc line="268">
-                @throws NullPointerException {@inheritDoc}                
-                <throws>
-                    InterruptedException {@inheritDoc}                    
-                </throws>
-            </javadoc>
-            <method name="putLast" type="void" line="272">
-                <params>
-                    <param name="e" type="E"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="274"/>
-                <declaration name="lock" type="ReentrantLock" line="275"/>
-                <scope line="277"/>
-                <scope line="280"/>
-            </method>
-            <javadoc line="284">
-                @throws NullPointerException {@inheritDoc}                
-                <throws>
-                    InterruptedException {@inheritDoc}                    
-                </throws>
-            </javadoc>
-            <method name="offerFirst" type="boolean" line="288">
-                <params>
-                    <param name="e" type="E"/>
-                    <param name="timeout" type="long"/>
-                    <param name="unit" type="TimeUnit"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="290"/>
-                <declaration name="nanos" type="long" line="291"/>
-                <declaration name="lock" type="ReentrantLock" line="292"/>
-                <scope line="294">
-                    <scope line="295"/>
-                </scope>
-                <scope line="301"/>
-            </method>
-            <javadoc line="305">
-                @throws NullPointerException {@inheritDoc}                
-                <throws>
-                    InterruptedException {@inheritDoc}                    
-                </throws>
-            </javadoc>
-            <method name="offerLast" type="boolean" line="309">
-                <params>
-                    <param name="e" type="E"/>
-                    <param name="timeout" type="long"/>
-                    <param name="unit" type="TimeUnit"/>
-                </params>
-                <declaration name="node" type="Node&lt;E&gt;" line="311"/>
-                <declaration name="nanos" type="long" line="312"/>
-                <declaration name="lock" type="ReentrantLock" line="313"/>
-                <scope line="315">
-                    <scope line="316"/>
-                </scope>
-                <scope line="322"/>
             </method>
             <javadoc line="326">
-                @throws NoSuchElementException {@inheritDoc}                
+                @throws IllegalStateException {@inheritDoc}                
+                <throws>
+                    NullPointerException  {@inheritDoc}                    
+                </throws>
             </javadoc>
-            <method name="removeFirst" type="E" line="329">
-                <declaration name="x" type="E" line="330"/>
+            <method name="addLast" type="void" line="330">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
             </method>
-            <javadoc line="334">
-                @throws NoSuchElementException {@inheritDoc}                
+            <javadoc line="335">
+                @throws NullPointerException {@inheritDoc}                
             </javadoc>
-            <method name="removeLast" type="E" line="337">
-                <declaration name="x" type="E" line="338"/>
-            </method>
-            <method name="pollFirst" type="E" line="342">
-                <declaration name="lock" type="ReentrantLock" line="343"/>
+            <method name="offerFirst" type="boolean" line="338">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <declaration name="node" type="Node&lt;E&gt;" line="340"/>
+                <declaration name="lock" type="ReentrantLock" line="341"/>
+                <scope line="343"/>
                 <scope line="345"/>
-                <scope line="348"/>
             </method>
-            <method name="pollLast" type="E" line="352">
-                <declaration name="lock" type="ReentrantLock" line="353"/>
-                <scope line="355"/>
+            <javadoc line="350">
+                @throws NullPointerException {@inheritDoc}                
+            </javadoc>
+            <method name="offerLast" type="boolean" line="353">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <declaration name="node" type="Node&lt;E&gt;" line="355"/>
+                <declaration name="lock" type="ReentrantLock" line="356"/>
                 <scope line="358"/>
+                <scope line="360"/>
             </method>
-            <method name="takeFirst" type="E" line="362">
-                <declaration name="lock" type="ReentrantLock" line="363"/>
-                <scope line="365">
-                    <declaration name="x" type="E" line="366"/>
-                </scope>
-                <scope line="370"/>
-            </method>
-            <method name="takeLast" type="E" line="374">
-                <declaration name="lock" type="ReentrantLock" line="375"/>
-                <scope line="377">
-                    <declaration name="x" type="E" line="378"/>
-                </scope>
-                <scope line="382"/>
-            </method>
-            <method name="pollFirst" type="E" line="386">
+            <javadoc line="365">
+                @throws NullPointerException {@inheritDoc}                
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="putFirst" type="void" line="369">
                 <params>
+                    <param name="e" type="E"/>
+                </params>
+                <declaration name="node" type="Node&lt;E&gt;" line="371"/>
+                <declaration name="lock" type="ReentrantLock" line="372"/>
+                <scope line="374"/>
+                <scope line="377"/>
+            </method>
+            <javadoc line="382">
+                @throws NullPointerException {@inheritDoc}                
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="putLast" type="void" line="386">
+                <params>
+                    <param name="e" type="E"/>
+                </params>
+                <declaration name="node" type="Node&lt;E&gt;" line="388"/>
+                <declaration name="lock" type="ReentrantLock" line="389"/>
+                <scope line="391"/>
+                <scope line="394"/>
+            </method>
+            <javadoc line="399">
+                @throws NullPointerException {@inheritDoc}                
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="offerFirst" type="boolean" line="404">
+                <params>
+                    <param name="e" type="E"/>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
-                <declaration name="nanos" type="long" line="387"/>
-                <declaration name="lock" type="ReentrantLock" line="388"/>
-                <scope line="390">
-                    <declaration name="x" type="E" line="391"/>
-                    <scope line="392"/>
+                <declaration name="node" type="Node&lt;E&gt;" line="406"/>
+                <declaration name="nanos" type="long" line="407"/>
+                <declaration name="lock" type="ReentrantLock" line="408"/>
+                <scope line="410">
+                    <scope line="411"/>
                 </scope>
-                <scope line="398"/>
+                <scope line="417"/>
             </method>
-            <method name="pollLast" type="E" line="402">
+            <javadoc line="422">
+                @throws NullPointerException {@inheritDoc}                
+                <throws>
+                    InterruptedException {@inheritDoc}                    
+                </throws>
+            </javadoc>
+            <method name="offerLast" type="boolean" line="427">
                 <params>
+                    <param name="e" type="E"/>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
-                <declaration name="nanos" type="long" line="403"/>
-                <declaration name="lock" type="ReentrantLock" line="404"/>
-                <scope line="406">
-                    <declaration name="x" type="E" line="407"/>
-                    <scope line="408"/>
+                <declaration name="node" type="Node&lt;E&gt;" line="429"/>
+                <declaration name="nanos" type="long" line="430"/>
+                <declaration name="lock" type="ReentrantLock" line="431"/>
+                <scope line="433">
+                    <scope line="434"/>
                 </scope>
-                <scope line="414"/>
-            </method>
-            <javadoc line="418">
-                @throws NoSuchElementException {@inheritDoc}                
-            </javadoc>
-            <method name="getFirst" type="E" line="421">
-                <declaration name="x" type="E" line="422"/>
-            </method>
-            <javadoc line="426">
-                @throws NoSuchElementException {@inheritDoc}                
-            </javadoc>
-            <method name="getLast" type="E" line="429">
-                <declaration name="x" type="E" line="430"/>
-            </method>
-            <method name="peekFirst" type="E" line="434">
-                <declaration name="lock" type="ReentrantLock" line="435"/>
-                <scope line="437"/>
                 <scope line="440"/>
             </method>
-            <method name="peekLast" type="E" line="444">
-                <declaration name="lock" type="ReentrantLock" line="445"/>
-                <scope line="447"/>
-                <scope line="450"/>
+            <javadoc line="445">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="removeFirst" type="E" line="448">
+                <declaration name="x" type="E" line="449"/>
             </method>
-            <method name="removeFirstOccurrence" type="boolean" line="454">
+            <javadoc line="454">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="removeLast" type="E" line="457">
+                <declaration name="x" type="E" line="458"/>
+            </method>
+            <method name="pollFirst" type="E" line="463">
+                <declaration name="lock" type="ReentrantLock" line="464"/>
+                <scope line="466"/>
+                <scope line="468"/>
+            </method>
+            <method name="pollLast" type="E" line="473">
+                <declaration name="lock" type="ReentrantLock" line="474"/>
+                <scope line="476"/>
+                <scope line="478"/>
+            </method>
+            <method name="takeFirst" type="E" line="483">
+                <declaration name="lock" type="ReentrantLock" line="484"/>
+                <scope line="486">
+                    <declaration name="x" type="E" line="487"/>
+                </scope>
+                <scope line="491"/>
+            </method>
+            <method name="takeLast" type="E" line="496">
+                <declaration name="lock" type="ReentrantLock" line="497"/>
+                <scope line="499">
+                    <declaration name="x" type="E" line="500"/>
+                </scope>
+                <scope line="504"/>
+            </method>
+            <method name="pollFirst" type="E" line="510">
+                <params>
+                    <param name="timeout" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="nanos" type="long" line="511"/>
+                <declaration name="lock" type="ReentrantLock" line="512"/>
+                <scope line="514">
+                    <declaration name="x" type="E" line="515"/>
+                    <scope line="516"/>
+                </scope>
+                <scope line="522"/>
+            </method>
+            <method name="pollLast" type="E" line="528">
+                <params>
+                    <param name="timeout" type="long"/>
+                    <param name="unit" type="TimeUnit"/>
+                </params>
+                <declaration name="nanos" type="long" line="529"/>
+                <declaration name="lock" type="ReentrantLock" line="530"/>
+                <scope line="532">
+                    <declaration name="x" type="E" line="533"/>
+                    <scope line="534"/>
+                </scope>
+                <scope line="540"/>
+            </method>
+            <javadoc line="545">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="getFirst" type="E" line="548">
+                <declaration name="x" type="E" line="549"/>
+            </method>
+            <javadoc line="554">
+                @throws NoSuchElementException {@inheritDoc}                
+            </javadoc>
+            <method name="getLast" type="E" line="557">
+                <declaration name="x" type="E" line="558"/>
+            </method>
+            <method name="peekFirst" type="E" line="563">
+                <declaration name="lock" type="ReentrantLock" line="564"/>
+                <scope line="566"/>
+                <scope line="568"/>
+            </method>
+            <method name="peekLast" type="E" line="573">
+                <declaration name="lock" type="ReentrantLock" line="574"/>
+                <scope line="576"/>
+                <scope line="578"/>
+            </method>
+            <method name="removeFirstOccurrence" type="boolean" line="583">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="456"/>
-                <scope line="458">
-                    <scope line="459">
-                        <scope line="460"/>
+                <declaration name="lock" type="ReentrantLock" line="585"/>
+                <scope line="587">
+                    <scope line="588">
+                        <scope line="589"/>
                     </scope>
                 </scope>
-                <scope line="467"/>
+                <scope line="595"/>
             </method>
-            <method name="removeLastOccurrence" type="boolean" line="471">
+            <method name="removeLastOccurrence" type="boolean" line="600">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="473"/>
-                <scope line="475">
-                    <scope line="476">
-                        <scope line="477"/>
+                <declaration name="lock" type="ReentrantLock" line="602"/>
+                <scope line="604">
+                    <scope line="605">
+                        <scope line="606"/>
                     </scope>
                 </scope>
-                <scope line="484"/>
+                <scope line="612"/>
             </method>
-            <javadoc line="488">
+            <javadoc line="619">
                 Inserts the specified element at the end of this deque unless it would
                   violate capacity restrictions.  When using a capacity-restricted deque,
                   it is generally preferable to use method {@link #offer(Object) offer}.
@@ -436,44 +544,44 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="add" type="boolean" line="497">
+            <method name="add" type="boolean" line="630">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="501">
+            <javadoc line="635">
                 @throws NullPointerException if the specified element is null                
             </javadoc>
-            <method name="offer" type="boolean" line="504">
+            <method name="offer" type="boolean" line="638">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="507">
+            <javadoc line="642">
                 @throws NullPointerException {@inheritDoc}                
                 <throws>
                     InterruptedException {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="put" type="void" line="511">
+            <method name="put" type="void" line="646">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="514">
+            <javadoc line="650">
                 @throws NullPointerException {@inheritDoc}                
                 <throws>
                     InterruptedException {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="offer" type="boolean" line="518">
+            <method name="offer" type="boolean" line="655">
                 <params>
                     <param name="e" type="E"/>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
             </method>
-            <javadoc line="521">
+            <javadoc line="659">
                 Retrieves and removes the head of the queue represented by this deque.
                   This method differs from {@link #poll poll} only in that it throws an
                   exception if this deque is empty.
@@ -485,16 +593,16 @@
                     NoSuchElementException if this deque is empty                    
                 </throws>
             </javadoc>
-            <method name="remove" type="E" line="529"/>
-            <method name="poll" type="E" line="532"/>
-            <method name="take" type="E" line="535"/>
-            <method name="poll" type="E" line="538">
+            <method name="remove" type="E" line="669"/>
+            <method name="poll" type="E" line="673"/>
+            <method name="take" type="E" line="677"/>
+            <method name="poll" type="E" line="681">
                 <params>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
             </method>
-            <javadoc line="541">
+            <javadoc line="685">
                 Retrieves, but does not remove, the head of the queue represented by
                   this deque.  This method differs from {@link #peek peek} only in that
                   it throws an exception if this deque is empty.
@@ -506,9 +614,9 @@
                     NoSuchElementException if this deque is empty                    
                 </throws>
             </javadoc>
-            <method name="element" type="E" line="549"/>
-            <method name="peek" type="E" line="552"/>
-            <javadoc line="555">
+            <method name="element" type="E" line="695"/>
+            <method name="peek" type="E" line="699"/>
+            <javadoc line="703">
                 Returns the number of additional elements that this deque can ideally
                   (in the absence of memory or resource constraints) accept without
                   blocking. This is always equal to the initial capacity of this deque
@@ -517,12 +625,12 @@
                   an element will succeed by inspecting {@code remainingCapacity}because it may be the case that another thread is about to
                   insert or remove an element.                
             </javadoc>
-            <method name="remainingCapacity" type="int" line="564">
-                <declaration name="lock" type="ReentrantLock" line="565"/>
-                <scope line="567"/>
-                <scope line="570"/>
+            <method name="remainingCapacity" type="int" line="714">
+                <declaration name="lock" type="ReentrantLock" line="715"/>
+                <scope line="717"/>
+                <scope line="719"/>
             </method>
-            <javadoc line="574">
+            <javadoc line="724">
                 @throws UnsupportedOperationException {@inheritDoc}                
                 <throws>
                     ClassCastException            {@inheritDoc}                    
@@ -534,12 +642,12 @@
                     IllegalArgumentException      {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="drainTo" type="int" line="580">
+            <method name="drainTo" type="int" line="730">
                 <params>
                     <param name="c" type="Collection<? super E>"/>
                 </params>
             </method>
-            <javadoc line="583">
+            <javadoc line="734">
                 @throws UnsupportedOperationException {@inheritDoc}                
                 <throws>
                     ClassCastException            {@inheritDoc}                    
@@ -551,34 +659,37 @@
                     IllegalArgumentException      {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="drainTo" type="int" line="589">
+            <method name="drainTo" type="int" line="740">
                 <params>
                     <param name="c" type="Collection<? super E>"/>
                     <param name="maxElements" type="int"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="592"/>
-                <scope line="594">
-                    <declaration name="n" type="int" line="595"/>
-                    <scope line="596"/>
+                <comment line="751">
+                    In this order, in case add() throws.                    
+                </comment>
+                <declaration name="lock" type="ReentrantLock" line="745"/>
+                <scope line="747">
+                    <declaration name="n" type="int" line="748"/>
+                    <scope line="749"/>
                 </scope>
-                <scope line="602"/>
+                <scope line="754"/>
             </method>
-            <javadoc line="606">
+            <javadoc line="761">
                 @throws IllegalStateException {@inheritDoc}                
                 <throws>
                     NullPointerException  {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="push" type="void" line="610">
+            <method name="push" type="void" line="765">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="613">
+            <javadoc line="769">
                 @throws NoSuchElementException {@inheritDoc}                
             </javadoc>
-            <method name="pop" type="E" line="616"/>
-            <javadoc line="619">
+            <method name="pop" type="E" line="772"/>
+            <javadoc line="778">
                 Removes the first occurrence of the specified element from this deque.
                   If the deque does not contain the element, it is unchanged.
                   More formally, removes the first element {@code e} such that{@code o.equals(e)} (if such an element exists).
@@ -592,23 +703,23 @@
                     {@code true} if this deque changed as a result of the call                    
                 </return>
             </javadoc>
-            <method name="remove" type="boolean" line="629">
+            <method name="remove" type="boolean" line="792">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
             </method>
-            <javadoc line="632">
+            <javadoc line="796">
                 Returns the number of elements in this deque.                
                 <return>
                     the number of elements in this deque                    
                 </return>
             </javadoc>
-            <method name="size" type="int" line="636">
-                <declaration name="lock" type="ReentrantLock" line="637"/>
-                <scope line="639"/>
-                <scope line="642"/>
+            <method name="size" type="int" line="801">
+                <declaration name="lock" type="ReentrantLock" line="802"/>
+                <scope line="804"/>
+                <scope line="806"/>
             </method>
-            <javadoc line="646">
+            <javadoc line="811">
                 Returns {@code true} if this deque contains the specified element.
                   More formally, returns {@code true} if and only if this deque contains
                   at least one element {@code e} such that {@code o.equals(e)}.                
@@ -619,15 +730,15 @@
                     {@code true} if this deque contains the specified element                    
                 </return>
             </javadoc>
-            <method name="contains" type="boolean" line="653">
+            <method name="contains" type="boolean" line="819">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="655"/>
-                <scope line="657"/>
-                <scope line="661"/>
+                <declaration name="lock" type="ReentrantLock" line="821"/>
+                <scope line="823"/>
+                <scope line="828"/>
             </method>
-            <javadoc line="665">
+            <javadoc line="874">
                 Returns an array containing all of the elements in this deque, in
                   proper sequence (from first to last element).
                   &lt;p&gt;The returned array will be &quot;safe&quot; in that no references to it are
@@ -639,15 +750,15 @@
                     an array containing all of the elements in this deque                    
                 </return>
             </javadoc>
-            <method name="toArray" type="Object[]" line="675">
-                <declaration name="lock" type="ReentrantLock" line="676"/>
-                <scope line="678">
-                    <declaration name="a" type="Object[]" line="679"/>
-                    <declaration name="k" type="int" line="680"/>
+            <method name="toArray" type="Object[]" line="888">
+                <declaration name="lock" type="ReentrantLock" line="889"/>
+                <scope line="891">
+                    <declaration name="a" type="Object[]" line="892"/>
+                    <declaration name="k" type="int" line="893"/>
                 </scope>
-                <scope line="684"/>
+                <scope line="897"/>
             </method>
-            <javadoc line="688">
+            <javadoc line="902">
                 Returns an array containing all of the elements in this deque, in
                   proper sequence; the runtime type of the returned array is that of
                   the specified array.  If the deque fits in the specified array, it
@@ -683,41 +794,41 @@
                     NullPointerException if the specified array is null                    
                 </throws>
             </javadoc>
-            <method name="toArray" type="T[]" line="716">
+            <method name="toArray" type="T[]" line="939">
                 <params>
                     <param name="a" type="T[]"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="717"/>
-                <scope line="719">
-                    <declaration name="k" type="int" line="721"/>
+                <declaration name="lock" type="ReentrantLock" line="940"/>
+                <scope line="942">
+                    <declaration name="k" type="int" line="947"/>
                 </scope>
-                <scope line="726"/>
+                <scope line="953"/>
             </method>
-            <method name="toString" type="String" line="730">
-                <declaration name="lock" type="ReentrantLock" line="731"/>
-                <scope line="733">
-                    <declaration name="p" type="Node&lt;E&gt;" line="734"/>
-                    <declaration name="sb" type="StringBuilder" line="736"/>
-                    <scope line="738">
-                        <declaration name="e" type="E" line="739"/>
+            <method name="toString" type="String" line="958">
+                <declaration name="lock" type="ReentrantLock" line="959"/>
+                <scope line="961">
+                    <declaration name="p" type="Node&lt;E&gt;" line="962"/>
+                    <declaration name="sb" type="StringBuilder" line="966"/>
+                    <scope line="968">
+                        <declaration name="e" type="E" line="969"/>
                     </scope>
                 </scope>
-                <scope line="746"/>
+                <scope line="976"/>
             </method>
-            <javadoc line="750">
+            <javadoc line="981">
                 Atomically removes all of the elements from this deque.
                   The deque will be empty after this call returns.                
             </javadoc>
-            <method name="clear" type="void" line="754">
-                <declaration name="lock" type="ReentrantLock" line="755"/>
-                <scope line="757">
-                    <scope line="758">
-                        <declaration name="n" type="Node&lt;E&gt;" line="760"/>
+            <method name="clear" type="void" line="985">
+                <declaration name="lock" type="ReentrantLock" line="986"/>
+                <scope line="988">
+                    <scope line="989">
+                        <declaration name="n" type="Node&lt;E&gt;" line="991"/>
                     </scope>
                 </scope>
-                <scope line="769"/>
+                <scope line="999"/>
             </method>
-            <javadoc line="773">
+            <javadoc line="1004">
                 Returns an iterator over the elements in this deque in proper sequence.
                   The elements will be returned in order from first (head) to last (tail).
                   &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
@@ -729,8 +840,8 @@
                     an iterator over the elements in this deque in proper sequence                    
                 </return>
             </javadoc>
-            <method name="iterator" type="Iterator<E>" line="783"/>
-            <javadoc line="786">
+            <method name="iterator" type="Iterator<E>" line="1017"/>
+            <javadoc line="1021">
                 Returns an iterator over the elements in this deque in reverse
                   sequential order.  The elements will be returned in order from
                   last (tail) to first (head).
@@ -743,95 +854,105 @@
                     an iterator over the elements in this deque in reverse order                    
                 </return>
             </javadoc>
-            <method name="descendingIterator" type="Iterator<E>" line="797"/>
-            <class name="AbstractItr" line="800">
+            <method name="descendingIterator" type="Iterator<E>" line="1035"/>
+            <class name="AbstractItr" line="1039">
                 <implements interface="Iterator">
                     <type_params>
                         <type_param name="E"/>
                     </type_params>
                 </implements>
-                <javadoc line="800">
+                <javadoc line="1039">
                     Base class for Iterators for LinkedBlockingDeque                    
                 </javadoc>
-                <declaration name="next" type="Node&lt;E&gt;" line="804"/>
-                <javadoc line="804">
+                <declaration name="next" type="Node&lt;E&gt;" line="1043"/>
+                <javadoc line="1043">
                     The next node to return in next()                    
                 </javadoc>
-                <declaration name="nextItem" type="E" line="808"/>
-                <javadoc line="808">
+                <declaration name="nextItem" type="E" line="1048"/>
+                <javadoc line="1048">
                     nextItem holds on to item fields because once we claim that
                       an element exists in hasNext(), we must return item read
                       under lock (in advance()) even if it was in the process of
                       being removed when hasNext() was called.                    
                 </javadoc>
-                <declaration name="lastRet" type="Node&lt;E&gt;" line="815"/>
-                <javadoc line="815">
+                <declaration name="lastRet" type="Node&lt;E&gt;" line="1056"/>
+                <javadoc line="1056">
                     Node returned by most recent call to next. Needed by remove.
                       Reset to null if this element is deleted by a call to remove.                    
                 </javadoc>
-                <method name="firstNode" type="Node<E>" line="820"/>
-                <method name="nextNode" type="Node<E>" line="821"/>
-                <method name="AbstractItr" type="constructor" line="822">
-                    <declaration name="lock" type="ReentrantLock" line="823"/>
-                    <scope line="825"/>
-                    <scope line="829"/>
+                <method name="firstNode" type="Node<E>" line="1062"/>
+                <method name="nextNode" type="Node<E>" line="1063"/>
+                <method name="AbstractItr" type="constructor" line="1065">
+                    <comment line="1067">
+                        set to initial position                        
+                    </comment>
+                    <declaration name="lock" type="ReentrantLock" line="1067"/>
+                    <scope line="1069"/>
+                    <scope line="1072"/>
                 </method>
-                <javadoc line="833">
+                <javadoc line="1077">
                     Returns the successor node of the given non-null, but
                       possibly previously deleted, node.                    
                 </javadoc>
-                <method name="succ" type="Node<E>" line="837">
+                <method name="succ" type="Node<E>" line="1081">
                     <params>
                         <param name="n" type="Node<E>"/>
                     </params>
-                    <scope line="838">
-                        <declaration name="s" type="Node&lt;E&gt;" line="839"/>
+                    <comment line="1083">
+                        Chains of deleted nodes ending in null or self-links
+                         are possible if multiple interior nodes are removed.                        
+                    </comment>
+                    <scope line="1084">
+                        <declaration name="s" type="Node&lt;E&gt;" line="1085"/>
                     </scope>
                 </method>
-                <javadoc line="846">
+                <javadoc line="1097">
                     Advances next.                    
                 </javadoc>
-                <method name="advance" type="void" line="849">
-                    <declaration name="lock" type="ReentrantLock" line="850"/>
-                    <scope line="852"/>
-                    <scope line="856"/>
+                <method name="advance" type="void" line="1100">
+                    <comment line="1105">
+                        assert next != null;                        
+                    </comment>
+                    <declaration name="lock" type="ReentrantLock" line="1101"/>
+                    <scope line="1103"/>
+                    <scope line="1107"/>
                 </method>
-                <method name="hasNext" type="boolean" line="860"/>
-                <method name="next" type="E" line="863">
-                    <declaration name="x" type="E" line="866"/>
+                <method name="hasNext" type="boolean" line="1112"/>
+                <method name="next" type="E" line="1116">
+                    <declaration name="x" type="E" line="1120"/>
                 </method>
-                <method name="remove" type="void" line="870">
-                    <declaration name="n" type="Node&lt;E&gt;" line="871"/>
-                    <declaration name="lock" type="ReentrantLock" line="874"/>
-                    <scope line="876"/>
-                    <scope line="879"/>
+                <method name="remove" type="void" line="1125">
+                    <declaration name="n" type="Node&lt;E&gt;" line="1126"/>
+                    <declaration name="lock" type="ReentrantLock" line="1130"/>
+                    <scope line="1132"/>
+                    <scope line="1135"/>
                 </method>
             </class>
-            <class name="Itr" line="884">
+            <class name="Itr" line="1141">
                 <extends class="AbstractItr"/>
-                <javadoc line="884">
+                <javadoc line="1141">
                     Forward iterator                    
                 </javadoc>
-                <method name="firstNode" type="Node<E>" line="888"/>
-                <method name="nextNode" type="Node<E>" line="891">
+                <method name="firstNode" type="Node<E>" line="1143"/>
+                <method name="nextNode" type="Node<E>" line="1144">
                     <params>
                         <param name="n" type="Node<E>"/>
                     </params>
                 </method>
             </class>
-            <class name="DescendingItr" line="895">
+            <class name="DescendingItr" line="1147">
                 <extends class="AbstractItr"/>
-                <javadoc line="895">
+                <javadoc line="1147">
                     Descending iterator                    
                 </javadoc>
-                <method name="firstNode" type="Node<E>" line="899"/>
-                <method name="nextNode" type="Node<E>" line="902">
+                <method name="firstNode" type="Node<E>" line="1149"/>
+                <method name="nextNode" type="Node<E>" line="1150">
                     <params>
                         <param name="n" type="Node<E>"/>
                     </params>
                 </method>
             </class>
-            <javadoc line="906">
+            <javadoc line="1153">
                 Save the state of this deque to a stream (that is, serialize it).                
                 <serialData>
                     The capacity (int), followed by elements (each an{@code Object}) in the proper order, followed by a null                    
@@ -840,27 +961,39 @@
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="writeObject" type="void" line="911">
+            <method name="writeObject" type="void" line="1161">
                 <params>
                     <param name="s" type="java.io.ObjectOutputStream"/>
                 </params>
-                <declaration name="lock" type="ReentrantLock" line="912"/>
-                <scope line="914"/>
-                <scope line="919"/>
+                <comment line="1166">
+                    Write out capacity and any hidden stuff                    
+                </comment>
+                <comment line="1168">
+                    Write out all elements in the proper order.                    
+                </comment>
+                <comment line="1171">
+                    Use trailing null as sentinel                    
+                </comment>
+                <declaration name="lock" type="ReentrantLock" line="1162"/>
+                <scope line="1164"/>
+                <scope line="1172"/>
             </method>
-            <javadoc line="923">
+            <javadoc line="1177">
                 Reconstitute this deque from a stream (that is,
                   deserialize it).                
                 <param>
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="readObject" type="void" line="928">
+            <method name="readObject" type="void" line="1183">
                 <params>
                     <param name="s" type="java.io.ObjectInputStream"/>
                 </params>
-                <scope line="933">
-                    <declaration name="item" type="E" line="934"/>
+                <comment line="1189">
+                    Read in all elements and place in queue                    
+                </comment>
+                <scope line="1189">
+                    <declaration name="item" type="E" line="1190"/>
                 </scope>
             </method>
         </class>

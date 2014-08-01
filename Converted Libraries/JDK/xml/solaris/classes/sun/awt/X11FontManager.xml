@@ -24,307 +24,610 @@
         <import package="sun.font.FontUtilities"/>
         <import package="sun.font.NativeFont"/>
         <import package="sun.util.logging.PlatformLogger"/>
-        <class name="X11FontManager" line="26">
+        <class name="X11FontManager" line="29">
             <extends class="SunFontManager"/>
-            <javadoc line="26">
+            <comment line="35">
+                constants identifying XLFD and font ID fields                
+            </comment>
+            <comment line="51">
+                fontNameMap is a map from a fontID (which is a substring of an XLFD like
+                 &quot;-monotype-arial-bold-r-normal-iso8859-7&quot;)
+                 to font file path like
+                 usropenwinliblocaleiso_8859_7X11fontsTrueTypeArialBoldItalic.ttf
+                 It&apos;s used in a couple of methods like
+                 getFileNameFomPlatformName(..) to help locate the font file.
+                 We use this substring of a full XLFD because the font configuration files
+                 define the XLFDs in a way that&apos;s easier to make into a request.
+                 E.g., the -0-0-0-0-p-0- reported by X is --%d---p-- in the font
+                 configuration files. We need to remove that part for comparisons.                
+            </comment>
+            <comment line="65">
+                xlfdMap is a map from a platform path like
+                 usropenwinliblocalejaX11fontsTTHG-GothicB.ttf to an XLFD like
+                 &quot;-ricoh-hg gothic b-medium-r-normal--0-0-0-0-m-0-jisx0201.1976-0&quot;
+                 Because there may be multiple native names, because the font is used
+                 to support multiple X encodings for example, the value of an entry in
+                 this map is always a vector where we store all the native names.
+                 For fonts which we don&apos;t understand the key isn&apos;t a pathname, its
+                 the full XLFD string like :-
+                 &quot;-ricoh-hg gothic b-medium-r-normal--0-0-0-0-m-0-jisx0201.1976-0&quot;                
+            </comment>
+            <comment line="78">
+                xFontDirsMap is also a map from a font ID to a font filepath.
+                 The difference from fontNameMap is just that it does not have
+                 resolved symbolic links. Normally this is not interesting except
+                 that we need to know the directory in which a font was found to
+                 add it to the X font server path, since although the files may
+                 be linked, the fonts.dir is different and specific to the encoding
+                 handled by that directory. This map is nulled out after use to free
+                 heap space. If the optimal path is taken, such that all fonts in
+                 font configuration files are referenced by filename, then the font
+                 dir can be directly derived as its parent directory.
+                 If a font is used by two XLFDs, each corresponding to a different
+                 X11 font directory, then precautions must be taken to include both
+                 directories.                
+            </comment>
+            <comment line="94">
+                This is the set of font directories needed to be on the X font path
+                 to enable AWT heavyweights to find all of the font configuration fonts.
+                 It is populated by :
+                 - awtfontpath entries in the fontconfig.properties
+                 - parent directories of &quot;core&quot; fonts used in the fontconfig.properties
+                 - looking up font dirs in the xFontDirsMap where the key is a fontID
+                   (cut down version of the XLFD read from the font configuration file).
+                 This set is nulled out after use to free heap space.                
+            </comment>
+            <comment line="106">
+                These maps are used on Linux where we reference the Lucida oblique
+                 fonts in fontconfig files even though they aren&apos;t in the standard
+                 font directory. This explicitly remaps the XLFDs for these to the
+                 correct base font. This is needed to prevent composite fonts from
+                 defaulting to the Lucida Sans which is a bad substitute for the
+                 monospaced Lucida Sans Typewriter. Also these maps prevent the
+                 JRE from doing wasted work at start up.                
+            </comment>
+            <comment line="117">
+                Used to eliminate redundant work. When a font directory is
+                 registered it added to this list. Subsequent registrations for the
+                 same directory can then be skipped by checking this Map.
+                 Access to this map is not synchronised here since creation
+                 of the singleton GE instance is already synchronised and that is
+                 the only code path that accesses this map.                
+            </comment>
+            <comment line="127">
+                Array of directories to be added to the X11 font path.
+                 Used by static method called from Toolkits which use X11 fonts.
+                 Specifically this means MToolkit                
+            </comment>
+            <comment line="279">
+                NOTE: this method needs to be executed in a privileged context.
+                 The superclass constructor which is the primary caller of
+                 this method executes entirely in such a context. Additionally
+                 the loadFonts() method does too. So all should be well.                
+            </comment>
+            <comment line="595">
+                Register just the paths, (it doesn&apos;t register the fonts).
+                 If a font configuration file has specified a baseFontPath
+                 fontPath is just those directories, unless on usage we
+                 find it doesn&apos;t contain what we need for the logical fonts.
+                 Otherwise, we register all the paths on Solaris, because
+                 the fontPath we have here is the complete one from
+                 parsing varsadminstallcontents, not just
+                 what&apos;s on the X font path (may be this should be
+                 changed).
+                 But for now what it means is that if we didn&apos;t do
+                 this then if the font weren&apos;t listed anywhere on the
+                 less complete font path we&apos;d trigger loadFonts which
+                 actually registers the fonts. This may actually be
+                 the right thing tho&apos; since that would also set up
+                 the X font path without which we wouldn&apos;t be able to
+                 display some &quot;native&quot; fonts.
+                 So something to revisit is that probably fontPath
+                 here ought to be only the X font path + jre font dir.
+                 loadFonts should have a separate native call to
+                 get the rest of the platform font path.
+                
+                 Registering the directories can now be avoided in the
+                 font configuration initialisation when filename entries
+                 exist in the font configuration file for all fonts.
+                 (Perhaps a little confusingly a filename entry is
+                 actually keyed using the XLFD used in the font entries,
+                 and it maps to a real filename).
+                 In the event any are missing, registration of all
+                 directories will be invoked to find the real files.
+                
+                 But registering the directory performed other
+                 functions such as filling in the map of all native names
+                 for the font. So when this method isn&apos;t invoked, they still
+                 must be found. This is mitigated by getNativeNames now
+                 being able to return at least the platform name, but mostly
+                 by ensuring that when a filename key is found, that
+                 xlfd key is stored as one of the set of platform names
+                 for the font. Its a set because typical font configuration
+                 files reference the same CJK font files using multiple
+                 X11 encodings. For the code that adds this to the map
+                 see X11GE.getFileNameFromPlatformName(..)
+                 If you don&apos;t get all of these then some code points may
+                 not use the Xserver, and will not get the PCF bitmaps
+                 that are available for some point sizes.
+                 So, in the event that there is such a problem,
+                 unconditionally making this call may be necessary, at
+                 some cost to JRE start-up                
+            </comment>
+            <comment line="660">
+                An X font spec (xlfd) includes an encoding. The same TrueType font file
+                 may be referenced from different X font directories in font.dir files
+                 to support use in multiple encodings by X apps.
+                 So for the purposes of font configuration logical fonts where AWT
+                 heavyweights need to access the font via X APIs we need to ensure that
+                 the directory for precisely the encodings needed by this are added to
+                 the x font path. This requires that we note the platform names
+                 specified in font configuration files and use that to identify the
+                 X font directory that contains a font.dir file for that platform name
+                 and add it to the X font path (if display is local)
+                 Here we make use of an already built map of xlfds to font locations
+                 to add the font location to the set of those required to build the
+                 x font path needed by AWT.
+                 These are added to the x font path later.
+                 All this is necessary because on Solaris the font.dir directories
+                 may contain not real font files, but symbolic links to the actual
+                 location but that location is not suitable for the x font path, since
+                 it probably doesn&apos;t have a font.dir at all and certainly not one
+                 with the required encodings
+                 If the fontconfiguration file is properly set up so that all fonts
+                 are mapped to files then we will never trigger initialising
+                 xFontDirsMap (it will be null). In this case the awtfontpath entries
+                 must specify all the X11 directories needed by AWT.                
+            </comment>
+            <comment line="722">
+                Implements SunGraphicsEnvironment.createFontConfiguration.                
+            </comment>
+            <javadoc line="29">
                 The X11 implementation of {@link FontManager}.                
             </javadoc>
-            <declaration name="FOUNDRY_FIELD" type="int" line="30"/>
-            <declaration name="FAMILY_NAME_FIELD" type="int" line="31"/>
-            <declaration name="WEIGHT_NAME_FIELD" type="int" line="32"/>
-            <declaration name="SLANT_FIELD" type="int" line="33"/>
-            <declaration name="SETWIDTH_NAME_FIELD" type="int" line="34"/>
-            <declaration name="ADD_STYLE_NAME_FIELD" type="int" line="35"/>
-            <declaration name="PIXEL_SIZE_FIELD" type="int" line="36"/>
-            <declaration name="POINT_SIZE_FIELD" type="int" line="37"/>
-            <declaration name="RESOLUTION_X_FIELD" type="int" line="38"/>
-            <declaration name="RESOLUTION_Y_FIELD" type="int" line="39"/>
-            <declaration name="SPACING_FIELD" type="int" line="40"/>
-            <declaration name="AVERAGE_WIDTH_FIELD" type="int" line="41"/>
-            <declaration name="CHARSET_REGISTRY_FIELD" type="int" line="42"/>
-            <declaration name="CHARSET_ENCODING_FIELD" type="int" line="43"/>
-            <declaration name="fontNameMap" type="Map" line="44"/>
-            <declaration name="xlfdMap" type="Map" line="45"/>
-            <declaration name="xFontDirsMap" type="Map" line="46"/>
-            <declaration name="fontConfigDirs" type="HashSet&lt;String&gt;" line="47"/>
-            <declaration name="oblmap" type="HashMap&lt;String,String&gt;" line="48"/>
-            <declaration name="registeredDirs" type="HashMap" line="49"/>
-            <declaration name="fontdirs" type="String[]" line="50"/>
-            <declaration name="defaultPlatformFont" type="String[]" line="51"/>
-            <declaration name="fcManager" type="FontConfigManager" line="52"/>
-            <method name="getInstance" type="X11FontManager" line="53"/>
-            <javadoc line="56">
+            <declaration name="FOUNDRY_FIELD" type="int" line="35"/>
+            <declaration name="FAMILY_NAME_FIELD" type="int" line="36"/>
+            <declaration name="WEIGHT_NAME_FIELD" type="int" line="37"/>
+            <declaration name="SLANT_FIELD" type="int" line="38"/>
+            <declaration name="SETWIDTH_NAME_FIELD" type="int" line="39"/>
+            <declaration name="ADD_STYLE_NAME_FIELD" type="int" line="40"/>
+            <declaration name="PIXEL_SIZE_FIELD" type="int" line="41"/>
+            <declaration name="POINT_SIZE_FIELD" type="int" line="42"/>
+            <declaration name="RESOLUTION_X_FIELD" type="int" line="43"/>
+            <declaration name="RESOLUTION_Y_FIELD" type="int" line="44"/>
+            <declaration name="SPACING_FIELD" type="int" line="45"/>
+            <declaration name="AVERAGE_WIDTH_FIELD" type="int" line="46"/>
+            <declaration name="CHARSET_REGISTRY_FIELD" type="int" line="47"/>
+            <declaration name="CHARSET_ENCODING_FIELD" type="int" line="48"/>
+            <declaration name="fontNameMap" type="Map" line="62"/>
+            <declaration name="xlfdMap" type="Map" line="75"/>
+            <declaration name="xFontDirsMap" type="Map" line="91"/>
+            <declaration name="fontConfigDirs" type="HashSet&lt;String&gt;" line="103"/>
+            <declaration name="oblmap" type="HashMap&lt;String,String&gt;" line="113"/>
+            <declaration name="registeredDirs" type="HashMap" line="124"/>
+            <declaration name="fontdirs" type="String[]" line="130"/>
+            <declaration name="defaultPlatformFont" type="String[]" line="132"/>
+            <declaration name="fcManager" type="FontConfigManager" line="134"/>
+            <method name="getInstance" type="X11FontManager" line="136"/>
+            <javadoc line="140">
                 Takes family name property in the following format:
                   &quot;-linotype-helvetica-medium-r-normal-sans--%d---p--iso8859-1&quot;
                   and returns the name of the corresponding physical font.
                   This code is used to resolve font configuration fonts, and expects
                   only to get called for these fonts.                
             </javadoc>
-            <method name="getFileNameFromPlatformName" type="String" line="63">
+            <method name="getFileNameFromPlatformName" type="String" line="148">
                 <params>
                     <param name="platName" type="String"/>
                 </params>
-                <scope line="64"/>
-                <declaration name="fileName" type="String" line="67"/>
-                <declaration name="fontID" type="String" line="68"/>
-                <scope line="70">
-                    <scope line="71"/>
-                    <scope line="74">
-                        <declaration name="xVal" type="Vector" line="75"/>
-                        <scope line="76">
-                            <scope line="77"/>
-                            <scope line="80"/>
+                <comment line="151">
+                    If the FontConfig file doesn&apos;t use xlfds, or its
+                     FcFontConfiguration, this may be already a file name.                    
+                </comment>
+                <comment line="161">
+                    If the font filename has been explicitly assigned in the
+                     font configuration file, use it. This avoids accessing
+                     the wrong fonts on Linux, where different fonts (some
+                     of which may not be usable by 2D) may share the same
+                     specific font ID. It may also speed up the lookup.                    
+                </comment>
+                <comment line="170">
+                                        
+                </comment>
+                <comment line="174">
+                    If a path is assigned in the font configuration file,
+                     it is required that the config file also specify using the
+                     new awtfontpath key the X11 font directories
+                     which must be added to the X11 font path to support
+                     AWT access to that font. For that reason we no longer
+                     have code here to add the parent directory to the list
+                     of font config dirs, since the parent directory may not
+                     be sufficient if fonts are symbolically linked to a
+                     different directory.
+                    
+                     Add this XLFD (platform name) to the list of known
+                     ones for this file.                    
+                </comment>
+                <comment line="189">
+                    Try to be robust on Linux distros which move fonts
+                     around by verifying that the fileName represents a
+                     file that exists.  If it doesn&apos;t, set it to null
+                     to trigger a search.                    
+                </comment>
+                <comment line="216">
+                                        
+                </comment>
+                <comment line="242">
+                    Query X11 directly to see if this font is available
+                     as a native font.                    
+                </comment>
+                <scope line="153"/>
+                <declaration name="fileName" type="String" line="157"/>
+                <declaration name="fontID" type="String" line="158"/>
+                <scope line="167">
+                    <scope line="168"/>
+                    <scope line="172">
+                        <declaration name="xVal" type="Vector" line="186"/>
+                        <scope line="187">
+                            <scope line="193"/>
+                            <scope line="196"/>
                         </scope>
-                        <scope line="86">
-                            <scope line="87"/>
+                        <scope line="201">
+                            <scope line="202"/>
                         </scope>
                     </scope>
-                    <scope line="92"/>
+                    <scope line="207"/>
                 </scope>
-                <scope line="97">
-                    <scope line="99">
-                        <scope line="100"/>
-                        <declaration name="oblkey" type="String" line="103"/>
-                        <scope line="104"/>
+                <scope line="213">
+                    <scope line="216">
+                        <scope line="217"/>
+                        <declaration name="oblkey" type="String" line="220"/>
+                        <scope line="221"/>
                     </scope>
-                    <scope line="108">
-                        <scope line="109"/>
-                        <scope line="114"/>
+                    <scope line="226">
+                        <scope line="227"/>
+                        <scope line="234"/>
                     </scope>
-                    <scope line="119"/>
-                    <scope line="122"/>
-                    <scope line="126"/>
+                    <scope line="240"/>
+                    <scope line="246"/>
+                    <scope line="250"/>
                 </scope>
             </method>
-            <method name="getNativeNames" type="String[]" line="132">
+            <method name="getNativeNames" type="String[]" line="259">
                 <params>
                     <param name="fontFileName" type="String"/>
                     <param name="platformName" type="String"/>
                 </params>
-                <declaration name="nativeNames" type="Vector" line="133"/>
-                <scope line="134">
-                    <scope line="135"/>
-                    <scope line="138">
-                        <declaration name="natNames" type="String[]" line="139"/>
+                <comment line="266">
+                    back-stop so that at least the name used in the
+                     font configuration file is known as a native name                    
+                </comment>
+                <declaration name="nativeNames" type="Vector" line="260"/>
+                <scope line="261">
+                    <scope line="262"/>
+                    <scope line="264">
+                        <declaration name="natNames" type="String[]" line="268"/>
                     </scope>
                 </scope>
-                <scope line="144">
-                    <declaration name="len" type="int" line="145"/>
+                <scope line="272">
+                    <declaration name="len" type="int" line="273"/>
                 </scope>
             </method>
-            <method name="registerFontDir" type="void" line="149">
+            <method name="registerFontDir" type="void" line="285">
                 <params>
                     <param name="path" type="String"/>
                 </params>
-                <scope line="150"/>
-                <declaration name="fontsDotDir" type="File" line="153"/>
-                <declaration name="fr" type="FileReader" line="154"/>
-                <scope line="155">
-                    <scope line="156">
-                        <declaration name="br" type="BufferedReader" line="158"/>
-                        <declaration name="st" type="StreamTokenizer" line="159"/>
-                        <declaration name="ttype" type="int" line="161"/>
-                        <scope line="162">
-                            <declaration name="numEntries" type="int" line="163"/>
-                            <scope line="165">
-                                <scope line="170">
-                                    <scope line="172"/>
-                                    <scope line="175"/>
-                                    <declaration name="breakPos" type="int" line="178"/>
-                                    <scope line="179">
-                                        <scope line="182"/>
+                <comment line="287">
+                    fonts.dir file format looks like :-
+                     47
+                     Arial.ttf -monotype-arial-regular-r-normal--0-0-0-0-p-0-iso8859-1
+                     Arial-Bold.ttf -monotype-arial-bold-r-normal--0-0-0-0-p-0-iso8859-1
+                     ...                    
+                </comment>
+                <comment line="324">
+                    On TurboLinux 8.0 a fonts.dir file had
+                     a line with integer value &quot;24&quot; which
+                     appeared to be the number of remaining
+                     entries in the file. This didn&apos;t add to
+                     the value on the first line of the file.
+                     Seemed like XFree86 didn&apos;t like this line
+                     much either. It failed to parse the file.
+                     Ignore lines like this completely, and
+                     don&apos;t let them count as an entry.                    
+                </comment>
+                <comment line="343">
+                    TurboLinux 8.0 comment line: ignore.
+                     can&apos;t use st.commentChar(&apos;!&apos;) to just
+                     skip because this line mustn&apos;t count
+                     against numEntries.                    
+                </comment>
+                <comment line="356">
+                    TurboLinux 8.0 uses some additional syntax to
+                     indicate algorithmic styling values.
+                     Ignore &apos;:&apos; separated files at the beginning
+                     of the fileName                    
+                </comment>
+                <comment line="382">
+                    we may have a resolved symbolic link
+                     this becomes important for an xlfd we
+                     still need to know the location it was
+                     found to update the X server font path
+                     for use by AWT heavyweights - and when 2D
+                     wants to use the native rasteriser.                    
+                </comment>
+                <scope line="292"/>
+                <declaration name="fontsDotDir" type="File" line="295"/>
+                <declaration name="fr" type="FileReader" line="296"/>
+                <scope line="297">
+                    <scope line="298">
+                        <declaration name="br" type="BufferedReader" line="300"/>
+                        <declaration name="st" type="StreamTokenizer" line="301"/>
+                        <declaration name="ttype" type="int" line="303"/>
+                        <scope line="304">
+                            <declaration name="numEntries" type="int" line="305"/>
+                            <scope line="307">
+                                <scope line="313">
+                                    <scope line="315"/>
+                                    <scope line="318"/>
+                                    <declaration name="breakPos" type="int" line="321"/>
+                                    <scope line="322">
+                                        <scope line="335"/>
                                     </scope>
-                                    <scope line="187">
-                                        <scope line="190"/>
+                                    <scope line="341">
+                                        <scope line="349"/>
                                     </scope>
-                                    <declaration name="fileName" type="String" line="195"/>
-                                    <declaration name="lastColon" type="int" line="196"/>
-                                    <scope line="197">
-                                        <scope line="198"/>
+                                    <declaration name="fileName" type="String" line="354"/>
+                                    <declaration name="lastColon" type="int" line="360"/>
+                                    <scope line="361">
+                                        <scope line="362"/>
                                     </scope>
-                                    <declaration name="fontPart" type="String" line="203"/>
-                                    <declaration name="fontID" type="String" line="204"/>
-                                    <declaration name="sVal" type="String" line="205"/>
-                                    <scope line="206">
-                                        <declaration name="logger" type="PlatformLogger" line="207"/>
+                                    <declaration name="fontPart" type="String" line="367"/>
+                                    <declaration name="fontID" type="String" line="368"/>
+                                    <declaration name="sVal" type="String" line="369"/>
+                                    <scope line="371">
+                                        <declaration name="logger" type="PlatformLogger" line="372"/>
                                     </scope>
-                                    <declaration name="fullPath" type="String" line="211"/>
-                                    <scope line="212">
-                                        <declaration name="file" type="File" line="213"/>
-                                        <scope line="214"/>
+                                    <declaration name="fullPath" type="String" line="378"/>
+                                    <scope line="379">
+                                        <declaration name="file" type="File" line="380"/>
+                                        <scope line="388"/>
                                     </scope>
-                                    <scope line="220"/>
-                                    <declaration name="xVal" type="Vector" line="223"/>
-                                    <scope line="224"/>
-                                    <scope line="227">
-                                        <scope line="228"/>
-                                        <scope line="232"/>
+                                    <scope line="393"/>
+                                    <declaration name="xVal" type="Vector" line="396"/>
+                                    <scope line="397"/>
+                                    <scope line="403">
+                                        <scope line="404"/>
+                                        <scope line="410"/>
                                     </scope>
-                                    <scope line="239"/>
+                                    <scope line="418"/>
                                 </scope>
                             </scope>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="248"/>
-                <scope line="250">
-                    <scope line="251">
-                        <scope line="252"/>
-                        <scope line="255"/>
+                <scope line="426"/>
+                <scope line="427">
+                    <scope line="428">
+                        <scope line="429"/>
+                        <scope line="431"/>
                     </scope>
                 </scope>
             </method>
-            <method name="loadFonts" type="void" line="260"/>
-            <method name="getObliqueLucidaFontID" type="String" line="266">
+            <method name="loadFonts" type="void" line="438">
+                <comment line="441">
+                    These maps are greatly expanded during a loadFonts but
+                     can be reset to their initial state afterwards.
+                     Since preferLocaleFonts() and preferProportionalFonts() will
+                     trigger a partial repopulating from the FontConfiguration
+                     it has to be the inital (empty) state for the latter two, not
+                     simply nulling out.
+                     xFontDirsMap is a special case in that the implementation
+                     will typically not ever need to initialise it so it can be null.                    
+                </comment>
+            </method>
+            <method name="getObliqueLucidaFontID" type="String" line="454">
                 <params>
                     <param name="fontID" type="String"/>
                 </params>
-                <scope line="267"/>
-                <scope line="270"/>
+                <scope line="458"/>
+                <scope line="460"/>
             </method>
-            <method name="getX11FontName" type="String" line="274">
+            <method name="getX11FontName" type="String" line="465">
                 <params>
                     <param name="platName" type="String"/>
                 </params>
-                <declaration name="xlfd" type="String" line="275"/>
-                <scope line="276"/>
-                <scope line="279"/>
+                <declaration name="xlfd" type="String" line="466"/>
+                <scope line="467"/>
+                <scope line="469"/>
             </method>
-            <method name="initObliqueLucidaFontMap" type="void" line="283"/>
-            <method name="isHeadless" type="boolean" line="290">
-                <declaration name="ge" type="GraphicsEnvironment" line="291"/>
+            <method name="initObliqueLucidaFontMap" type="void" line="474"/>
+            <method name="isHeadless" type="boolean" line="486">
+                <declaration name="ge" type="GraphicsEnvironment" line="487"/>
             </method>
-            <method name="specificFontIDForName" type="String" line="294">
+            <method name="specificFontIDForName" type="String" line="492">
                 <params>
                     <param name="name" type="String"/>
                 </params>
-                <declaration name="hPos" type="int[]" line="295"/>
-                <declaration name="hyphenCnt" type="int" line="296"/>
-                <declaration name="pos" type="int" line="297"/>
-                <scope line="298">
-                    <scope line="300"/>
+                <comment line="512">
+                    what else can we do?                    
+                </comment>
+                <declaration name="hPos" type="int[]" line="494"/>
+                <declaration name="hyphenCnt" type="int" line="495"/>
+                <declaration name="pos" type="int" line="496"/>
+                <scope line="498">
+                    <scope line="500"/>
                 </scope>
-                <scope line="305">
-                    <scope line="306"/>
+                <scope line="506">
+                    <scope line="507"/>
                 </scope>
-                <declaration name="sb" type="StringBuffer" line="311"/>
-                <declaration name="retval" type="String" line="313"/>
+                <declaration name="sb" type="StringBuffer" line="514"/>
+                <declaration name="retval" type="String" line="518"/>
             </method>
-            <method name="switchFontIDForName" type="String" line="316">
+            <method name="switchFontIDForName" type="String" line="522">
                 <params>
                     <param name="name" type="String"/>
                 </params>
-                <declaration name="hPos" type="int[]" line="317"/>
-                <declaration name="hyphenCnt" type="int" line="318"/>
-                <declaration name="pos" type="int" line="319"/>
-                <scope line="320">
-                    <scope line="322"/>
+                <comment line="542">
+                    what else can we do?                    
+                </comment>
+                <comment line="558">
+                    workaround for #4471000                    
+                </comment>
+                <declaration name="hPos" type="int[]" line="524"/>
+                <declaration name="hyphenCnt" type="int" line="525"/>
+                <declaration name="pos" type="int" line="526"/>
+                <scope line="528">
+                    <scope line="530"/>
                 </scope>
-                <scope line="327">
-                    <scope line="328"/>
+                <scope line="536">
+                    <scope line="537"/>
                 </scope>
-                <declaration name="slant" type="String" line="333"/>
-                <declaration name="family" type="String" line="334"/>
-                <declaration name="registry" type="String" line="335"/>
-                <declaration name="encoding" type="String" line="336"/>
-                <scope line="337"/>
-                <scope line="340"/>
-                <scope line="343"/>
-                <declaration name="sb" type="StringBuffer" line="346"/>
-                <declaration name="retval" type="String" line="351"/>
+                <declaration name="slant" type="String" line="544"/>
+                <declaration name="family" type="String" line="546"/>
+                <declaration name="registry" type="String" line="548"/>
+                <declaration name="encoding" type="String" line="550"/>
+                <scope line="552"/>
+                <scope line="554"/>
+                <scope line="560"/>
+                <declaration name="sb" type="StringBuffer" line="563"/>
+                <declaration name="retval" type="String" line="571"/>
             </method>
-            <javadoc line="354">
+            <javadoc line="575">
                 Returns the face name for the given XLFD.                
             </javadoc>
-            <method name="getFileNameFromXLFD" type="String" line="357">
+            <method name="getFileNameFromXLFD" type="String" line="578">
                 <params>
                     <param name="name" type="String"/>
                 </params>
-                <declaration name="fileName" type="String" line="358"/>
-                <declaration name="fontID" type="String" line="359"/>
-                <scope line="360">
-                    <scope line="362"/>
-                    <scope line="366"/>
+                <declaration name="fileName" type="String" line="579"/>
+                <declaration name="fontID" type="String" line="580"/>
+                <scope line="581">
+                    <scope line="583"/>
+                    <scope line="587"/>
                 </scope>
             </method>
-            <method name="registerFontDirs" type="void" line="372">
+            <method name="registerFontDirs" type="void" line="643">
                 <params>
                     <param name="pathName" type="String"/>
                 </params>
-                <declaration name="parser" type="StringTokenizer" line="373"/>
-                <scope line="374">
-                    <scope line="375">
-                        <declaration name="dirPath" type="String" line="376"/>
-                        <scope line="377"/>
+                <declaration name="parser" type="StringTokenizer" line="645"/>
+                <scope line="647">
+                    <scope line="648">
+                        <declaration name="dirPath" type="String" line="649"/>
+                        <scope line="650"/>
                     </scope>
                 </scope>
-                <scope line="383"/>
+                <scope line="655"/>
             </method>
-            <method name="addFontToPlatformFontPath" type="void" line="386">
+            <method name="addFontToPlatformFontPath" type="void" line="683">
                 <params>
                     <param name="platformName" type="String"/>
                 </params>
-                <scope line="388">
-                    <declaration name="fontID" type="String" line="389"/>
-                    <declaration name="dirName" type="String" line="390"/>
-                    <scope line="391"/>
+                <comment line="685">
+                    Lazily initialize fontConfigDirs.                    
+                </comment>
+                <scope line="686">
+                    <declaration name="fontID" type="String" line="687"/>
+                    <declaration name="dirName" type="String" line="688"/>
+                    <scope line="689"/>
                 </scope>
             </method>
-            <method name="getPlatformFontPathFromFontConfig" type="void" line="397">
-                <scope line="398">
-                    <scope line="400">
-                        <declaration name="names" type="String[]" line="401"/>
-                        <scope line="402"/>
+            <method name="getPlatformFontPathFromFontConfig" type="void" line="696">
+                <scope line="697">
+                    <scope line="699">
+                        <declaration name="names" type="String[]" line="700"/>
+                        <scope line="701"/>
                     </scope>
                 </scope>
             </method>
-            <method name="registerPlatformFontsUsedByFontConfiguration" type="void" line="408">
-                <scope line="410"/>
-                <scope line="413"/>
+            <method name="registerPlatformFontsUsedByFontConfiguration" type="void" line="709">
+                <comment line="711">
+                    Lazily initialize fontConfigDirs.                    
+                </comment>
+                <scope line="712"/>
+                <scope line="715"/>
             </method>
-            <method name="createFontConfiguration" type="FontConfiguration" line="418">
-                <declaration name="mFontConfig" type="FontConfiguration" line="419"/>
-                <scope line="420">
-                    <declaration name="fcFontConfig" type="FcFontConfiguration" line="421"/>
-                    <scope line="422"/>
+            <method name="createFontConfiguration" type="FontConfiguration" line="722">
+                <comment line="724">
+                    The logic here decides whether to use a preconfigured
+                     fontconfig.properties file, or synthesise one using platform APIs.
+                     On Solaris (as opposed to OpenSolaris) we try to use the
+                     pre-configured ones, but if the files it specifies are missing
+                     we fail-safe to synthesising one. This might happen if Solaris
+                     changes its fonts.
+                     For OpenSolaris I don&apos;t expect us to ever create fontconfig files,
+                     so it will always synthesise. Note that if we misidentify
+                     OpenSolaris as Solaris, then the test for the presence of
+                     Solaris-only font files will correct this.
+                     For Linux we require an exact match of distro and version to
+                     use the preconfigured file, and also that it points to
+                     existent fonts.
+                     If synthesising fails, we fall back to any preconfigured file
+                     and do the best we can. For the commercial JDK this will be
+                     fine as it includes the Lucida fonts. OpenJDK should not hit
+                     this as the synthesis should always work on its platforms.                    
+                </comment>
+                <declaration name="mFontConfig" type="FontConfiguration" line="741"/>
+                <scope line="746">
+                    <declaration name="fcFontConfig" type="FcFontConfiguration" line="747"/>
+                    <scope line="749"/>
                 </scope>
             </method>
-            <method name="createFontConfiguration" type="FontConfiguration" line="429">
+            <method name="createFontConfiguration" type="FontConfiguration" line="758">
                 <params>
                     <param name="preferLocaleFonts" type="boolean"/>
                     <param name="preferPropFonts" type="boolean"/>
                 </params>
             </method>
-            <method name="getFontPathNative" type="String" line="432"/>
-            <method name="getFontPath" type="String" line="433">
+            <method name="getFontPathNative" type="String" line="764"/>
+            <method name="getFontPath" type="String" line="766">
                 <params>
                     <param name="noType1Fonts" type="boolean"/>
                 </params>
+                <comment line="768">
+                    make sure GE is inited, as its the X11 lock.                    
+                </comment>
             </method>
-            <method name="getDefaultPlatformFont" type="String[]" line="437">
-                <scope line="438"/>
-                <declaration name="info" type="String[]" line="441"/>
-                <declaration name="fontConfigFonts" type="FontConfigManager.FcCompFont[]" line="443"/>
-                <scope line="444">
-                    <scope line="445"/>
+            <method name="getDefaultPlatformFont" type="String[]" line="771">
+                <comment line="788">
+                    Absolute last ditch attempt in the face of fontconfig problems.
+                     If we didn&apos;t match, pick the first, or just make something
+                     up so we don&apos;t NPE.                    
+                </comment>
+                <scope line="772"/>
+                <declaration name="info" type="String[]" line="775"/>
+                <declaration name="fontConfigFonts" type="FontConfigManager.FcCompFont[]" line="777"/>
+                <scope line="779">
+                    <scope line="781"/>
                 </scope>
-                <scope line="451">
-                    <scope line="452"/>
-                    <scope line="456"/>
+                <scope line="791">
+                    <scope line="793"/>
+                    <scope line="796"/>
                 </scope>
             </method>
-            <method name="getFontConfigManager" type="FontConfigManager" line="464">
-                <scope line="465"/>
+            <method name="getFontConfigManager" type="FontConfigManager" line="805">
+                <scope line="807"/>
             </method>
-            <method name="getFontConfigFUIR" type="FontUIResource" line="470">
+            <method name="getFontConfigFUIR" type="FontUIResource" line="815">
                 <params>
                     <param name="family" type="String"/>
                     <param name="style" type="int"/>
                     <param name="size" type="int"/>
                 </params>
-                <declaration name="font2D" type="CompositeFont" line="471"/>
-                <scope line="472"/>
-                <declaration name="fuir" type="FontUIResource" line="475"/>
+                <comment line="820">
+                    Not expected, just a precaution.                    
+                </comment>
+                <comment line="824">
+                    The name of the font will be that of the physical font in slot,
+                     but by setting the handle to that of the CompositeFont it
+                     renders as that CompositeFont.
+                     It also needs to be marked as a created font which is the
+                     current mechanism to signal that deriveFont etc must copy
+                     the handle from the original font.                    
+                </comment>
+                <declaration name="font2D" type="CompositeFont" line="817"/>
+                <scope line="819"/>
+                <declaration name="fuir" type="FontUIResource" line="830"/>
             </method>
         </class>
     </source>

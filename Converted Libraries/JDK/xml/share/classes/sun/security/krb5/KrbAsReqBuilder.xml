@@ -11,8 +11,30 @@
         <import package="sun.security.krb5.internal.Krb5"/>
         <import package="sun.security.krb5.internal.PAData"/>
         <import package="sun.security.krb5.internal.crypto.EType"/>
-        <class name="KrbAsReqBuilder" line="13">
-            <javadoc line="13">
+        <class name="KrbAsReqBuilder" line="40">
+            <comment line="69">
+                Common data for AS-REQ fields                
+            </comment>
+            <comment line="78">
+                Secret source: can&apos;t be changed once assigned, only one (of the two
+                 sources) can be set to non-null                
+            </comment>
+            <comment line="83">
+                Used to create a ENC-TIMESTAMP in the 2nd AS-REQ                
+            </comment>
+            <comment line="84">
+                PA-DATA from both KRB-ERROR and AS-REP.
+                 Used by getKeys() only.
+                 Only AS-REP should be enough per RFC,
+                 combined in case etypes are different.                
+            </comment>
+            <comment line="89">
+                The generated and received:                
+            </comment>
+            <comment line="100">
+                Called by other constructors                
+            </comment>
+            <javadoc line="40">
                 A manager class for AS-REQ communications.
                   This class does:
                   1. Gather information to create AS-REQ
@@ -35,28 +57,26 @@
                     1.7                    
                 </since>
             </javadoc>
-            <declaration name="options" type="KDCOptions" line="35"/>
-            <declaration name="cname" type="PrincipalName" line="36"/>
-            <declaration name="sname" type="PrincipalName" line="37"/>
-            <declaration name="from" type="KerberosTime" line="38"/>
-            <declaration name="till" type="KerberosTime" line="39"/>
-            <declaration name="rtime" type="KerberosTime" line="40"/>
-            <declaration name="addresses" type="HostAddresses" line="41"/>
-            <declaration name="password" type="char[]" line="42"/>
-            <declaration name="ktab" type="KeyTab" line="43"/>
-            <declaration name="paList" type="PAData[]" line="44"/>
-            <declaration name="req" type="KrbAsReq" line="45"/>
-            <declaration name="rep" type="KrbAsRep" line="46"/>
-            <declaration name="State" type="enum" line="47"/>
-            <scope line="47"/>
-            <declaration name="state" type="State" line="48"/>
-            <method name="init" type="void" line="49">
+            <declaration name="options" type="KDCOptions" line="69"/>
+            <declaration name="cname" type="PrincipalName" line="70"/>
+            <declaration name="sname" type="PrincipalName" line="71"/>
+            <declaration name="from" type="KerberosTime" line="72"/>
+            <declaration name="till" type="KerberosTime" line="73"/>
+            <declaration name="rtime" type="KerberosTime" line="74"/>
+            <declaration name="addresses" type="HostAddresses" line="75"/>
+            <declaration name="password" type="char[]" line="79"/>
+            <declaration name="ktab" type="KeyTab" line="80"/>
+            <declaration name="paList" type="PAData[]" line="83"/>
+            <declaration name="req" type="KrbAsReq" line="89"/>
+            <declaration name="rep" type="KrbAsRep" line="90"/>
+            <declaration name="state" type="State" line="97"/>
+            <method name="init" type="void" line="101">
                 <params>
                     <param name="cname" type="PrincipalName"/>
                 </params>
-                <scope line="50"/>
+                <scope line="102"/>
             </method>
-            <javadoc line="56">
+            <javadoc line="109">
                 Creates a builder to be used by {@code cname} with existing keys.                
                 <param>
                     cname the client of the AS-REQ. Must not be null. Might have no
@@ -72,13 +92,13 @@
                     KrbException                    
                 </throws>
             </javadoc>
-            <method name="KrbAsReqBuilder" type="constructor" line="66">
+            <method name="KrbAsReqBuilder" type="constructor" line="121">
                 <params>
                     <param name="cname" type="PrincipalName"/>
                     <param name="ktab" type="KeyTab"/>
                 </params>
             </method>
-            <javadoc line="71">
+            <javadoc line="127">
                 Creates a builder to be used by {@code cname} with a known password.                
                 <param>
                     cname the client of the AS-REQ. Must not be null. Might have no
@@ -94,19 +114,19 @@
                     KrbException                    
                 </throws>
             </javadoc>
-            <method name="KrbAsReqBuilder" type="constructor" line="81">
+            <method name="KrbAsReqBuilder" type="constructor" line="139">
                 <params>
                     <param name="cname" type="PrincipalName"/>
                     <param name="pass" type="char[]"/>
                 </params>
             </method>
-            <javadoc line="86">
+            <javadoc line="145">
                 Retrieves an array of secret keys for the client. This is used when
                   the client supplies password but need keys to act as an acceptor
                   (in JAAS words, isInitiator=true and storeKey=true)                
                 <return>
                     generated keys from password. PA-DATA from server might be used.
-                      All "default_tkt_enctypes" keys will be generated, Never null.                    
+                      All &quot;default_tkt_enctypes&quot; keys will be generated, Never null.                    
                 </return>
                 <throws>
                     IllegalStateException if not constructed from a password                    
@@ -115,60 +135,84 @@
                     KrbException                    
                 </throws>
             </javadoc>
-            <method name="getKeys" type="EncryptionKey[]" line="95">
-                <scope line="97">
-                    <declaration name="eTypes" type="int[]" line="98"/>
-                    <declaration name="result" type="EncryptionKey[]" line="99"/>
-                    <declaration name="salt" type="String" line="100"/>
-                    <scope line="101">
-                        <declaration name="snp" type="PAData.SaltAndParams" line="102"/>
-                        <scope line="103"/>
+            <method name="getKeys" type="EncryptionKey[]" line="154">
+                <comment line="161">
+                    Returns an array of keys. Before KrbAsReqBuilder, all etypes
+                     use the same salt which is either the default one or a new salt
+                     coming from PA-DATA. After KrbAsReqBuilder, each etype uses its
+                     own new salt from PA-DATA. For an etype with no PA-DATA new salt
+                     at all, what salt should it use?
+                    
+                     Commonly, the stored keys are only to be used by an acceptor to
+                     decrypt service ticket in AP-REQ. Most impls only allow keys
+                     from a keytab on acceptor, but unfortunately (?) Java supports
+                     acceptor using password. In this case, if the service ticket is
+                     encrypted using an etype which we don&apos;t have PA-DATA new salt,
+                     using the default salt is normally wrong (say, case-insensitive
+                     user name). Instead, we would use the new salt of another etype.                    
+                </comment>
+                <comment line="177">
+                    the saved new salt                    
+                </comment>
+                <comment line="181">
+                    First round, only calculate those with new salt                    
+                </comment>
+                <comment line="192">
+                    Second round, calculate those with no new salt                    
+                </comment>
+                <scope line="156">
+                    <declaration name="eTypes" type="int[]" line="157"/>
+                    <declaration name="result" type="EncryptionKey[]" line="158"/>
+                    <declaration name="salt" type="String" line="176"/>
+                    <scope line="177">
+                        <declaration name="snp" type="PAData.SaltAndParams" line="178"/>
+                        <scope line="181"/>
                     </scope>
-                    <scope line="109">
-                        <scope line="110">
-                            <declaration name="snp" type="PAData.SaltAndParams" line="111"/>
+                    <scope line="190">
+                        <scope line="192">
+                            <declaration name="snp" type="PAData.SaltAndParams" line="193"/>
                         </scope>
                     </scope>
                 </scope>
-                <scope line="117"/>
+                <scope line="202"/>
             </method>
-            <javadoc line="121">
+            <javadoc line="207">
                 Sets or clears options. If cleared, default options will be used
                   at creation time.                
                 <param>
                     options                    
                 </param>
             </javadoc>
-            <method name="setOptions" type="void" line="126">
+            <method name="setOptions" type="void" line="212">
                 <params>
                     <param name="options" type="KDCOptions"/>
                 </params>
             </method>
-            <javadoc line="130">
+            <javadoc line="217">
                 Sets or clears target. If cleared, KrbAsReq might choose krbtgt
                   for cname realm                
                 <param>
                     sname                    
                 </param>
             </javadoc>
-            <method name="setTarget" type="void" line="135">
+            <method name="setTarget" type="void" line="222">
                 <params>
                     <param name="sname" type="PrincipalName"/>
                 </params>
             </method>
-            <javadoc line="139">
+            <javadoc line="227">
                 Adds or clears addresses. KrbAsReq might add some if empty
                   field not allowed                
                 <param>
                     addresses                    
                 </param>
             </javadoc>
-            <method name="setAddresses" type="void" line="144">
+            <method name="setAddresses" type="void" line="232">
                 <params>
                     <param name="addresses" type="HostAddresses"/>
                 </params>
             </method>
-            <javadoc line="148">
+            <javadoc line="237">
                 Build a KrbAsReq object from all info fed above. Normally this method
                   will be called twice: initial AS-REQ and second with pakey                
                 <param>
@@ -184,17 +228,17 @@
                     IOException                    
                 </throws>
             </javadoc>
-            <method name="build" type="KrbAsReq" line="156">
+            <method name="build" type="KrbAsReq" line="245">
                 <params>
                     <param name="key" type="EncryptionKey"/>
                 </params>
-                <declaration name="eTypes" type="int[]" line="157"/>
-                <scope line="158"/>
-                <scope line="161">
-                    <declaration name="ks" type="EncryptionKey[]" line="162"/>
+                <declaration name="eTypes" type="int[]" line="246"/>
+                <scope line="247"/>
+                <scope line="249">
+                    <declaration name="ks" type="EncryptionKey[]" line="250"/>
                 </scope>
             </method>
-            <javadoc line="168">
+            <javadoc line="266">
                 Parses AS-REP, decrypts enc-part, retrieves ticket and session key                
                 <throws>
                     KrbException                    
@@ -206,20 +250,20 @@
                     IOException                    
                 </throws>
             </javadoc>
-            <method name="resolve" type="KrbAsReqBuilder" line="174">
-                <scope line="175"/>
-                <scope line="178"/>
-                <scope line="181">
-                    <scope line="182"/>
-                    <scope line="185">
-                        <declaration name="extraLen" type="int" line="186"/>
-                        <scope line="187">
-                            <declaration name="oldLen" type="int" line="188"/>
+            <method name="resolve" type="KrbAsReqBuilder" line="273">
+                <scope line="274"/>
+                <scope line="276"/>
+                <scope line="279">
+                    <scope line="280"/>
+                    <scope line="282">
+                        <declaration name="extraLen" type="int" line="283"/>
+                        <scope line="284">
+                            <declaration name="oldLen" type="int" line="285"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="196">
+            <javadoc line="294">
                 Communication until AS-REP or non preauth-related KRB-ERROR received                
                 <throws>
                     KrbException                    
@@ -228,30 +272,37 @@
                     IOException                    
                 </throws>
             </javadoc>
-            <method name="send" type="KrbAsReqBuilder" line="201">
-                <declaration name="preAuthFailedOnce" type="boolean" line="202"/>
-                <declaration name="comm" type="KdcComm" line="203"/>
-                <declaration name="pakey" type="EncryptionKey" line="204"/>
-                <scope line="205">
-                    <scope line="206"/>
-                    <scope line="211">
-                        <scope line="212">
-                            <scope line="213"/>
-                            <declaration name="kerr" type="KRBError" line="217"/>
-                            <scope line="218">
-                                <declaration name="ks" type="EncryptionKey[]" line="219"/>
+            <method name="send" type="KrbAsReqBuilder" line="299">
+                <comment line="328">
+                    Possible if PA-PW-SALT is in KRB-ERROR. RFC
+                     does not recommend this                    
+                </comment>
+                <comment line="341">
+                    Update current paList                    
+                </comment>
+                <declaration name="preAuthFailedOnce" type="boolean" line="300"/>
+                <declaration name="comm" type="KdcComm" line="301"/>
+                <declaration name="pakey" type="EncryptionKey" line="302"/>
+                <scope line="303">
+                    <scope line="304"/>
+                    <scope line="308">
+                        <scope line="311">
+                            <scope line="312"/>
+                            <declaration name="kerr" type="KRBError" line="317"/>
+                            <scope line="318">
+                                <declaration name="ks" type="EncryptionKey[]" line="319"/>
                             </scope>
-                            <scope line="224">
-                                <declaration name="snp" type="PAData.SaltAndParams" line="225"/>
-                                <scope line="226"/>
-                                <scope line="229"/>
+                            <scope line="323">
+                                <declaration name="snp" type="PAData.SaltAndParams" line="324"/>
+                                <scope line="326"/>
+                                <scope line="333"/>
                             </scope>
                         </scope>
-                        <scope line="235"/>
+                        <scope line="341"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="241">
+            <javadoc line="348">
                 Performs AS-REQ send and AS-REP receive.
                   Maybe a state is needed here, to divide prepare process and getCreds.                
                 <throws>
@@ -264,22 +315,22 @@
                     IOException                    
                 </throws>
             </javadoc>
-            <method name="action" type="KrbAsReqBuilder" line="248"/>
-            <javadoc line="253">
+            <method name="action" type="KrbAsReqBuilder" line="356"/>
+            <javadoc line="362">
                 Gets Credentials object after action                
             </javadoc>
-            <method name="getCreds" type="Credentials" line="256"/>
-            <javadoc line="260">
+            <method name="getCreds" type="Credentials" line="365"/>
+            <javadoc line="370">
                 Gets another type of Credentials after action                
             </javadoc>
-            <method name="getCCreds" type="sun.security.krb5.internal.ccache.Credentials" line="263"/>
-            <javadoc line="267">
+            <method name="getCCreds" type="sun.security.krb5.internal.ccache.Credentials" line="373"/>
+            <javadoc line="378">
                 Destroys the object and clears keys and password info.                
             </javadoc>
-            <method name="destroy" type="void" line="270">
-                <scope line="272"/>
+            <method name="destroy" type="void" line="381">
+                <scope line="383"/>
             </method>
-            <javadoc line="276">
+            <javadoc line="388">
                 Checks if the current state is the specified one.                
                 <param>
                     st the expected state                    
@@ -291,12 +342,12 @@
                     IllegalStateException if state is not correct                    
                 </throws>
             </javadoc>
-            <method name="checkState" type="void" line="282">
+            <method name="checkState" type="void" line="394">
                 <params>
                     <param name="st" type="State"/>
                     <param name="msg" type="String"/>
                 </params>
-                <scope line="283"/>
+                <scope line="395"/>
             </method>
         </class>
     </source>

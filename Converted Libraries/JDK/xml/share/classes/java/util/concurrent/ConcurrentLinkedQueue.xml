@@ -6,7 +6,7 @@
         <import package="java.util.Iterator"/>
         <import package="java.util.NoSuchElementException"/>
         <import package="java.util.Queue"/>
-        <class name="ConcurrentLinkedQueue" line="8">
+        <class name="ConcurrentLinkedQueue" line="45">
             <type_params>
                 <type_param name="E"/>
             </type_params>
@@ -15,13 +15,89 @@
                     <type_param name="E"/>
                 </type_params>
             </extends>
+            <comment line="108">
+                This is a modification of the Michael &amp; Scott algorithm,
+                 adapted for a garbage-collected environment, with support for
+                 interior node deletion (to support remove(Object)).  For
+                 explanation, read the paper.
+                
+                 Note that like most non-blocking algorithms in this package,
+                 this implementation relies on the fact that in garbage
+                 collected systems, there is no possibility of ABA problems due
+                 to recycled nodes, so there is no need to use &quot;counted
+                 pointers&quot; or related techniques seen in versions used in
+                 non-GC&apos;ed settings.
+                
+                 The fundamental invariants are:
+                 - There is exactly one (last) Node with a null next reference,
+                   which is CASed when enqueueing.  This last Node can be
+                   reached in O(1) time from tail, but tail is merely an
+                   optimization - it can always be reached in O(N) time from
+                   head as well.
+                 - The elements contained in the queue are the non-null items in
+                   Nodes that are reachable from head.  CASing the item
+                   reference of a Node to null atomically removes it from the
+                   queue.  Reachability of all elements from head must remain
+                   true even in the case of concurrent modifications that cause
+                   head to advance.  A dequeued Node may remain in use
+                   indefinitely due to creation of an Iterator or simply a
+                   poll() that has lost its time slice.
+                
+                 The above might appear to imply that all Nodes are GC-reachable
+                 from a predecessor dequeued Node.  That would cause two problems:
+                 - allow a rogue Iterator to cause unbounded memory retention
+                 - cause cross-generational linking of old Nodes to new Nodes if
+                   a Node was tenured while live, which generational GCs have a
+                   hard time dealing with, causing repeated major collections.
+                 However, only non-deleted Nodes need to be reachable from
+                 dequeued Nodes, and reachability does not necessarily have to
+                 be of the kind understood by the GC.  We use the trick of
+                 linking a Node that has just been dequeued to itself.  Such a
+                 self-link implicitly means to advance to head.
+                
+                 Both head and tail are permitted to lag.  In fact, failing to
+                 update them every time one could is a significant optimization
+                 (fewer CASes). As with LinkedTransferQueue (see the internal
+                 documentation for that class), we use a slack threshold of two;
+                 that is, we update headtail when the current pointer appears
+                 to be two or more steps away from the firstlast node.
+                
+                 Since head and tail are updated concurrently and independently,
+                 it is possible for tail to lag behind head (why not)?
+                
+                 CASing a Node&apos;s item reference to null atomically removes the
+                 element from the queue.  Iterators skip over Nodes with null
+                 items.  Prior implementations of this class had a race between
+                 poll() and remove(Object) where the same element would appear
+                 to be successfully removed by two concurrent operations.  The
+                 method remove(Object) also lazily unlinks deleted Nodes, but
+                 this is merely an optimization.
+                
+                 When constructing a Node (before enqueuing it) we avoid paying
+                 for a volatile write to item by using Unsafe.putObject instead
+                 of a normal write.  This allows the cost of enqueue to be
+                 &quot;one-and-a-half&quot; CASes.
+                
+                 Both head and tail may or may not point to a Node with a
+                 non-null item.  If the queue is empty, all items must of course
+                 be null.  Upon creation, both head and tail refer to a dummy
+                 Node with null item.  Both head and tail are only updated using
+                 CAS, so they never regress, although again this is merely an
+                 optimization.                
+            </comment>
+            <comment line="286">
+                Have to override just to update the javadoc                
+            </comment>
+            <comment line="819">
+                Unsafe mechanics                
+            </comment>
             <implements interface="Queue">
                 <type_params>
                     <type_param name="E"/>
                 </type_params>
             </implements>
             <implements interface="java.io.Serializable"/>
-            <javadoc line="8">
+            <javadoc line="45">
                 An unbounded thread-safe {@linkplain Queue queue} based on linked nodes.
                   This queue orders elements FIFO (first-in-first-out).
                   The &lt;em&gt;head&lt;/em&gt; of the queue is that element that has been on the
@@ -69,55 +145,58 @@
                     Doug Lea                    
                 </author>
                 <param>
-                    <E>
-                      the type of elements held in this collection                    
+                    &lt;E&gt;
+                       the type of elements held in this collection                    
                 </param>
             </javadoc>
-            <declaration name="serialVersionUID" type="long" line="55"/>
-            <class name="Node" line="56">
+            <declaration name="serialVersionUID" type="long" line="105"/>
+            <class name="Node" line="178">
                 <type_params>
                     <type_param name="E"/>
                 </type_params>
-                <declaration name="item" type="E" line="57"/>
-                <declaration name="next" type="Node&lt;E&gt;" line="58"/>
-                <javadoc line="59">
+                <comment line="203">
+                    Unsafe mechanics                    
+                </comment>
+                <declaration name="item" type="E" line="179"/>
+                <declaration name="next" type="Node&lt;E&gt;" line="180"/>
+                <javadoc line="182">
                     Constructs a new node.  Uses relaxed write because item can
                       only be seen after publication via casNext.                    
                 </javadoc>
-                <method name="Node" type="constructor" line="63">
+                <method name="Node" type="constructor" line="186">
                     <params>
                         <param name="item" type="E"/>
                     </params>
                 </method>
-                <method name="casItem" type="boolean" line="66">
+                <method name="casItem" type="boolean" line="190">
                     <params>
                         <param name="cmp" type="E"/>
                         <param name="val" type="E"/>
                     </params>
                 </method>
-                <method name="lazySetNext" type="void" line="69">
+                <method name="lazySetNext" type="void" line="194">
                     <params>
                         <param name="val" type="Node<E>"/>
                     </params>
                 </method>
-                <method name="casNext" type="boolean" line="72">
+                <method name="casNext" type="boolean" line="198">
                     <params>
                         <param name="cmp" type="Node<E>"/>
                         <param name="val" type="Node<E>"/>
                     </params>
                 </method>
-                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="75"/>
-                <declaration name="itemOffset" type="long" line="76"/>
-                <declaration name="nextOffset" type="long" line="77"/>
-                <scope line="78">
-                    <scope line="79">
-                        <declaration name="k" type="Class" line="81"/>
+                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="204"/>
+                <declaration name="itemOffset" type="long" line="205"/>
+                <declaration name="nextOffset" type="long" line="206"/>
+                <scope line="208">
+                    <scope line="209">
+                        <declaration name="k" type="Class" line="211"/>
                     </scope>
-                    <scope line="85"/>
+                    <scope line="216"/>
                 </scope>
             </class>
-            <declaration name="head" type="Node&lt;E&gt;" line="90"/>
-            <javadoc line="90">
+            <declaration name="head" type="Node&lt;E&gt;" line="222"/>
+            <javadoc line="222">
                 A node from which the first live (non-deleted) node (if any)
                   can be reached in O(1) time.
                   Invariants:
@@ -129,8 +208,8 @@
                   - it is permitted for tail to lag behind head, that is, for tail
                   to not be reachable from head!                
             </javadoc>
-            <declaration name="tail" type="Node&lt;E&gt;" line="103"/>
-            <javadoc line="103">
+            <declaration name="tail" type="Node&lt;E&gt;" line="236"/>
+            <javadoc line="236">
                 A node from which the last node on list (that is, the unique
                   node with node.next == null) can be reached in O(1) time.
                   Invariants:
@@ -142,11 +221,11 @@
                   to not be reachable from head!
                   - tail.next may or may not be self-pointing to tail.                
             </javadoc>
-            <javadoc line="116">
+            <javadoc line="251">
                 Creates a {@code ConcurrentLinkedQueue} that is initially empty.                
             </javadoc>
-            <method name="ConcurrentLinkedQueue" type="constructor" line="119"/>
-            <javadoc line="122">
+            <method name="ConcurrentLinkedQueue" type="constructor" line="254"/>
+            <javadoc line="258">
                 Creates a {@code ConcurrentLinkedQueue}initially containing the elements of the given collection,
                   added in traversal order of the collection&apos;s iterator.                
                 <param>
@@ -157,17 +236,17 @@
                       of its elements are null                    
                 </throws>
             </javadoc>
-            <method name="ConcurrentLinkedQueue" type="constructor" line="129">
+            <method name="ConcurrentLinkedQueue" type="constructor" line="267">
                 <params>
                     <param name="c" type="Collection<? extends E>"/>
                 </params>
-                <declaration name="h" type="Node&lt;E&gt;" line="130"/>
-                <scope line="131">
-                    <declaration name="newNode" type="Node&lt;E&gt;" line="133"/>
-                    <scope line="135"/>
+                <declaration name="h" type="Node&lt;E&gt;" line="268"/>
+                <scope line="269">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="271"/>
+                    <scope line="274"/>
                 </scope>
             </method>
-            <javadoc line="144">
+            <javadoc line="287">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never throw{@link IllegalStateException} or return {@code false}.                
                 <return>
@@ -177,33 +256,33 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="add" type="boolean" line="150">
+            <method name="add" type="boolean" line="295">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="153">
+            <javadoc line="299">
                 Try to CAS head to p. If successful, repoint old head to itself
                   as sentinel for succ(), below.                
             </javadoc>
-            <method name="updateHead" type="void" line="157">
+            <method name="updateHead" type="void" line="303">
                 <params>
                     <param name="h" type="Node<E>"/>
                     <param name="p" type="Node<E>"/>
                 </params>
             </method>
-            <javadoc line="160">
+            <javadoc line="308">
                 Returns the successor of p, or the head node if p.next has been
                   linked to self, which will only be true if traversing with a
                   stale pointer that is now off the list.                
             </javadoc>
-            <method name="succ" type="Node<E>" line="165">
+            <method name="succ" type="Node<E>" line="313">
                 <params>
                     <param name="p" type="Node<E>"/>
                 </params>
-                <declaration name="next" type="Node&lt;E&gt;" line="166"/>
+                <declaration name="next" type="Node&lt;E&gt;" line="314"/>
             </method>
-            <javadoc line="169">
+            <javadoc line="318">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never return {@code false}.                
                 <return>
@@ -213,36 +292,69 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="offer" type="boolean" line="175">
+            <method name="offer" type="boolean" line="325">
                 <params>
                     <param name="e" type="E"/>
                 </params>
-                <declaration name="newNode" type="Node&lt;E&gt;" line="177"/>
-                <scope line="178">
-                    <declaration name="q" type="Node&lt;E&gt;" line="179"/>
-                    <scope line="180">
-                        <scope line="181"/>
+                <comment line="333">
+                    p is last node                    
+                </comment>
+                <comment line="335">
+                    Successful CAS is the linearization point
+                     for e to become an element of this queue,
+                     and for newNode to become &quot;live&quot;.                    
+                </comment>
+                <comment line="338">
+                    hop two nodes at a time                    
+                </comment>
+                <comment line="339">
+                    Failure is OK.                    
+                </comment>
+                <comment line="342">
+                    Lost CAS race to another thread; re-read next                    
+                </comment>
+                <comment line="345">
+                    We have fallen off list.  If tail is unchanged, it
+                     will also be off-list, in which case we need to
+                     jump to head, from which all live nodes are always
+                     reachable.  Else the new tail is a better bet.                    
+                </comment>
+                <comment line="351">
+                    Check for tail updates after two hops.                    
+                </comment>
+                <declaration name="newNode" type="Node&lt;E&gt;" line="327"/>
+                <scope line="329">
+                    <declaration name="q" type="Node&lt;E&gt;" line="330"/>
+                    <scope line="331">
+                        <scope line="333"/>
                     </scope>
                 </scope>
             </method>
-            <method name="poll" type="E" line="190">
-                <scope line="191">
-                    <scope line="192">
-                        <declaration name="item" type="E" line="193"/>
-                        <scope line="194"/>
-                        <scope line="198"/>
+            <method name="poll" type="E" line="355">
+                <comment line="363">
+                    Successful CAS is the linearization point
+                     for item to be removed from this queue.                    
+                </comment>
+                <comment line="365">
+                    hop two nodes at a time                    
+                </comment>
+                <scope line="357">
+                    <scope line="358">
+                        <declaration name="item" type="E" line="359"/>
+                        <scope line="361"/>
+                        <scope line="368"/>
                     </scope>
                 </scope>
             </method>
-            <method name="peek" type="E" line="207">
-                <scope line="208">
-                    <scope line="209">
-                        <declaration name="item" type="E" line="210"/>
-                        <scope line="211"/>
+            <method name="peek" type="E" line="380">
+                <scope line="382">
+                    <scope line="383">
+                        <declaration name="item" type="E" line="384"/>
+                        <scope line="385"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="220">
+            <javadoc line="397">
                 Returns the first live (non-deleted) node on list, or null if none.
                   This is yet another variant of poll/peek; here returning the
                   first node, not element.  We could make peek() a wrapper around
@@ -250,22 +362,22 @@
                   and the need to add a retry loop to deal with the possibility
                   of losing a race to a concurrent poll().                
             </javadoc>
-            <method name="first" type="Node<E>" line="228">
-                <scope line="229">
-                    <scope line="230">
-                        <declaration name="hasItem" type="boolean" line="231"/>
-                        <scope line="232"/>
+            <method name="first" type="Node<E>" line="405">
+                <scope line="407">
+                    <scope line="408">
+                        <declaration name="hasItem" type="boolean" line="409"/>
+                        <scope line="410"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="241">
+            <javadoc line="422">
                 Returns {@code true} if this queue contains no elements.                
                 <return>
                     {@code true} if this queue contains no elements                    
                 </return>
             </javadoc>
-            <method name="isEmpty" type="boolean" line="245"/>
-            <javadoc line="248">
+            <method name="isEmpty" type="boolean" line="427"/>
+            <javadoc line="431">
                 Returns the number of elements in this queue.  If this queue
                   contains more than {@code Integer.MAX_VALUE} elements, returns{@code Integer.MAX_VALUE}.
                   &lt;p&gt;Beware that, unlike in most collections, this method is
@@ -280,10 +392,13 @@
                     the number of elements in this queue                    
                 </return>
             </javadoc>
-            <method name="size" type="int" line="261">
-                <declaration name="count" type="int" line="262"/>
+            <method name="size" type="int" line="447">
+                <comment line="452">
+                    Collection.size() spec says to max out                    
+                </comment>
+                <declaration name="count" type="int" line="448"/>
             </method>
-            <javadoc line="266">
+            <javadoc line="457">
                 Returns {@code true} if this queue contains the specified element.
                   More formally, returns {@code true} if and only if this queue contains
                   at least one element {@code e} such that {@code o.equals(e)}.                
@@ -294,15 +409,15 @@
                     {@code true} if this queue contains the specified element                    
                 </return>
             </javadoc>
-            <method name="contains" type="boolean" line="273">
+            <method name="contains" type="boolean" line="465">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <scope line="275">
-                    <declaration name="item" type="E" line="276"/>
+                <scope line="467">
+                    <declaration name="item" type="E" line="468"/>
                 </scope>
             </method>
-            <javadoc line="281">
+            <javadoc line="475">
                 Removes a single instance of the specified element from this queue,
                   if it is present.  More formally, removes an element {@code e} such
                   that {@code o.equals(e)}, if this queue contains one or more such
@@ -316,19 +431,19 @@
                     {@code true} if this queue changed as a result of the call                    
                 </return>
             </javadoc>
-            <method name="remove" type="boolean" line="291">
+            <method name="remove" type="boolean" line="486">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <declaration name="pred" type="Node&lt;E&gt;" line="293"/>
-                <scope line="294">
-                    <declaration name="item" type="E" line="295"/>
-                    <scope line="296">
-                        <declaration name="next" type="Node&lt;E&gt;" line="297"/>
+                <declaration name="pred" type="Node&lt;E&gt;" line="488"/>
+                <scope line="489">
+                    <declaration name="item" type="E" line="490"/>
+                    <scope line="493">
+                        <declaration name="next" type="Node&lt;E&gt;" line="494"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="305">
+            <javadoc line="504">
                 Appends all of the elements in the specified collection to the end of
                   this queue, in the order that they are returned by the specified
                   collection&apos;s iterator.  Attempts to {@code addAll} of a queue to
@@ -347,25 +462,57 @@
                     IllegalArgumentException if the collection is this queue                    
                 </throws>
             </javadoc>
-            <method name="addAll" type="boolean" line="316">
+            <method name="addAll" type="boolean" line="516">
                 <params>
                     <param name="c" type="Collection<? extends E>"/>
                 </params>
-                <declaration name="beginningOfTheEnd" type="Node&lt;E&gt;" line="318"/>
-                <scope line="319">
-                    <declaration name="newNode" type="Node&lt;E&gt;" line="321"/>
-                    <scope line="323"/>
+                <comment line="519">
+                    As historically specified in AbstractQueue#addAll                    
+                </comment>
+                <comment line="522">
+                    Copy c into a private chain of Nodes                    
+                </comment>
+                <comment line="537">
+                    Atomically append the chain at the tail of this collection                    
+                </comment>
+                <comment line="541">
+                    p is last node                    
+                </comment>
+                <comment line="543">
+                    Successful CAS is the linearization point
+                     for all elements to be added to this queue.                    
+                </comment>
+                <comment line="546">
+                    Try a little harder to update tail,
+                     since we may be adding many elements.                    
+                </comment>
+                <comment line="554">
+                    Lost CAS race to another thread; re-read next                    
+                </comment>
+                <comment line="557">
+                    We have fallen off list.  If tail is unchanged, it
+                     will also be off-list, in which case we need to
+                     jump to head, from which all live nodes are always
+                     reachable.  Else the new tail is a better bet.                    
+                </comment>
+                <comment line="563">
+                    Check for tail updates after two hops.                    
+                </comment>
+                <declaration name="beginningOfTheEnd" type="Node&lt;E&gt;" line="522"/>
+                <scope line="523">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="525"/>
+                    <scope line="528"/>
                 </scope>
-                <scope line="329">
-                    <declaration name="q" type="Node&lt;E&gt;" line="330"/>
-                    <scope line="331">
-                        <scope line="332">
-                            <scope line="333"/>
+                <scope line="537">
+                    <declaration name="q" type="Node&lt;E&gt;" line="538"/>
+                    <scope line="539">
+                        <scope line="541">
+                            <scope line="544"/>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="344">
+            <javadoc line="567">
                 Returns an array containing all of the elements in this queue, in
                   proper sequence.
                   &lt;p&gt;The returned array will be &quot;safe&quot; in that no references to it are
@@ -377,13 +524,16 @@
                     an array containing all of the elements in this queue                    
                 </return>
             </javadoc>
-            <method name="toArray" type="Object[]" line="354">
-                <declaration name="al" type="ArrayList&lt;E&gt;" line="355"/>
-                <scope line="356">
-                    <declaration name="item" type="E" line="357"/>
+            <method name="toArray" type="Object[]" line="580">
+                <comment line="582">
+                    Use ArrayList to deal with resizing.                    
+                </comment>
+                <declaration name="al" type="ArrayList&lt;E&gt;" line="582"/>
+                <scope line="583">
+                    <declaration name="item" type="E" line="584"/>
                 </scope>
             </method>
-            <javadoc line="362">
+            <javadoc line="591">
                 Returns an array containing all of the elements in this queue, in
                   proper sequence; the runtime type of the returned array is that of
                   the specified array.  If the queue fits in the specified array, it
@@ -419,22 +569,28 @@
                     NullPointerException if the specified array is null                    
                 </throws>
             </javadoc>
-            <method name="toArray" type="T[]" line="390">
+            <method name="toArray" type="T[]" line="628">
                 <params>
                     <param name="a" type="T[]"/>
                 </params>
-                <declaration name="k" type="int" line="391"/>
-                <declaration name="p" type="Node&lt;E&gt;" line="392"/>
-                <scope line="393">
-                    <declaration name="item" type="E" line="394"/>
+                <comment line="630">
+                    try to use sent-in array                    
+                </comment>
+                <comment line="644">
+                    If won&apos;t fit, use ArrayList version                    
+                </comment>
+                <declaration name="k" type="int" line="630"/>
+                <declaration name="p" type="Node&lt;E&gt;" line="631"/>
+                <scope line="632">
+                    <declaration name="item" type="E" line="633"/>
                 </scope>
-                <scope line="397"/>
-                <declaration name="al" type="ArrayList&lt;E&gt;" line="401"/>
-                <scope line="402">
-                    <declaration name="item" type="E" line="403"/>
+                <scope line="637"/>
+                <declaration name="al" type="ArrayList&lt;E&gt;" line="644"/>
+                <scope line="645">
+                    <declaration name="item" type="E" line="646"/>
                 </scope>
             </method>
-            <javadoc line="408">
+            <javadoc line="653">
                 Returns an iterator over the elements in this queue in proper sequence.
                   The elements will be returned in order from first (head) to last (tail).
                   &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
@@ -446,54 +602,63 @@
                     an iterator over the elements in this queue in proper sequence                    
                 </return>
             </javadoc>
-            <method name="iterator" type="Iterator<E>" line="418"/>
-            <class name="Itr" line="421">
+            <method name="iterator" type="Iterator<E>" line="666"/>
+            <class name="Itr" line="670">
+                <comment line="203">
+                    Unsafe mechanics                    
+                </comment>
                 <implements interface="Iterator">
                     <type_params>
                         <type_param name="E"/>
                     </type_params>
                 </implements>
-                <declaration name="nextNode" type="Node&lt;E&gt;" line="422"/>
-                <javadoc line="422">
+                <declaration name="nextNode" type="Node&lt;E&gt;" line="671"/>
+                <javadoc line="671">
                     Next node to return item for.                    
                 </javadoc>
-                <declaration name="nextItem" type="E" line="426"/>
-                <javadoc line="426">
+                <declaration name="nextItem" type="E" line="676"/>
+                <javadoc line="676">
                     nextItem holds on to item fields because once we claim
                       that an element exists in hasNext(), we must return it in
                       the following next() call even if it was in the process of
                       being removed when hasNext() was called.                    
                 </javadoc>
-                <declaration name="lastRet" type="Node&lt;E&gt;" line="433"/>
-                <javadoc line="433">
+                <declaration name="lastRet" type="Node&lt;E&gt;" line="684"/>
+                <javadoc line="684">
                     Node of the last returned item, to support remove.                    
                 </javadoc>
-                <method name="Itr" type="constructor" line="437"/>
-                <javadoc line="440">
+                <method name="Itr" type="constructor" line="689"/>
+                <javadoc line="693">
                     Moves to next valid node and returns item to return for
                       next(), or null if no such.                    
                 </javadoc>
-                <method name="advance" type="E" line="444">
-                    <declaration name="x" type="E" line="446"/>
-                    <declaration name="pred" type="Node&lt;E&gt;" line="447"/>
-                    <scope line="448"/>
-                    <scope line="452"/>
-                    <scope line="456">
-                        <scope line="457"/>
-                        <declaration name="item" type="E" line="462"/>
-                        <scope line="463"/>
-                        <scope line="468">
-                            <declaration name="next" type="Node&lt;E&gt;" line="469"/>
+                <method name="advance" type="E" line="697">
+                    <comment line="723">
+                        skip over nulls                        
+                    </comment>
+                    <declaration name="x" type="E" line="699"/>
+                    <declaration name="pred" type="Node&lt;E&gt;" line="701"/>
+                    <scope line="702"/>
+                    <scope line="705"/>
+                    <scope line="710">
+                        <scope line="711"/>
+                        <declaration name="item" type="E" line="716"/>
+                        <scope line="717"/>
+                        <scope line="721">
+                            <declaration name="next" type="Node&lt;E&gt;" line="723"/>
                         </scope>
                     </scope>
                 </method>
-                <method name="hasNext" type="boolean" line="475"/>
-                <method name="next" type="E" line="478"/>
-                <method name="remove" type="void" line="482">
-                    <declaration name="l" type="Node&lt;E&gt;" line="483"/>
+                <method name="hasNext" type="boolean" line="731"/>
+                <method name="next" type="E" line="735"/>
+                <method name="remove" type="void" line="740">
+                    <comment line="744">
+                        rely on a future traversal to relink.                        
+                    </comment>
+                    <declaration name="l" type="Node&lt;E&gt;" line="741"/>
                 </method>
             </class>
-            <javadoc line="489">
+            <javadoc line="749">
                 Saves the state to a stream (that is, serializes it).                
                 <serialData>
                     All of the elements (each an {@code E}) in
@@ -503,62 +668,74 @@
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="writeObject" type="void" line="495">
+            <method name="writeObject" type="void" line="757">
                 <params>
                     <param name="s" type="java.io.ObjectOutputStream"/>
                 </params>
-                <scope line="497">
-                    <declaration name="item" type="Object" line="498"/>
+                <comment line="760">
+                    Write out any hidden stuff                    
+                </comment>
+                <comment line="763">
+                    Write out all elements in the proper order.                    
+                </comment>
+                <comment line="770">
+                    Use trailing null as sentinel                    
+                </comment>
+                <scope line="763">
+                    <declaration name="item" type="Object" line="764"/>
                 </scope>
             </method>
-            <javadoc line="503">
+            <javadoc line="773">
                 Reconstitutes the instance from a stream (that is, deserializes it).                
                 <param>
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="readObject" type="void" line="507">
+            <method name="readObject" type="void" line="778">
                 <params>
                     <param name="s" type="java.io.ObjectInputStream"/>
                 </params>
-                <declaration name="h" type="Node&lt;E&gt;" line="509"/>
-                <declaration name="item" type="Object" line="510"/>
-                <scope line="511">
-                    <declaration name="newNode" type="Node&lt;E&gt;" line="512"/>
-                    <scope line="514"/>
+                <comment line="782">
+                    Read in elements until trailing null sentinel found                    
+                </comment>
+                <declaration name="h" type="Node&lt;E&gt;" line="782"/>
+                <declaration name="item" type="Object" line="783"/>
+                <scope line="784">
+                    <declaration name="newNode" type="Node&lt;E&gt;" line="785"/>
+                    <scope line="789"/>
                 </scope>
             </method>
-            <javadoc line="523">
+            <javadoc line="800">
                 Throws NullPointerException if argument is null.                
                 <param>
                     v the element                    
                 </param>
             </javadoc>
-            <method name="checkNotNull" type="void" line="527">
+            <method name="checkNotNull" type="void" line="805">
                 <params>
                     <param name="v" type="Object"/>
                 </params>
             </method>
-            <method name="casTail" type="boolean" line="530">
+            <method name="casTail" type="boolean" line="810">
                 <params>
                     <param name="cmp" type="Node<E>"/>
                     <param name="val" type="Node<E>"/>
                 </params>
             </method>
-            <method name="casHead" type="boolean" line="533">
+            <method name="casHead" type="boolean" line="814">
                 <params>
                     <param name="cmp" type="Node<E>"/>
                     <param name="val" type="Node<E>"/>
                 </params>
             </method>
-            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="536"/>
-            <declaration name="headOffset" type="long" line="537"/>
-            <declaration name="tailOffset" type="long" line="538"/>
-            <scope line="539">
-                <scope line="540">
-                    <declaration name="k" type="Class" line="542"/>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="820"/>
+            <declaration name="headOffset" type="long" line="821"/>
+            <declaration name="tailOffset" type="long" line="822"/>
+            <scope line="823">
+                <scope line="824">
+                    <declaration name="k" type="Class" line="826"/>
                 </scope>
-                <scope line="546"/>
+                <scope line="831"/>
             </scope>
         </class>
     </source>

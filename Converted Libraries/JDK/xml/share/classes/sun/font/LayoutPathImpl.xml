@@ -12,31 +12,43 @@
         <import package="java.awt.geom.PathIterator"/>
         <import package="java.lang.Math.abs"/>
         <import package="java.lang.Math.sqrt"/>
-        <class name="LayoutPathImpl" line="14">
+        <class name="LayoutPathImpl" line="50">
             <extends class="LayoutPath"/>
-            <method name="pointToPath" type="Point2D" line="15">
+            <comment line="53">
+                Convenience APIs                
+            </comment>
+            <comment line="79">
+                extra utility APIs                
+            </comment>
+            <comment line="88">
+                debugging flags                
+            </comment>
+            <comment line="110">
+                Top level construction.                
+            </comment>
+            <method name="pointToPath" type="Point2D" line="56">
                 <params>
                     <param name="x" type="double"/>
                     <param name="y" type="double"/>
                 </params>
-                <declaration name="pt" type="Point2D.Double" line="16"/>
+                <declaration name="pt" type="Point2D.Double" line="57"/>
             </method>
-            <method name="pathToPoint" type="Point2D" line="20">
+            <method name="pathToPoint" type="Point2D" line="62">
                 <params>
                     <param name="a" type="double"/>
                     <param name="o" type="double"/>
                     <param name="preceding" type="boolean"/>
                 </params>
-                <declaration name="pt" type="Point2D.Double" line="21"/>
+                <declaration name="pt" type="Point2D.Double" line="63"/>
             </method>
-            <method name="pointToPath" type="void" line="25">
+            <method name="pointToPath" type="void" line="68">
                 <params>
                     <param name="x" type="double"/>
                     <param name="y" type="double"/>
                     <param name="pt" type="Point2D"/>
                 </params>
             </method>
-            <method name="pathToPoint" type="void" line="29">
+            <method name="pathToPoint" type="void" line="73">
                 <params>
                     <param name="a" type="double"/>
                     <param name="o" type="double"/>
@@ -44,14 +56,13 @@
                     <param name="pt" type="Point2D"/>
                 </params>
             </method>
-            <method name="start" type="double" line="33"/>
-            <method name="end" type="double" line="34"/>
-            <method name="length" type="double" line="35"/>
-            <method name="mapShape" type="Shape" line="36"/>
-            <declaration name="LOGMAP" type="boolean" line="37"/>
-            <declaration name="LOG" type="Formatter" line="38"/>
-            <declaration name="EndType" type="enum" line="39"/>
-            <javadoc line="39">
+            <method name="start" type="double" line="82"/>
+            <method name="end" type="double" line="83"/>
+            <method name="length" type="double" line="84"/>
+            <method name="mapShape" type="Shape" line="85"/>
+            <declaration name="LOGMAP" type="boolean" line="91"/>
+            <declaration name="LOG" type="Formatter" line="92"/>
+            <javadoc line="94">
                 Indicate how positions past the start and limit of the
                   path are treated.  PINNED adjusts these positions so
                   as to be within start and limit.  EXTENDED ignores the
@@ -59,63 +70,142 @@
                   last segments of the path &apos;infinitely&apos;.  CLOSED wraps
                   positions around the ends of the path.                
             </javadoc>
-            <scope line="47"/>
-            <method name="isPinned" type="boolean" line="47"/>
-            <method name="isExtended" type="boolean" line="50"/>
-            <method name="isClosed" type="boolean" line="53"/>
-            <scope line="-1"/>
-            <javadoc line="57">
+            <method name="isPinned" type="boolean" line="104"/>
+            <method name="isExtended" type="boolean" line="105"/>
+            <method name="isClosed" type="boolean" line="106"/>
+            <javadoc line="113">
                 Return a path representing the path from the origin through the points in order.                
             </javadoc>
-            <method name="getPath" type="LayoutPathImpl" line="60">
+            <method name="getPath" type="LayoutPathImpl" line="116">
                 <params>
                     <param name="etype" type="EndType"/>
                     <param name="coords" type="double"/>
                 </params>
-                <scope line="61"/>
+                <scope line="117"/>
             </method>
-            <class name="SegmentPathBuilder" line="66">
-                <javadoc line="66">
+            <class name="SegmentPathBuilder" line="124">
+                <comment line="314">
+                    triplets x, y, a                    
+                </comment>
+                <comment line="330">
+                    LayoutPath API                    
+                </comment>
+                <comment line="338">
+                    the path consists of line segments, which i&apos;ll call
+                     &apos;path vectors&apos;.  call each run of path vectors a &apos;path segment&apos;.
+                     no path vector in a path segment is zero length (in the
+                     data, such vectors start a new path segment).
+                    
+                     for each path segment...
+                    
+                     for each path vector...
+                    
+                     we look at the dot product of the path vector and the vector from the
+                     origin of the path vector to the test point.  if &lt;0 (case
+                     A), the projection of the test point is before the start of
+                     the path vector.  if &gt; the square of the length of the path vector
+                     (case B), the projection is past the end point of the
+                     path vector.  otherwise (case C), it lies on the path vector.
+                     determine the closeset point on the path vector.  if case A, it
+                     is the start of the path vector.  if case B and this is the last
+                     path vector in the path segment, it is the end of the path vector.  If
+                     case C, it is the projection onto the path vector.  Otherwise
+                     there is no closest point.
+                    
+                     if we have a closest point, compare the distance from it to
+                     the test point against our current closest distance.
+                     (culling should be fast, currently i am using distance
+                     squared, but there&apos;s probably better ways).  if we&apos;re
+                     closer, save the new point as the current closest point,
+                     and record the path vector index so we can determine the final
+                     info if this turns out to be the closest point in the end.
+                    
+                     after we have processed all the segments we will have
+                     tested each path vector and each endpoint.  if our point is not on
+                     an endpoint, we&apos;re done; we can compute the position and
+                     offset again, or if we saved it off we can just use it.  if
+                     we&apos;re on an endpoint we need to see which path vector we should
+                     associate with.  if we&apos;re at the start or end of a path segment,
+                     we&apos;re done-- the first or last vector of the segment is the
+                     one we associate with.  we project against that vector to
+                     get the offset, and pin to that vector to get the length.
+                    
+                     otherwise, we compute the information as follows.  if the
+                     dot product (see above) with the following vector is zero,
+                     we associate with that vector.  otherwise, if the dot
+                     product with the previous vector is zero, we associate with
+                     that vector.  otherwise we&apos;re beyond the end of the
+                     previous vector and before the start of the current vector.
+                     we project against both vectors and get the distance from
+                     the test point to the projection (this will be the offset).
+                     if they are the same, we take the following vector.
+                     otherwise use the vector from which the test point is the
+                     _farthest_ (this is because the point lies most clearly in
+                     the half of the plane defined by extending that vector).
+                    
+                     the returned position is the path length to the (possibly
+                     pinned) point, the offset is the projection onto the line
+                     along the vector, and we have a boolean flag which if false
+                     indicates that we associate with the previous vector at a
+                     junction (which is necessary when projecting such a
+                     location back to a point).                    
+                </comment>
+                <comment line="546">
+                    LayoutPathImpl API                    
+                </comment>
+                <comment line="566">
+                    Utilities                    
+                </comment>
+                <comment line="651">
+                    Mapping classes.
+                     Map the path onto each path segment.
+                     Record points where the advance &apos;enters&apos; and &apos;exits&apos; the path segment, and connect successive
+                     points when appropriate.                    
+                </comment>
+                <comment line="929">
+                    for debugging                    
+                </comment>
+                <javadoc line="124">
                     Use to build a SegmentPath.  This takes the data and preanalyzes it for
                       information that the SegmentPath needs, then constructs a SegmentPath
                       from that.  Mainly, this lets SegmentPath cache the lengths along
                       the path to each line segment, and so avoid calculating them over and over.                    
                 </javadoc>
-                <declaration name="data" type="double[]" line="73"/>
-                <declaration name="w" type="int" line="74"/>
-                <declaration name="px" type="double" line="75"/>
-                <declaration name="py" type="double" line="76"/>
-                <declaration name="a" type="double" line="77"/>
-                <declaration name="pconnect" type="boolean" line="78"/>
-                <javadoc line="79">
+                <declaration name="data" type="double[]" line="131"/>
+                <declaration name="w" type="int" line="132"/>
+                <declaration name="px" type="double" line="133"/>
+                <declaration name="py" type="double" line="134"/>
+                <declaration name="a" type="double" line="135"/>
+                <declaration name="pconnect" type="boolean" line="136"/>
+                <javadoc line="138">
                     Construct a SegmentPathBuilder.                    
                 </javadoc>
-                <method name="SegmentPathBuilder" type="constructor" line="82"/>
-                <javadoc line="84">
+                <method name="SegmentPathBuilder" type="constructor" line="141"/>
+                <javadoc line="144">
                     Reset the builder for a new path.  Datalen is a hint of how many
                       points will be in the path, and the working buffer will be sized
                       to accomodate at least this number of points.  If datalen is zero,
                       the working buffer is freed (it will be allocated on first use).                    
                 </javadoc>
-                <method name="reset" type="void" line="90">
+                <method name="reset" type="void" line="150">
                     <params>
                         <param name="datalen" type="int"/>
                     </params>
-                    <scope line="91"/>
-                    <scope line="94"/>
+                    <scope line="151"/>
+                    <scope line="153"/>
                 </method>
-                <javadoc line="101">
+                <javadoc line="161">
                     Automatically build from a list of points represented by pairs of
                       doubles.  Initial advance is zero.                    
                 </javadoc>
-                <method name="build" type="SegmentPath" line="105">
+                <method name="build" type="SegmentPath" line="165">
                     <params>
                         <param name="etype" type="EndType"/>
                         <param name="pts" type="double"/>
                     </params>
-                    <scope line="108"/>
+                    <scope line="170"/>
                 </method>
-                <javadoc line="113">
+                <javadoc line="177">
                     Move to a new point.  If there is no data, this will become the
                       first point.  If there is data, and the previous call was a lineTo, this
                       point is checked against the previous point, and if different, this
@@ -125,70 +215,178 @@
                       Calling this is optional, lineTo will suffice and the initial point
                       will be set to 0, 0.                    
                 </javadoc>
-                <method name="moveTo" type="void" line="123">
+                <method name="moveTo" type="void" line="188">
                     <params>
                         <param name="x" type="double"/>
                         <param name="y" type="double"/>
                     </params>
                 </method>
-                <javadoc line="126">
+                <javadoc line="192">
                     Connect to a new point.  If there is no data, the previous point
                       is presumed to be 0, 0.  This point is checked against
                       the previous point, and if different, this point is added to
                       the path and the advance extended.  If this point is the same as the
                       previous point, the path remains unchanged.                    
                 </javadoc>
-                <method name="lineTo" type="void" line="133">
+                <method name="lineTo" type="void" line="199">
                     <params>
                         <param name="x" type="double"/>
                         <param name="y" type="double"/>
                     </params>
                 </method>
-                <javadoc line="136">
+                <javadoc line="203">
                     Add a new point, and increment advance if connect is true.
                       This automatically rejects duplicate points and multiple disconnected points.                    
                 </javadoc>
-                <method name="nextPoint" type="void" line="140">
+                <method name="nextPoint" type="void" line="208">
                     <params>
                         <param name="x" type="double"/>
                         <param name="y" type="double"/>
                         <param name="connect" type="boolean"/>
                     </params>
-                    <scope line="141"/>
-                    <scope line="144">
-                        <scope line="145"/>
-                        <scope line="148"/>
+                    <comment line="211">
+                        if zero length move or line, ignore                        
+                    </comment>
+                    <comment line="216">
+                        this is the first point, make sure we have space                        
+                    </comment>
+                    <comment line="221">
+                        default first point to 0, 0                        
+                    </comment>
+                    <comment line="225">
+                        if multiple disconnected move, just update position, leave advance alone                        
+                    </comment>
+                    <comment line="232">
+                        grow data to deal with new point                        
+                    </comment>
+                    <comment line="245">
+                        update data                        
+                    </comment>
+                    <comment line="250">
+                        update state                        
+                    </comment>
+                    <scope line="211"/>
+                    <scope line="215">
+                        <scope line="216"/>
+                        <scope line="219"/>
                     </scope>
-                    <scope line="152"/>
-                    <scope line="157">
-                        <declaration name="t" type="double[]" line="158"/>
+                    <scope line="225"/>
+                    <scope line="232">
+                        <declaration name="t" type="double[]" line="233"/>
                     </scope>
-                    <scope line="162">
-                        <declaration name="dx" type="double" line="163"/>
-                        <declaration name="dy" type="double" line="164"/>
+                    <scope line="238">
+                        <declaration name="dx" type="double" line="239"/>
+                        <declaration name="dy" type="double" line="240"/>
                     </scope>
                 </method>
-                <method name="complete" type="SegmentPath" line="174"/>
-                <javadoc line="177">
+                <method name="complete" type="SegmentPath" line="255"/>
+                <javadoc line="259">
                     Complete building a SegmentPath.  Once this is called, the builder is restored
                       to its initial state and information about the previous path is released.  The
                       end type indicates whether to treat the path as closed, extended, or pinned.                    
                 </javadoc>
-                <method name="complete" type="SegmentPath" line="182">
+                <method name="complete" type="SegmentPath" line="264">
                     <params>
                         <param name="etype" type="EndType"/>
                     </params>
-                    <declaration name="result" type="SegmentPath" line="183"/>
-                    <scope line="184"/>
-                    <scope line="187"/>
-                    <scope line="191">
-                        <declaration name="dataToAdopt" type="double[]" line="192"/>
+                    <comment line="274">
+                        releases pointer to data                        
+                    </comment>
+                    <comment line="279">
+                        reuses data, since we held on to it                        
+                    </comment>
+                    <declaration name="result" type="SegmentPath" line="265"/>
+                    <scope line="267"/>
+                    <scope line="271"/>
+                    <scope line="274">
+                        <declaration name="dataToAdopt" type="double[]" line="275"/>
                     </scope>
                 </method>
             </class>
-            <class name="SegmentPath" line="200">
+            <class name="SegmentPath" line="285">
                 <extends class="LayoutPathImpl"/>
-                <javadoc line="200">
+                <comment line="314">
+                    triplets x, y, a                    
+                </comment>
+                <comment line="330">
+                    LayoutPath API                    
+                </comment>
+                <comment line="338">
+                    the path consists of line segments, which i&apos;ll call
+                     &apos;path vectors&apos;.  call each run of path vectors a &apos;path segment&apos;.
+                     no path vector in a path segment is zero length (in the
+                     data, such vectors start a new path segment).
+                    
+                     for each path segment...
+                    
+                     for each path vector...
+                    
+                     we look at the dot product of the path vector and the vector from the
+                     origin of the path vector to the test point.  if &lt;0 (case
+                     A), the projection of the test point is before the start of
+                     the path vector.  if &gt; the square of the length of the path vector
+                     (case B), the projection is past the end point of the
+                     path vector.  otherwise (case C), it lies on the path vector.
+                     determine the closeset point on the path vector.  if case A, it
+                     is the start of the path vector.  if case B and this is the last
+                     path vector in the path segment, it is the end of the path vector.  If
+                     case C, it is the projection onto the path vector.  Otherwise
+                     there is no closest point.
+                    
+                     if we have a closest point, compare the distance from it to
+                     the test point against our current closest distance.
+                     (culling should be fast, currently i am using distance
+                     squared, but there&apos;s probably better ways).  if we&apos;re
+                     closer, save the new point as the current closest point,
+                     and record the path vector index so we can determine the final
+                     info if this turns out to be the closest point in the end.
+                    
+                     after we have processed all the segments we will have
+                     tested each path vector and each endpoint.  if our point is not on
+                     an endpoint, we&apos;re done; we can compute the position and
+                     offset again, or if we saved it off we can just use it.  if
+                     we&apos;re on an endpoint we need to see which path vector we should
+                     associate with.  if we&apos;re at the start or end of a path segment,
+                     we&apos;re done-- the first or last vector of the segment is the
+                     one we associate with.  we project against that vector to
+                     get the offset, and pin to that vector to get the length.
+                    
+                     otherwise, we compute the information as follows.  if the
+                     dot product (see above) with the following vector is zero,
+                     we associate with that vector.  otherwise, if the dot
+                     product with the previous vector is zero, we associate with
+                     that vector.  otherwise we&apos;re beyond the end of the
+                     previous vector and before the start of the current vector.
+                     we project against both vectors and get the distance from
+                     the test point to the projection (this will be the offset).
+                     if they are the same, we take the following vector.
+                     otherwise use the vector from which the test point is the
+                     _farthest_ (this is because the point lies most clearly in
+                     the half of the plane defined by extending that vector).
+                    
+                     the returned position is the path length to the (possibly
+                     pinned) point, the offset is the projection onto the line
+                     along the vector, and we have a boolean flag which if false
+                     indicates that we associate with the previous vector at a
+                     junction (which is necessary when projecting such a
+                     location back to a point).                    
+                </comment>
+                <comment line="546">
+                    LayoutPathImpl API                    
+                </comment>
+                <comment line="566">
+                    Utilities                    
+                </comment>
+                <comment line="651">
+                    Mapping classes.
+                     Map the path onto each path segment.
+                     Record points where the advance &apos;enters&apos; and &apos;exits&apos; the path segment, and connect successive
+                     points when appropriate.                    
+                </comment>
+                <comment line="929">
+                    for debugging                    
+                </comment>
+                <javadoc line="285">
                     Represents a path built from segments.  Each segment is
                       represented by a triple: x, y, and cumulative advance.
                       These represent the end point of the segment.  The start
@@ -211,142 +409,252 @@
                       Note: We might want to cache more auxiliary data than the
                       advance, but this seems adequate for now.                    
                 </javadoc>
-                <declaration name="data" type="double[]" line="224"/>
-                <declaration name="etype" type="EndType" line="225"/>
-                <method name="get" type="SegmentPath" line="226">
+                <declaration name="data" type="double[]" line="313"/>
+                <declaration name="etype" type="EndType" line="314"/>
+                <method name="get" type="SegmentPath" line="316">
                     <params>
                         <param name="etype" type="EndType"/>
                         <param name="pts" type="double"/>
                     </params>
                 </method>
-                <javadoc line="229">
+                <javadoc line="320">
                     Internal, use SegmentPathBuilder or one of the static
                       helper functions to construct a SegmentPath.                    
                 </javadoc>
-                <method name="SegmentPath" type="constructor" line="233">
+                <method name="SegmentPath" type="constructor" line="324">
                     <params>
                         <param name="data" type="double[]"/>
                         <param name="etype" type="EndType"/>
                     </params>
                 </method>
-                <method name="pathToPoint" type="void" line="237">
+                <method name="pathToPoint" type="void" line="333">
                     <params>
                         <param name="location" type="Point2D"/>
                         <param name="preceding" type="boolean"/>
                         <param name="point" type="Point2D"/>
                     </params>
                 </method>
-                <method name="pointToPath" type="boolean" line="240">
+                <method name="pointToPath" type="boolean" line="396">
                     <params>
                         <param name="pt" type="Point2D"/>
                         <param name="result" type="Point2D"/>
                     </params>
-                    <declaration name="x" type="double" line="241"/>
-                    <declaration name="y" type="double" line="242"/>
-                    <declaration name="bx" type="double" line="243"/>
-                    <declaration name="by" type="double" line="244"/>
-                    <declaration name="bl" type="double" line="245"/>
-                    <declaration name="cd2" type="double" line="246"/>
-                    <declaration name="cx" type="double" line="247"/>
-                    <declaration name="cy" type="double" line="248"/>
-                    <declaration name="cl" type="double" line="249"/>
-                    <declaration name="ci" type="int" line="250"/>
-                    <scope line="251">
-                        <declaration name="nx" type="double" line="252"/>
-                        <declaration name="ny" type="double" line="253"/>
-                        <declaration name="nl" type="double" line="254"/>
-                        <declaration name="dx" type="double" line="255"/>
-                        <declaration name="dy" type="double" line="256"/>
-                        <declaration name="dl" type="double" line="257"/>
-                        <declaration name="px" type="double" line="258"/>
-                        <declaration name="py" type="double" line="259"/>
-                        <declaration name="dot" type="double" line="260"/>
-                        <declaration name="vcx" type="double" line="261"/>
-                        <declaration name="vi" type="int" line="262"/>
-                        <scope line="263">
-                            <scope line="264"/>
-                            <scope line="270">
-                                <declaration name="l2" type="double" line="271"/>
-                                <scope line="272">
-                                    <declaration name="p" type="double" line="273"/>
+                    <comment line="398">
+                        test point                        
+                    </comment>
+                    <comment line="401">
+                        previous point                        
+                    </comment>
+                    <comment line="405">
+                        start with defaults                        
+                    </comment>
+                    <comment line="406">
+                        current best distance from path, squared                        
+                    </comment>
+                    <comment line="407">
+                        current best x                        
+                    </comment>
+                    <comment line="408">
+                        current best y                        
+                    </comment>
+                    <comment line="409">
+                        current best position along path                        
+                    </comment>
+                    <comment line="410">
+                        current best index into data                        
+                    </comment>
+                    <comment line="413">
+                        current end point                        
+                    </comment>
+                    <comment line="417">
+                        vector from previous to current                        
+                    </comment>
+                    <comment line="421">
+                        vector from previous to test point                        
+                    </comment>
+                    <comment line="424">
+                        determine sign of dot product of vectors from bx, by
+                         if &lt; 0, we&apos;re before the start of this vector                        
+                    </comment>
+                    <comment line="427">
+                        dot product                        
+                    </comment>
+                    <comment line="428">
+                        hold closest point on vector as x, y, l                        
+                    </comment>
+                    <comment line="429">
+                        hold index of line, is data.length if last point on path                        
+                    </comment>
+                    <comment line="430">
+                        use break below, lets us avoid initializing vcx, vcy...                        
+                    </comment>
+                    <comment line="431">
+                        moveto, or                        
+                    </comment>
+                    <comment line="432">
+                        before path vector and                        
+                    </comment>
+                    <comment line="434">
+                        closest point is start of vector                        
+                    </comment>
+                    <comment line="440">
+                        aka dx * dx + dy * dy, square of length                        
+                    </comment>
+                    <comment line="441">
+                        closest point is not past end of vector, or                        
+                    </comment>
+                    <comment line="442">
+                        we&apos;re extended and at the last segment                        
+                    </comment>
+                    <comment line="444">
+                        get parametric along segment                        
+                    </comment>
+                    <comment line="445">
+                        compute closest point                        
+                    </comment>
+                    <comment line="451">
+                        special case, always test last point                        
+                    </comment>
+                    <comment line="456">
+                        typical case, skip point, we&apos;ll pick it up next iteration                        
+                    </comment>
+                    <comment line="461">
+                        compute distance from (usually pinned) projection to test point                        
+                    </comment>
+                    <comment line="464">
+                        new closest point, record info on it                        
+                    </comment>
+                    <comment line="478">
+                        we have our closest point, get the info                        
+                    </comment>
+                    <comment line="481">
+                        not on endpoint, no need to resolve                        
+                    </comment>
+                    <comment line="484">
+                        have a true perpendicular, so can use distance                        
+                    </comment>
+                    <comment line="486">
+                        determine sign of offset                        
+                    </comment>
+                    <comment line="490">
+                        on endpoint, we need to resolve which segment                        
+                    </comment>
+                    <comment line="501">
+                        associate with previous                        
+                    </comment>
+                    <comment line="504">
+                        associate with following                        
+                    </comment>
+                    <declaration name="x" type="double" line="397"/>
+                    <declaration name="y" type="double" line="398"/>
+                    <declaration name="bx" type="double" line="400"/>
+                    <declaration name="by" type="double" line="401"/>
+                    <declaration name="bl" type="double" line="402"/>
+                    <declaration name="cd2" type="double" line="405"/>
+                    <declaration name="cx" type="double" line="406"/>
+                    <declaration name="cy" type="double" line="407"/>
+                    <declaration name="cl" type="double" line="408"/>
+                    <declaration name="ci" type="int" line="409"/>
+                    <scope line="411">
+                        <declaration name="nx" type="double" line="412"/>
+                        <declaration name="ny" type="double" line="413"/>
+                        <declaration name="nl" type="double" line="414"/>
+                        <declaration name="dx" type="double" line="416"/>
+                        <declaration name="dy" type="double" line="417"/>
+                        <declaration name="dl" type="double" line="418"/>
+                        <declaration name="px" type="double" line="420"/>
+                        <declaration name="py" type="double" line="421"/>
+                        <declaration name="dot" type="double" line="426"/>
+                        <declaration name="vcx" type="double" line="427"/>
+                        <declaration name="vi" type="int" line="428"/>
+                        <scope line="429">
+                            <scope line="433"/>
+                            <scope line="438">
+                                <declaration name="l2" type="double" line="439"/>
+                                <scope line="442">
+                                    <declaration name="p" type="double" line="443"/>
                                 </scope>
-                                <scope line="279">
-                                    <scope line="280"/>
-                                    <scope line="286"/>
+                                <scope line="448">
+                                    <scope line="449"/>
+                                    <scope line="454"/>
                                 </scope>
                             </scope>
-                            <declaration name="tdx" type="double" line="291"/>
-                            <declaration name="tdy" type="double" line="292"/>
-                            <declaration name="td2" type="double" line="293"/>
-                            <scope line="294"/>
+                            <declaration name="tdx" type="double" line="460"/>
+                            <declaration name="tdy" type="double" line="461"/>
+                            <declaration name="td2" type="double" line="462"/>
+                            <scope line="463"/>
                         </scope>
                     </scope>
-                    <scope line="309">
-                        <declaration name="nx" type="double" line="310"/>
-                        <declaration name="ny" type="double" line="311"/>
-                        <declaration name="co" type="double" line="312"/>
-                        <scope line="313"/>
+                    <scope line="480">
+                        <declaration name="nx" type="double" line="481"/>
+                        <declaration name="ny" type="double" line="482"/>
+                        <declaration name="co" type="double" line="483"/>
+                        <scope line="484"/>
                     </scope>
-                    <scope line="319">
-                        <declaration name="havePrev" type="boolean" line="320"/>
-                        <declaration name="haveFoll" type="boolean" line="321"/>
-                        <declaration name="doExtend" type="boolean" line="322"/>
-                        <scope line="323">
-                            <declaration name="pp" type="Point2D.Double" line="324"/>
-                            <declaration name="fp" type="Point2D.Double" line="326"/>
-                            <scope line="328"/>
-                            <scope line="332"/>
+                    <scope line="489">
+                        <declaration name="havePrev" type="boolean" line="490"/>
+                        <declaration name="haveFoll" type="boolean" line="491"/>
+                        <declaration name="doExtend" type="boolean" line="492"/>
+                        <scope line="493">
+                            <declaration name="pp" type="Point2D.Double" line="494"/>
+                            <declaration name="fp" type="Point2D.Double" line="496"/>
+                            <scope line="498"/>
+                            <scope line="501"/>
                         </scope>
-                        <scope line="337"/>
-                        <scope line="342"/>
+                        <scope line="505"/>
+                        <scope line="509"/>
                     </scope>
                 </method>
-                <javadoc line="349">
+                <javadoc line="517">
                     Return the location of the point passed in result as mapped to the
                       line indicated by index.  If doExtend is true, extend the
                       x value without pinning to the ends of the line.
                       this assumes that index is valid and references a line that has
                       non-zero length.                    
                 </javadoc>
-                <method name="calcoffset" type="void" line="356">
+                <method name="calcoffset" type="void" line="524">
                     <params>
                         <param name="index" type="int"/>
                         <param name="doExtend" type="boolean"/>
                         <param name="result" type="Point2D"/>
                     </params>
-                    <declaration name="bx" type="double" line="357"/>
-                    <declaration name="by" type="double" line="358"/>
-                    <declaration name="px" type="double" line="359"/>
-                    <declaration name="py" type="double" line="360"/>
-                    <declaration name="dx" type="double" line="361"/>
-                    <declaration name="dy" type="double" line="362"/>
-                    <declaration name="l" type="double" line="363"/>
-                    <declaration name="rx" type="double" line="364"/>
-                    <declaration name="ry" type="double" line="365"/>
-                    <scope line="366"/>
+                    <comment line="534">
+                        rx = A dot B / |B|
+                         ry = A dot invB / |B|                        
+                    </comment>
+                    <declaration name="bx" type="double" line="525"/>
+                    <declaration name="by" type="double" line="526"/>
+                    <declaration name="px" type="double" line="527"/>
+                    <declaration name="py" type="double" line="528"/>
+                    <declaration name="dx" type="double" line="529"/>
+                    <declaration name="dy" type="double" line="530"/>
+                    <declaration name="l" type="double" line="531"/>
+                    <declaration name="rx" type="double" line="535"/>
+                    <declaration name="ry" type="double" line="536"/>
+                    <scope line="537"/>
                 </method>
-                <method name="mapShape" type="Shape" line="373">
+                <method name="mapShape" type="Shape" line="549">
                     <params>
                         <param name="s" type="Shape"/>
                     </params>
                 </method>
-                <method name="start" type="double" line="376"/>
-                <method name="end" type="double" line="379"/>
-                <method name="length" type="double" line="382"/>
-                <javadoc line="385">
+                <method name="start" type="double" line="553"/>
+                <method name="end" type="double" line="557"/>
+                <method name="length" type="double" line="561"/>
+                <javadoc line="569">
                     Get the &apos;modulus&apos; of an advance on a closed path.                    
                 </javadoc>
-                <method name="getClosedAdvance" type="double" line="388">
+                <method name="getClosedAdvance" type="double" line="572">
                     <params>
                         <param name="a" type="double"/>
                         <param name="preceding" type="boolean"/>
                     </params>
-                    <scope line="389">
-                        <declaration name="count" type="int" line="391"/>
-                        <scope line="393"/>
+                    <scope line="573">
+                        <declaration name="count" type="int" line="575"/>
+                        <scope line="577"/>
                     </scope>
                 </method>
-                <javadoc line="400">
+                <javadoc line="586">
                     Return the index of the segment associated with advance. This
                       points to the start of the triple and is a multiple of 3 between
                       3 and data.length-3 inclusive.  It never points to a &apos;moveto&apos; triple.
@@ -361,245 +669,486 @@
                       after the last.  The first or last segment (as appropriate)
                       will be returned in this case.                    
                 </javadoc>
-                <method name="getSegmentIndexForAdvance" type="int" line="415">
+                <method name="getSegmentIndexForAdvance" type="int" line="603">
                     <params>
                         <param name="a" type="double"/>
                         <param name="preceding" type="boolean"/>
                     </params>
-                    <declaration name="i" type="int" line="417"/>
-                    <scope line="418">
-                        <declaration name="v" type="double" line="419"/>
-                        <scope line="420"/>
+                    <comment line="605">
+                        must have local advance                        
+                    </comment>
+                    <comment line="608">
+                        note we must avoid &apos;moveto&apos; segments.  the first segment is
+                         always a moveto segment, so we always skip it.                        
+                    </comment>
+                    <comment line="617">
+                        adjust to start of segment                        
+                    </comment>
+                    <declaration name="i" type="int" line="609"/>
+                    <scope line="610">
+                        <declaration name="v" type="double" line="611"/>
+                        <scope line="612"/>
                     </scope>
                 </method>
-                <javadoc line="426">
+                <javadoc line="619">
                     Map a location based on the provided segment, returning in pt.
                       Seg must be a valid &apos;lineto&apos; segment.  Note: if the path is
                       closed, x must be within the start and end of the path.                    
                 </javadoc>
-                <method name="map" type="void" line="431">
+                <method name="map" type="void" line="624">
                     <params>
                         <param name="seg" type="int"/>
                         <param name="a" type="double"/>
                         <param name="o" type="double"/>
                         <param name="pt" type="Point2D"/>
                     </params>
-                    <declaration name="dx" type="double" line="432"/>
-                    <declaration name="dy" type="double" line="433"/>
-                    <declaration name="dl" type="double" line="434"/>
-                    <declaration name="ux" type="double" line="435"/>
-                    <declaration name="uy" type="double" line="436"/>
+                    <comment line="630">
+                        could cache these, but is it worth it?                        
+                    </comment>
+                    <declaration name="dx" type="double" line="625"/>
+                    <declaration name="dy" type="double" line="626"/>
+                    <declaration name="dl" type="double" line="627"/>
+                    <declaration name="ux" type="double" line="629"/>
+                    <declaration name="uy" type="double" line="630"/>
                 </method>
-                <javadoc line="440">
+                <javadoc line="638">
                     Map the point, and return the segment index.                    
                 </javadoc>
-                <method name="locateAndGetIndex" type="int" line="443">
+                <method name="locateAndGetIndex" type="int" line="641">
                     <params>
                         <param name="loc" type="Point2D"/>
                         <param name="preceding" type="boolean"/>
                         <param name="result" type="Point2D"/>
                     </params>
-                    <declaration name="a" type="double" line="444"/>
-                    <declaration name="o" type="double" line="445"/>
-                    <declaration name="seg" type="int" line="446"/>
+                    <declaration name="a" type="double" line="642"/>
+                    <declaration name="o" type="double" line="643"/>
+                    <declaration name="seg" type="int" line="644"/>
                 </method>
-                <class name="LineInfo" line="450">
-                    <javadoc line="450">
+                <class name="LineInfo" line="657">
+                    <comment line="664">
+                        start                        
+                    </comment>
+                    <comment line="665">
+                        limit                        
+                    </comment>
+                    <comment line="666">
+                        slope dy/dx                        
+                    </comment>
+                    <comment line="757">
+                        index into data array for this segment                        
+                    </comment>
+                    <comment line="758">
+                        unit vector                        
+                    </comment>
+                    <comment line="760">
+                        working line info                        
+                    </comment>
+                    <comment line="762">
+                        true if a moveto has occurred since we last added to our path                        
+                    </comment>
+                    <comment line="763">
+                        last point in gp                        
+                    </comment>
+                    <comment line="764">
+                        path built for this segment                        
+                    </comment>
+                    <comment line="828">
+                        working line info                        
+                    </comment>
+                    <comment line="829">
+                        cache additional data on segments, working objects                        
+                    </comment>
+                    <comment line="830">
+                        last moveto source point                        
+                    </comment>
+                    <comment line="831">
+                        current source point                        
+                    </comment>
+                    <comment line="832">
+                        true when last op was a moveto                        
+                    </comment>
+                    <javadoc line="657">
                         This represents a line segment from the iterator.  Each target segment will
                           interpret it, and since this process needs slope along the line
                           segment, this lets us compute it once and pass it around easily.                        
                     </javadoc>
-                    <declaration name="sx" type="double" line="456"/>
-                    <declaration name="lx" type="double" line="457"/>
-                    <declaration name="m" type="double" line="458"/>
-                    <javadoc line="459">
+                    <declaration name="sx" type="double" line="663"/>
+                    <declaration name="lx" type="double" line="664"/>
+                    <declaration name="m" type="double" line="665"/>
+                    <javadoc line="667">
                         Set the lineinfo to this line                        
                     </javadoc>
-                    <method name="set" type="void" line="462">
+                    <method name="set" type="void" line="670">
                         <params>
                             <param name="sx" type="double"/>
                             <param name="sy" type="double"/>
                             <param name="lx" type="double"/>
                             <param name="ly" type="double"/>
                         </params>
-                        <declaration name="dx" type="double" line="467"/>
-                        <scope line="468"/>
-                        <scope line="471">
-                            <declaration name="dy" type="double" line="472"/>
+                        <comment line="678">
+                            we&apos;ll check for this elsewhere                            
+                        </comment>
+                        <declaration name="dx" type="double" line="675"/>
+                        <scope line="676"/>
+                        <scope line="678">
+                            <declaration name="dy" type="double" line="679"/>
                         </scope>
                     </method>
-                    <method name="set" type="void" line="476">
+                    <method name="set" type="void" line="684">
                         <params>
                             <param name="rhs" type="LineInfo"/>
                         </params>
                     </method>
-                    <javadoc line="483">
+                    <javadoc line="692">
                         Return true if we intersect the infinitely tall rectangle with
                           lo &lt;= x &lt; hi.  If we do, also return the pinned portion of ourselves in
                           result.                        
                     </javadoc>
-                    <method name="pin" type="boolean" line="488">
+                    <method name="pin" type="boolean" line="697">
                         <params>
                             <param name="lo" type="double"/>
                             <param name="hi" type="double"/>
                             <param name="result" type="LineInfo"/>
                         </params>
-                        <scope line="490">
-                            <scope line="491">
-                                <scope line="492"/>
-                                <scope line="496"/>
+                        <scope line="699">
+                            <scope line="700">
+                                <scope line="701"/>
+                                <scope line="705"/>
                             </scope>
                         </scope>
-                        <scope line="503">
-                            <scope line="504">
-                                <scope line="505"/>
-                                <scope line="509"/>
+                        <scope line="711">
+                            <scope line="712">
+                                <scope line="713"/>
+                                <scope line="717"/>
                             </scope>
                         </scope>
                     </method>
-                    <javadoc line="518">
+                    <javadoc line="727">
                         Return true if we intersect the segment at ix.  This takes
                           the path end type into account and computes the relevant
                           parameters to pass to pin(double, double, LineInfo).                        
                     </javadoc>
-                    <method name="pin" type="boolean" line="523">
+                    <method name="pin" type="boolean" line="732">
                         <params>
                             <param name="ix" type="int"/>
                             <param name="result" type="LineInfo"/>
                         </params>
-                        <declaration name="lo" type="double" line="524"/>
-                        <declaration name="hi" type="double" line="525"/>
+                        <comment line="744">
+                            not implemented                            
+                        </comment>
+                        <declaration name="lo" type="double" line="733"/>
+                        <declaration name="hi" type="double" line="734"/>
                     </method>
                 </class>
-                <class name="Segment" line="539">
-                    <javadoc line="539">
+                <class name="Segment" line="751">
+                    <comment line="664">
+                        start                        
+                    </comment>
+                    <comment line="665">
+                        limit                        
+                    </comment>
+                    <comment line="666">
+                        slope dy/dx                        
+                    </comment>
+                    <comment line="757">
+                        index into data array for this segment                        
+                    </comment>
+                    <comment line="758">
+                        unit vector                        
+                    </comment>
+                    <comment line="760">
+                        working line info                        
+                    </comment>
+                    <comment line="762">
+                        true if a moveto has occurred since we last added to our path                        
+                    </comment>
+                    <comment line="763">
+                        last point in gp                        
+                    </comment>
+                    <comment line="764">
+                        path built for this segment                        
+                    </comment>
+                    <comment line="828">
+                        working line info                        
+                    </comment>
+                    <comment line="829">
+                        cache additional data on segments, working objects                        
+                    </comment>
+                    <comment line="830">
+                        last moveto source point                        
+                    </comment>
+                    <comment line="831">
+                        current source point                        
+                    </comment>
+                    <comment line="832">
+                        true when last op was a moveto                        
+                    </comment>
+                    <javadoc line="751">
                         Each segment will construct its own general path, mapping the provided lines
                           into its own simple space.                        
                     </javadoc>
-                    <declaration name="ix" type="int" line="544"/>
-                    <declaration name="ux" type="double" line="545"/>
-                    <declaration name="temp" type="LineInfo" line="546"/>
-                    <declaration name="broken" type="boolean" line="547"/>
-                    <declaration name="cx" type="double" line="548"/>
-                    <declaration name="gp" type="GeneralPath" line="549"/>
-                    <method name="Segment" type="constructor" line="550">
+                    <declaration name="ix" type="int" line="756"/>
+                    <declaration name="ux" type="double" line="757"/>
+                    <declaration name="temp" type="LineInfo" line="759"/>
+                    <declaration name="broken" type="boolean" line="761"/>
+                    <declaration name="cx" type="double" line="762"/>
+                    <declaration name="gp" type="GeneralPath" line="763"/>
+                    <method name="Segment" type="constructor" line="765">
                         <params>
                             <param name="ix" type="int"/>
                         </params>
-                        <declaration name="len" type="double" line="552"/>
+                        <declaration name="len" type="double" line="767"/>
                     </method>
-                    <method name="init" type="void" line="557"/>
-                    <method name="move" type="void" line="563"/>
-                    <method name="close" type="void" line="567">
-                        <scope line="568"/>
+                    <method name="init" type="void" line="773"/>
+                    <method name="move" type="void" line="780"/>
+                    <method name="close" type="void" line="785">
+                        <scope line="786"/>
                     </method>
-                    <method name="line" type="void" line="573">
+                    <method name="line" type="void" line="792">
                         <params>
                             <param name="li" type="LineInfo"/>
                         </params>
-                        <scope line="575">
-                            <declaration name="sx" type="double" line="578"/>
-                            <declaration name="sy" type="double" line="579"/>
-                            <declaration name="lx" type="double" line="581"/>
-                            <declaration name="ly" type="double" line="582"/>
-                            <scope line="584">
-                                <scope line="585"/>
-                                <scope line="589"/>
+                        <scope line="795">
+                            <declaration name="sx" type="double" line="799"/>
+                            <declaration name="sy" type="double" line="800"/>
+                            <declaration name="lx" type="double" line="802"/>
+                            <declaration name="ly" type="double" line="803"/>
+                            <scope line="807">
+                                <scope line="808"/>
+                                <scope line="811"/>
                             </scope>
                         </scope>
                     </method>
                 </class>
-                <class name="Mapper" line="602">
-                    <declaration name="li" type="LineInfo" line="603"/>
-                    <declaration name="segments" type="ArrayList&lt;Segment&gt;" line="604"/>
-                    <declaration name="mpt" type="Point2D.Double" line="605"/>
-                    <declaration name="cpt" type="Point2D.Double" line="606"/>
-                    <declaration name="haveMT" type="boolean" line="607"/>
-                    <method name="Mapper" type="constructor" line="608">
-                        <scope line="611">
-                            <scope line="612"/>
+                <class name="Mapper" line="826">
+                    <comment line="664">
+                        start                        
+                    </comment>
+                    <comment line="665">
+                        limit                        
+                    </comment>
+                    <comment line="666">
+                        slope dy/dx                        
+                    </comment>
+                    <comment line="757">
+                        index into data array for this segment                        
+                    </comment>
+                    <comment line="758">
+                        unit vector                        
+                    </comment>
+                    <comment line="760">
+                        working line info                        
+                    </comment>
+                    <comment line="762">
+                        true if a moveto has occurred since we last added to our path                        
+                    </comment>
+                    <comment line="763">
+                        last point in gp                        
+                    </comment>
+                    <comment line="764">
+                        path built for this segment                        
+                    </comment>
+                    <comment line="828">
+                        working line info                        
+                    </comment>
+                    <comment line="829">
+                        cache additional data on segments, working objects                        
+                    </comment>
+                    <comment line="830">
+                        last moveto source point                        
+                    </comment>
+                    <comment line="831">
+                        current source point                        
+                    </comment>
+                    <comment line="832">
+                        true when last op was a moveto                        
+                    </comment>
+                    <declaration name="li" type="LineInfo" line="827"/>
+                    <declaration name="segments" type="ArrayList&lt;Segment&gt;" line="828"/>
+                    <declaration name="mpt" type="Point2D.Double" line="829"/>
+                    <declaration name="cpt" type="Point2D.Double" line="830"/>
+                    <declaration name="haveMT" type="boolean" line="831"/>
+                    <method name="Mapper" type="constructor" line="833">
+                        <comment line="838">
+                            a new segment                            
+                        </comment>
+                        <scope line="836">
+                            <scope line="837"/>
                         </scope>
                     </method>
-                    <method name="init" type="void" line="619">
-                        <scope line="622"/>
+                    <method name="init" type="void" line="846">
+                        <scope line="849"/>
                     </method>
-                    <method name="moveTo" type="void" line="626">
+                    <method name="moveTo" type="void" line="854">
                         <params>
                             <param name="x" type="double"/>
                             <param name="y" type="double"/>
                         </params>
                     </method>
-                    <method name="lineTo" type="void" line="632">
+                    <method name="lineTo" type="void" line="861">
                         <params>
                             <param name="x" type="double"/>
                             <param name="y" type="double"/>
                         </params>
-                        <scope line="634"/>
-                        <scope line="638"/>
-                        <scope line="641">
-                            <scope line="643"/>
+                        <comment line="866">
+                            prepare previous point for no-op check                            
+                        </comment>
+                        <comment line="872">
+                            lineto is a no-op                            
+                        </comment>
+                        <comment line="877">
+                            current point is the most recent moveto point                            
+                        </comment>
+                        <scope line="864"/>
+                        <scope line="870"/>
+                        <scope line="875">
+                            <scope line="878"/>
                         </scope>
-                        <scope line="648"/>
+                        <scope line="884"/>
                     </method>
-                    <method name="close" type="void" line="654">
-                        <scope line="657"/>
+                    <method name="close" type="void" line="892">
+                        <scope line="895"/>
                     </method>
-                    <method name="mapShape" type="Shape" line="661">
+                    <method name="mapShape" type="Shape" line="900">
                         <params>
                             <param name="s" type="Shape"/>
                         </params>
-                        <declaration name="pi" type="PathIterator" line="663"/>
-                        <declaration name="coords" type="double[]" line="666"/>
-                        <scope line="667"/>
-                        <declaration name="gp" type="GeneralPath" line="684"/>
-                        <scope line="685"/>
+                        <comment line="903">
+                            cheap way to handle curves.                            
+                        </comment>
+                        <declaration name="pi" type="PathIterator" line="902"/>
+                        <declaration name="coords" type="double[]" line="907"/>
+                        <scope line="908"/>
+                        <declaration name="gp" type="GeneralPath" line="920"/>
+                        <scope line="921"/>
                     </method>
                 </class>
-                <method name="toString" type="String" line="691">
-                    <declaration name="b" type="StringBuilder" line="692"/>
-                    <scope line="696">
-                        <scope line="697"/>
-                        <declaration name="x" type="float" line="700"/>
-                        <declaration name="y" type="float" line="701"/>
-                        <declaration name="l" type="float" line="702"/>
+                <method name="toString" type="String" line="932">
+                    <declaration name="b" type="StringBuilder" line="933"/>
+                    <scope line="937">
+                        <scope line="938"/>
+                        <declaration name="x" type="float" line="941"/>
+                        <declaration name="y" type="float" line="942"/>
+                        <declaration name="l" type="float" line="943"/>
                     </scope>
                 </method>
             </class>
-            <class name="EmptyPath" line="715">
+            <class name="EmptyPath" line="958">
                 <extends class="LayoutPathImpl"/>
-                <declaration name="tx" type="AffineTransform" line="716"/>
-                <method name="EmptyPath" type="constructor" line="717">
+                <comment line="314">
+                    triplets x, y, a                    
+                </comment>
+                <comment line="330">
+                    LayoutPath API                    
+                </comment>
+                <comment line="338">
+                    the path consists of line segments, which i&apos;ll call
+                     &apos;path vectors&apos;.  call each run of path vectors a &apos;path segment&apos;.
+                     no path vector in a path segment is zero length (in the
+                     data, such vectors start a new path segment).
+                    
+                     for each path segment...
+                    
+                     for each path vector...
+                    
+                     we look at the dot product of the path vector and the vector from the
+                     origin of the path vector to the test point.  if &lt;0 (case
+                     A), the projection of the test point is before the start of
+                     the path vector.  if &gt; the square of the length of the path vector
+                     (case B), the projection is past the end point of the
+                     path vector.  otherwise (case C), it lies on the path vector.
+                     determine the closeset point on the path vector.  if case A, it
+                     is the start of the path vector.  if case B and this is the last
+                     path vector in the path segment, it is the end of the path vector.  If
+                     case C, it is the projection onto the path vector.  Otherwise
+                     there is no closest point.
+                    
+                     if we have a closest point, compare the distance from it to
+                     the test point against our current closest distance.
+                     (culling should be fast, currently i am using distance
+                     squared, but there&apos;s probably better ways).  if we&apos;re
+                     closer, save the new point as the current closest point,
+                     and record the path vector index so we can determine the final
+                     info if this turns out to be the closest point in the end.
+                    
+                     after we have processed all the segments we will have
+                     tested each path vector and each endpoint.  if our point is not on
+                     an endpoint, we&apos;re done; we can compute the position and
+                     offset again, or if we saved it off we can just use it.  if
+                     we&apos;re on an endpoint we need to see which path vector we should
+                     associate with.  if we&apos;re at the start or end of a path segment,
+                     we&apos;re done-- the first or last vector of the segment is the
+                     one we associate with.  we project against that vector to
+                     get the offset, and pin to that vector to get the length.
+                    
+                     otherwise, we compute the information as follows.  if the
+                     dot product (see above) with the following vector is zero,
+                     we associate with that vector.  otherwise, if the dot
+                     product with the previous vector is zero, we associate with
+                     that vector.  otherwise we&apos;re beyond the end of the
+                     previous vector and before the start of the current vector.
+                     we project against both vectors and get the distance from
+                     the test point to the projection (this will be the offset).
+                     if they are the same, we take the following vector.
+                     otherwise use the vector from which the test point is the
+                     _farthest_ (this is because the point lies most clearly in
+                     the half of the plane defined by extending that vector).
+                    
+                     the returned position is the path length to the (possibly
+                     pinned) point, the offset is the projection onto the line
+                     along the vector, and we have a boolean flag which if false
+                     indicates that we associate with the previous vector at a
+                     junction (which is necessary when projecting such a
+                     location back to a point).                    
+                </comment>
+                <comment line="546">
+                    LayoutPathImpl API                    
+                </comment>
+                <comment line="566">
+                    Utilities                    
+                </comment>
+                <comment line="651">
+                    Mapping classes.
+                     Map the path onto each path segment.
+                     Record points where the advance &apos;enters&apos; and &apos;exits&apos; the path segment, and connect successive
+                     points when appropriate.                    
+                </comment>
+                <comment line="929">
+                    for debugging                    
+                </comment>
+                <declaration name="tx" type="AffineTransform" line="959"/>
+                <method name="EmptyPath" type="constructor" line="961">
                     <params>
                         <param name="tx" type="AffineTransform"/>
                     </params>
                 </method>
-                <method name="pathToPoint" type="void" line="720">
+                <method name="pathToPoint" type="void" line="965">
                     <params>
                         <param name="location" type="Point2D"/>
                         <param name="preceding" type="boolean"/>
                         <param name="point" type="Point2D"/>
                     </params>
-                    <scope line="721"/>
-                    <scope line="724"/>
+                    <scope line="966"/>
+                    <scope line="968"/>
                 </method>
-                <method name="pointToPath" type="boolean" line="728">
+                <method name="pointToPath" type="boolean" line="973">
                     <params>
                         <param name="pt" type="Point2D"/>
                         <param name="result" type="Point2D"/>
                     </params>
-                    <scope line="730">
-                        <scope line="731"/>
-                        <scope line="734"/>
+                    <scope line="975">
+                        <scope line="976"/>
+                        <scope line="979"/>
                     </scope>
                 </method>
-                <method name="start" type="double" line="739"/>
-                <method name="end" type="double" line="742"/>
-                <method name="length" type="double" line="745"/>
-                <method name="mapShape" type="Shape" line="748">
+                <method name="start" type="double" line="985"/>
+                <method name="end" type="double" line="987"/>
+                <method name="length" type="double" line="989"/>
+                <method name="mapShape" type="Shape" line="991">
                     <params>
                         <param name="s" type="Shape"/>
                     </params>
-                    <scope line="749"/>
+                    <scope line="992"/>
                 </method>
             </class>
         </class>

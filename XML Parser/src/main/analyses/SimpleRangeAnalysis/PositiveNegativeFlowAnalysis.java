@@ -42,10 +42,16 @@ public class PositiveNegativeFlowAnalysis extends AbstractCrystalMethodAnalysis 
 			TupleLatticeElement<Variable, PositiveNegativeLattice> beforeTuple = 
 					flowAnalysis.getResultsAfter(node);
 			Variable varToCheck = flowAnalysis.getVariable(node.getLeftHandSide());
-			System.out.println(node.getLeftHandSide().toString());
 			PositiveNegativeLattice element = beforeTuple.get(varToCheck);
-			System.out.println(beforeTuple.toString());
+			System.out.println(element.name());
+			System.out.println(beforeTuple.get(varToCheck));
+			
+			for (Variable v : beforeTuple.getKeySet()) {
+				System.out.println("Var " + v + " is in the tuple");
+			}
+			
 			if (element == PositiveNegativeLattice.POS) {
+				
 				getReporter().reportUserProblem(
 						"The variable " + exp + "is > 0", node, getName(),
 						SEVERITY.WARNING);
