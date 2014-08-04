@@ -43,7 +43,7 @@ public class RegexCommentExtractor {
 						String lineNumber = matcher.group(1);
 						String comment = matcher.group(2).trim();
 						
-						if (!comment.replaceAll("<br/>", "").trim().isEmpty()) {
+						if (!comment.isEmpty()) {
 							writer.write(lineNumber);
 							writer.write("\t");
 							writer.write(StringEscapeUtils.unescapeXml(comment));
