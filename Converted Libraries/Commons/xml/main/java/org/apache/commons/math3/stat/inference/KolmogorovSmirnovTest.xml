@@ -1,0 +1,862 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.stat.inference">
+        <import package="java.math.BigDecimal"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Iterator"/>
+        <import package="org.apache.commons.math3.distribution.RealDistribution"/>
+        <import package="org.apache.commons.math3.exception.InsufficientDataException"/>
+        <import package="org.apache.commons.math3.exception.MathArithmeticException"/>
+        <import package="org.apache.commons.math3.exception.NullArgumentException"/>
+        <import package="org.apache.commons.math3.exception.NumberIsTooLargeException"/>
+        <import package="org.apache.commons.math3.exception.OutOfRangeException"/>
+        <import package="org.apache.commons.math3.exception.TooManyIterationsException"/>
+        <import package="org.apache.commons.math3.exception.util.LocalizedFormats"/>
+        <import package="org.apache.commons.math3.fraction.BigFraction"/>
+        <import package="org.apache.commons.math3.fraction.BigFractionField"/>
+        <import package="org.apache.commons.math3.fraction.FractionConversionException"/>
+        <import package="org.apache.commons.math3.linear.Array2DRowFieldMatrix"/>
+        <import package="org.apache.commons.math3.linear.Array2DRowRealMatrix"/>
+        <import package="org.apache.commons.math3.linear.FieldMatrix"/>
+        <import package="org.apache.commons.math3.linear.RealMatrix"/>
+        <import package="org.apache.commons.math3.random.RandomGenerator"/>
+        <import package="org.apache.commons.math3.random.Well19937c"/>
+        <import package="org.apache.commons.math3.util.CombinatoricsUtils"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <import package="org.apache.commons.math3.util.MathArrays"/>
+        <class name="KolmogorovSmirnovTest" line="45">
+            <javadoc line="45">
+                Implementation of the &lt;a href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt;
+                  Kolmogorov-Smirnov (K-S) test&lt;/a&gt; for equality of continuous distributions.
+                  &lt;p&gt;
+                  The K-S test uses a statistic based on the maximum deviation of the empirical distribution of
+                  sample data points from the distribution expected under the null hypothesis. For one-sample tests
+                  evaluating the null hypothesis that a set of sample data points follow a given distribution, the
+                  test statistic is \(D_n=\sup_x |F_n(x)-F(x)|\), where \(F\) is the expected distribution and
+                  \(F_n\) is the empirical distribution of the \(n\) sample data points. The distribution of
+                  \(D_n\) is estimated using a method based on [1] with certain quick decisions for extreme values
+                  given in [2].
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  Two-sample tests are also supported, evaluating the null hypothesis that the two samples{@code x} and {@code y} come from the same underlying distribution. In this case, the test
+                  statistic is \(D_{n,m}=\sup_t | F_n(t)-F_m(t)|\) where \(n\) is the length of {@code x}, \(m\) is
+                  the length of {@code y}, \(F_n\) is the empirical distribution that puts mass \(1/n\) at each of
+                  the values in {@code x} and \(F_m\) is the empirical distribution of the {@code y} values. The
+                  default 2-sample test method, {@link #kolmogorovSmirnovTest(double[],double[])} works as
+                  follows:
+                  &lt;ul&gt;
+                  &lt;li&gt;For very small samples (where the product of the sample sizes is less than{@value #SMALL_SAMPLE_PRODUCT}), the exact distribution is used to compute the p-value for the
+                  2-sample test.&lt;/li&gt;
+                  &lt;li&gt;For mid-size samples (product of sample sizes greater than or equal to{@value #SMALL_SAMPLE_PRODUCT} but less than {@value #LARGE_SAMPLE_PRODUCT}), Monte Carlo
+                  simulation is used to compute the p-value. The simulation randomly generates partitions of \(m +
+                  n\) into an \(m\)-set and an \(n\)-set and reports the proportion that give \(D\) values
+                  exceeding the observed value.&lt;/li&gt;
+                  &lt;li&gt;When the product of the sample sizes exceeds {@value #LARGE_SAMPLE_PRODUCT}, the asymptotic
+                  distribution of \(D_{n,m}\) is used. See {@link #approximateP(double,int,int)} for details on
+                  the approximation.&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  In the two-sample case, \(D_{n,m}\) has a discrete distribution. This makes the p-value
+                  associated with the null hypothesis \(H_0 : D_{n,m} \ge d \) differ from \(H_0 : D_{n,m} &gt; d \)
+                  by the mass of the observed value \(d\). To distinguish these, the two-sample tests use a boolean{@code strict} parameter. This parameter is ignored for large samples.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The methods used by the 2-sample default implementation are also exposed directly:
+                  &lt;ul&gt;
+                  &lt;li&gt;{@link #exactP(double,int,int,boolean)} computes exact 2-sample p-values&lt;/li&gt;
+                  &lt;li&gt;{@link #monteCarloP(double,int,int,boolean,int)} computes 2-sample p-values by Monte
+                  Carlo simulation&lt;/li&gt;
+                  &lt;li&gt;{@link #approximateP(double,int,int)} uses the asymptotic distribution The {@code boolean}arguments in the first two methods allow the probability used to estimate the p-value to be
+                  expressed using strict or non-strict inequality. See{@link #kolmogorovSmirnovTest(double[],double[],boolean)}.&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  References:
+                  &lt;ul&gt;
+                  &lt;li&gt;[1] &lt;a href=&quot;http://www.jstatsoft.org/v08/i18/&quot;&gt; Evaluating Kolmogorov&apos;s Distribution&lt;/a&gt; by
+                  George Marsaglia, Wai Wan Tsang, and Jingbo Wang&lt;/li&gt;
+                  &lt;li&gt;[2] &lt;a href=&quot;http://www.jstatsoft.org/v39/i11/&quot;&gt; Computing the Two-Sided Kolmogorov-Smirnov
+                  Distribution&lt;/a&gt; by Richard Simard and Pierre L&apos;Ecuyer&lt;/li&gt;
+                  &lt;/ul&gt;
+                  &lt;br/&gt;
+                  Note that [1] contains an error in computing h, refer to &lt;a
+                  href=&quot;https://issues.apache.org/jira/browse/MATH-437&quot;&gt;MATH-437&lt;/a&gt; for details.
+                  &lt;/p&gt;                
+                <since>
+                    3.3                    
+                </since>
+                <version>
+                    $Id: KolmogorovSmirnovTest.java 1591211 2014-04-30 08:20:51Z luc $                    
+                </version>
+            </javadoc>
+            <declaration name="MAXIMUM_PARTIAL_SUM_COUNT" type="int" line="115"/>
+            <javadoc line="115">
+                Bound on the number of partial sums in {@link #ksSum(double,double,int)}                
+            </javadoc>
+            <declaration name="KS_SUM_CAUCHY_CRITERION" type="double" line="120"/>
+            <javadoc line="120">
+                Convergence criterion for {@link #ksSum(double,double,int)}                
+            </javadoc>
+            <declaration name="SMALL_SAMPLE_PRODUCT" type="int" line="123"/>
+            <javadoc line="123">
+                When product of sample sizes is less than this value, 2-sample K-S test is exact                
+            </javadoc>
+            <declaration name="LARGE_SAMPLE_PRODUCT" type="int" line="126"/>
+            <javadoc line="126">
+                When product of sample sizes exceeds this value, 2-sample K-S test uses asymptotic
+                  distribution for strict inequality p-value.                
+            </javadoc>
+            <declaration name="MONTE_CARLO_ITERATIONS" type="int" line="132"/>
+            <javadoc line="132">
+                Default number of iterations used by {@link #monteCarloP(double,int,int,boolean,int)}                
+            </javadoc>
+            <declaration name="rng" type="RandomGenerator" line="135"/>
+            <javadoc line="135">
+                Random data generator used by {@link #monteCarloP(double,int,int,boolean,int)}                
+            </javadoc>
+            <javadoc line="138">
+                Construct a KolmogorovSmirnovTest instance with a default random data generator.                
+            </javadoc>
+            <method name="KolmogorovSmirnovTest" type="constructor" line="141"/>
+            <javadoc line="145">
+                Construct a KolmogorovSmirnovTest with the provided random data generator.                
+                <param>
+                    rng random data generator used by {@link #monteCarloP(double,int,int,boolean,int)}                    
+                </param>
+            </javadoc>
+            <method name="KolmogorovSmirnovTest" type="constructor" line="150">
+                <params>
+                    <param name="rng" type="RandomGenerator"/>
+                </params>
+            </method>
+            <javadoc line="154">
+                Computes the &lt;i&gt;p-value&lt;/i&gt;, or &lt;i&gt;observed significance level&lt;/i&gt;, of a one-sample &lt;a
+                  href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt; Kolmogorov-Smirnov test&lt;/a&gt;
+                  evaluating the null hypothesis that {@code data} conforms to {@code distribution}. If{@code exact} is true, the distribution used to compute the p-value is computed using
+                  extended precision. See {@link #cdfExact(double,int)}.                
+                <param>
+                    distribution reference distribution                    
+                </param>
+                <param>
+                    data sample being being evaluated                    
+                </param>
+                <param>
+                    exact whether or not to force exact computation of the p-value                    
+                </param>
+                <return>
+                    the p-value associated with the null hypothesis that {@code data} is a sample from{@code distribution}                    
+                </return>
+                <throws>
+                    InsufficientDataException if {@code data} does not have length at least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if {@code data} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovTest" type="double" line="169">
+                <params>
+                    <param name="distribution" type="RealDistribution"/>
+                    <param name="data" type="double[]"/>
+                    <param name="exact" type="boolean"/>
+                </params>
+            </method>
+            <javadoc line="173">
+                Computes the one-sample Kolmogorov-Smirnov test statistic, \(D_n=\sup_x |F_n(x)-F(x)|\) where
+                  \(F\) is the distribution (cdf) function associated with {@code distribution}, \(n\) is the
+                  length of {@code data} and \(F_n\) is the empirical distribution that puts mass \(1/n\) at
+                  each of the values in {@code data}.                
+                <param>
+                    distribution reference distribution                    
+                </param>
+                <param>
+                    data sample being evaluated                    
+                </param>
+                <return>
+                    Kolmogorov-Smirnov statistic \(D_n\)                    
+                </return>
+                <throws>
+                    InsufficientDataException if {@code data} does not have length at least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if {@code data} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovStatistic" type="double" line="185">
+                <params>
+                    <param name="distribution" type="RealDistribution"/>
+                    <param name="data" type="double[]"/>
+                </params>
+                <declaration name="n" type="int" line="187"/>
+                <declaration name="nd" type="double" line="188"/>
+                <declaration name="dataCopy" type="double[]" line="189"/>
+                <declaration name="d" type="double" line="192"/>
+                <scope line="193">
+                    <declaration name="yi" type="double" line="194"/>
+                    <declaration name="currD" type="double" line="195"/>
+                    <scope line="196"/>
+                </scope>
+            </method>
+            <javadoc line="203">
+                Computes the &lt;i&gt;p-value&lt;/i&gt;, or &lt;i&gt;observed significance level&lt;/i&gt;, of a two-sample &lt;a
+                  href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt; Kolmogorov-Smirnov test&lt;/a&gt;
+                  evaluating the null hypothesis that {@code x} and {@code y} are samples drawn from the same
+                  probability distribution. Specifically, what is returned is an estimate of the probability
+                  that the {@link #kolmogorovSmirnovStatistic(double[],double[])} associated with a randomly
+                  selected partition of the combined sample into subsamples of sizes {@code x.length} and{@code y.length} will strictly exceed (if {@code strict} is {@code true}) or be at least as
+                  large as {@code strict = false}) as {@code kolmogorovSmirnovStatistic(x, y)}.
+                  &lt;ul&gt;
+                  &lt;li&gt;For very small samples (where the product of the sample sizes is less than{@value #SMALL_SAMPLE_PRODUCT}), the exact distribution is used to compute the p-value. This
+                  is accomplished by enumerating all partitions of the combined sample into two subsamples of
+                  the respective sample sizes, computing \(D_{n,m}\) for each partition and returning the
+                  proportion of partitions that give \(D\) values exceeding the observed value.&lt;/li&gt;
+                  &lt;li&gt;For mid-size samples (product of sample sizes greater than or equal to{@value #SMALL_SAMPLE_PRODUCT} but less than {@value #LARGE_SAMPLE_PRODUCT}), Monte Carlo
+                  simulation is used to compute the p-value. The simulation randomly generates partitions and
+                  reports the proportion that give \(D\) values exceeding the observed value.&lt;/li&gt;
+                  &lt;li&gt;When the product of the sample sizes exceeds {@value #LARGE_SAMPLE_PRODUCT}, the
+                  asymptotic distribution of \(D_{n,m}\) is used. See {@link #approximateP(double,int,int)}for details on the approximation.&lt;/li&gt;
+                  &lt;/ul&gt;                
+                <param>
+                    x first sample dataset                    
+                </param>
+                <param>
+                    y second sample dataset                    
+                </param>
+                <param>
+                    strict whether or not the probability to compute is expressed as a strict inequality
+                      (ignored for large samples)                    
+                </param>
+                <return>
+                    p-value associated with the null hypothesis that {@code x} and {@code y} represent
+                      samples from the same distribution                    
+                </return>
+                <throws>
+                    InsufficientDataException if either {@code x} or {@code y} does not have length at
+                      least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if either {@code x} or {@code y} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovTest" type="double" line="237">
+                <params>
+                    <param name="x" type="double[]"/>
+                    <param name="y" type="double[]"/>
+                    <param name="strict" type="boolean"/>
+                </params>
+                <scope line="238"/>
+                <scope line="241"/>
+            </method>
+            <javadoc line="247">
+                Computes the &lt;i&gt;p-value&lt;/i&gt;, or &lt;i&gt;observed significance level&lt;/i&gt;, of a two-sample &lt;a
+                  href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt; Kolmogorov-Smirnov test&lt;/a&gt;
+                  evaluating the null hypothesis that {@code x} and {@code y} are samples drawn from the same
+                  probability distribution. Assumes the strict form of the inequality used to compute the
+                  p-value. See {@link #kolmogorovSmirnovTest(RealDistribution,double[],boolean)}.                
+                <param>
+                    x first sample dataset                    
+                </param>
+                <param>
+                    y second sample dataset                    
+                </param>
+                <return>
+                    p-value associated with the null hypothesis that {@code x} and {@code y} represent
+                      samples from the same distribution                    
+                </return>
+                <throws>
+                    InsufficientDataException if either {@code x} or {@code y} does not have length at
+                      least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if either {@code x} or {@code y} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovTest" type="double" line="262">
+                <params>
+                    <param name="x" type="double[]"/>
+                    <param name="y" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="266">
+                Computes the two-sample Kolmogorov-Smirnov test statistic, \(D_{n,m}=\sup_x |F_n(x)-F_m(x)|\)
+                  where \(n\) is the length of {@code x}, \(m\) is the length of {@code y}, \(F_n\) is the
+                  empirical distribution that puts mass \(1/n\) at each of the values in {@code x} and \(F_m\)
+                  is the empirical distribution of the {@code y} values.                
+                <param>
+                    x first sample                    
+                </param>
+                <param>
+                    y second sample                    
+                </param>
+                <return>
+                    test statistic \(D_{n,m}\) used to evaluate the null hypothesis that {@code x} and{@code y} represent samples from the same underlying distribution                    
+                </return>
+                <throws>
+                    InsufficientDataException if either {@code x} or {@code y} does not have length at
+                      least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if either {@code x} or {@code y} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovStatistic" type="double" line="280">
+                <params>
+                    <param name="x" type="double[]"/>
+                    <param name="y" type="double[]"/>
+                </params>
+                <comment line="284">
+                    Copy and sort the sample arrays                    
+                </comment>
+                <comment line="292">
+                    Find the max difference between cdf_x and cdf_y                    
+                </comment>
+                <comment line="294">
+                    First walk x points                    
+                </comment>
+                <comment line="304">
+                    Now look at y                    
+                </comment>
+                <declaration name="sx" type="double[]" line="284"/>
+                <declaration name="sy" type="double[]" line="285"/>
+                <declaration name="n" type="int" line="288"/>
+                <declaration name="m" type="int" line="289"/>
+                <declaration name="supD" type="double" line="292"/>
+                <scope line="294">
+                    <declaration name="cdf_x" type="double" line="295"/>
+                    <declaration name="yIndex" type="int" line="296"/>
+                    <declaration name="cdf_y" type="double" line="297"/>
+                    <declaration name="curD" type="double" line="298"/>
+                    <scope line="299"/>
+                </scope>
+                <scope line="304">
+                    <declaration name="cdf_y" type="double" line="305"/>
+                    <declaration name="xIndex" type="int" line="306"/>
+                    <declaration name="cdf_x" type="double" line="307"/>
+                    <declaration name="curD" type="double" line="308"/>
+                    <scope line="309"/>
+                </scope>
+            </method>
+            <javadoc line="316">
+                Computes the &lt;i&gt;p-value&lt;/i&gt;, or &lt;i&gt;observed significance level&lt;/i&gt;, of a one-sample &lt;a
+                  href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt; Kolmogorov-Smirnov test&lt;/a&gt;
+                  evaluating the null hypothesis that {@code data} conforms to {@code distribution}.                
+                <param>
+                    distribution reference distribution                    
+                </param>
+                <param>
+                    data sample being being evaluated                    
+                </param>
+                <return>
+                    the p-value associated with the null hypothesis that {@code data} is a sample from{@code distribution}                    
+                </return>
+                <throws>
+                    InsufficientDataException if {@code data} does not have length at least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if {@code data} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovTest" type="double" line="328">
+                <params>
+                    <param name="distribution" type="RealDistribution"/>
+                    <param name="data" type="double[]"/>
+                </params>
+            </method>
+            <javadoc line="332">
+                Performs a &lt;a href=&quot;http://en.wikipedia.org/wiki/Kolmogorov-Smirnov_test&quot;&gt; Kolmogorov-Smirnov
+                  test&lt;/a&gt; evaluating the null hypothesis that {@code data} conforms to {@code distribution}.                
+                <param>
+                    distribution reference distribution                    
+                </param>
+                <param>
+                    data sample being being evaluated                    
+                </param>
+                <param>
+                    alpha significance level of the test                    
+                </param>
+                <return>
+                    true iff the null hypothesis that {@code data} is a sample from {@code distribution}can be rejected with confidence 1 - {@code alpha}                    
+                </return>
+                <throws>
+                    InsufficientDataException if {@code data} does not have length at least 2                    
+                </throws>
+                <throws>
+                    NullArgumentException if {@code data} is null                    
+                </throws>
+            </javadoc>
+            <method name="kolmogorovSmirnovTest" type="boolean" line="344">
+                <params>
+                    <param name="distribution" type="RealDistribution"/>
+                    <param name="data" type="double[]"/>
+                    <param name="alpha" type="double"/>
+                </params>
+                <scope line="345"/>
+            </method>
+            <javadoc line="351">
+                Calculates \(P(D_n &lt; d)\) using the method described in [1] with quick decisions for extreme
+                  values given in [2] (see above). The result is not exact as with{@link #cdfExact(double,int)} because calculations are based on{@code double} rather than {@link org.apache.commons.math3.fraction.BigFraction}.                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <return>
+                    \(P(D_n &lt; d)\)                    
+                </return>
+                <throws>
+                    MathArithmeticException if algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\) for integer {@code k, m} and \(0 \le h &lt; 1\)                    
+                </throws>
+            </javadoc>
+            <method name="cdf" type="double" line="365">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                </params>
+            </method>
+            <javadoc line="369">
+                Calculates {@code P(D_n &lt; d)}. The result is exact in the sense that BigFraction/BigReal is
+                  used everywhere at the expense of very slow execution time. Almost never choose this in real
+                  applications unless you are very sure; this is almost solely for verification purposes.
+                  Normally, you would choose {@link #cdf(double,int)}. See the class
+                  javadoc for definitions and algorithm description.                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <return>
+                    \(P(D_n &lt; d)\)                    
+                </return>
+                <throws>
+                    MathArithmeticException if the algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\) for integer {@code k, m} and \(0 \le h &lt; 1\)                    
+                </throws>
+            </javadoc>
+            <method name="cdfExact" type="double" line="384">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                </params>
+            </method>
+            <javadoc line="388">
+                Calculates {@code P(D_n &lt; d)} using method described in [1] with quick decisions for extreme
+                  values given in [2] (see above).                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <param>
+                    exact whether the probability should be calculated exact using{@link org.apache.commons.math3.fraction.BigFraction} everywhere at the expense of
+                      very slow execution time, or if {@code double} should be used convenient places to
+                      gain speed. Almost never choose {@code true} in real applications unless you are very
+                      sure; {@code true} is almost solely for verification purposes.                    
+                </param>
+                <return>
+                    \(P(D_n &lt; d)\)                    
+                </return>
+                <throws>
+                    MathArithmeticException if algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\) for integer {@code k, m} and \(0 \le h &lt; 1\).                    
+                </throws>
+            </javadoc>
+            <method name="cdf" type="double" line="405">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                    <param name="exact" type="boolean"/>
+                </params>
+                <comment line="416">
+                    n! f^n = n*f * (n-1)*f * ... * 1*x                    
+                </comment>
+                <declaration name="ninv" type="double" line="407"/>
+                <declaration name="ninvhalf" type="double" line="408"/>
+                <scope line="410"/>
+                <scope line="412">
+                    <declaration name="res" type="double" line="413"/>
+                    <declaration name="f" type="double" line="414"/>
+                    <scope line="416"/>
+                </scope>
+                <scope line="420"/>
+                <scope line="422"/>
+            </method>
+            <javadoc line="428">
+                Calculates the exact value of {@code P(D_n &lt; d)} using the method described in [1] (reference
+                  in class javadoc above) and {@link org.apache.commons.math3.fraction.BigFraction} (see
+                  above).                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <return>
+                    the two-sided probability of \(P(D_n &lt; d)\)                    
+                </return>
+                <throws>
+                    MathArithmeticException if algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\) for integer {@code k, m} and \(0 \le h &lt; 1\).                    
+                </throws>
+            </javadoc>
+            <method name="exactK" type="double" line="441">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                </params>
+                <comment line="455">
+                    BigFraction.doubleValue converts numerator to double and the denominator to double and
+                     divides afterwards. That gives NaN quite easy. This does not (scale is the number of
+                     digits):                    
+                </comment>
+                <declaration name="k" type="int" line="443"/>
+                <declaration name="H" type="FieldMatrix&amp;lt;BigFraction&amp;gt;" line="445"/>
+                <declaration name="Hpower" type="FieldMatrix&amp;lt;BigFraction&amp;gt;" line="446"/>
+                <declaration name="pFrac" type="BigFraction" line="448"/>
+                <scope line="450"/>
+            </method>
+            <javadoc line="462">
+                Calculates {@code P(D_n &lt; d)} using method described in [1] and doubles (see above).                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <return>
+                    the two-sided probability of \(P(D_n &lt; d)\)                    
+                </return>
+                <throws>
+                    MathArithmeticException if algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\ for integer {@code k, m} and \(0 &lt;= h &lt; 1\).                    
+                </throws>
+            </javadoc>
+            <method name="roundedK" type="double" line="473">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                </params>
+                <comment line="480">
+                    Here the rounding part comes into play: use RealMatrix instead of
+                     FieldMatrix&lt;BigFraction&gt;                    
+                </comment>
+                <declaration name="k" type="int" line="475"/>
+                <declaration name="HBigFraction" type="FieldMatrix&amp;lt;BigFraction&amp;gt;" line="476"/>
+                <declaration name="m" type="int" line="477"/>
+                <declaration name="H" type="RealMatrix" line="483"/>
+                <scope line="484">
+                    <scope line="485"/>
+                </scope>
+                <declaration name="Hpower" type="RealMatrix" line="489"/>
+                <declaration name="pFrac" type="double" line="490"/>
+                <scope line="491"/>
+            </method>
+            <javadoc line="497">
+                Creates {@code H} of size {@code m x m} as described in [1] (see above).                
+                <param>
+                    d statistic                    
+                </param>
+                <param>
+                    n sample size                    
+                </param>
+                <return>
+                    H matrix                    
+                </return>
+                <throws>
+                    NumberIsTooLargeException if fractional part is greater than 1                    
+                </throws>
+                <throws>
+                    FractionConversionException if algorithm fails to convert {@code h} to a{@link org.apache.commons.math3.fraction.BigFraction} in expressing {@code d} as \((k
+                      - h) / m\) for integer {@code k, m} and \(0 &lt;= h &lt; 1\).                    
+                </throws>
+            </javadoc>
+            <method name="createH" type="FieldMatrix&lt;BigFraction&gt;" line="509">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                </params>
+                <comment line="530">
+                    Start by filling everything with either 0 or 1.                    
+                </comment>
+                <comment line="543">
+                    Setting up power-array to avoid calculating the same value twice: hPowers[0] = h^1 ...
+                     hPowers[m-1] = h^m                    
+                </comment>
+                <comment line="553">
+                    First column and last row has special values (each other reversed).                    
+                </comment>
+                <comment line="561">
+                    [1] states: &quot;For 12 &lt; h &lt; 1 the bottom left element of the matrix should be (1 - 2h^m +
+                     (2h - 1)^m )m!&quot; Since 0 &lt;= h &lt; 1, then if h &gt; 12 is sufficient to check:                    
+                </comment>
+                <comment line="569">
+                    Aside from the first column and last row, the (i, j)-th element is 1(i - j + 1)! if i -
+                     j + 1 &gt;= 0, else 0. 1&apos;s and 0&apos;s are already put, so only division with (i - j + 1)! is
+                     needed in the elements that have 1&apos;s. There is no need to calculate (i - j + 1)! and then
+                     divide - small steps avoid overflows. Note that i - j + 1 &gt; 0 &lt;=&gt; i + 1 &gt; j instead of
+                     j&apos;ing all the way to m. Also note that it is started at g = 2 because dividing by 1 isn&apos;t
+                     really necessary.                    
+                </comment>
+                <declaration name="k" type="int" line="511"/>
+                <declaration name="m" type="int" line="512"/>
+                <declaration name="hDouble" type="double" line="513"/>
+                <scope line="514"/>
+                <declaration name="h" type="BigFraction" line="517"/>
+                <scope line="518"/>
+                <scope line="520">
+                    <scope line="521"/>
+                    <scope line="523"/>
+                </scope>
+                <declaration name="Hdata" type="BigFraction[][]" line="527"/>
+                <scope line="532">
+                    <scope line="533">
+                        <scope line="534"/>
+                        <scope line="536"/>
+                    </scope>
+                </scope>
+                <declaration name="hPowers" type="BigFraction[]" line="546"/>
+                <scope line="548"/>
+                <scope line="555"/>
+                <scope line="564"/>
+                <scope line="576">
+                    <scope line="577">
+                        <scope line="578">
+                            <scope line="579"/>
+                        </scope>
+                    </scope>
+                </scope>
+            </method>
+            <javadoc line="588">
+                Verifies that {@code array} has length at least 2.                
+                <param>
+                    array array to test                    
+                </param>
+                <throws>
+                    NullArgumentException if array is null                    
+                </throws>
+                <throws>
+                    InsufficientDataException if array is too short                    
+                </throws>
+            </javadoc>
+            <method name="checkArray" type="void" line="595">
+                <params>
+                    <param name="array" type="double[]"/>
+                </params>
+                <scope line="596"/>
+                <scope line="599"/>
+            </method>
+            <javadoc line="605">
+                Computes \( 1 + 2 \sum_{i=1}^\infty (-1)^i e^{-2 i^2 t^2} \) stopping when successive partial
+                  sums are within {@code tolerance} of one another, or when {@code maxIterations} partial sums
+                  have been computed. If the sum does not converge before {@code maxIterations} iterations a{@link TooManyIterationsException} is thrown.                
+                <param>
+                    t argument                    
+                </param>
+                <param>
+                    tolerance Cauchy criterion for partial sums                    
+                </param>
+                <param>
+                    maxIterations maximum number of partial sums to compute                    
+                </param>
+                <return>
+                    Kolmogorov sum evaluated at t                    
+                </return>
+                <throws>
+                    TooManyIterationsException if the series does not converge                    
+                </throws>
+            </javadoc>
+            <method name="ksSum" type="double" line="617">
+                <params>
+                    <param name="t" type="double"/>
+                    <param name="tolerance" type="double"/>
+                    <param name="maxIterations" type="int"/>
+                </params>
+                <comment line="619">
+                    TODO: for small t (say less than 1), the alternative expansion in part 3 of [1]
+                     from class javadoc should be used.                    
+                </comment>
+                <declaration name="x" type="double" line="620"/>
+                <declaration name="sign" type="int" line="621"/>
+                <declaration name="i" type="long" line="622"/>
+                <declaration name="partialSum" type="double" line="623"/>
+                <declaration name="delta" type="double" line="624"/>
+                <scope line="625"/>
+                <scope line="631"/>
+            </method>
+            <javadoc line="637">
+                Computes \(P(D_{n,m} &gt; d)\) if {@code strict} is {@code true}; otherwise \(P(D_{n,m} \ge
+                  d)\), where \(D_{n,m}\) is the 2-sample Kolmogorov-Smirnov statistic. See{@link #kolmogorovSmirnovStatistic(double[],double[])} for the definition of \(D_{n,m}\).
+                  &lt;p&gt;
+                  The returned probability is exact, obtained by enumerating all partitions of {@code m + n}into {@code m} and {@code n} sets, computing \(D_{n,m}\) for each partition and counting the
+                  number of partitions that yield \(D_{n,m}\) values exceeding (resp. greater than or equal to){@code d}.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  &lt;strong&gt;USAGE NOTE&lt;/strong&gt;: Since this method enumerates all combinations in \({m+n} \choose
+                  {n}\), it is very slow if called for large {@code m, n}. For this reason,{@link #kolmogorovSmirnovTest(double[],double[])} uses this only for {@code m  n &lt; }{@value #SMALL_SAMPLE_PRODUCT}.
+                  &lt;/p&gt;                
+                <param>
+                    d D-statistic value                    
+                </param>
+                <param>
+                    n first sample size                    
+                </param>
+                <param>
+                    m second sample size                    
+                </param>
+                <param>
+                    strict whether or not the probability to compute is expressed as a strict inequality                    
+                </param>
+                <return>
+                    probability that a randomly selected m-n partition of m + n generates \(D_{n,m}\)
+                      greater than (resp. greater than or equal to) {@code d}                    
+                </return>
+            </javadoc>
+            <method name="exactP" type="double" line="661">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                    <param name="m" type="int"/>
+                    <param name="strict" type="boolean"/>
+                </params>
+                <comment line="668">
+                    Generate an n-set                    
+                </comment>
+                <comment line="670">
+                    Copy the n-set to nSet and its complement to mSet                    
+                </comment>
+                <declaration name="combinationsIterator" type="Iterator&amp;lt;int[]&amp;gt;" line="662"/>
+                <declaration name="tail" type="long" line="663"/>
+                <declaration name="nSet" type="double[]" line="664"/>
+                <declaration name="mSet" type="double[]" line="665"/>
+                <scope line="666">
+                    <declaration name="nSetI" type="int[]" line="668"/>
+                    <declaration name="j" type="int" line="670"/>
+                    <declaration name="k" type="int" line="671"/>
+                    <scope line="672">
+                        <scope line="673"/>
+                        <scope line="675"/>
+                    </scope>
+                    <declaration name="curD" type="double" line="679"/>
+                    <scope line="680"/>
+                    <scope line="682"/>
+                </scope>
+            </method>
+            <javadoc line="689">
+                Uses the Kolmogorov-Smirnov distribution to approximate \(P(D_{n,m} &gt; d)\) where \(D_{n,m}\)
+                  is the 2-sample Kolmogorov-Smirnov statistic. See{@link #kolmogorovSmirnovStatistic(double[],double[])} for the definition of \(D_{n,m}\).
+                  &lt;p&gt;
+                  Specifically, what is returned is \(1 - k(d \sqrt{mn / (m + n)})\) where \(k(t) = 1 + 2
+                  \sum_{i=1}^\infty (-1)^i e^{-2 i^2 t^2}\). See {@link #ksSum(double,double,int)} for
+                  details on how convergence of the sum is determined. This implementation passes {@code ksSum}{@value #KS_SUM_CAUCHY_CRITERION} as {@code tolerance} and{@value #MAXIMUM_PARTIAL_SUM_COUNT} as {@code maxIterations}.
+                  &lt;/p&gt;                
+                <param>
+                    d D-statistic value                    
+                </param>
+                <param>
+                    n first sample size                    
+                </param>
+                <param>
+                    m second sample size                    
+                </param>
+                <return>
+                    approximate probability that a randomly selected m-n partition of m + n generates
+                      \(D_{n,m}\) greater than {@code d}                    
+                </return>
+            </javadoc>
+            <method name="approximateP" type="double" line="707">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                    <param name="m" type="int"/>
+                </params>
+                <declaration name="dm" type="double" line="708"/>
+                <declaration name="dn" type="double" line="709"/>
+            </method>
+            <javadoc line="713">
+                Uses Monte Carlo simulation to approximate \(P(D_{n,m} &gt; d)\) where \(D_{n,m}\) is the
+                  2-sample Kolmogorov-Smirnov statistic. See{@link #kolmogorovSmirnovStatistic(double[],double[])} for the definition of \(D_{n,m}\).
+                  &lt;p&gt;
+                  The simulation generates {@code iterations} random partitions of {@code m + n} into an{@code n} set and an {@code m} set, computing \(D_{n,m}\) for each partition and returning
+                  the proportion of values that are greater than {@code d}, or greater than or equal to{@code d} if {@code strict} is {@code false}.
+                  &lt;/p&gt;                
+                <param>
+                    d D-statistic value                    
+                </param>
+                <param>
+                    n first sample size                    
+                </param>
+                <param>
+                    m second sample size                    
+                </param>
+                <param>
+                    iterations number of random partitions to generate                    
+                </param>
+                <param>
+                    strict whether or not the probability to compute is expressed as a strict inequality                    
+                </param>
+                <return>
+                    proportion of randomly generated m-n partitions of m + n that result in \(D_{n,m}\)
+                      greater than (resp. greater than or equal to) {@code d}                    
+                </return>
+            </javadoc>
+            <method name="monteCarloP" type="double" line="732">
+                <params>
+                    <param name="d" type="double"/>
+                    <param name="n" type="int"/>
+                    <param name="m" type="int"/>
+                    <param name="strict" type="boolean"/>
+                    <param name="iterations" type="int"/>
+                </params>
+                <declaration name="nPlusMSet" type="int[]" line="733"/>
+                <declaration name="nSet" type="double[]" line="734"/>
+                <declaration name="mSet" type="double[]" line="735"/>
+                <declaration name="tail" type="int" line="736"/>
+                <scope line="737">
+                    <declaration name="curD" type="double" line="739"/>
+                    <scope line="740"/>
+                    <scope line="742"/>
+                </scope>
+            </method>
+            <javadoc line="751">
+                Copies the first {@code n} elements of {@code nSetI} into {@code nSet} and its complement
+                  relative to {@code m + n} into {@code mSet}. For example, if {@code m = 3}, {@code n = 3} and{@code nSetI = [1,4,5,2,3,0]} then after this method returns, we will have{@code nSet = [1,4,5], mSet = [0,2,3]}.
+                  &lt;p&gt;
+                  &lt;strong&gt;Precondition:&lt;/strong&gt; The first {@code n} elements of {@code nSetI} must be sorted
+                  in ascending order.
+                  &lt;/p&gt;                
+                <param>
+                    nSet array to fill with the first {@code n} elements of {@code nSetI}                    
+                </param>
+                <param>
+                    mSet array to fill with the {@code m} complementary elements of {@code nSet} relative
+                      to {@code m + n}                    
+                </param>
+                <param>
+                    nSetI array whose first {@code n} elements specify the members of {@code nSet}                    
+                </param>
+                <param>
+                    n number of elements in the first output array                    
+                </param>
+                <param>
+                    m number of elements in the second output array                    
+                </param>
+            </javadoc>
+            <method name="copyPartition" type="void" line="768">
+                <params>
+                    <param name="nSet" type="double[]"/>
+                    <param name="mSet" type="double[]"/>
+                    <param name="nSetI" type="int[]"/>
+                    <param name="n" type="int"/>
+                    <param name="m" type="int"/>
+                </params>
+                <declaration name="j" type="int" line="769"/>
+                <declaration name="k" type="int" line="770"/>
+                <scope line="771">
+                    <scope line="772"/>
+                    <scope line="774"/>
+                </scope>
+            </method>
+        </class>
+    </source>

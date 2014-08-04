@@ -1,6 +1,29 @@
+/*
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
+ */
+/*
+ * Copyright  2003-2004 The Apache Software Foundation.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ */
 package com.sun.org.apache.xml.internal.security.encryption;
+
 import org.w3c.dom.Attr;
-/** 
+
+
+/**
  * <code>CipherReference</code> identifies a source which, when processed,
  * yields the encrypted octet sequence.
  * <p>
@@ -26,39 +49,45 @@ import org.w3c.dom.Attr;
  * <xmp>
  * <element name='CipherReference' type='xenc:CipherReferenceType'/>
  * <complexType name='CipherReferenceType'>
- * <sequence>
- * <element name='Transforms' type='xenc:TransformsType' minOccurs='0'/>
- * </sequence>
- * <attribute name='URI' type='anyURI' use='required'/>
+ *     <sequence>
+ *         <element name='Transforms' type='xenc:TransformsType' minOccurs='0'/>
+ *     </sequence>
+ *     <attribute name='URI' type='anyURI' use='required'/>
  * </complexType>
  * </xmp>
+ *
  * @author Axl Mattheus
  */
 public interface CipherReference {
-  /** 
- * Returns an <code>URI</code> that contains an identifier that should be
- * dereferenced.
- * @return
- */
-  String getURI();
-  /** 
- * Gets the URI as an Attribute node.  Used to meld the CipherREference
- * with the XMLSignature ResourceResolvers
- * @return
- */
-  public Attr getURIAsAttr();
-  /** 
- * Returns the <code>Transforms</code> that specifies how to transform the
- * <code>URI</code> to yield the appropiate cipher value.
- * @return the transform that specifies how to transform the reference to
- * yield the intended cipher value.
- */
-  Transforms getTransforms();
-  /** 
- * Sets the <code>Transforms</code> that specifies how to transform the
- * <code>URI</code> to yield the appropiate cipher value.
- * @param transforms the set of <code>Transforms</code> that specifies how
- * to transform the reference to yield the intended cipher value.
- */
-  void setTransforms(  Transforms transforms);
+    /**
+     * Returns an <code>URI</code> that contains an identifier that should be
+     * dereferenced.
+     * @return
+     */
+    String getURI();
+
+        /**
+         * Gets the URI as an Attribute node.  Used to meld the CipherREference
+         * with the XMLSignature ResourceResolvers
+     * @return
+         */
+        public Attr getURIAsAttr();
+
+    /**
+     * Returns the <code>Transforms</code> that specifies how to transform the
+     * <code>URI</code> to yield the appropiate cipher value.
+     *
+     * @return the transform that specifies how to transform the reference to
+     *   yield the intended cipher value.
+     */
+    Transforms getTransforms();
+
+    /**
+     * Sets the <code>Transforms</code> that specifies how to transform the
+     * <code>URI</code> to yield the appropiate cipher value.
+     *
+     * @param transforms the set of <code>Transforms</code> that specifies how
+     *   to transform the reference to yield the intended cipher value.
+     */
+    void setTransforms(Transforms transforms);
 }

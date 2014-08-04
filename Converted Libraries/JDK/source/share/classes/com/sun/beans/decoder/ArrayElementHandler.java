@@ -1,6 +1,32 @@
+/*
+ * Copyright (c) 2008, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
 package com.sun.beans.decoder;
+
 import java.lang.reflect.Array;
-/** 
+
+/**
  * This class is intended to handle &lt;array&gt; element,
  * that is used to array creation.
  * The {@code length} attribute specifies the length of the array.
@@ -15,9 +41,9 @@ import java.lang.reflect.Array;
  * The {@code index} attribute can thus be used with arrays.
  * For example:<pre>
  * &lt;array length="3" class="java.lang.String"&gt;
- * &lt;void index="1"&gt;
- * &lt;string&gt;Hello, world&lt;/string&gt;
- * &lt;/void&gt;
+ *     &lt;void index="1"&gt;
+ *         &lt;string&gt;Hello, world&lt;/string&gt;
+ *     &lt;/void&gt;
  * &lt;/array&gt;</pre>
  * is equivalent to the following Java code:<pre>
  * String[] s = new String[3];
@@ -27,11 +53,10 @@ import java.lang.reflect.Array;
  * The length of the array is equal to the number of values specified.
  * For example:<pre>
  * &lt;array id="array" class="int"&gt;
- * &lt;int&gt;123&lt;/int&gt;
- * &lt;int&gt;456&lt;/int&gt;
+ *     &lt;int&gt;123&lt;/int&gt;
+ *     &lt;int&gt;456&lt;/int&gt;
  * &lt;/array&gt;</pre>
- * is equivalent to {@code} int[] array = 
- * 123, 456}} in Java code.
+ * is equivalent to {@code int[] array = {123, 456}} in Java code.
  * <p>The following atributes are supported:
  * <dl>
  * <dt>length
@@ -41,59 +66,68 @@ import java.lang.reflect.Array;
  * <dt>id
  * <dd>the identifier of the variable that is intended to store the result
  * </dl>
+ *
  * @since 1.7
+ *
  * @author Sergey A. Malenkov
  */
 final class ArrayElementHandler extends NewElementHandler {
-  private Integer length;
-  /** 
- * Parses attributes of the element.
- * The following atributes are supported:
- * <dl>
- * <dt>length
- * <dd>the array length
- * <dt>class
- * <dd>the type of object for instantiation
- * <dt>id
- * <dd>the identifier of the variable that is intended to store the result
- * </dl>
- * @param name   the attribute name
- * @param value  the attribute value
- */
-  @Override public void addAttribute(  String name,  String value){
-    if (name.equals("length")) {
-      this.length=Integer.valueOf(value);
+    private Integer length;
+
+    /**
+     * Parses attributes of the element.
+     * The following atributes are supported:
+     * <dl>
+     * <dt>length
+     * <dd>the array length
+     * <dt>class
+     * <dd>the type of object for instantiation
+     * <dt>id
+     * <dd>the identifier of the variable that is intended to store the result
+     * </dl>
+     *
+     * @param name   the attribute name
+     * @param value  the attribute value
+     */
+    @Override
+    public void addAttribute(String name, String value) {
+        if (name.equals("length")) { // NON-NLS: the attribute name
+            this.length = Integer.valueOf(value);
+        } else {
+            super.addAttribute(name, value);
+        }
     }
- else {
-      super.addAttribute(name,value);
+
+    /**
+     * Calculates the value of this element
+     * if the lentgh attribute is set.
+     */
+    @Override
+    public void startElement() {
+        if (this.length != null) {
+            getValueObject();
+        }
     }
-  }
-  /** 
- * Calculates the value of this element
- * if the lentgh attribute is set.
- */
-  @Override public void startElement(){
-    if (this.length != null) {
-      getValueObject();
+
+    /**
+     * Creates an instance of the array.
+     *
+     * @param type  the base class
+     * @param args  the array of arguments
+     * @return the value of this element
+     */
+    @Override
+    protected ValueObject getValueObject(Class<?> type, Object[] args) {
+        if (type == null) {
+            type = Object.class;
+        }
+        if (this.length != null) {
+            return ValueObjectImpl.create(Array.newInstance(type, this.length));
+        }
+        Object array = Array.newInstance(type, args.length);
+        for (int i = 0; i < args.length; i++) {
+            Array.set(array, i, args[i]);
+        }
+        return ValueObjectImpl.create(array);
     }
-  }
-  /** 
- * Creates an instance of the array.
- * @param type  the base class
- * @param args  the array of arguments
- * @return the value of this element
- */
-  @Override protected ValueObject getValueObject(  Class<?> type,  Object[] args){
-    if (type == null) {
-      type=Object.class;
-    }
-    if (this.length != null) {
-      return ValueObjectImpl.create(Array.newInstance(type,this.length));
-    }
-    Object array=Array.newInstance(type,args.length);
-    for (int i=0; i < args.length; i++) {
-      Array.set(array,i,args[i]);
-    }
-    return ValueObjectImpl.create(array);
-  }
 }

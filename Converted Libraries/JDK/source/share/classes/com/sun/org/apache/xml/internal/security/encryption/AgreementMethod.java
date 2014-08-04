@@ -1,8 +1,32 @@
+/*
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
+ */
+/*
+ * Copyright  2003-2004 The Apache Software Foundation.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ */
 package com.sun.org.apache.xml.internal.security.encryption;
+
+
 import java.util.Iterator;
 import com.sun.org.apache.xml.internal.security.keys.KeyInfo;
 import org.w3c.dom.Element;
-/** 
+
+
+/**
  * A Key Agreement algorithm provides for the derivation of a shared secret key
  * based on a shared secret computed from certain types of compatible public
  * keys from both the sender and the recipient. Information from the originator
@@ -41,75 +65,92 @@ import org.w3c.dom.Element;
  * <xmp>
  * <element name="AgreementMethod" type="xenc:AgreementMethodType"/>
  * <complexType name="AgreementMethodType" mixed="true">
- * <sequence>
- * <element name="KA-Nonce" minOccurs="0" type="base64Binary"/>
- * <!-- <element ref="ds:DigestMethod" minOccurs="0"/> -->
- * <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
- * <element name="OriginatorKeyInfo" minOccurs="0" type="ds:KeyInfoType"/>
- * <element name="RecipientKeyInfo" minOccurs="0" type="ds:KeyInfoType"/>
- * </sequence>
- * <attribute name="Algorithm" type="anyURI" use="required"/>
+ *     <sequence>
+ *         <element name="KA-Nonce" minOccurs="0" type="base64Binary"/>
+ *         <!-- <element ref="ds:DigestMethod" minOccurs="0"/> -->
+ *         <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
+ *         <element name="OriginatorKeyInfo" minOccurs="0" type="ds:KeyInfoType"/>
+ *         <element name="RecipientKeyInfo" minOccurs="0" type="ds:KeyInfoType"/>
+ *     </sequence>
+ *     <attribute name="Algorithm" type="anyURI" use="required"/>
  * </complexType>
  * </xmp>
+ *
  * @author Axl Mattheus
  */
 public interface AgreementMethod {
-  /** 
- * Returns an <code>byte</code> array.
- * @return
- */
-  byte[] getKANonce();
-  /** 
- * Sets the KANonce.jj
- * @param kanonce
- */
-  void setKANonce(  byte[] kanonce);
-  /** 
- * Returns aditional information regarding the <code>AgreementMethod</code>.
- * @return
- */
-  Iterator getAgreementMethodInformation();
-  /** 
- * Adds additional <code>AgreementMethod</code> information.
- * @param info a <code>Element</code> that represents additional information
- * specified by
- * <xmp>
- * <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
- * </xmp>
- */
-  void addAgreementMethodInformation(  Element info);
-  /** 
- * Removes additional <code>AgreementMethod</code> information.
- * @param info a <code>Element</code> that represents additional information
- * specified by
- * <xmp>
- * <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
- * </xmp>
- */
-  void revoveAgreementMethodInformation(  Element info);
-  /** 
- * Returns information relating to the originator's shared secret.
- * @return information relating to the originator's shared secret.
- */
-  KeyInfo getOriginatorKeyInfo();
-  /** 
- * Sets the information relating to the originator's shared secret.
- * @param keyInfo information relating to the originator's shared secret.
- */
-  void setOriginatorKeyInfo(  KeyInfo keyInfo);
-  /** 
- * Retruns information relating to the recipient's shared secret.
- * @return information relating to the recipient's shared secret.
- */
-  KeyInfo getRecipientKeyInfo();
-  /** 
- * Sets the information relating to the recipient's shared secret.
- * @param keyInfo information relating to the recipient's shared secret.
- */
-  void setRecipientKeyInfo(  KeyInfo keyInfo);
-  /** 
- * Returns the algorithm URI of this <code>CryptographicMethod</code>.
- * @return the algorithm URI of this <code>CryptographicMethod</code>
- */
-  String getAlgorithm();
+    /**
+     * Returns an <code>byte</code> array.
+     * @return
+     */
+    byte[] getKANonce();
+
+    /**
+     * Sets the KANonce.jj
+     * @param kanonce
+     */
+    void setKANonce(byte[] kanonce);
+
+    /**
+     * Returns aditional information regarding the <code>AgreementMethod</code>.
+     * @return
+     */
+    Iterator getAgreementMethodInformation();
+
+    /**
+     * Adds additional <code>AgreementMethod</code> information.
+     *
+     * @param info a <code>Element</code> that represents additional information
+     * specified by
+     *   <xmp>
+     *     <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
+     *   </xmp>
+     */
+    void addAgreementMethodInformation(Element info);
+
+    /**
+     * Removes additional <code>AgreementMethod</code> information.
+     *
+     * @param info a <code>Element</code> that represents additional information
+     * specified by
+     *   <xmp>
+     *     <any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
+     *   </xmp>
+     */
+    void revoveAgreementMethodInformation(Element info);
+
+    /**
+     * Returns information relating to the originator's shared secret.
+     *
+     * @return information relating to the originator's shared secret.
+     */
+    KeyInfo getOriginatorKeyInfo();
+
+    /**
+     * Sets the information relating to the originator's shared secret.
+     *
+     * @param keyInfo information relating to the originator's shared secret.
+     */
+    void setOriginatorKeyInfo(KeyInfo keyInfo);
+
+    /**
+     * Retruns information relating to the recipient's shared secret.
+     *
+     * @return information relating to the recipient's shared secret.
+     */
+    KeyInfo getRecipientKeyInfo();
+
+    /**
+     * Sets the information relating to the recipient's shared secret.
+     *
+     * @param keyInfo information relating to the recipient's shared secret.
+     */
+    void setRecipientKeyInfo(KeyInfo keyInfo);
+
+    /**
+     * Returns the algorithm URI of this <code>CryptographicMethod</code>.
+     *
+     * @return the algorithm URI of this <code>CryptographicMethod</code>
+     */
+    String getAlgorithm();
 }

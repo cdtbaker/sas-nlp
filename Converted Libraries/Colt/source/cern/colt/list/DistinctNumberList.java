@@ -1,5 +1,14 @@
+/*
+Copyright © 1999 CERN - European Organization for Nuclear Research.
+Permission to use, copy, modify, distribute and sell this software and its documentation for any purpose 
+is hereby granted without fee, provided that the above copyright notice appear in all copies and 
+that both that copyright notice and this permission notice appear in supporting documentation. 
+CERN makes no representations about the suitability of this software for any purpose. 
+It is provided "as is" without expressed or implied warranty.
+*/
 package cern.colt.list;
-/** 
+
+/**
  * Resizable compressed list holding numbers; based on the fact that a number from a large list with few distinct values need not take more than <tt>log(distinctValues)</tt> bits; implemented with a <tt>MinMaxNumberList</tt>.
  * First see the <a href="package-summary.html">package summary</a> and javadoc <a href="package-tree.html">tree view</a> to get the broad picture.
  * <p>
@@ -30,12 +39,14 @@ package cern.colt.list;
  * list.add(Double.doubleToLongBits(d1));
  * double d2 = Double.longBitsToDouble(list.get(0));
  * if (d1!=d2) System.out.println("This is impossible!");
+ *
  * DistinctNumberList list2 = ... instantiation goes here
  * float f1 = 1.234f;
  * list2.add((long) Float.floatToIntBits(f1));
  * float f2 = Float.intBitsToFloat((int)list2.get(0));
  * if (f1!=f2) System.out.println("This is impossible!");
  * </pre>
+ *
  * @see LongArrayList
  * @see MinMaxNumberList
  * @see java.lang.Float
@@ -44,97 +55,106 @@ package cern.colt.list;
  * @version 1.0, 09/24/99
  */
 public class DistinctNumberList extends cern.colt.list.AbstractLongList {
-  protected long[] distinctValues;
-  protected MinMaxNumberList elements;
-  /** 
+	protected long[] distinctValues;
+	protected MinMaxNumberList elements;
+/**
  * Constructs an empty list with the specified initial capacity and the specified distinct values allowed to be hold in this list.
- * @param distinctValues   an array sorted ascending containing the distinct values allowed to be hold in this list.
- * @param initialCapacity   the number of elements the receiver can hold without auto-expanding itself by allocating new internal memory.
+ *
+ * @param   distinctValues   an array sorted ascending containing the distinct values allowed to be hold in this list.
+ * @param   initialCapacity   the number of elements the receiver can hold without auto-expanding itself by allocating new internal memory.
  */
-  public DistinctNumberList(  long[] distinctValues,  int initialCapacity){
-    setUp(distinctValues,initialCapacity);
-  }
-  /** 
+public DistinctNumberList(long[] distinctValues, int initialCapacity) {
+	setUp(distinctValues,initialCapacity);
+}
+/**
  * Appends the specified element to the end of this list.
+ *
  * @param element element to be appended to this list.
  */
-  public void add(  long element){
-    elements.add(codeOf(element));
-    size++;
-  }
-  /** 
+public void add(long element) {
+	//overridden for performance only.
+	elements.add(codeOf(element));
+	size++;
+}
+/**
  * Returns the code that shall be stored for the given element.
  */
-  protected int codeOf(  long element){
-    int index=java.util.Arrays.binarySearch(distinctValues,element);
-    if (index < 0)     throw new IllegalArgumentException("Element=" + element + " not contained in distinct elements.");
-    return index;
-  }
-  /** 
+protected int codeOf(long element) {
+	int index = java.util.Arrays.binarySearch(distinctValues,element);
+	if (index<0) throw new IllegalArgumentException("Element="+element+" not contained in distinct elements.");
+	return index;
+}
+/**
  * Ensures that the receiver can hold at least the specified number of elements without needing to allocate new internal memory.
  * If necessary, allocates new internal memory and increases the capacity of the receiver.
- * @param minCapacity   the desired minimum capacity.
+ *
+ * @param   minCapacity   the desired minimum capacity.
  */
-  public void ensureCapacity(  int minCapacity){
-    elements.ensureCapacity(minCapacity);
-  }
-  /** 
+public void ensureCapacity(int minCapacity) {
+	elements.ensureCapacity(minCapacity);
+}
+/**
  * Returns the element at the specified position in the receiver; <b>WARNING:</b> Does not check preconditions. 
  * Provided with invalid parameters this method may return invalid elements without throwing any exception!
  * <b>You should only use this method when you are absolutely sure that the index is within bounds.</b>
  * Precondition (unchecked): <tt>index &gt;= 0 && index &lt; size()</tt>.
+ *
  * @param index index of element to return.
  */
-  public long getQuick(  int index){
-    return distinctValues[(int)(elements.getQuick(index))];
-  }
-  /** 
+public long getQuick(int index) {
+	return distinctValues[(int)(elements.getQuick(index))];
+}
+/**
  * Removes from the receiver all elements whose index is between
  * <code>from</code>, inclusive and <code>to</code>, inclusive.  Shifts any succeeding
  * elements to the left (reduces their index).
  * This call shortens the list by <tt>(to - from + 1)</tt> elements.
+ *
  * @param from index of first element to be removed.
  * @param to index of last element to be removed.
  * @exception IndexOutOfBoundsException index is out of range (<tt>size()&gt;0 && (from&lt;0 || from&gt;to || to&gt;=size())</tt>).
  */
-  public void removeFromTo(  int from,  int to){
-    elements.removeFromTo(from,to);
-    size-=to - from + 1;
-  }
-  /** 
+public void removeFromTo(int from, int to) {
+	elements.removeFromTo(from,to);
+	size -= to-from+1;
+}
+/**
  * Replaces the element at the specified position in the receiver with the specified element; <b>WARNING:</b> Does not check preconditions. 
  * Provided with invalid parameters this method may access invalid indexes without throwing any exception!
  * <b>You should only use this method when you are absolutely sure that the index is within bounds.</b>
  * Precondition (unchecked): <tt>index &gt;= 0 && index &lt; size()</tt>.
+ *
  * @param index index of element to replace.
  * @param element element to be stored at the specified position.
  */
-  public void setQuick(  int index,  long element){
-    elements.setQuick(index,codeOf(element));
-  }
-  /** 
+public void setQuick(int index, long element) {
+	elements.setQuick(index,codeOf(element));
+}
+/**
  * Sets the size of the receiver without modifying it otherwise.
  * This method should not release or allocate new memory but simply set some instance variable like <tt>size</tt>.
  */
-  protected void setSizeRaw(  int newSize){
-    super.setSizeRaw(newSize);
-    elements.setSizeRaw(newSize);
-  }
-  /** 
+protected void setSizeRaw(int newSize) {
+	super.setSizeRaw(newSize);
+	elements.setSizeRaw(newSize);
+}
+/**
  * Sets the receiver to an empty list with the specified initial capacity and the specified distinct values allowed to be hold in this list.
- * @param distinctValues   an array sorted ascending containing the distinct values allowed to be hold in this list.
- * @param initialCapacity   the number of elements the receiver can hold without auto-expanding itself by allocating new internal memory.
+ *
+ * @param   distinctValues   an array sorted ascending containing the distinct values allowed to be hold in this list.
+ * @param   initialCapacity   the number of elements the receiver can hold without auto-expanding itself by allocating new internal memory.
  */
-  protected void setUp(  long[] distinctValues,  int initialCapacity){
-    this.distinctValues=distinctValues;
-    this.elements=new MinMaxNumberList(0,distinctValues.length - 1,initialCapacity);
-  }
-  /** 
+protected void setUp(long[] distinctValues, int initialCapacity) {
+	this.distinctValues = distinctValues;
+	//java.util.Arrays.sort(this.distinctElements);
+	this.elements = new MinMaxNumberList(0,distinctValues.length-1,initialCapacity);
+}
+/**
  * Trims the capacity of the receiver to be the receiver's current 
  * size. An application can use this operation to minimize the 
  * storage of the receiver. 
  */
-  public void trimToSize(){
-    elements.trimToSize();
-  }
+public void trimToSize() {
+	elements.trimToSize();
+}
 }

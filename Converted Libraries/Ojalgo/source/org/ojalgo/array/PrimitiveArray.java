@@ -1,6 +1,30 @@
+/*
+ * Copyright 1997-2014 Optimatika (www.optimatika.se)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.ojalgo.array;
+
 import static org.ojalgo.constant.PrimitiveMath.*;
+
 import java.util.Arrays;
+
 import org.ojalgo.access.Access1D;
 import org.ojalgo.function.BinaryFunction;
 import org.ojalgo.function.BinaryFunction.FixedFirst;
@@ -10,389 +34,533 @@ import org.ojalgo.function.ParameterFunction.FixedParameter;
 import org.ojalgo.function.PrimitiveFunction;
 import org.ojalgo.function.UnaryFunction;
 import org.ojalgo.function.VoidFunction;
+import org.ojalgo.machine.JavaType;
 import org.ojalgo.scalar.PrimitiveScalar;
 import org.ojalgo.scalar.Scalar;
 import org.ojalgo.type.TypeUtils;
-/** 
- * <p>
+
+/**
  * A one- and/or arbitrary-dimensional array of double.
- * </p>
- * <p>
- * You cannot instantiate a PrimitiveArray directly. You have to either subclass it and implement instantiation code in
- * that subclass, or use one of the static factory methods in {@linkplain Array1D}, {@linkplain Array2D} or{@linkplain ArrayAnyD}.
- * </p>
+ *
  * @author apete
  */
-public class PrimitiveArray extends BasicArray<Double> {
-  private static void add(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg + aRightArg[i];
+public class PrimitiveArray extends DenseArray<Double> {
+
+    static final long ELEMENT_SIZE = JavaType.DOUBLE.memory();
+
+    static final DenseFactory<Double> FACTORY = new DenseFactory<Double>() {
+
+        @Override
+        long getElementSize() {
+            return ELEMENT_SIZE;
+        }
+
+        @Override
+        DenseArray<Double> make(final int size) {
+            return PrimitiveArray.make(size);
+        }
+
+        @Override
+        Scalar<Double> zero() {
+            return PrimitiveScalar.ZERO;
+        }
+
+    };
+
+    public static final PrimitiveArray make(final int size) {
+        return new PrimitiveArray(size);
     }
-  }
-  private static void add(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] + aRightArg;
+
+    public static final SegmentedArray<Double> makeSegmented(final int size) {
+        return SegmentedArray.PRIMITIVE.makeSegmented(FACTORY, size);
     }
-  }
-  private static void add(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] + aRightArg[i];
+
+    public static final SegmentedArray<Double> makeSegmented(final long count) {
+        return SegmentedArray.PRIMITIVE.makeSegmented(FACTORY, count);
     }
-  }
-  private static void divide(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg / aRightArg[i];
+
+    public static final PrimitiveArray wrap(final double[] data) {
+        return new PrimitiveArray(data);
     }
-  }
-  private static void divide(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] / aRightArg;
+
+    private static void add(final double[] data, final int first, final int limit, final int step, final double left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left + right[i];
+        }
     }
-  }
-  private static void divide(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] / aRightArg[i];
+
+    private static void add(final double[] data, final int first, final int limit, final int step, final double[] left, final double right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] + right;
+        }
     }
-  }
-  private static void multiply(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg * aRightArg[i];
+
+    private static void add(final double[] data, final int first, final int limit, final int step, final double[] left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] + right[i];
+        }
     }
-  }
-  private static void multiply(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] * aRightArg;
+
+    private static void divide(final double[] data, final int first, final int limit, final int step, final double left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left / right[i];
+        }
     }
-  }
-  private static void multiply(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] * aRightArg[i];
+
+    private static void divide(final double[] data, final int first, final int limit, final int step, final double[] left, final double right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] / right;
+        }
     }
-  }
-  private static void negate(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] anArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=-anArg[i];
+
+    private static void divide(final double[] data, final int first, final int limit, final int step, final double[] left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] / right[i];
+        }
     }
-  }
-  private static void subtract(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg - aRightArg[i];
+
+    private static void multiply(final double[] data, final int first, final int limit, final int step, final double left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left * right[i];
+        }
     }
-  }
-  private static void subtract(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] - aRightArg;
+
+    private static void multiply(final double[] data, final int first, final int limit, final int step, final double[] left, final double right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] * right;
+        }
     }
-  }
-  private static void subtract(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final double[] aRightArg){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aLeftArg[i] - aRightArg[i];
+
+    private static void multiply(final double[] data, final int first, final int limit, final int step, final double[] left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] * right[i];
+        }
     }
-  }
-  protected static void exchange(  final double[] aData,  final int aFirstA,  final int aFirstB,  final int aStep,  final int aCount){
-    int tmpIndexA=aFirstA;
-    int tmpIndexB=aFirstB;
-    double tmpVal;
-    for (int i=0; i < aCount; i++) {
-      tmpVal=aData[tmpIndexA];
-      aData[tmpIndexA]=aData[tmpIndexB];
-      aData[tmpIndexB]=tmpVal;
-      tmpIndexA+=aStep;
-      tmpIndexB+=aStep;
+
+    private static void negate(final double[] data, final int first, final int limit, final int step, final double[] values) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = -values[i];
+        }
     }
-  }
-  protected static void fill(  final double[] aData,  final Access1D<?> anArg){
-    final int tmpLimit=Math.min(aData.length,anArg.size());
-    for (int i=0; i < tmpLimit; i++) {
-      aData[i]=anArg.doubleValue(i);
+
+    private static void subtract(final double[] data, final int first, final int limit, final int step, final double left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left - right[i];
+        }
     }
-  }
-  protected static void fill(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aVal){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aVal;
+
+    private static void subtract(final double[] data, final int first, final int limit, final int step, final double[] left, final double right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] - right;
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final Access1D<Double> aLeftArg,  final BinaryFunction<Double> aFunc,  final Access1D<Double> aRightArg){
-    if ((aLeftArg instanceof PrimitiveArray) && (aRightArg instanceof PrimitiveArray)) {
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,((PrimitiveArray)aLeftArg).data(),aFunc,((PrimitiveArray)aRightArg).data());
+
+    private static void subtract(final double[] data, final int first, final int limit, final int step, final double[] left, final double[] right) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = left[i] - right[i];
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg.doubleValue(i),aRightArg.doubleValue(i));
-      }
+
+    protected static void exchange(final double[] data, final int firstA, final int firstB, final int step, final int count) {
+
+        int tmpIndexA = firstA;
+        int tmpIndexB = firstB;
+
+        double tmpVal;
+
+        for (int i = 0; i < count; i++) {
+
+            tmpVal = data[tmpIndexA];
+            data[tmpIndexA] = data[tmpIndexB];
+            data[tmpIndexB] = tmpVal;
+
+            tmpIndexA += step;
+            tmpIndexB += step;
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final Access1D<Double> aLeftArg,  final BinaryFunction<Double> aFunc,  final double aRightArg){
-    if (aLeftArg instanceof PrimitiveArray) {
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,((PrimitiveArray)aLeftArg).data(),aFunc,aRightArg);
+
+    protected static void fill(final double[] data, final Access1D<?> values) {
+        final int tmpLimit = (int) Math.min(data.length, values.count());
+        for (int i = 0; i < tmpLimit; i++) {
+            data[i] = values.doubleValue(i);
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg.doubleValue(i),aRightArg);
-      }
+
+    protected static void fill(final double[] data, final int first, final int limit, final int step, final double aVal) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = aVal;
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final Access1D<Double> anArg,  final ParameterFunction<Double> aFunc,  final int aParam){
-    if (anArg instanceof PrimitiveArray) {
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,((PrimitiveArray)anArg).data(),aFunc,aParam);
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final Access1D<Double> left,
+            final BinaryFunction<Double> function, final Access1D<Double> right) {
+        if ((left instanceof PrimitiveArray) && (right instanceof PrimitiveArray)) {
+            PrimitiveArray.invoke(data, first, limit, step, ((PrimitiveArray) left).data, function, ((PrimitiveArray) right).data);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left.doubleValue(i), right.doubleValue(i));
+            }
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(anArg.doubleValue(i),aParam);
-      }
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final Access1D<Double> left,
+            final BinaryFunction<Double> function, final double right) {
+        if (left instanceof PrimitiveArray) {
+            PrimitiveArray.invoke(data, first, limit, step, ((PrimitiveArray) left).data, function, right);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left.doubleValue(i), right);
+            }
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final Access1D<Double> anArg,  final UnaryFunction<Double> aFunc){
-    if (anArg instanceof PrimitiveArray) {
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,((PrimitiveArray)anArg).data(),aFunc);
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final Access1D<Double> values,
+            final ParameterFunction<Double> function, final int aParam) {
+        if (values instanceof PrimitiveArray) {
+            PrimitiveArray.invoke(data, first, limit, step, ((PrimitiveArray) values).data, function, aParam);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(values.doubleValue(i), aParam);
+            }
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(anArg.doubleValue(i));
-      }
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final Access1D<Double> values,
+            final UnaryFunction<Double> function) {
+        if (values instanceof PrimitiveArray) {
+            PrimitiveArray.invoke(data, first, limit, step, ((PrimitiveArray) values).data, function);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(values.doubleValue(i));
+            }
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final BinaryFunction<Double> aFunc,  final Access1D<Double> aRightArg){
-    if (aRightArg instanceof PrimitiveArray) {
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,aLeftArg,aFunc,((PrimitiveArray)aRightArg).data());
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final double left,
+            final BinaryFunction<Double> function, final Access1D<Double> right) {
+        if (right instanceof PrimitiveArray) {
+            PrimitiveArray.invoke(data, first, limit, step, left, function, ((PrimitiveArray) right).data);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left, right.doubleValue(i));
+            }
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg,aRightArg.doubleValue(i));
-      }
+
+    protected static void invoke(final double[] data, final int first, final int limit, final int step, final VoidFunction<Double> aVisitor) {
+        for (int i = first; i < limit; i += step) {
+            aVisitor.invoke(data[i]);
+        }
     }
-  }
-  protected static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final VoidFunction<Double> aVisitor){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aVisitor.invoke(aData[i]);
+
+    static void invoke(final double[] data, final int first, final int limit, final int step, final double left, final BinaryFunction<Double> function,
+            final double[] right) {
+        if (function == PrimitiveFunction.ADD) {
+            PrimitiveArray.add(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.DIVIDE) {
+            PrimitiveArray.divide(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.MULTIPLY) {
+            PrimitiveArray.multiply(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.SUBTRACT) {
+            PrimitiveArray.subtract(data, first, limit, step, left, right);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left, right[i]);
+            }
+        }
     }
-  }
-  static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double aLeftArg,  final BinaryFunction<Double> aFunc,  final double[] aRightArg){
-    if (aFunc == PrimitiveFunction.ADD) {
-      PrimitiveArray.add(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    static void invoke(final double[] data, final int first, final int limit, final int step, final double[] left, final BinaryFunction<Double> function,
+            final double right) {
+        if (function == PrimitiveFunction.ADD) {
+            PrimitiveArray.add(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.DIVIDE) {
+            PrimitiveArray.divide(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.MULTIPLY) {
+            PrimitiveArray.multiply(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.SUBTRACT) {
+            PrimitiveArray.subtract(data, first, limit, step, left, right);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left[i], right);
+            }
+        }
     }
- else     if (aFunc == PrimitiveFunction.DIVIDE) {
-      PrimitiveArray.divide(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    static void invoke(final double[] data, final int first, final int limit, final int step, final double[] left, final BinaryFunction<Double> function,
+            final double[] right) {
+        if (function == PrimitiveFunction.ADD) {
+            PrimitiveArray.add(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.DIVIDE) {
+            PrimitiveArray.divide(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.MULTIPLY) {
+            PrimitiveArray.multiply(data, first, limit, step, left, right);
+        } else if (function == PrimitiveFunction.SUBTRACT) {
+            PrimitiveArray.subtract(data, first, limit, step, left, right);
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(left[i], right[i]);
+            }
+        }
     }
- else     if (aFunc == PrimitiveFunction.MULTIPLY) {
-      PrimitiveArray.multiply(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    static void invoke(final double[] data, final int first, final int limit, final int step, final double[] values, final ParameterFunction<Double> function,
+            final int aParam) {
+        for (int i = first; i < limit; i += step) {
+            data[i] = function.invoke(values[i], aParam);
+        }
     }
- else     if (aFunc == PrimitiveFunction.SUBTRACT) {
-      PrimitiveArray.subtract(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    static void invoke(final double[] data, final int first, final int limit, final int step, final double[] values, final UnaryFunction<Double> function) {
+        if (function == PrimitiveFunction.NEGATE) {
+            PrimitiveArray.negate(data, first, limit, step, values);
+        } else if (function instanceof FixedFirst<?>) {
+            final FixedFirst<Double> tmpFunc = (FixedFirst<Double>) function;
+            PrimitiveArray.invoke(data, first, limit, step, tmpFunc.doubleValue(), tmpFunc.getFunction(), data);
+        } else if (function instanceof FixedSecond<?>) {
+            final FixedSecond<Double> tmpFunc = (FixedSecond<Double>) function;
+            PrimitiveArray.invoke(data, first, limit, step, data, tmpFunc.getFunction(), tmpFunc.doubleValue());
+        } else if (function instanceof FixedParameter<?>) {
+            final FixedParameter<Double> tmpFunc = (FixedParameter<Double>) function;
+            PrimitiveArray.invoke(data, first, limit, step, data, tmpFunc.getFunction(), tmpFunc.getParameter());
+        } else {
+            for (int i = first; i < limit; i += step) {
+                data[i] = function.invoke(values[i]);
+            }
+        }
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg,aRightArg[i]);
-      }
+
+    public final double[] data;
+
+    /**
+     * Array not copied! No checking!
+     */
+    protected PrimitiveArray(final double[] data) {
+
+        super();
+
+        this.data = data;
     }
-  }
-  static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final BinaryFunction<Double> aFunc,  final double aRightArg){
-    if (aFunc == PrimitiveFunction.ADD) {
-      PrimitiveArray.add(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    protected PrimitiveArray(final int size) {
+
+        super();
+
+        data = new double[size];
     }
- else     if (aFunc == PrimitiveFunction.DIVIDE) {
-      PrimitiveArray.divide(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    @Override
+    public boolean equals(final Object anObj) {
+        if (anObj instanceof PrimitiveArray) {
+            return Arrays.equals(data, ((PrimitiveArray) anObj).data);
+        } else {
+            return super.equals(anObj);
+        }
     }
- else     if (aFunc == PrimitiveFunction.MULTIPLY) {
-      PrimitiveArray.multiply(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(data);
     }
- else     if (aFunc == PrimitiveFunction.SUBTRACT) {
-      PrimitiveArray.subtract(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    protected final double[] copyOfData() {
+        return ArrayUtils.copyOf(data);
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg[i],aRightArg);
-      }
+
+    @Override
+    protected final double doubleValue(final int index) {
+        return data[index];
     }
-  }
-  static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] aLeftArg,  final BinaryFunction<Double> aFunc,  final double[] aRightArg){
-    if (aFunc == PrimitiveFunction.ADD) {
-      PrimitiveArray.add(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    @Override
+    protected final void exchange(final int firstA, final int firstB, final int step, final int count) {
+        PrimitiveArray.exchange(data, firstA, firstB, step, count);
     }
- else     if (aFunc == PrimitiveFunction.DIVIDE) {
-      PrimitiveArray.divide(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    protected void fill(final Access1D<?> values) {
+        PrimitiveArray.fill(data, values);
     }
- else     if (aFunc == PrimitiveFunction.MULTIPLY) {
-      PrimitiveArray.multiply(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    @Override
+    protected final void fill(final int first, final int limit, final Access1D<Double> left, final BinaryFunction<Double> function, final Access1D<Double> right) {
+        PrimitiveArray.invoke(data, first, limit, 1, left, function, right);
     }
- else     if (aFunc == PrimitiveFunction.SUBTRACT) {
-      PrimitiveArray.subtract(aData,aFirst,aLimit,aStep,aLeftArg,aRightArg);
+
+    @Override
+    protected final void fill(final int first, final int limit, final Access1D<Double> left, final BinaryFunction<Double> function, final Double right) {
+        PrimitiveArray.invoke(data, first, limit, 1, left, function, right);
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(aLeftArg[i],aRightArg[i]);
-      }
+
+    @Override
+    protected final void fill(final int first, final int limit, final Double left, final BinaryFunction<Double> function, final Access1D<Double> right) {
+        PrimitiveArray.invoke(data, first, limit, 1, left, function, right);
     }
-  }
-  static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] anArg,  final ParameterFunction<Double> aFunc,  final int aParam){
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      aData[i]=aFunc.invoke(anArg[i],aParam);
+
+    @Override
+    protected final void fill(final int first, final int limit, final int step, final Double value) {
+        PrimitiveArray.fill(data, first, limit, step, value);
     }
-  }
-  static void invoke(  final double[] aData,  final int aFirst,  final int aLimit,  final int aStep,  final double[] anArg,  final UnaryFunction<Double> aFunc){
-    if (aFunc == PrimitiveFunction.NEGATE) {
-      PrimitiveArray.negate(aData,aFirst,aLimit,aStep,anArg);
+
+    @Override
+    protected final Double get(final int index) {
+        return data[index];
     }
- else     if (aFunc instanceof FixedFirst<?>) {
-      final FixedFirst<Double> tmpFunc=(FixedFirst<Double>)aFunc;
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,tmpFunc.doubleValue(),tmpFunc.getFunction(),aData);
+
+    @Override
+    protected final int indexOfLargest(final int first, final int limit, final int step) {
+
+        int retVal = first;
+        double tmpLargest = ZERO;
+        double tmpValue;
+
+        for (int i = first; i < limit; i += step) {
+            tmpValue = Math.abs(data[i]);
+            if (tmpValue > tmpLargest) {
+                tmpLargest = tmpValue;
+                retVal = i;
+            }
+        }
+
+        return retVal;
     }
- else     if (aFunc instanceof FixedSecond<?>) {
-      final FixedSecond<Double> tmpFunc=(FixedSecond<Double>)aFunc;
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,aData,tmpFunc.getFunction(),tmpFunc.doubleValue());
+
+    @Override
+    protected final boolean isAbsolute(final int index) {
+        return PrimitiveScalar.isAbsolute(data[index]);
     }
- else     if (aFunc instanceof FixedParameter<?>) {
-      final FixedParameter<Double> tmpFunc=(FixedParameter<Double>)aFunc;
-      PrimitiveArray.invoke(aData,aFirst,aLimit,aStep,aData,tmpFunc.getFunction(),tmpFunc.getParameter());
+
+    @Override
+    protected final boolean isInfinite(final int index) {
+        return PrimitiveScalar.isInfinite(data[index]);
     }
- else {
-      for (int i=aFirst; i < aLimit; i+=aStep) {
-        aData[i]=aFunc.invoke(anArg[i]);
-      }
+
+    @Override
+    protected final boolean isNaN(final int index) {
+        return PrimitiveScalar.isNaN(data[index]);
     }
-  }
-  private final double[] myData;
-  /** 
- * Array not copied! No checking!
- */
-  protected PrimitiveArray(  final double[] anArray){
-    super(anArray.length);
-    myData=anArray;
-  }
-  protected PrimitiveArray(  final int aLength){
-    super(aLength);
-    myData=new double[aLength];
-  }
-  public final double doubleValue(  final long index){
-    return myData[(int)index];
-  }
-  @Override public boolean equals(  final Object anObj){
-    if (anObj instanceof PrimitiveArray) {
-      return Arrays.equals(myData,((PrimitiveArray)anObj).data());
+
+    @Override
+    protected final boolean isPositive(final int index) {
+        return PrimitiveScalar.isPositive(data[index]);
     }
- else {
-      return super.equals(anObj);
+
+    @Override
+    protected final boolean isReal(final int index) {
+        return PrimitiveScalar.IS_REAL;
     }
-  }
-  public final void fillAll(  final Double aNmbr){
-    PrimitiveArray.fill(myData,0,myData.length,1,aNmbr);
-  }
-  public void fillRange(  final long first,  final long limit,  final Double value){
-    PrimitiveArray.fill(myData,(int)first,(int)limit,1,value);
-  }
-  public Double get(  final long index){
-    return myData[(int)index];
-  }
-  @Override public int hashCode(){
-    return Arrays.hashCode(myData);
-  }
-  public final boolean isAbsolute(  final long index){
-    return PrimitiveScalar.isAbsolute(myData[(int)index]);
-  }
-  public final boolean isInfinite(  final long index){
-    return PrimitiveScalar.isInfinite(myData[(int)index]);
-  }
-  public final boolean isNaN(  final long index){
-    return PrimitiveScalar.isNaN(myData[(int)index]);
-  }
-  public final boolean isPositive(  final long index){
-    return PrimitiveScalar.isPositive(myData[(int)index]);
-  }
-  public final boolean isReal(  final long index){
-    return PrimitiveScalar.IS_REAL;
-  }
-  public final boolean isZero(  final long index){
-    return PrimitiveScalar.isZero(myData[(int)index]);
-  }
-  @Override public final Double set(  final int index,  final Number aNmbr){
-    final double retVal=myData[index];
-    myData[index]=aNmbr.doubleValue();
-    return retVal;
-  }
-  public final void set(  final long index,  final double value){
-    myData[(int)index]=value;
-  }
-  public void set(  final long index,  final Number value){
-    myData[(int)index]=value.doubleValue();
-  }
-  protected final double[] copyOfData(){
-    return ArrayUtils.copyOf(myData);
-  }
-  protected final double[] data(){
-    return myData;
-  }
-  @Override protected final void exchange(  final int aFirstA,  final int aFirstB,  final int aStep,  final int aCount){
-    PrimitiveArray.exchange(myData,aFirstA,aFirstB,aStep,aCount);
-  }
-  @Override protected void fill(  final Access1D<?> anArg){
-    PrimitiveArray.fill(myData,anArg);
-  }
-  @Override protected final void fill(  final int aFirst,  final int aLimit,  final Access1D<Double> aLeftArg,  final BinaryFunction<Double> aFunc,  final Access1D<Double> aRightArg){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,1,aLeftArg,aFunc,aRightArg);
-  }
-  @Override protected final void fill(  final int aFirst,  final int aLimit,  final Access1D<Double> aLeftArg,  final BinaryFunction<Double> aFunc,  final Double aRightArg){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,1,aLeftArg,aFunc,aRightArg);
-  }
-  @Override protected final void fill(  final int aFirst,  final int aLimit,  final Double aLeftArg,  final BinaryFunction<Double> aFunc,  final Access1D<Double> aRightArg){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,1,aLeftArg,aFunc,aRightArg);
-  }
-  @Override protected final void fill(  final int aFirst,  final int aLimit,  final int aStep,  final Double aNmbr){
-    PrimitiveArray.fill(myData,aFirst,aLimit,aStep,aNmbr);
-  }
-  @Override protected final int getIndexOfLargest(  final int aFirst,  final int aLimit,  final int aStep){
-    int retVal=aFirst;
-    double tmpLargest=ZERO;
-    double tmpValue;
-    for (int i=aFirst; i < aLimit; i+=aStep) {
-      tmpValue=Math.abs(myData[i]);
-      if (tmpValue > tmpLargest) {
-        tmpLargest=tmpValue;
-        retVal=i;
-      }
+
+    @Override
+    protected final boolean isZero(final int index) {
+        return TypeUtils.isZero(data[index]);
     }
-    return retVal;
-  }
-  @Override protected final boolean isReal(  final int index){
-    return true;
-  }
-  @Override protected final boolean isZero(  final int index){
-    return TypeUtils.isZero(myData[index]);
-  }
-  @Override protected final boolean isZeros(  final int aFirst,  final int aLimit,  final int aStep){
-    boolean retVal=true;
-    for (int i=aFirst; retVal && (i < aLimit); i+=aStep) {
-      retVal&=TypeUtils.isZero(myData[i]);
+
+    @Override
+    protected final boolean isZeros(final int first, final int limit, final int step) {
+
+        boolean retVal = true;
+
+        for (int i = first; retVal && (i < limit); i += step) {
+            retVal &= TypeUtils.isZero(data[i]);
+        }
+
+        return retVal;
     }
-    return retVal;
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final Access1D<Double> aLeftArg,  final BinaryFunction<Double> aFunc){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,aLeftArg,aFunc,this);
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final BinaryFunction<Double> aFunc,  final Access1D<Double> aRightArg){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,this,aFunc,aRightArg);
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final BinaryFunction<Double> aFunc,  final Double aRightArg){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,myData,aFunc,aRightArg);
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final Double aLeftArg,  final BinaryFunction<Double> aFunc){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,aLeftArg,aFunc,myData);
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final ParameterFunction<Double> aFunc,  final int aParam){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,myData,aFunc,aParam);
-  }
-  @Override protected final void modify(  final int aFirst,  final int aLimit,  final int aStep,  final UnaryFunction<Double> aFunc){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,this,aFunc);
-  }
-  @Override protected final int searchAscending(  final Double aNmbr){
-    return Arrays.binarySearch(myData,aNmbr.doubleValue());
-  }
-  @Override protected final void sortAscending(){
-    Arrays.sort(myData);
-  }
-  @Override protected final Scalar<Double> toScalar(  final int index){
-    return new PrimitiveScalar(myData[index]);
-  }
-  @Override protected final void visit(  final int aFirst,  final int aLimit,  final int aStep,  final VoidFunction<Double> aVisitor){
-    PrimitiveArray.invoke(myData,aFirst,aLimit,aStep,aVisitor);
-  }
+
+    @Override
+    protected void modify(final int index, final Access1D<Double> left, final BinaryFunction<Double> function) {
+        // TODO Auto-generated method stub
+
+    }
+
+    @Override
+    protected void modify(final int index, final BinaryFunction<Double> function, final Access1D<Double> right) {
+        // TODO Auto-generated method stub
+
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final Access1D<Double> left, final BinaryFunction<Double> function) {
+        PrimitiveArray.invoke(data, first, limit, step, left, function, this);
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final BinaryFunction<Double> function, final Access1D<Double> right) {
+        PrimitiveArray.invoke(data, first, limit, step, this, function, right);
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final BinaryFunction<Double> function, final Double right) {
+        PrimitiveArray.invoke(data, first, limit, step, data, function, right);
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final Double left, final BinaryFunction<Double> function) {
+        PrimitiveArray.invoke(data, first, limit, step, left, function, data);
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final ParameterFunction<Double> function, final int parameter) {
+        PrimitiveArray.invoke(data, first, limit, step, data, function, parameter);
+    }
+
+    @Override
+    protected final void modify(final int first, final int limit, final int step, final UnaryFunction<Double> function) {
+        PrimitiveArray.invoke(data, first, limit, step, this, function);
+    }
+
+    @Override
+    protected void modify(final int index, final UnaryFunction<Double> function) {
+        data[index] = function.invoke(data[index]);
+    }
+
+    @Override
+    protected final int searchAscending(final Double aNmbr) {
+        return Arrays.binarySearch(data, aNmbr.doubleValue());
+    }
+
+    @Override
+    protected final void set(final int index, final double value) {
+        data[index] = value;
+    }
+
+    @Override
+    protected final void set(final int index, final Number value) {
+        data[index] = value.doubleValue();
+    }
+
+    @Override
+    protected int size() {
+        return data.length;
+    }
+
+    @Override
+    protected final void sortAscending() {
+        Arrays.sort(data);
+    }
+
+    @Override
+    protected final Scalar<Double> toScalar(final long index) {
+        return new PrimitiveScalar(data[(int) index]);
+    }
+
+    @Override
+    protected final void visit(final int first, final int limit, final int step, final VoidFunction<Double> visitor) {
+        PrimitiveArray.invoke(data, first, limit, step, visitor);
+    }
+
+    @Override
+    protected final void visit(final int index, final VoidFunction<Double> visitor) {
+        visitor.invoke(data[index]);
+    }
+
+    @Override
+    boolean isPrimitive() {
+        return true;
+    }
+
+    @Override
+    DenseArray<Double> newInstance(final int capacity) {
+        return new PrimitiveArray(capacity);
+    }
+
 }

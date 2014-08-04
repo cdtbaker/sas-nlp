@@ -1,14 +1,27 @@
+/*
+Copyright � 1999 CERN - European Organization for Nuclear Research.
+Permission to use, copy, modify, distribute and sell this software and its documentation for any purpose 
+is hereby granted without fee, provided that the above copyright notice appear in all copies and 
+that both that copyright notice and this permission notice appear in supporting documentation. 
+CERN makes no representations about the suitability of this software for any purpose. 
+It is provided "as is" without expressed or implied warranty.
+*/
 package cern.jet.random;
+
 import cern.jet.random.engine.RandomEngine;
-/** 
+/**
  * Abstract base class for all random distributions.
+ *
  * A subclass of this class need to override method <tt>nextDouble()</tt> and, in rare cases, also <tt>nextInt()</tt>.
  * <p>
  * Currently all subclasses use a uniform pseudo-random number generation engine and transform its results to the target distribution.
  * Thus, they expect such a uniform engine upon instance construction.
- * <p>{@link cern.jet.random.engine.MersenneTwister} is recommended as uniform pseudo-random number generation engine, since it is very strong and at the same time quick.{@link #makeDefaultGenerator()} will conveniently construct and return such a magic thing.
+ * <p>
+ * {@link cern.jet.random.engine.MersenneTwister} is recommended as uniform pseudo-random number generation engine, since it is very strong and at the same time quick.
+ * {@link #makeDefaultGenerator()} will conveniently construct and return such a magic thing.
  * You can also, for example, use {@link cern.jet.random.engine.DRand}, a quicker (but much weaker) uniform random number generation engine.
  * Of course, you can also use other strong uniform random number generation engines. 
+ *
  * <p>
  * <b>Ressources on the Web:</b>
  * <dt>Check the Web version of the <A HREF="http://www.cern.ch/RD11/rkb/AN16pp/node1.html"> CERN Data Analysis Briefbook </A>. This will clarify the definitions of most distributions.
@@ -31,64 +44,64 @@ import cern.jet.random.engine.RandomEngine;
  * @version 1.0, 09/24/99
  */
 public abstract class AbstractDistribution extends cern.colt.PersistentObject implements cern.colt.function.DoubleFunction, cern.colt.function.IntFunction {
-  protected RandomEngine randomGenerator;
-  /** 
+	protected RandomEngine randomGenerator;
+/**
  * Makes this class non instantiable, but still let's others inherit from it.
  */
-  protected AbstractDistribution(){
-  }
-  /** 
- * Equivalent to <tt>nextDouble()</tt>.
- * This has the effect that distributions can now be used as function objects, returning a random number upon function evaluation.
- */
-  public double apply(  double dummy){
-    return nextDouble();
-  }
-  /** 
- * Equivalent to <tt>nextInt()</tt>.
- * This has the effect that distributions can now be used as function objects, returning a random number upon function evaluation.
- */
-  public int apply(  int dummy){
-    return nextInt();
-  }
-  /** 
+protected AbstractDistribution() {}
+/**
+Equivalent to <tt>nextDouble()</tt>.
+This has the effect that distributions can now be used as function objects, returning a random number upon function evaluation.
+*/
+public double apply(double dummy) {
+	return nextDouble();
+}
+/**
+Equivalent to <tt>nextInt()</tt>.
+This has the effect that distributions can now be used as function objects, returning a random number upon function evaluation.
+*/
+public int apply(int dummy) {
+	return nextInt();
+}
+/**
  * Returns a deep copy of the receiver; the copy will produce identical sequences.
  * After this call has returned, the copy and the receiver have equal but separate state.
+ *
  * @return a copy of the receiver.
  */
-  public Object clone(){
-    AbstractDistribution copy=(AbstractDistribution)super.clone();
-    if (this.randomGenerator != null)     copy.randomGenerator=(RandomEngine)this.randomGenerator.clone();
-    return copy;
-  }
-  /** 
+public Object clone() {
+	AbstractDistribution copy = (AbstractDistribution) super.clone();
+	if (this.randomGenerator != null) copy.randomGenerator = (RandomEngine) this.randomGenerator.clone();
+	return copy;
+}
+/**
  * Returns the used uniform random number generator;
  */
-  protected RandomEngine getRandomGenerator(){
-    return randomGenerator;
-  }
-  /** 
+protected RandomEngine getRandomGenerator() {
+	return randomGenerator;
+}
+/**
  * Constructs and returns a new uniform random number generation engine seeded with the current time.
  * Currently this is {@link cern.jet.random.engine.MersenneTwister}.
  */
-  public static RandomEngine makeDefaultGenerator(){
-    return cern.jet.random.engine.RandomEngine.makeDefault();
-  }
-  /** 
+public static RandomEngine makeDefaultGenerator() {
+	return cern.jet.random.engine.RandomEngine.makeDefault();
+}
+/**
  * Returns a random number from the distribution.
  */
-  public abstract double nextDouble();
-  /** 
+public abstract double nextDouble();
+/**
  * Returns a random number from the distribution; returns <tt>(int) Math.round(nextDouble())</tt>.
  * Override this method if necessary.
  */
-  public int nextInt(){
-    return (int)Math.round(nextDouble());
-  }
-  /** 
+public int nextInt() {
+	return (int) Math.round(nextDouble());
+}
+/**
  * Sets the uniform random generator internally used.
  */
-  protected void setRandomGenerator(  RandomEngine randomGenerator){
-    this.randomGenerator=randomGenerator;
-  }
+protected void setRandomGenerator(RandomEngine randomGenerator) {
+	this.randomGenerator = randomGenerator;
+}
 }

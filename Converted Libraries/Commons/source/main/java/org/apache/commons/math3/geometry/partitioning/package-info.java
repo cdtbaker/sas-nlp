@@ -1,11 +1,32 @@
-/** 
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/**
+ *
  * This package provides classes to implement Binary Space Partition trees.
- * <p>{@link org.apache.commons.math3.geometry.partitioning.BSPTree BSP trees}are an efficient way to represent parts of space and in particular
+ *
+ * <p>
+ * {@link org.apache.commons.math3.geometry.partitioning.BSPTree BSP trees}
+ * are an efficient way to represent parts of space and in particular
  * polytopes (line segments in 1D, polygons in 2D and polyhedrons in 3D)
  * and to operate on them. The main principle is to recursively subdivide
  * the space using simple hyperplanes (points in 1D, lines in 2D, planes
  * in 3D).
  * </p>
+ *
  * <p>
  * We start with a tree composed of a single node without any cut
  * hyperplane: it represents the complete space, which is a convex
@@ -19,6 +40,7 @@
  * cut hyperplane and leaf nodes without any hyperplane which correspond
  * to convex parts.
  * </p>
+ *
  * <p>
  * When BSP trees are used to represent polytopes, the convex parts are
  * known to be completely inside or outside the polytope as long as there
@@ -29,13 +51,16 @@
  * important to note that the polytope is <em>not</em> defined by a
  * single part, but by several convex ones. This is the property that
  * allows BSP-trees to represent non-convex polytopes despites all parts
- * are convex. The {@link org.apache.commons.math3.geometry.partitioning.Region Region} class is
- * devoted to this representation, it is build on top of the {@link org.apache.commons.math3.geometry.partitioning.BSPTree BSPTree} class using
+ * are convex. The {@link
+ * org.apache.commons.math3.geometry.partitioning.Region Region} class is
+ * devoted to this representation, it is build on top of the {@link
+ * org.apache.commons.math3.geometry.partitioning.BSPTree BSPTree} class using
  * boolean objects as the leaf nodes attributes to represent the
  * inside/outside property of each leaf part, and also adds various
  * methods dealing with boundaries (i.e. the separation between the
  * inside and the outside parts).
  * </p>
+ *
  * <p>
  * Rather than simply associating the internal nodes with an hyperplane,
  * we consider <em>sub-hyperplanes</em> which correspond to the part of
@@ -50,6 +75,7 @@
  * sub-hyperplanes in an internal node or belongs to one of the leaf
  * convex parts.
  * </p>
+ *
  * <p>
  * In order to determine where a point is, it is sufficient to check its
  * position with respect to the root cut hyperplane, to select the
@@ -65,6 +91,7 @@
  * or if the first tree levels close to the root discriminate large parts
  * of the total space.
  * </p>
+ *
  * <p>
  * One of the main sources for the development of this package was Bruce
  * Naylor, John Amanatides and William Thibault paper <a
@@ -75,5 +102,13 @@
  * found <a
  * href="http://www.cs.utexas.edu/users/fussell/courses/cs384g/bsp_treemerge.pdf">here</a>.
  * </p>
+ *
+ * <p>
+ * Note that the interfaces defined in this package are <em>not</em> intended to
+ * be implemented by Apache Commons Math users, they are only intended to be
+ * implemented within the library itself. New methods may be added even for
+ * minor versions, which breaks compatibility for external implementations.
+ * </p>
+ *
  */
 package org.apache.commons.math3.geometry.partitioning;

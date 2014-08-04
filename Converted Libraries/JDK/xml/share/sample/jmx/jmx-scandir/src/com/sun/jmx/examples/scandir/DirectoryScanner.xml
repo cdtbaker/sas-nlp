@@ -1,0 +1,469 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jmx.examples.scandir">
+        <import package="com.sun.jmx.examples.scandir.ScanManager.getNextSeqNumber"/>
+        <import package="com.sun.jmx.examples.scandir.ScanManagerMXBean.ScanState"/>
+        <import package="com.sun.jmx.examples.scandir.ScanManagerMXBean.ScanState"/>
+        <import package="com.sun.jmx.examples.scandir.config.DirectoryScannerConfig.Action"/>
+        <import package="com.sun.jmx.examples.scandir.config.XmlConfigUtils"/>
+        <import package="com.sun.jmx.examples.scandir.config.DirectoryScannerConfig"/>
+        <import package="com.sun.jmx.examples.scandir.config.DirectoryScannerConfig.Action"/>
+        <import package="com.sun.jmx.examples.scandir.config.ResultRecord"/>
+        <import package="java.io.File"/>
+        <import package="java.io.FileFilter"/>
+        <import package="java.io.IOException"/>
+        <import package="java.util.Arrays"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.EnumSet"/>
+        <import package="java.util.HashSet"/>
+        <import package="java.util.LinkedList"/>
+        <import package="java.util.Set"/>
+        <import package="java.util.logging.Level"/>
+        <import package="java.util.logging.Logger"/>
+        <import package="javax.management.AttributeChangeNotification"/>
+        <import package="javax.management.InstanceNotFoundException"/>
+        <import package="javax.management.ListenerNotFoundException"/>
+        <import package="javax.management.MBeanNotificationInfo"/>
+        <import package="javax.management.Notification"/>
+        <import package="javax.management.NotificationBroadcasterSupport"/>
+        <import package="javax.management.NotificationEmitter"/>
+        <import package="javax.management.NotificationFilter"/>
+        <import package="javax.management.NotificationListener"/>
+        <class name="DirectoryScanner" line="63">
+            <comment line="116">
+                Attribute : State                
+            </comment>
+            <comment line="120">
+                The DirectoryScanner delegates the implementation of
+                 the NotificationEmitter interface to a wrapped instance
+                 of NotificationBroadcasterSupport.                
+            </comment>
+            <comment line="126">
+                The root directory at which this DirectoryScanner will start
+                 scanning. Constructed from config.getRootDirectory().                
+            </comment>
+            <comment line="131">
+                This DirectoryScanner config - this is a constant which is
+                 provided at construction time by the {@link ScanManager}.                
+            </comment>
+            <comment line="136">
+                The set of actions for which this DirectoryScanner is configured.
+                 Constructed from config.getActions()                
+            </comment>
+            <comment line="141">
+                The ResultLogManager that this DirectoryScanner will use to log
+                 info. This is a hard reference to another MBean, provided
+                 at construction time by the ScanManager.
+                 The ScanManager makes sure that the life cycle of these two MBeans
+                 is consistent.                
+            </comment>
+            <comment line="201">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="207">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="213">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="218">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="223">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="230">
+                This variable points to the current (or latest) scan.                
+            </comment>
+            <comment line="234">
+                see DirectoryScannerMXBean                
+            </comment>
+            <comment line="274">
+                This method is invoked to carry out the configured actions on a
+                 matching file.
+                 Do not call this method from within synchronized() { } as this
+                 method may send notifications!                
+            </comment>
+            <comment line="328">
+                Deletes a matching file.                
+            </comment>
+            <comment line="344">
+                Notifies of a matching file.                
+            </comment>
+            <comment line="366">
+                Logs a result with the ResultLogManager                
+            </comment>
+            <comment line="378">
+                Contextual object used to store info about current
+                 (or last) scan.                
+            </comment>
+            <comment line="415">
+                The actual scan logic. Switches state to RUNNING,
+                 and scan the list of given dirs.
+                 The list is a live object which is updated by this method.
+                 This would allow us to implement methods like &quot;pause&quot; and &quot;resume&quot;,
+                 since all the info needed to resume would be in the list.                
+            </comment>
+            <comment line="512">
+                Switch this object state to the desired value an send
+                 a notification. Don&apos;t call this method from within a
+                 synchronized block!                
+            </comment>
+            <comment line="565">
+                Validates the given root directory, returns a File object for
+                 that directory.
+                 Throws IllegalArgumentException if the given root is not
+                 acceptable.                
+            </comment>
+            <implements interface="DirectoryScannerMXBean"/>
+            <implements interface="NotificationEmitter"/>
+            <javadoc line="63">
+                A &lt;code&gt;DirectoryScanner&lt;/code&gt; is an MBean that
+                  scans a file system starting at a given root directory,
+                  and then looks for files that match a given criteria.
+                  &lt;p&gt;
+                  When such a file is found, the &lt;code&gt;DirectoryScanner&lt;/code&gt; takes
+                  the action for which it was configured: emit a notification,
+                  &lt;i&gt;and or&lt;/i&gt; log a {@link com.sun.jmx.examples.scandir.config.ResultRecord} for this file,
+                  &lt;i&gt;and or&lt;/i&gt; delete that file.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The code that would actually delete the file is commented out - so that
+                  nothing valuable is lost if this example is run by mistake on the wrong
+                  set of directories.&lt;br&gt;
+                  Logged results are logged by sending them to the {@link ResultLogManager}.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  &lt;code&gt;DirectoryScannerMXBeans&lt;/code&gt; are created, initialized, and
+                  registered by the {@link ScanManagerMXBean}.
+                  The {@link ScanManagerMXBean} will also schedule and run them in
+                  background by calling their {@link #scan} method.
+                  &lt;/p&gt;
+                  &lt;p&gt;Client code is not expected to create or register directly any such
+                  MBean. Instead, clients are expected to modify the configuration, using
+                  the {@link ScanDirConfigMXBean}, and then apply it, using the {@link ScanManagerMXBean}. Instances of &lt;code&gt;DirectoryScannerMXBeans&lt;/code&gt;
+                  will then be created and registered (or unregistered and garbage collected)
+                  as a side effect of applying that configuration.
+                  &lt;/p&gt;                
+                <author>
+                    Sun Microsystems, 2006 - All rights reserved.                    
+                </author>
+            </javadoc>
+            <declaration name="FILE_MATCHES_NOTIFICATION" type="String" line="99"/>
+            <javadoc line="99">
+                The type for &lt;i&gt;com.sun.jmx.examples.scandir.filematch&lt;/i&gt; notifications.
+                  Notifications of this type will be emitted whenever a file that
+                  matches this {@code DirectoryScanner} criteria is found, but only if
+                  this {@code DirectoryScanner} was configured to {@link Action#NOTIFY notify} for matching files.                
+            </javadoc>
+            <declaration name="LOG" type="Logger" line="109"/>
+            <javadoc line="109">
+                A logger for this class.                
+            </javadoc>
+            <declaration name="state" type="ScanState" line="117"/>
+            <declaration name="broadcaster" type="NotificationBroadcasterSupport" line="123"/>
+            <declaration name="rootFile" type="File" line="128"/>
+            <declaration name="config" type="DirectoryScannerConfig" line="133"/>
+            <declaration name="actions" type="Set&amp;lt;Action&amp;gt;" line="138"/>
+            <declaration name="logManager" type="ResultLogManager" line="146"/>
+            <javadoc line="148">
+                Constructs a new {@code DirectoryScanner}.
+                  &lt;p&gt;This constructor is
+                  package protected, and this MBean cannot be created by a remote
+                  client, because it needs a reference to the {@link ResultLogManager},
+                  which cannot be provided from remote.
+                  &lt;/p&gt;
+                  &lt;p&gt;This is a conscious design choice: {@code DirectoryScanner} MBeans
+                  are expected to be completely managed (created, registered, unregistered)
+                  by the {@link ScanManager} which does provide this reference.
+                  &lt;/p&gt;                
+                <param>
+                    config This {@code DirectoryScanner} configuration.                    
+                </param>
+                <param>
+                    logManager The info log manager with which to log the info
+                      records.                    
+                </param>
+                <throws>
+                    IllegalArgumentException if one of the parameter is null, or if
+                      the provided {@code config} doesn&apos;t have its {@code name} set,
+                      or if the {@link DirectoryScannerConfig#getRootDirectoryroot directory} provided in the {@code config} is not acceptable
+                      (not provided or not found or not readable, etc...).                    
+                </throws>
+            </javadoc>
+            <method name="DirectoryScanner" type="constructor" line="171">
+                <params>
+                    <param name="config" type="DirectoryScannerConfig"/>
+                    <param name="logManager" type="ResultLogManager"/>
+                </params>
+                <comment line="182">
+                    Clone the config: ensure data encapsulation.                    
+                </comment>
+                <comment line="186">
+                    Checks that the provided root directory is valid.
+                     Throws IllegalArgumentException if it isn&apos;t.                    
+                </comment>
+                <comment line="191">
+                    Initialize the Set&lt;Action&gt; for which this DirectoryScanner
+                     is configured.                    
+                </comment>
+            </method>
+            <method name="stop" type="void" line="201">
+                <comment line="203">
+                    switch state to stop and send AttributeValueChangeNotification                    
+                </comment>
+            </method>
+            <method name="getRootDirectory" type="String" line="207"/>
+            <method name="getState" type="ScanState" line="213"/>
+            <method name="getConfiguration" type="DirectoryScannerConfig" line="218"/>
+            <method name="getCurrentScanInfo" type="String" line="223">
+                <declaration name="currentOrLastTask" type="ScanTask" line="224"/>
+            </method>
+            <declaration name="currentTask" type="ScanTask" line="231"/>
+            <method name="scan" type="void" line="234">
+                <comment line="246">
+                    only accept to scan if state is STOPPED or COMPLETED.                    
+                </comment>
+                <comment line="254">
+                    Create a new ScanTask object for our root directory file.                    
+                </comment>
+                <comment line="258">
+                    transient state... will be switched to RUNNING when
+                     task.execute() is called. This code could in fact be modified
+                     to use java.util.concurent.Future and, to push the task to
+                     an executor. We would then need to wait for the task to
+                     complete before returning.  However, this wouldn&apos;t buy us
+                     anything - since this method should wait for the task to
+                     finish anyway: so why would we do it?
+                     As it stands, we simply call task.execute() in the current
+                     thread - brave and fearless readers may want to attempt the
+                     modification ;-)                    
+                </comment>
+                <declaration name="task" type="ScanTask" line="235"/>
+                <scope line="237">
+                    <declaration name="list" type="LinkedList&amp;lt;File&amp;gt;" line="238"/>
+                </scope>
+            </method>
+            <method name="actOn" type="void" line="278">
+                <params>
+                    <param name="file" type="File"/>
+                </params>
+                <comment line="281">
+                    Which action were actually taken                    
+                </comment>
+                <comment line="286">
+                    Check out which actions are configured and carry them out.                    
+                </comment>
+                <comment line="292">
+                    Delete succeeded: add DELETE to the set of
+                     actions carried out.                    
+                </comment>
+                <comment line="299">
+                    Notify succeeded: add NOTIFY to the set of
+                     actions carried out.                    
+                </comment>
+                <comment line="305">
+                    LOGRESULT was configured - log actions carried out.
+                     =&gt; we must execute this action as the last action.
+                        simply set logresult=true for now. We will do
+                        the logging later                    
+                </comment>
+                <comment line="318">
+                    Now is time for logging:                    
+                </comment>
+                <comment line="322">
+                    just for the last trace below...                    
+                </comment>
+                <declaration name="taken" type="Set&amp;lt;Action&amp;gt;" line="282"/>
+                <declaration name="logresult" type="boolean" line="283"/>
+                <scope line="287">
+                    <scope line="290"/>
+                    <scope line="297"/>
+                </scope>
+                <scope line="318"/>
+            </method>
+            <method name="deleteFile" type="boolean" line="328">
+                <params>
+                    <param name="file" type="File"/>
+                </params>
+                <comment line="331">
+                    file.delete() is commented so that we don&apos;t do anything
+                     bad if the example is mistakenly run on the wrong set of
+                     directories.                    
+                </comment>
+                <comment line="335">
+                                        
+                </comment>
+                <scope line="329"/>
+                <scope line="337"/>
+            </method>
+            <method name="notifyMatch" type="boolean" line="344">
+                <params>
+                    <param name="file" type="File"/>
+                </params>
+                <comment line="352">
+                    This method *is not* called from any synchronized block, so
+                     we can happily call broadcaster.sendNotification() here.
+                     Note that verifying whether a method is called from within
+                     a synchronized block demends a thoroughful code reading,
+                     examining each of the &apos;parent&apos; methods in turn.                    
+                </comment>
+                <scope line="345">
+                    <declaration name="n" type="Notification" line="346"/>
+                </scope>
+                <scope line="359"/>
+            </method>
+            <method name="logResult" type="boolean" line="366">
+                <params>
+                    <param name="file" type="File"/>
+                    <param name="actions" type="Action[]"/>
+                </params>
+                <scope line="367"/>
+                <scope line="370"/>
+            </method>
+            <class name="ScanTask" line="380">
+                <comment line="383">
+                    List of Files that remain to scan.
+                     When files are discovered they are added to the list.
+                     When they are being handled, they are removed from the list.
+                     When the list is empty, the scanning is finished.                    
+                </comment>
+                <comment line="391">
+                    Some statistics...                    
+                </comment>
+                <declaration name="list" type="LinkedList&amp;lt;File&amp;gt;" line="387"/>
+                <declaration name="scan" type="DirectoryScanner" line="388"/>
+                <declaration name="scanned" type="long" line="392"/>
+                <declaration name="matching" type="long" line="393"/>
+                <declaration name="info" type="String" line="395"/>
+                <method name="ScanTask" type="constructor" line="397">
+                    <params>
+                        <param name="list" type="LinkedList&lt;File&gt;"/>
+                        <param name="scan" type="DirectoryScanner"/>
+                    </params>
+                </method>
+                <method name="execute" type="void" line="401"/>
+                <method name="scan" type="void" line="405">
+                    <params>
+                        <param name="list" type="LinkedList&lt;File&gt;"/>
+                    </params>
+                </method>
+                <method name="getScanInfo" type="String" line="409"/>
+            </class>
+            <method name="scan" type="void" line="420">
+                <params>
+                    <param name="task" type="ScanTask"/>
+                    <param name="list" type="LinkedList&lt;File&gt;"/>
+                </params>
+                <comment line="426">
+                    The FileFilter will tell us which files match and which don&apos;t.                    
+                </comment>
+                <comment line="430">
+                    We have two condition to end the loop: either the list is
+                     empty, meaning there&apos;s nothing more to scan, or the state of
+                     the DirectoryScanner was asynchronously switched to STOPPED by
+                     another thread, e.g. because someone called &quot;stop&quot; on the
+                     ScanManagerMXBean                    
+                </comment>
+                <comment line="438">
+                    Get and remove the first element in the list.                    
+                </comment>
+                <comment line="442">
+                    Increment number of file scanned.                    
+                </comment>
+                <comment line="445">
+                    If &apos;current&apos; is a file, it&apos;s already been matched by our
+                     file filter (see below): act on it.
+                     Note that for the first iteration of this loop, there will
+                     be one single file in the list: the root directory for this
+                     scanner.                    
+                </comment>
+                <comment line="456">
+                    If &apos;current&apos; is a directory, then
+                     find files and directories that match the file filter
+                     in this directory                    
+                </comment>
+                <comment line="462">
+                    Gets matching files and directories                    
+                </comment>
+                <comment line="466">
+                    Adds all matching file to the list.                    
+                </comment>
+                <comment line="471">
+                    The loop terminated. If the list is empty, then we have
+                     completed our task. If not, then somebody must have called
+                     stop() on this directory scanner.                    
+                </comment>
+                <comment line="480">
+                    We got an exception: stop the scan                    
+                </comment>
+                <comment line="489">
+                    We got an Error:
+                     Should not happen unless we ran out of memory or
+                     whatever - don&apos;t even try to notify, but
+                     stop the scan anyway!                    
+                </comment>
+                <comment line="497">
+                    rethrow error.                    
+                </comment>
+                <scope line="423">
+                    <declaration name="filter" type="FileFilter" line="427"/>
+                    <scope line="435">
+                        <declaration name="current" type="File" line="439"/>
+                        <scope line="450"/>
+                        <scope line="459">
+                            <declaration name="content" type="File[]" line="462"/>
+                        </scope>
+                    </scope>
+                    <scope line="474"/>
+                </scope>
+                <scope line="478"/>
+                <scope line="487"/>
+            </method>
+            <javadoc line="502">
+                MBeanNotification support - delegates to broadcaster.                
+            </javadoc>
+            <method name="addNotificationListener" type="void" line="507">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                </params>
+            </method>
+            <method name="setStateAndNotify" type="void" line="515">
+                <params>
+                    <param name="desired" type="ScanState"/>
+                </params>
+                <declaration name="old" type="ScanState" line="516"/>
+                <declaration name="n" type="AttributeChangeNotification" line="519"/>
+            </method>
+            <javadoc line="528">
+                The {@link DirectoryScannerMXBean} may send two types of
+                  notifications: filematch, and state attribute changed.                
+            </javadoc>
+            <method name="getNotificationInfo" type="MBeanNotificationInfo[]" line="532"/>
+            <javadoc line="547">
+                MBeanNotification support - delegates to broadcaster.                
+            </javadoc>
+            <method name="removeNotificationListener" type="void" line="551">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                </params>
+            </method>
+            <javadoc line="555">
+                MBeanNotification support - delegates to broadcaster.                
+            </javadoc>
+            <method name="removeNotificationListener" type="void" line="560">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                </params>
+            </method>
+            <method name="validateRoot" type="File" line="569">
+                <params>
+                    <param name="root" type="String"/>
+                </params>
+                <declaration name="f" type="File" line="574"/>
+            </method>
+        </class>
+    </source>

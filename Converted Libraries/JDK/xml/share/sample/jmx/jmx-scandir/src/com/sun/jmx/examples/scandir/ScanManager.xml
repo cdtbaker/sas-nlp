@@ -1,0 +1,943 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="com.sun.jmx.examples.scandir">
+        <import package="com.sun.jmx.examples.scandir.ScanManagerMXBean.ScanState"/>
+        <import package="com.sun.jmx.examples.scandir.ScanManagerMXBean.ScanState"/>
+        <import package="com.sun.jmx.examples.scandir.config.DirectoryScannerConfig"/>
+        <import package="com.sun.jmx.examples.scandir.config.ScanManagerConfig"/>
+        <import package="java.io.File"/>
+        <import package="java.io.IOException"/>
+        <import package="java.lang.management.ManagementFactory"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.Collections"/>
+        <import package="java.util.EnumSet"/>
+        <import package="java.util.HashMap"/>
+        <import package="java.util.Map"/>
+        <import package="java.util.Map.Entry"/>
+        <import package="java.util.Timer"/>
+        <import package="java.util.TimerTask"/>
+        <import package="java.util.concurrent.BlockingQueue"/>
+        <import package="java.util.concurrent.ConcurrentHashMap"/>
+        <import package="java.util.concurrent.ConcurrentLinkedQueue"/>
+        <import package="java.util.concurrent.LinkedBlockingQueue"/>
+        <import package="java.util.concurrent.Semaphore"/>
+        <import package="java.util.concurrent.TimeUnit"/>
+        <import package="java.util.logging.Level"/>
+        <import package="java.util.logging.Logger"/>
+        <import package="javax.management.AttributeChangeNotification"/>
+        <import package="javax.management.InstanceNotFoundException"/>
+        <import package="javax.management.JMException"/>
+        <import package="javax.management.JMX"/>
+        <import package="javax.management.ListenerNotFoundException"/>
+        <import package="javax.management.MBeanNotificationInfo"/>
+        <import package="javax.management.MBeanRegistration"/>
+        <import package="javax.management.MBeanServer"/>
+        <import package="javax.management.MBeanServerConnection"/>
+        <import package="javax.management.MalformedObjectNameException"/>
+        <import package="javax.management.Notification"/>
+        <import package="javax.management.NotificationBroadcasterSupport"/>
+        <import package="javax.management.NotificationEmitter"/>
+        <import package="javax.management.NotificationFilter"/>
+        <import package="javax.management.NotificationListener"/>
+        <import package="javax.management.ObjectInstance"/>
+        <import package="javax.management.ObjectName"/>
+        <class name="ScanManager" line="76">
+            <comment line="151">
+                The ResultLogManager for this application.                
+            </comment>
+            <comment line="161">
+                A proxy to the current ScanDirConfigMXBean which holds the current
+                 configuration data.                
+            </comment>
+            <comment line="166">
+                Avoid to write parameters twices when creating a new ConcurrentHashMap.                
+            </comment>
+            <comment line="172">
+                Avoid to write parameters twices when creating a new HashMap.                
+            </comment>
+            <comment line="332">
+                Creates a new DirectoryScannerMXBean, from the given configuration data.                
+            </comment>
+            <comment line="337">
+                Applies a configuration.
+                 throws IllegalStateException if lock can&apos;t be acquired.
+                 Unregisters all existing directory scanners, the create and registers
+                 new directory scanners according to the given config.
+                 Then pushes the log config to the result log manager.                
+            </comment>
+            <comment line="362">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="369">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="378">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="383">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="388">
+                Creates and registers a new directory scanner.
+                 Called by applyConfiguration.
+                 throws IllegalStateException if state is not STOPPED or COMPLETED
+                 (you cannot change the config while scanning is scheduled or running).                
+            </comment>
+            <comment line="431">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="446">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="455">
+                ---------------------------------------------------------------
+                 State Management
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="493">
+                Get this object&apos;s state. No need to synchronize because
+                 state is volatile.
+                 See ScanManagerMXBean                
+            </comment>
+            <comment line="568">
+                ---------------------------------------------------------------
+                 schedule() creates a new SessionTask that will be executed later
+                 (possibly right away if delay=0) by a Timer thread.
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="573">
+                The timer used by this object. Lazzy evaluation. Cleaned in
+                 postDeregister()                
+            </comment>
+            <comment line="578">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="596">
+                Schedule a SessionTask. The session task may reschedule
+                 a new identical task when it eventually ends.
+                 We use this logic so that the &apos;interval&apos; time is measured
+                 starting at the end of the task that finishes, rather than
+                 at its beginning. Therefore if a repeated task takes x ms,
+                 it will be repeated every x+interval ms.                
+            </comment>
+            <comment line="611">
+                ---------------------------------------------------------------
+                 start() is equivalent to schedule(0,0)
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="615">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="620">
+                ---------------------------------------------------------------
+                 Methods used to implement stop() -  stop() is asynchronous,
+                 and needs to notify any running background task that it needs
+                 to stop. It also needs to prevent scheduled task from being
+                 run.
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="627">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="650">
+                See ScanManagerMXBean                
+            </comment>
+            <comment line="656">
+                Appends exception to a StringBuilder message.                
+            </comment>
+            <comment line="668">
+                Cancels all scheduled session tasks                
+            </comment>
+            <comment line="686">
+                Stops all DirectoryScanners configured for this object.                
+            </comment>
+            <comment line="704">
+                ---------------------------------------------------------------
+                 We start scanning in background in a Timer thread.
+                 The methods below implement that logic.
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="731">
+                List of scheduled session task. Needed by stop() to cancel
+                 scheduled sessions. There&apos;s usually at most 1 session in
+                 this list (unless there&apos;s a bug somewhere ;-))                
+            </comment>
+            <comment line="738">
+                Used to give a unique id to session task - useful for
+                 debugging.                
+            </comment>
+            <comment line="901">
+                ---------------------------------------------------------------
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="904">
+                ---------------------------------------------------------------
+                 MBean Notification support
+                 The methods below are imported from {@link NotificationEmitter}
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="957">
+                ---------------------------------------------------------------
+                 End of MBean Notification support
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="961">
+                ---------------------------------------------------------------
+                 MBeanRegistration support
+                 The methods below are imported from {@link MBeanRegistration}
+                 ---------------------------------------------------------------                
+            </comment>
+            <comment line="1002">
+                Returns the default configuration filename                
+            </comment>
+            <comment line="1072">
+                Unregisters all created DirectoryScanners                
+            </comment>
+            <comment line="1077">
+                Unregisters all created ScanDirConfigs                
+            </comment>
+            <comment line="1082">
+                Unregisters all MBeans named by the given map                
+            </comment>
+            <comment line="1091">
+                Unregisters the ResultLogManager.                
+            </comment>
+            <comment line="1148">
+                ---------------------------------------------------------------
+                 End of MBeanRegistration support
+                 ---------------------------------------------------------------                
+            </comment>
+            <implements interface="ScanManagerMXBean"/>
+            <implements interface="NotificationEmitter"/>
+            <implements interface="MBeanRegistration"/>
+            <javadoc line="76">
+                &lt;p&gt;
+                  The &lt;code&gt;ScanManager&lt;/code&gt; is responsible for applying a configuration,
+                  starting and scheduling directory scans, and reporting application state.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The ScanManager MBean is a singleton MBean which controls
+                  scan session. The ScanManager name is defined by{@link #SCAN_MANAGER_NAME ScanManager.SCAN_MANAGER_NAME}.
+                  &lt;/p&gt;
+                  &lt;p&gt;
+                  The &lt;code&gt;ScanManager&lt;/code&gt; MBean is the entry point of the &lt;i&gt;scandir&lt;/i&gt;
+                  application management interface. It is from this MBean that all other MBeans
+                  will be created and registered.
+                  &lt;/p&gt;                
+                <author>
+                    Sun Microsystems, 2006 - All rights reserved.                    
+                </author>
+            </javadoc>
+            <declaration name="LOG" type="Logger" line="97"/>
+            <javadoc line="97">
+                A logger for this class.                
+            </javadoc>
+            <declaration name="SCAN_MANAGER_NAME" type="ObjectName" line="103"/>
+            <javadoc line="103">
+                The name of the ScanManager singleton MBean.                
+            </javadoc>
+            <declaration name="seqNumber" type="long" line="109"/>
+            <javadoc line="109">
+                Sequence number used for sending notifications. We use this
+                  sequence number throughout the application.                
+            </javadoc>
+            <declaration name="broadcaster" type="NotificationBroadcasterSupport" line="115"/>
+            <javadoc line="115">
+                The NotificationBroadcasterSupport object used to handle
+                  listener registration.                
+            </javadoc>
+            <declaration name="mbeanServer" type="MBeanServer" line="121"/>
+            <javadoc line="121">
+                The MBeanServer in which this MBean is registered. We obtain
+                  this reference by implementing the {@link MBeanRegistration}interface.                
+            </javadoc>
+            <declaration name="pendingNotifs" type="BlockingQueue&amp;lt;Notification&amp;gt;" line="128"/>
+            <javadoc line="128">
+                A queue of pending notifications we are about to send.
+                  We&apos;re using a BlockingQueue in order to avoid sending
+                  notifications from within a synchronized block.                
+            </javadoc>
+            <declaration name="state" type="ScanState" line="135"/>
+            <javadoc line="135">
+                The state of the scan session.                
+            </javadoc>
+            <declaration name="scanmap" type="Map&amp;lt;ObjectName,DirectoryScannerMXBean&amp;gt;" line="140"/>
+            <javadoc line="140">
+                The list of DirectoryScannerMBean that are run by a scan session.                
+            </javadoc>
+            <declaration name="configmap" type="Map&amp;lt;ObjectName,ScanDirConfigMXBean&amp;gt;" line="145"/>
+            <javadoc line="145">
+                The list of ScanDirConfigMXBean that were created by this MBean.                
+            </javadoc>
+            <declaration name="log" type="ResultLogManager" line="151"/>
+            <declaration name="sequencer" type="Semaphore" line="153"/>
+            <javadoc line="153">
+                We use a semaphore to ensure proper sequencing of exclusive
+                  action. The logic we have implemented is to fail - rather
+                  than block, if an exclusive action is already in progress.                
+            </javadoc>
+            <declaration name="config" type="ScanDirConfigMXBean" line="163"/>
+            <method name="newConcurrentHashMap" type="Map&lt;K,V&gt;" line="167"/>
+            <method name="newHashMap" type="Map&lt;K,V&gt;" line="173"/>
+            <javadoc line="177">
+                Creates a default singleton ObjectName for a given class.                
+                <param>
+                    clazz The interface class of the MBean for which we want to obtain
+                      a default singleton name, or its implementation class.
+                      Give one or the other depending on what you wish to see in
+                      the value of the key {@code type=}.                    
+                </param>
+                <return>
+                    A default singleton name for a singleton MBean class.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if the name can&apos;t be created
+                      for some unfathomable reason (e.g. an unexpected
+                      exception was raised).                    
+                </throws>
+            </javadoc>
+            <method name="makeSingletonName" type="ObjectName" line="188">
+                <params>
+                    <param name="clazz" type="Class"/>
+                </params>
+                <comment line="196">
+                    We use a reference to ScanDirAgent.class to ease
+                     to keep track of possible class renaming.                    
+                </comment>
+                <scope line="189">
+                    <declaration name="p" type="Package" line="190"/>
+                    <declaration name="packageName" type="String" line="191"/>
+                    <declaration name="className" type="String" line="192"/>
+                    <declaration name="domain" type="String" line="193"/>
+                    <scope line="194"/>
+                    <scope line="198"/>
+                    <declaration name="name" type="ObjectName" line="201"/>
+                </scope>
+                <scope line="203">
+                    <declaration name="iae" type="IllegalArgumentException" line="204"/>
+                </scope>
+            </method>
+            <javadoc line="210">
+                Creates a default ObjectName with keys &lt;code&gt;type=&lt;/code&gt; and
+                  &lt;code&gt;name=&lt;/code&gt; for an instance of a given MBean interface class.                
+                <param>
+                    clazz The interface class of the MBean for which we want to obtain
+                      a default name, or its implementation class.
+                      Give one or the other depending on what you wish to see in
+                      the value of the key {@code type=}.                    
+                </param>
+                <param>
+                    name The value of the &lt;code&gt;name=&lt;/code&gt; key.                    
+                </param>
+                <return>
+                    A default name for an instance of the given MBean interface class.                    
+                </return>
+                <throws>
+                    IllegalArgumentException if the name can&apos;t be created.
+                      (e.g. an unexpected exception was raised).                    
+                </throws>
+            </javadoc>
+            <method name="makeMBeanName" type="ObjectName" line="222">
+                <params>
+                    <param name="clazz" type="Class"/>
+                    <param name="name" type="String"/>
+                </params>
+                <scope line="223"/>
+                <scope line="227">
+                    <declaration name="iae" type="IllegalArgumentException" line="228"/>
+                </scope>
+            </method>
+            <javadoc line="234">
+                Return the ObjectName for a DirectoryScannerMXBean of that name.
+                  This is {@code makeMBeanName(DirectoryScannerMXBean.class,name)}.                
+                <param>
+                    name The value of the &lt;code&gt;name=&lt;/code&gt; key.                    
+                </param>
+                <return>
+                    the ObjectName for a DirectoryScannerMXBean of that name.                    
+                </return>
+            </javadoc>
+            <method name="makeDirectoryScannerName" type="ObjectName" line="240">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="244">
+                Return the ObjectName for a {@code ScanDirConfigMXBean} of that name.
+                  This is {@code makeMBeanName(ScanDirConfigMXBean.class,name)}.                
+                <param>
+                    name The value of the &lt;code&gt;name=&lt;/code&gt; key.                    
+                </param>
+                <return>
+                    the ObjectName for a {@code ScanDirConfigMXBean} of that name.                    
+                </return>
+            </javadoc>
+            <method name="makeScanDirConfigName" type="ObjectName" line="250">
+                <params>
+                    <param name="name" type="String"/>
+                </params>
+            </method>
+            <javadoc line="254">
+                Create and register a new singleton instance of the ScanManager
+                  MBean in the given {@link MBeanServerConnection}.                
+                <param>
+                    mbs The MBeanServer in which the new singleton instance
+                      should be created.                    
+                </param>
+                <throws>
+                    JMException The MBeanServer connection raised an exception
+                      while trying to instantiate and register the singleton MBean
+                      instance.                    
+                </throws>
+                <throws>
+                    IOException There was a connection problem while trying to
+                      communicate with the underlying MBeanServer.                    
+                </throws>
+                <return>
+                    A proxy for the registered MBean.                    
+                </return>
+            </javadoc>
+            <method name="register" type="ScanManagerMXBean" line="267">
+                <params>
+                    <param name="mbs" type="MBeanServerConnection"/>
+                </params>
+                <declaration name="moi" type="ObjectInstance" line="268"/>
+                <declaration name="proxy" type="ScanManagerMXBean" line="270"/>
+            </method>
+            <javadoc line="276">
+                Creates a new {@code ScanManagerMXBean} proxy over the given{@code MBeanServerConnection}. Does not check whether a{@code ScanManagerMXBean}is actually registered in that {@code MBeanServerConnection}.                
+                <return>
+                    a new {@code ScanManagerMXBean} proxy.                    
+                </return>
+                <param>
+                    mbs The {@code MBeanServerConnection} which holds the{@code ScanManagerMXBean} to proxy.                    
+                </param>
+            </javadoc>
+            <method name="newSingletonProxy" type="ScanManagerMXBean" line="286">
+                <params>
+                    <param name="mbs" type="MBeanServerConnection"/>
+                </params>
+                <declaration name="proxy" type="ScanManagerMXBean" line="287"/>
+            </method>
+            <javadoc line="293">
+                Creates a new {@code ScanManagerMXBean} proxy over the platform{@code MBeanServer}. This is equivalent to{@code newSingletonProxy(ManagementFactory.getPlatformMBeanServer())}.                
+                <return>
+                    a new {@code ScanManagerMXBean} proxy.                    
+                </return>
+            </javadoc>
+            <method name="newSingletonProxy" type="ScanManagerMXBean" line="299"/>
+            <javadoc line="303">
+                Create and register a new singleton instance of the ScanManager
+                  MBean in the given {@link MBeanServerConnection}.                
+                <throws>
+                    JMException The MBeanServer connection raised an exception
+                      while trying to instantiate and register the singleton MBean
+                      instance.                    
+                </throws>
+                <throws>
+                    IOException There was a connection problem while trying to
+                      communicate with the underlying MBeanServer.                    
+                </throws>
+                <return>
+                    A proxy for the registered MBean.                    
+                </return>
+            </javadoc>
+            <method name="register" type="ScanManagerMXBean" line="314">
+                <declaration name="mbs" type="MBeanServer" line="315"/>
+            </method>
+            <javadoc line="319">
+                Create a new ScanManager MBean                
+            </javadoc>
+            <method name="ScanManager" type="constructor" line="322"/>
+            <method name="createDirectoryScanner" type="DirectoryScannerMXBean" line="332">
+                <params>
+                    <param name="config" type="DirectoryScannerConfig"/>
+                </params>
+            </method>
+            <method name="applyConfiguration" type="void" line="343">
+                <params>
+                    <param name="bean" type="ScanManagerConfig"/>
+                </params>
+                <scope line="345"/>
+                <scope line="348">
+                    <declaration name="scans" type="DirectoryScannerConfig[]" line="350"/>
+                    <scope line="352"/>
+                </scope>
+                <scope line="356"/>
+            </method>
+            <method name="applyConfiguration" type="void" line="363">
+                <params>
+                    <param name="fromMemory" type="boolean"/>
+                </params>
+            </method>
+            <method name="applyCurrentResultLogConfig" type="void" line="370">
+                <params>
+                    <param name="toMemory" type="boolean"/>
+                </params>
+                <declaration name="bean" type="ScanManagerConfig" line="371"/>
+            </method>
+            <method name="setConfigurationMBean" type="void" line="378">
+                <params>
+                    <param name="config" type="ScanDirConfigMXBean"/>
+                </params>
+            </method>
+            <method name="getConfigurationMBean" type="ScanDirConfigMXBean" line="383"/>
+            <method name="addDirectoryScanner" type="DirectoryScannerMXBean" line="394">
+                <params>
+                    <param name="bean" type="DirectoryScannerConfig"/>
+                </params>
+                <scope line="395">
+                    <declaration name="scanner" type="DirectoryScannerMXBean" line="396"/>
+                    <declaration name="scanName" type="ObjectName" line="397"/>
+                    <scope line="398"/>
+                    <declaration name="moi" type="ObjectInstance" line="407"/>
+                    <declaration name="moiName" type="ObjectName" line="409"/>
+                    <declaration name="proxy" type="DirectoryScannerMXBean" line="410"/>
+                </scope>
+                <scope line="415">
+                    <declaration name="msg" type="String" line="416"/>
+                </scope>
+                <scope line="421">
+                    <declaration name="msg" type="String" line="422"/>
+                </scope>
+            </method>
+            <method name="createOtherConfigurationMBean" type="ScanDirConfigMXBean" line="433">
+                <params>
+                    <param name="name" type="String"/>
+                    <param name="filename" type="String"/>
+                </params>
+                <declaration name="profile" type="ScanDirConfig" line="434"/>
+                <declaration name="profName" type="ObjectName" line="435"/>
+                <declaration name="moi" type="ObjectInstance" line="436"/>
+                <declaration name="proxy" type="ScanDirConfigMXBean" line="437"/>
+            </method>
+            <method name="getDirectoryScanners" type="Map&lt;String,DirectoryScannerMXBean&gt;" line="446">
+                <declaration name="proxyMap" type="Map&amp;lt;String,DirectoryScannerMXBean&amp;gt;" line="447"/>
+                <scope line="448"/>
+            </method>
+            <declaration name="allowedStates" type="Map&amp;lt;String,EnumSet&amp;lt;ScanState&amp;gt;&amp;gt;" line="458"/>
+            <javadoc line="458">
+                For each operation, this map stores a list of states from
+                  which the corresponding operation can be legally called.
+                  For instance, it is legal to call &quot;stop&quot; regardless of the
+                  application state. However, &quot;schedule&quot; can be called only if
+                  the application state is STOPPED, etc...                
+            </javadoc>
+            <scope line="466"/>
+            <method name="getState" type="ScanState" line="495"/>
+            <javadoc line="499">
+                Enqueue a state changed notification for the given states.                
+            </javadoc>
+            <method name="queueStateChangedNotification" type="void" line="506">
+                <params>
+                    <param name="sequence" type="long"/>
+                    <param name="time" type="long"/>
+                    <param name="old" type="ScanState"/>
+                    <param name="current" type="ScanState"/>
+                </params>
+                <comment line="512">
+                    Queue the notification. We have created an unlimited queue, so
+                     this method should always succeed.                    
+                </comment>
+                <declaration name="n" type="AttributeChangeNotification" line="507"/>
+                <scope line="513">
+                    <scope line="514"/>
+                </scope>
+                <scope line="517"/>
+            </method>
+            <javadoc line="522">
+                Send all notifications present in the queue.                
+            </javadoc>
+            <method name="sendQueuedNotifications" type="void" line="525">
+                <declaration name="n" type="Notification" line="526"/>
+                <scope line="527"/>
+            </method>
+            <javadoc line="532">
+                Checks that the current state is allowed for the given operation,
+                  and if so, switch its value to the new desired state.
+                  This operation also enqueue the appropriate state changed
+                  notification.                
+            </javadoc>
+            <method name="switchState" type="ScanState" line="538">
+                <params>
+                    <param name="desired" type="ScanState"/>
+                    <param name="forOperation" type="String"/>
+                </params>
+            </method>
+            <javadoc line="542">
+                Checks that the current state is one of the allowed states,
+                  and if so, switch its value to the new desired state.
+                  This operation also enqueue the appropriate state changed
+                  notification.                
+            </javadoc>
+            <method name="switchState" type="ScanState" line="548">
+                <params>
+                    <param name="desired" type="ScanState"/>
+                    <param name="allowed" type="EnumSet&lt;ScanState&gt;"/>
+                </params>
+                <declaration name="old" type="ScanState" line="549"/>
+                <declaration name="timestamp" type="long" line="550"/>
+                <declaration name="sequence" type="long" line="551"/>
+                <scope line="552"/>
+            </method>
+            <declaration name="timer" type="Timer" line="575"/>
+            <method name="schedule" type="void" line="578">
+                <params>
+                    <param name="delay" type="long"/>
+                    <param name="interval" type="long"/>
+                </params>
+                <scope line="579"/>
+                <scope line="582">
+                    <declaration name="old" type="ScanState" line="584"/>
+                    <declaration name="scheduled" type="boolean" line="585"/>
+                </scope>
+                <scope line="589"/>
+            </method>
+            <method name="scheduleSession" type="boolean" line="602">
+                <params>
+                    <param name="task" type="SessionTask"/>
+                    <param name="delay" type="long"/>
+                </params>
+            </method>
+            <method name="start" type="void" line="615"/>
+            <method name="stop" type="void" line="627">
+                <declaration name="errcount" type="int" line="630"/>
+                <declaration name="b" type="StringBuilder" line="631"/>
+                <scope line="633"/>
+                <scope line="638"/>
+                <scope line="643"/>
+            </method>
+            <method name="close" type="void" line="650"/>
+            <method name="append" type="void" line="657">
+                <params>
+                    <param name="b" type="StringBuilder"/>
+                    <param name="prefix" type="String"/>
+                    <param name="t" type="Throwable"/>
+                </params>
+                <declaration name="first" type="String" line="658"/>
+                <declaration name="cause" type="Throwable" line="660"/>
+                <scope line="661"/>
+            </method>
+            <method name="cancelSessionTasks" type="int" line="669">
+                <params>
+                    <param name="b" type="StringBuilder"/>
+                </params>
+                <comment line="672">
+                    Stops scheduled tasks if any...                    
+                </comment>
+                <declaration name="errcount" type="int" line="670"/>
+                <scope line="673">
+                    <scope line="674"/>
+                    <scope line="677"/>
+                </scope>
+            </method>
+            <method name="stopDirectoryScanners" type="int" line="687">
+                <params>
+                    <param name="b" type="StringBuilder"/>
+                </params>
+                <comment line="690">
+                    Stops directory scanners if any...                    
+                </comment>
+                <declaration name="errcount" type="int" line="688"/>
+                <scope line="691">
+                    <scope line="692"/>
+                    <scope line="694"/>
+                </scope>
+            </method>
+            <method name="scanAllDirectories" type="void" line="709">
+                <declaration name="errcount" type="int" line="711"/>
+                <declaration name="b" type="StringBuilder" line="712"/>
+                <scope line="713">
+                    <declaration name="s" type="DirectoryScannerMXBean" line="714"/>
+                    <scope line="715"/>
+                    <scope line="718"/>
+                </scope>
+                <scope line="724"/>
+            </method>
+            <declaration name="tasklist" type="ConcurrentLinkedQueue&amp;lt;SessionTask&amp;gt;" line="734"/>
+            <declaration name="taskcount" type="long" line="740"/>
+            <class name="SessionTask" line="742">
+                <extends class="TimerTask"/>
+                <comment line="804">
+                    Cancels this task.                    
+                </comment>
+                <javadoc line="742">
+                    A session task will be scheduled to run in background in a
+                      timer thread. There can be at most one session task running
+                      at a given time (this is ensured by using a timer - which is
+                      a single threaded object).
+                      If the session needs to be repeated, it will reschedule an
+                      identical session when it finishes to run. This ensure that
+                      two session runs are separated by the given interval time.                    
+                </javadoc>
+                <declaration name="delayBeforeNext" type="long" line="755"/>
+                <javadoc line="755">
+                    Delay after which the next iteration of this task will
+                      start. This delay is measured  starting at the end of
+                      the previous iteration.                    
+                </javadoc>
+                <declaration name="taskid" type="long" line="762"/>
+                <javadoc line="762">
+                    A unique id for this task.                    
+                </javadoc>
+                <declaration name="cancelled" type="boolean" line="767"/>
+                <javadoc line="767">
+                    Whether it&apos;s been cancelled by stop()                    
+                </javadoc>
+                <javadoc line="772">
+                    create a new SessionTask.                    
+                </javadoc>
+                <method name="SessionTask" type="constructor" line="775">
+                    <params>
+                        <param name="scheduleNext" type="long"/>
+                    </params>
+                </method>
+                <javadoc line="780">
+                    When run() begins, the state is switched to RUNNING.
+                      When run() ends then:
+                      If the task is repeated, the state will be switched
+                      to SCHEDULED (because a new task was scheduled).
+                      Otherwise the state will be switched to either
+                      STOPPED (if it was stopped before it could complete)
+                      or COMPLETED (if it completed gracefully)
+                      This method is used to switch to the desired state and
+                      send the appropriate notifications.
+                      When entering the method, we check whether the state is
+                      STOPPED. If so, we return false - and the SessionTask will
+                      stop. Otherwise, we switch the state to the desired value.                    
+                </javadoc>
+                <method name="notifyStateChange" type="boolean" line="794">
+                    <params>
+                        <param name="newState" type="ScanState"/>
+                        <param name="condition" type="String"/>
+                    </params>
+                    <scope line="795"/>
+                </method>
+                <method name="cancel" type="boolean" line="804"/>
+                <javadoc line="809">
+                    Invoke all directories scanners in sequence. At each
+                      step, checks to see whether the task should stop.                    
+                </javadoc>
+                <method name="execute" type="boolean" line="813">
+                    <declaration name="tag" type="String" line="814"/>
+                    <scope line="815">
+                        <scope line="816"/>
+                        <scope line="820"/>
+                    </scope>
+                    <scope line="825">
+                        <scope line="826"/>
+                        <scope line="829"/>
+                    </scope>
+                </method>
+                <javadoc line="836">
+                    Schedule an identical task for next iteration.                    
+                </javadoc>
+                <method name="scheduleNext" type="boolean" line="839">
+                    <comment line="843">
+                        We need now to reschedule a new task for after &apos;delayBeforeNext&apos; ms.                        
+                    </comment>
+                    <declaration name="tag" type="String" line="840"/>
+                    <scope line="843">
+                        <scope line="845"/>
+                        <declaration name="nextTask" type="SessionTask" line="849"/>
+                    </scope>
+                    <scope line="852">
+                        <scope line="853"/>
+                        <scope line="856"/>
+                    </scope>
+                </method>
+                <javadoc line="864">
+                    The run method:
+                      executes scanning logic, the schedule next iteration if needed.                    
+                </javadoc>
+                <method name="run" type="void" line="868">
+                    <comment line="880">
+                        if delayBeforeNext &lt;= 0 we are done, either because the session was
+                         stopped or because it successfully completed.                        
+                    </comment>
+                    <comment line="890">
+                        we need to reschedule a new session for &apos;delayBeforeNext&apos; ms.                        
+                    </comment>
+                    <declaration name="tag" type="String" line="869"/>
+                    <scope line="872">
+                        <scope line="881"/>
+                    </scope>
+                    <scope line="892"/>
+                </method>
+            </class>
+            <javadoc line="908">
+                Delegates the implementation of this method to the wrapped{@code NotificationBroadcasterSupport} object.                
+            </javadoc>
+            <method name="addNotificationListener" type="void" line="912">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="917">
+                We emit an {@code AttributeChangeNotification} when the {@code State}attribute changes.                
+            </javadoc>
+            <method name="getNotificationInfo" type="MBeanNotificationInfo[]" line="921"/>
+            <javadoc line="930">
+                Delegates the implementation of this method to the wrapped{@code NotificationBroadcasterSupport} object.                
+            </javadoc>
+            <method name="removeNotificationListener" type="void" line="934">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                </params>
+            </method>
+            <javadoc line="938">
+                Delegates the implementation of this method to the wrapped{@code NotificationBroadcasterSupport} object.                
+            </javadoc>
+            <method name="removeNotificationListener" type="void" line="942">
+                <params>
+                    <param name="listener" type="NotificationListener"/>
+                    <param name="filter" type="NotificationFilter"/>
+                    <param name="handback" type="Object"/>
+                </params>
+            </method>
+            <javadoc line="946">
+                Returns and increment the sequence number used for
+                  notifications. We use the same sequence number throughout the
+                  application - this is why this method is only package protected.                
+                <return>
+                    A unique sequence number for the next notification.                    
+                </return>
+            </javadoc>
+            <method name="getNextSeqNumber" type="long" line="952"/>
+            <javadoc line="965">
+                Allows the MBean to perform any operations it needs before being
+                  registered in the MBean server. If the name of the MBean is not
+                  specified, the MBean can provide a name for its registration. If
+                  any exception is raised, the MBean will not be registered in the
+                  MBean server.
+                  &lt;p&gt;In this implementation, we check that the provided name is
+                  either {@code null} or equals to {@link #SCAN_MANAGER_NAME}. If it
+                  isn&apos;t then we throw an IllegalArgumentException, otherwise we return{@link #SCAN_MANAGER_NAME}.&lt;/p&gt;
+                  &lt;p&gt;This ensures that there will be a single instance of ScanManager
+                  registered in a given MBeanServer, and that it will always be
+                  registered with the singleton&apos;s {@link #SCAN_MANAGER_NAME}.&lt;/p&gt;
+                  &lt;p&gt;We do not need to check whether an MBean by that name is
+                  already registered because the MBeanServer will perform
+                  this check just after having called preRegister().&lt;/p&gt;                
+                <param>
+                    server The MBean server in which the MBean will be registered.                    
+                </param>
+                <param>
+                    name The object name of the MBean. This name is null if the
+                      name parameter to one of the createMBean or registerMBean methods in
+                      the MBeanServer interface is null. In that case, this method must
+                      return a non-null ObjectName for the new MBean.                    
+                </param>
+                <return>
+                    The name under which the MBean is to be registered. This value
+                      must not be null. If the name parameter is not null, it will usually
+                      but not necessarily be the returned value.                    
+                </return>
+                <throws>
+                    Exception This exception will be caught by the MBean server and
+                      re-thrown as an MBeanRegistrationException.                    
+                </throws>
+            </javadoc>
+            <method name="preRegister" type="ObjectName" line="992">
+                <params>
+                    <param name="server" type="MBeanServer"/>
+                    <param name="name" type="ObjectName"/>
+                </params>
+                <scope line="993"/>
+            </method>
+            <method name="getDefaultConfigurationFileName" type="String" line="1002">
+                <comment line="1004">
+                    This is a file calles &apos;jmx-scandir.xml&apos; located
+                     in the user directory.                    
+                </comment>
+                <declaration name="user" type="String" line="1005"/>
+                <declaration name="defconf" type="String" line="1006"/>
+            </method>
+            <javadoc line="1010">
+                Allows the MBean to perform any operations needed after having
+                  been registered in the MBean server or after the registration has
+                  failed.
+                  &lt;p&gt;
+                  If registration was not successful, the method returns immediately.
+                  &lt;p&gt;
+                  If registration is successful, register the {@link ResultLogManager}and default {@link ScanDirConfigMXBean}. If registering these
+                  MBean fails, the {@code ScanManager} state will be switched to{@link #close CLOSED}, and postRegister ends there.
+                  &lt;/p&gt;
+                  &lt;p&gt;Otherwise the {@code ScanManager} will ask the{@link ScanDirConfigMXBean} to load its configuration.
+                  If it succeeds, the configuration will be {@link #applyConfiguration applied}. Otherwise, the method simply returns,
+                  assuming that the user will later create/update a configuration and
+                  apply it.                
+                <param>
+                    registrationDone Indicates whether or not the MBean has been
+                      successfully registered in the MBean server. The value false means
+                      that the registration has failed.                    
+                </param>
+            </javadoc>
+            <method name="postRegister" type="void" line="1032">
+                <params>
+                    <param name="registrationDone" type="Boolean"/>
+                </params>
+                <declaration name="test" type="Exception" line="1034"/>
+                <scope line="1035">
+                    <declaration name="defconf" type="String" line="1038"/>
+                    <declaration name="conf" type="String" line="1039"/>
+                    <declaration name="confname" type="String" line="1040"/>
+                    <declaration name="defaultProfileName" type="ObjectName" line="1041"/>
+                </scope>
+                <scope line="1049"/>
+                <scope line="1054"/>
+                <scope line="1056"/>
+                <scope line="1060">
+                    <scope line="1061"/>
+                    <scope line="1063"/>
+                </scope>
+            </method>
+            <method name="unregisterScanners" type="void" line="1072"/>
+            <method name="unregisterConfigs" type="void" line="1077"/>
+            <method name="unregisterMBeans" type="void" line="1082">
+                <params>
+                    <param name="map" type="Map&lt;ObjectName,?&gt;"/>
+                </params>
+                <scope line="1083"/>
+            </method>
+            <method name="unregisterResultLogManager" type="void" line="1091">
+                <declaration name="name" type="ObjectName" line="1092"/>
+                <scope line="1093"/>
+            </method>
+            <javadoc line="1098">
+                Allows the MBean to perform any operations it needs before being
+                  unregistered by the MBean server.
+                  This implementation also unregisters all the MXBeans
+                  that were created by this object.                
+                <throws>
+                    IllegalStateException if the lock can&apos;t be acquire, or if
+                      the MBean&apos;s state doesn&apos;t allow the MBean to be unregistered
+                      (e.g. because it&apos;s scheduled or running).                    
+                </throws>
+                <throws>
+                    Exception This exception will be caught by the MBean server and
+                      re-thrown as an MBeanRegistrationException.                    
+                </throws>
+            </javadoc>
+            <method name="preDeregister" type="void" line="1109">
+                <scope line="1110">
+                    <scope line="1114"/>
+                    <scope line="1118"/>
+                </scope>
+                <scope line="1121"/>
+            </method>
+            <javadoc line="1127">
+                Allows the MBean to perform any operations needed after having been
+                  unregistered in the MBean server.
+                  Cancels the internal timer - if any.                
+            </javadoc>
+            <method name="postDeregister" type="void" line="1132">
+                <scope line="1133">
+                    <scope line="1134"/>
+                    <scope line="1136"/>
+                    <scope line="1141"/>
+                </scope>
+            </method>
+        </class>
+    </source>

@@ -3,6 +3,8 @@ package main.commentextraction.com.jml.objects.framework;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.lang3.StringEscapeUtils;
+
 public class JMLElement extends Element {
 
 	protected List<Element> children;
@@ -10,9 +12,14 @@ public class JMLElement extends Element {
 	protected String name;
 
 	public JMLElement(String name) {
-		this.name = name;
+		if (name.isEmpty()) {
+			this.name = "empty";
+		} else {
+			this.name = name;
+		}
 		children = new ArrayList<>();
 		attributes = new ArrayList<>();
+		
 	}
 
 	public void addContent(JMLElement e) {

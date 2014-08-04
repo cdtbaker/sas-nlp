@@ -8,6 +8,8 @@ public class JavadocTag extends JMLElement {
 		super(name);
 		this.addContent(text);
 
+		
+
 	}
 
 }

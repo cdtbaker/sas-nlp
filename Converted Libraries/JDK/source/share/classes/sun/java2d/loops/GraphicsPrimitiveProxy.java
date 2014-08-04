@@ -1,6 +1,33 @@
+/*
+ * Copyright (c) 1998, 2003, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
 package sun.java2d.loops;
-/** 
- * GraphicsPrimitiveProxy
+
+/**
+ *   GraphicsPrimitiveProxy
+ *
  * Acts as a proxy for instances of GraphicsPrimitive, enabling lazy
  * classloading of these primitives.  This leads to a substantial
  * savings in start-up time and footprint.  In the typical case,
@@ -13,52 +40,75 @@ package sun.java2d.loops;
  * to the caller.
  */
 public class GraphicsPrimitiveProxy extends GraphicsPrimitive {
-  private Class owner;
-  private String relativeClassName;
-  /** 
- * Create a GraphicsPrimitiveProxy for a primitive with a no-argument
- * constructor.
- * @param owner The owner class for this primitive.  The primitive
- * must be in the same package as this owner.
- * @param relativeClassName  The name of the class this is a proxy for.
- * This should not include the package.
- */
-  public GraphicsPrimitiveProxy(  Class owner,  String relativeClassName,  String methodSignature,  int primID,  SurfaceType srctype,  CompositeType comptype,  SurfaceType dsttype){
-    super(methodSignature,primID,srctype,comptype,dsttype);
-    this.owner=owner;
-    this.relativeClassName=relativeClassName;
-  }
-  public GraphicsPrimitive makePrimitive(  SurfaceType srctype,  CompositeType comptype,  SurfaceType dsttype){
-    throw new InternalError("makePrimitive called on a Proxy!");
-  }
-  GraphicsPrimitive instantiate(){
-    String name=getPackageName(owner.getName()) + "." + relativeClassName;
-    try {
-      Class clazz=Class.forName(name);
-      GraphicsPrimitive p=(GraphicsPrimitive)clazz.newInstance();
-      if (!satisfiesSameAs(p)) {
-        throw new RuntimeException("Primitive " + p + " incompatible with proxy for "+ name);
-      }
-      return p;
+
+    private Class owner;
+    private String relativeClassName;
+
+    /**
+     * Create a GraphicsPrimitiveProxy for a primitive with a no-argument
+     * constructor.
+     *
+     * @param owner The owner class for this primitive.  The primitive
+     *          must be in the same package as this owner.
+     * @param relativeClassName  The name of the class this is a proxy for.
+     *          This should not include the package.
+     */
+    public GraphicsPrimitiveProxy(Class owner, String relativeClassName,
+                                  String methodSignature,
+                                  int primID,
+                                  SurfaceType srctype,
+                                  CompositeType comptype,
+                                  SurfaceType dsttype)
+    {
+        super(methodSignature, primID, srctype, comptype, dsttype);
+        this.owner = owner;
+        this.relativeClassName = relativeClassName;
     }
- catch (    ClassNotFoundException ex) {
-      throw new RuntimeException(ex.toString());
+
+    public GraphicsPrimitive makePrimitive(SurfaceType srctype,
+                                           CompositeType comptype,
+                                           SurfaceType dsttype) {
+        // This should never happen.
+        throw new InternalError("makePrimitive called on a Proxy!");
     }
-catch (    InstantiationException ex) {
-      throw new RuntimeException(ex.toString());
+
+    //
+    // Come up with the real instance.  Called from
+    // GraphicsPrimitiveMgr.locate()
+    //
+    GraphicsPrimitive instantiate() {
+        String name = getPackageName(owner.getName()) + "."
+                        + relativeClassName;
+        try {
+            Class clazz = Class.forName(name);
+            GraphicsPrimitive p = (GraphicsPrimitive) clazz.newInstance();
+            if (!satisfiesSameAs(p)) {
+                throw new RuntimeException("Primitive " + p
+                                           + " incompatible with proxy for "
+                                           + name);
+            }
+            return p;
+        } catch (ClassNotFoundException ex) {
+            throw new RuntimeException(ex.toString());
+        } catch (InstantiationException ex) {
+            throw new RuntimeException(ex.toString());
+        } catch (IllegalAccessException ex) {
+            throw new RuntimeException(ex.toString());
+        }
+        // A RuntimeException should never happen in a deployed JDK, because
+        // the regression test GraphicsPrimitiveProxyTest will catch any
+        // of these errors.
     }
-catch (    IllegalAccessException ex) {
-      throw new RuntimeException(ex.toString());
+
+    private static String getPackageName(String className) {
+        int lastDotIdx = className.lastIndexOf('.');
+        if (lastDotIdx < 0) {
+            return className;
+        }
+        return className.substring(0, lastDotIdx);
     }
-  }
-  private static String getPackageName(  String className){
-    int lastDotIdx=className.lastIndexOf('.');
-    if (lastDotIdx < 0) {
-      return className;
+
+    public GraphicsPrimitive traceWrap() {
+        return instantiate().traceWrap();
     }
-    return className.substring(0,lastDotIdx);
-  }
-  public GraphicsPrimitive traceWrap(){
-    return instantiate().traceWrap();
-  }
 }

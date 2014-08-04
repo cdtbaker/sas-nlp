@@ -1,4 +1,4 @@
-/** 
+/**
  * <p>This package contains adapter classes to <a href="http://math.nist.gov/javanumerics/jama/" target="_blank">JAMA</a>.
  * The entire original JAMA package is here but made package private.
  * Use the adapters.</p>
@@ -16,6 +16,7 @@
  * <li>SingularValueDecomposition: Make wantu and wantv input parameters to the existing constructor, and add another constructor with the old signature that sets both those parateres to true.</li>
  * </ul></li>
  * </ol>
+ *
  * @author apete
  */
 package org.ojalgo.matrix.jama;

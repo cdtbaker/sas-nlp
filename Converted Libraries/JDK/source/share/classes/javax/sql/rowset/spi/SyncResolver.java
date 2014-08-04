@@ -1,7 +1,34 @@
+/*
+ * Copyright (c) 2003, 2004, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
 package javax.sql.rowset.spi;
+
 import javax.sql.RowSet;
 import java.sql.SQLException;
-/** 
+
+/**
  * Defines a framework that allows applications to use a manual decision tree
  * to decide what should be done when a synchronization conflict occurs.
  * Although it is not mandatory for
@@ -15,7 +42,9 @@ import java.sql.SQLException;
  * a <code>RowSet</code> object's original values are the values it had just prior to the
  * the last synchronization, which are not necessarily its initial values.
  * <p>
+ *
  * <H2>Description of a <code>SyncResolver</code> Object</H2>
+ *
  * A <code>SyncResolver</code> object is a specialized <code>RowSet</code> object
  * that implements the <code>SyncResolver</code> interface.
  * It <b>may</b> operate as either a connected <code>RowSet</code> object (an
@@ -40,7 +69,9 @@ import java.sql.SQLException;
  * the conflict(s) and <code>null</code> for all other values.
  * In addition, it contains information about each conflict.
  * <P>
+ *
  * <H2>Getting and Using a <code>SyncResolver</code> Object</H2>
+ *
  * When the method <code>acceptChanges</code> encounters conflicts, the
  * <code>SyncProvider</code> object creates a <code>SyncProviderException</code>
  * object and sets it with the new <code>SyncResolver</code> object. The method
@@ -50,10 +81,10 @@ import java.sql.SQLException;
  * <code>SyncProviderException</code> method <code>getSyncResolver</code> to get
  * the <code>SyncResolver</code> object <i>resolver</i>.
  * <PRE>
- * } catch (SyncProviderException spe) {
- * SyncResolver resolver = spe.getSyncResolver();
- * ...
- * }
+ *     } catch (SyncProviderException spe) {
+ *         SyncResolver resolver = spe.getSyncResolver();
+ *     ...
+ *     }
  * </PRE>
  * <P>
  * With <i>resolver</i> in hand, an application can use it to get the information
@@ -66,7 +97,7 @@ import java.sql.SQLException;
  * The following kinds of information can be obtained from a <code>SyncResolver</code>
  * object:
  * <P>
- * <LI>What operation was being attempted when a conflict occurred<BR>
+ *    <LI>What operation was being attempted when a conflict occurred<BR>
  * The <code>SyncProvider</code> interface defines four constants
  * describing states that may occur. Three
  * constants describe the type of operation (update, delete, or insert) that a
@@ -75,10 +106,10 @@ import java.sql.SQLException;
  * These constants are the possible return values when a <code>SyncResolver</code> object
  * calls the method <code>getStatus</code>.
  * <PRE>
- * int operation = resolver.getStatus();
+ *     int operation = resolver.getStatus();
  * </PRE>
  * <P>
- * <LI>The value in the data source that caused a conflict<BR>
+ *    <LI>The value in the data source that caused a conflict<BR>
  * A conflict exists when a value that a <code>RowSet</code> object has changed
  * and is attempting to write to the data source
  * has also been changed in the data source since the last synchronization.  An
@@ -87,7 +118,7 @@ import java.sql.SQLException;
  * value in the data source that is the cause of the conflict because the values in a
  * <code>SyncResolver</code> object are the conflict values from the data source.
  * <PRE>
- * java.lang.Object conflictValue = resolver.getConflictValue(2);
+ *     java.lang.Object conflictValue = resolver.getConflictValue(2);
  * </PRE>
  * Note that the column in <i>resolver</i> can be designated by the column number,
  * as is done in the preceding line of code, or by the column name.
@@ -99,7 +130,7 @@ import java.sql.SQLException;
  * <code>SyncResolver</code> method <code>setResolvedValue</code>, which sets the value
  * to be persisted in the <code>RowSet</code> object and also in the data source.
  * <PRE>
- * resolver.setResolvedValue("DEPT", 8390426);
+ *     resolver.setResolvedValue("DEPT", 8390426);
  * </PRE>
  * In the preceding line of code,
  * the column name designates the column in the <code>RowSet</code> object
@@ -110,7 +141,9 @@ import java.sql.SQLException;
  * resolved all of the conflicts in the current conflict row and repeats this process
  * for each conflict row in the <code>SyncResolver</code> object.
  * <P>
+ *
  * <H2>Navigating a <code>SyncResolver</code> Object</H2>
+ *
  * Because a <code>SyncResolver</code> object is a <code>RowSet</code> object, an
  * application can use all of the <code>RowSet</code> methods for moving the cursor
  * to navigate a <code>SyncResolver</code> object. For example, an application can
@@ -128,7 +161,9 @@ import java.sql.SQLException;
  * <code>SyncResolver</code> method <code>getConflictValue</code>, supplying it
  * with the column number, to get the conflict value itself. The code fragment in the
  * next section gives an example.
+ *
  * <H2>Code Example</H2>
+ *
  * The following code fragment demonstrates how a disconnected <code>RowSet</code>
  * object <i>crs</i> might attempt to synchronize itself with the
  * underlying data source and then resolve the conflicts. In the <code>try</code>
@@ -157,153 +192,181 @@ import java.sql.SQLException;
  * values can be retrieved and compared to decide which one should be persisted. In this
  * code fragment, the value in <i>crs</i> is the one set as the resolved value, which means
  * that it will be used to overwrite the conflict value in the data source.
+ *
  * <PRE>
- * try {
- * crs.acceptChanges(con);
- * } catch (SyncProviderException spe) {
- * SyncResolver resolver = spe.getSyncResolver();
- * Object crsValue;  // value in the <code>RowSet</code> object
- * Object resolverValue:  // value in the <code>SyncResolver</code> object
- * Object resolvedValue:  // value to be persisted
- * while(resolver.nextConflict())  {
- * if(resolver.getStatus() == SyncResolver.UPDATE_ROW_CONFLICT)  {
- * int row = resolver.getRow();
- * crs.absolute(row);
- * int colCount = crs.getMetaData().getColumnCount();
- * for(int j = 1; j <= colCount; j++) {
- * if (resolver.getConflictValue(j) != null)  {
- * crsValue = crs.getObject(j);
- * resolverValue = resolver.getConflictValue(j);
- * . . .
- * // compare crsValue and resolverValue to determine
- * // which should be the resolved value (the value to persist)
- * resolvedValue = crsValue;
- * resolver.setResolvedValue(j, resolvedValue);
- * }
- * }
- * }
- * }
- * }
+ *     try {
+ *
+ *         crs.acceptChanges(con);
+ *
+ *     } catch (SyncProviderException spe) {
+ *
+ *         SyncResolver resolver = spe.getSyncResolver();
+ *
+ *         Object crsValue;  // value in the <code>RowSet</code> object
+ *         Object resolverValue:  // value in the <code>SyncResolver</code> object
+ *         Object resolvedValue:  // value to be persisted
+ *
+ *         while(resolver.nextConflict())  {
+ *             if(resolver.getStatus() == SyncResolver.UPDATE_ROW_CONFLICT)  {
+ *                 int row = resolver.getRow();
+ *                 crs.absolute(row);
+ *
+ *                 int colCount = crs.getMetaData().getColumnCount();
+ *                 for(int j = 1; j <= colCount; j++) {
+ *                     if (resolver.getConflictValue(j) != null)  {
+ *                         crsValue = crs.getObject(j);
+ *                         resolverValue = resolver.getConflictValue(j);
+ *                         . . .
+ *                         // compare crsValue and resolverValue to determine
+ *                         // which should be the resolved value (the value to persist)
+ *                         resolvedValue = crsValue;
+ *
+ *                         resolver.setResolvedValue(j, resolvedValue);
+ *                      }
+ *                  }
+ *              }
+ *          }
+ *      }
  * </PRE>
  * @author  Jonathan Bruce
  */
+
 public interface SyncResolver extends RowSet {
-  /** 
- * Indicates that a conflict occurred while the <code>RowSet</code> object was
- * attempting to update a row in the data source.
- * The values in the data source row to be updated differ from the
- * <code>RowSet</code> object's original values for that row, which means that
- * the row in the data source has been updated or deleted since the last
- * synchronization.
- */
-  public static int UPDATE_ROW_CONFLICT=0;
-  /** 
- * Indicates that a conflict occurred while the <code>RowSet</code> object was
- * attempting to delete a row in the data source.
- * The values in the data source row to be updated differ from the
- * <code>RowSet</code> object's original values for that row, which means that
- * the row in the data source has been updated or deleted since the last
- * synchronization.
- */
-  public static int DELETE_ROW_CONFLICT=1;
-  /** 
- * Indicates that a conflict occurred while the <code>RowSet</code> object was
- * attempting to insert a row into the data source.  This means that a
- * row with the same primary key as the row to be inserted has been inserted
- * into the data source since the last synchronization.
- */
-  public static int INSERT_ROW_CONFLICT=2;
-  /** 
- * Indicates that <b>no</b> conflict occured while the <code>RowSet</code> object
- * was attempting to update, delete or insert a row in the data source. The values in
- * the <code>SyncResolver</code> will contain <code>null</code> values only as an indication
- * that no information in pertitent to the conflict resolution in this row.
- */
-  public static int NO_ROW_CONFLICT=3;
-  /** 
- * Retrieves the conflict status of the current row of this <code>SyncResolver</code>,
- * which indicates the operation
- * the <code>RowSet</code> object was attempting when the conflict occurred.
- * @return one of the following constants:
- * <code>SyncResolver.UPDATE_ROW_CONFLICT</code>,
- * <code>SyncResolver.DELETE_ROW_CONFLICT</code>,
- * <code>SyncResolver.INSERT_ROW_CONFLICT</code>, or
- * <code>SyncResolver.NO_ROW_CONFLICT</code>
- */
-  public int getStatus();
-  /** 
- * Retrieves the value in the designated column in the current row of this
- * <code>SyncResolver</code> object, which is the value in the data source
- * that caused a conflict.
- * @param index an <code>int</code> designating the column in this row of this
- * <code>SyncResolver</code> object from which to retrieve the value
- * causing a conflict
- * @return the value of the designated column in the current row of this
- * <code>SyncResolver</code> object
- * @throws SQLException if a database access error occurs
- */
-  public Object getConflictValue(  int index) throws SQLException ;
-  /** 
- * Retrieves the value in the designated column in the current row of this
- * <code>SyncResolver</code> object, which is the value in the data source
- * that caused a conflict.
- * @param columnName a <code>String</code> object designating the column in this row of this
- * <code>SyncResolver</code> object from which to retrieve the value
- * causing a conflict
- * @return the value of the designated column in the current row of this
- * <code>SyncResolver</code> object
- * @throws SQLException if a database access error occurs
- */
-  public Object getConflictValue(  String columnName) throws SQLException ;
-  /** 
- * Sets <i>obj</i> as the value in column <i>index</i> in the current row of the
- * <code>RowSet</code> object that is being synchronized. <i>obj</i>
- * is set as the value in the data source internally.
- * @param index an <code>int</code> giving the number of the column into which to
- * set the value to be persisted
- * @param obj an <code>Object</code> that is the value to be set in the
- * <code>RowSet</code> object and persisted in the data source
- * @throws SQLException if a database access error occurs
- */
-  public void setResolvedValue(  int index,  Object obj) throws SQLException ;
-  /** 
- * Sets <i>obj</i> as the value in column <i>columnName</i> in the current row of the
- * <code>RowSet</code> object that is being synchronized. <i>obj</i>
- * is set as the value in the data source internally.
- * @param columnName a <code>String</code> object giving the name of the column
- * into which to set the value to be persisted
- * @param obj an <code>Object</code> that is the value to be set in the
- * <code>RowSet</code> object and persisted in the data source
- * @throws SQLException if a database access error occurs
- */
-  public void setResolvedValue(  String columnName,  Object obj) throws SQLException ;
-  /** 
- * Moves the cursor down from its current position to the next row that contains
- * a conflict value. A <code>SyncResolver</code> object's
- * cursor is initially positioned before the first conflict row; the first call to the
- * method <code>nextConflict</code> makes the first conflict row the current row;
- * the second call makes the second conflict row the current row, and so on.
- * <p>
- * A call to the method <code>nextConflict</code> will implicitly close
- * an input stream if one is open and will clear the <code>SyncResolver</code>
- * object's warning chain.
- * @return <code>true</code> if the new current row is valid; <code>false</code>
- * if there are no more rows
- * @throws SQLException if a database access error occurs or the result set type
- * is <code>TYPE_FORWARD_ONLY</code>
- */
-  public boolean nextConflict() throws SQLException ;
-  /** 
- * Moves the cursor up from its current position to the previous conflict
- * row in this <code>SyncResolver</code> object.
- * <p>
- * A call to the method <code>previousConflict</code> will implicitly close
- * an input stream if one is open and will clear the <code>SyncResolver</code>
- * object's warning chain.
- * @return <code>true</code> if the cursor is on a valid row; <code>false</code>
- * if it is off the result set
- * @throws SQLException if a database access error occurs or the result set type
- * is <code>TYPE_FORWARD_ONLY</code>
- */
-  public boolean previousConflict() throws SQLException ;
+    /**
+     * Indicates that a conflict occurred while the <code>RowSet</code> object was
+     * attempting to update a row in the data source.
+     * The values in the data source row to be updated differ from the
+     * <code>RowSet</code> object's original values for that row, which means that
+     * the row in the data source has been updated or deleted since the last
+     * synchronization.
+     */
+     public static int UPDATE_ROW_CONFLICT = 0;
+
+    /**
+     * Indicates that a conflict occurred while the <code>RowSet</code> object was
+     * attempting to delete a row in the data source.
+     * The values in the data source row to be updated differ from the
+     * <code>RowSet</code> object's original values for that row, which means that
+     * the row in the data source has been updated or deleted since the last
+     * synchronization.
+     */
+    public static int DELETE_ROW_CONFLICT = 1;
+
+   /**
+    * Indicates that a conflict occurred while the <code>RowSet</code> object was
+    * attempting to insert a row into the data source.  This means that a
+    * row with the same primary key as the row to be inserted has been inserted
+    * into the data source since the last synchronization.
+    */
+    public static int INSERT_ROW_CONFLICT = 2;
+
+    /**
+     * Indicates that <b>no</b> conflict occured while the <code>RowSet</code> object
+     * was attempting to update, delete or insert a row in the data source. The values in
+     * the <code>SyncResolver</code> will contain <code>null</code> values only as an indication
+     * that no information in pertitent to the conflict resolution in this row.
+     */
+    public static int NO_ROW_CONFLICT = 3;
+
+    /**
+     * Retrieves the conflict status of the current row of this <code>SyncResolver</code>,
+     * which indicates the operation
+     * the <code>RowSet</code> object was attempting when the conflict occurred.
+     *
+     * @return one of the following constants:
+     *         <code>SyncResolver.UPDATE_ROW_CONFLICT</code>,
+     *         <code>SyncResolver.DELETE_ROW_CONFLICT</code>,
+     *         <code>SyncResolver.INSERT_ROW_CONFLICT</code>, or
+     *         <code>SyncResolver.NO_ROW_CONFLICT</code>
+     */
+    public int getStatus();
+
+    /**
+     * Retrieves the value in the designated column in the current row of this
+     * <code>SyncResolver</code> object, which is the value in the data source
+     * that caused a conflict.
+     *
+     * @param index an <code>int</code> designating the column in this row of this
+     *        <code>SyncResolver</code> object from which to retrieve the value
+     *        causing a conflict
+     * @return the value of the designated column in the current row of this
+     *         <code>SyncResolver</code> object
+     * @throws SQLException if a database access error occurs
+     */
+    public Object getConflictValue(int index) throws SQLException;
+
+    /**
+     * Retrieves the value in the designated column in the current row of this
+     * <code>SyncResolver</code> object, which is the value in the data source
+     * that caused a conflict.
+     *
+     * @param columnName a <code>String</code> object designating the column in this row of this
+     *        <code>SyncResolver</code> object from which to retrieve the value
+     *        causing a conflict
+     * @return the value of the designated column in the current row of this
+     *         <code>SyncResolver</code> object
+     * @throws SQLException if a database access error occurs
+     */
+    public Object getConflictValue(String columnName) throws SQLException;
+
+    /**
+     * Sets <i>obj</i> as the value in column <i>index</i> in the current row of the
+     * <code>RowSet</code> object that is being synchronized. <i>obj</i>
+     * is set as the value in the data source internally.
+     *
+     * @param index an <code>int</code> giving the number of the column into which to
+     *        set the value to be persisted
+     * @param obj an <code>Object</code> that is the value to be set in the
+     *        <code>RowSet</code> object and persisted in the data source
+     * @throws SQLException if a database access error occurs
+     */
+    public void setResolvedValue(int index, Object obj) throws SQLException;
+
+    /**
+     * Sets <i>obj</i> as the value in column <i>columnName</i> in the current row of the
+     * <code>RowSet</code> object that is being synchronized. <i>obj</i>
+     * is set as the value in the data source internally.
+     *
+     * @param columnName a <code>String</code> object giving the name of the column
+     *        into which to set the value to be persisted
+     * @param obj an <code>Object</code> that is the value to be set in the
+     *        <code>RowSet</code> object and persisted in the data source
+     * @throws SQLException if a database access error occurs
+     */
+    public void setResolvedValue(String columnName, Object obj) throws SQLException;
+
+    /**
+     * Moves the cursor down from its current position to the next row that contains
+     * a conflict value. A <code>SyncResolver</code> object's
+     * cursor is initially positioned before the first conflict row; the first call to the
+     * method <code>nextConflict</code> makes the first conflict row the current row;
+     * the second call makes the second conflict row the current row, and so on.
+     * <p>
+     * A call to the method <code>nextConflict</code> will implicitly close
+     * an input stream if one is open and will clear the <code>SyncResolver</code>
+     * object's warning chain.
+     *
+     * @return <code>true</code> if the new current row is valid; <code>false</code>
+     *         if there are no more rows
+     * @throws SQLException if a database access error occurs or the result set type
+     *     is <code>TYPE_FORWARD_ONLY</code>
+     *
+     */
+    public boolean nextConflict() throws SQLException;
+
+    /**
+     * Moves the cursor up from its current position to the previous conflict
+     * row in this <code>SyncResolver</code> object.
+     * <p>
+     * A call to the method <code>previousConflict</code> will implicitly close
+     * an input stream if one is open and will clear the <code>SyncResolver</code>
+     * object's warning chain.
+     *
+     * @return <code>true</code> if the cursor is on a valid row; <code>false</code>
+     *     if it is off the result set
+     * @throws SQLException if a database access error occurs or the result set type
+     *     is <code>TYPE_FORWARD_ONLY</code>
+     */
+    public boolean previousConflict() throws SQLException;
+
 }

@@ -1,4 +1,29 @@
-/** 
+/*
+ * Copyright (c) 2008, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
+/**
  * This package contains annotations and enumerations that are used to
  * add DTrace-specific information to a tracing provider.
  * <p>
@@ -35,22 +60,23 @@
  * <p>
  * Here is an example of how to declare a provider, specifying additional DTrace
  * data:
- * <PRE>
- * &#064;ProviderName("my_app_provider")
- * &#064;ModuleName("app.jar")
- * &#064;ProviderAttributes(&#064;Attributes={
- * name=StabilityLevel.STABLE,data=StabilityLevel.STABLE,
- * dependency=DependencyClass.COMMON})
- * &#064;ProbeAttributes(&#064;Attributes={
- * name=StabilityLevel.STABLE,data=StabilityLevel.STABLE,
- * dependency=DependencyClass.COMMON})
- * &#064;ModuleAttributes(&#064;Attributes={name=StabilityLevel.UNSTABLE})
- * public class MyProvider {
- * &#064;FunctionName("main") void startProbe();
- * }
- * </PRE>
+<PRE>
+    &#064;ProviderName("my_app_provider")
+    &#064;ModuleName("app.jar")
+    &#064;ProviderAttributes(&#064;Attributes={
+        name=StabilityLevel.STABLE,data=StabilityLevel.STABLE,
+        dependency=DependencyClass.COMMON})
+    &#064;ProbeAttributes(&#064;Attributes={
+        name=StabilityLevel.STABLE,data=StabilityLevel.STABLE,
+        dependency=DependencyClass.COMMON})
+    &#064;ModuleAttributes(&#064;Attributes={name=StabilityLevel.UNSTABLE})
+    public class MyProvider {
+        &#064;FunctionName("main") void startProbe();
+    }
+</PRE>
  * <p>
  * @see <a href="http://docs.sun.com/app/docs/doc/817-6223/6mlkidlms?a=view">Solaris Dynamic Tracing Guide, Chapter 34: Statically Defined Tracing for User Applications</a>
  * @see <a href="http://docs.sun.com/app/docs/doc/817-6223/6mlkidlnp?a=view">Solaris Dynamic Tracing Guide, Chapter 39: Stability</a>
  */
+
 package com.sun.tracing.dtrace;

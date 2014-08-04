@@ -3,12 +3,26 @@
         <import package="java.util.ArrayList"/>
         <import package="java.util.List"/>
         <import package="org.apache.commons.math3.exception.TooManyIterationsException"/>
+        <import package="org.apache.commons.math3.optim.OptimizationData"/>
         <import package="org.apache.commons.math3.optim.PointValuePair"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
         <import package="org.apache.commons.math3.util.Precision"/>
-        <class name="SimplexSolver" line="25">
+        <class name="SimplexSolver" line="28">
             <extends class="LinearOptimizer"/>
-            <javadoc line="25">
+            <javadoc line="28">
                 Solves a linear problem using the &quot;Two-Phase Simplex&quot; method.
+                  &lt;p&gt;
+                  The {@link SimplexSolver} supports the following {@link OptimizationData} data provided
+                  as arguments to {@link #optimize(OptimizationData)}:
+                  &lt;ul&gt;
+                  &lt;li&gt;objective function: {@link LinearObjectiveFunction} - mandatory&lt;/li&gt;
+                  &lt;li&gt;linear constraints {@link LinearConstraintSet} - mandatory&lt;/li&gt;
+                  &lt;li&gt;type of optimization: {@link org.apache.commons.math3.optim.nonlinear.scalar.GoalType GoalType}- optional, default: {@link org.apache.commons.math3.optim.nonlinear.scalar.GoalType#MINIMIZE MINIMIZE}&lt;/li&gt;
+                  &lt;li&gt;whether to allow negative values as solution: {@link NonNegativeConstraint} - optional, default: true&lt;/li&gt;
+                  &lt;li&gt;pivot selection rule: {@link PivotSelectionRule} - optional, default {@link PivotSelectionRule#DANTZIG}&lt;/li&gt;
+                  &lt;li&gt;callback for the best solution: {@link SolutionCallback} - optional&lt;/li&gt;
+                  &lt;li&gt;maximum number of iterations: {@link org.apache.commons.math3.optim.MaxIter} - optional, default: {@link Integer#MAX_VALUE}&lt;/li&gt;
+                  &lt;/ul&gt;
                   &lt;p&gt;
                   &lt;b&gt;Note:&lt;/b&gt; Depending on the problem definition, the default convergence criteria
                   may be too strict, resulting in {@link NoFeasibleSolutionException} or{@link TooManyIterationsException}. In such a case it is advised to adjust these
@@ -18,67 +32,72 @@
                   &lt;ul&gt;
                   &lt;li&gt;Algorithm convergence: 1e-6&lt;/li&gt;
                   &lt;li&gt;Floating-point comparisons: 10 ulp&lt;/li&gt;
-                  &lt;li&gt;Cut-Off value: 1e-12&lt;/li&gt;
+                  &lt;li&gt;Cut-Off value: 1e-10&lt;/li&gt;
                   &lt;/ul&gt;
                   &lt;p&gt;
-                  The cut-off value has been introduced to zero out very small numbers in the Simplex tableau,
-                  as these may lead to numerical instabilities due to the nature of the Simplex algorithm
-                  (the pivot element is used as a denominator). If the problem definition is very tight, the
-                  default cut-off value may be too small, thus it is advised to increase it to a larger value,
-                  in accordance with the chosen epsilon.
-                  &lt;p&gt;
-                  It may also be counter-productive to provide a too large value for {@link org.apache.commons.math3.optim.MaxIter MaxIter} as parameter in the call of {@link #optimize(org.apache.commons.math3.optim.OptimizationData) optimize(OptimizationData...)},
-                  as the {@link SimplexSolver} will use different strategies depending on the current iteration
-                  count. After half of the allowed max iterations has already been reached, the strategy to select
-                  pivot rows will change in order to break possible cycles due to degenerate problems.                
+                  The cut-off value has been introduced to handle the case of very small pivot elements
+                  in the Simplex tableau, as these may lead to numerical instabilities and degeneracy.
+                  Potential pivot elements smaller than this value will be treated as if they were zero
+                  and are thus not considered by the pivot selection mechanism. The default value is safe
+                  for many problems, but may need to be adjusted in case of very small coefficients
+                  used in either the {@link LinearConstraint} or {@link LinearObjectiveFunction}.                
                 <version>
-                    $Id: SimplexSolver.java 1462503 2013-03-29 15:48:27Z luc $                    
+                    $Id: SimplexSolver.java 1553855 2013-12-28 15:55:24Z erans $                    
                 </version>
                 <since>
                     2.0                    
                 </since>
             </javadoc>
-            <declaration name="DEFAULT_ULPS" type="int" line="57"/>
-            <javadoc line="57">
+            <declaration name="DEFAULT_ULPS" type="int" line="67"/>
+            <javadoc line="67">
                 Default amount of error to accept in floating point comparisons (as ulps).                
             </javadoc>
-            <declaration name="DEFAULT_CUT_OFF" type="double" line="60"/>
-            <javadoc line="60">
+            <declaration name="DEFAULT_CUT_OFF" type="double" line="70"/>
+            <javadoc line="70">
                 Default cut-off value.                
             </javadoc>
-            <declaration name="DEFAULT_EPSILON" type="double" line="63"/>
-            <javadoc line="63">
+            <declaration name="DEFAULT_EPSILON" type="double" line="73"/>
+            <javadoc line="73">
                 Default amount of error to accept for algorithm convergence.                
             </javadoc>
-            <declaration name="epsilon" type="double" line="66"/>
-            <javadoc line="66">
+            <declaration name="epsilon" type="double" line="76"/>
+            <javadoc line="76">
                 Amount of error to accept for algorithm convergence.                
             </javadoc>
-            <declaration name="maxUlps" type="int" line="69"/>
-            <javadoc line="69">
+            <declaration name="maxUlps" type="int" line="79"/>
+            <javadoc line="79">
                 Amount of error to accept in floating point comparisons (as ulps).                
             </javadoc>
-            <declaration name="cutOff" type="double" line="72"/>
-            <javadoc line="72">
+            <declaration name="cutOff" type="double" line="82"/>
+            <javadoc line="82">
                 Cut-off value for entries in the tableau: values smaller than the cut-off
                   are treated as zero to improve numerical stability.                
             </javadoc>
-            <javadoc line="78">
+            <declaration name="pivotSelection" type="PivotSelectionRule" line="88"/>
+            <javadoc line="88">
+                The pivot selection method to use.                
+            </javadoc>
+            <declaration name="solutionCallback" type="SolutionCallback" line="91"/>
+            <javadoc line="91">
+                The solution callback to access the best solution found so far in case
+                  the optimizer fails to find an optimal solution within the iteration limits.                
+            </javadoc>
+            <javadoc line="97">
                 Builds a simplex solver with default settings.                
             </javadoc>
-            <method name="SimplexSolver" type="constructor" line="81"/>
-            <javadoc line="85">
+            <method name="SimplexSolver" type="constructor" line="100"/>
+            <javadoc line="104">
                 Builds a simplex solver with a specified accepted amount of error.                
                 <param>
                     epsilon Amount of error to accept for algorithm convergence.                    
                 </param>
             </javadoc>
-            <method name="SimplexSolver" type="constructor" line="90">
+            <method name="SimplexSolver" type="constructor" line="109">
                 <params>
                     <param name="epsilon" type="double"/>
                 </params>
             </method>
-            <javadoc line="94">
+            <javadoc line="113">
                 Builds a simplex solver with a specified accepted amount of error.                
                 <param>
                     epsilon Amount of error to accept for algorithm convergence.                    
@@ -87,13 +106,13 @@
                     maxUlps Amount of error to accept in floating point comparisons.                    
                 </param>
             </javadoc>
-            <method name="SimplexSolver" type="constructor" line="100">
+            <method name="SimplexSolver" type="constructor" line="119">
                 <params>
                     <param name="epsilon" type="double"/>
                     <param name="maxUlps" type="int"/>
                 </params>
             </method>
-            <javadoc line="104">
+            <javadoc line="123">
                 Builds a simplex solver with a specified accepted amount of error.                
                 <param>
                     epsilon Amount of error to accept for algorithm convergence.                    
@@ -105,14 +124,64 @@
                     cutOff Values smaller than the cutOff are treated as zero.                    
                 </param>
             </javadoc>
-            <method name="SimplexSolver" type="constructor" line="111">
+            <method name="SimplexSolver" type="constructor" line="130">
                 <params>
                     <param name="epsilon" type="double"/>
                     <param name="maxUlps" type="int"/>
                     <param name="cutOff" type="double"/>
                 </params>
             </method>
-            <javadoc line="117">
+            <javadoc line="137">
+                {@inheritDoc}                
+                <param>
+                    optData Optimization data. In addition to those documented in{@link LinearOptimizer#optimize(OptimizationData)LinearOptimizer}, this method will register the following data:
+                      &lt;ul&gt;
+                      &lt;li&gt;{@link SolutionCallback}&lt;/li&gt;
+                      &lt;li&gt;{@link PivotSelectionRule}&lt;/li&gt;
+                      &lt;/ul&gt;                    
+                </param>
+                <return>
+                    {@inheritDoc}                    
+                </return>
+                <throws>
+                    TooManyIterationsException if the maximal number of iterations is exceeded.                    
+                </throws>
+            </javadoc>
+            <method name="optimize" type="PointValuePair" line="153">
+                <params>
+                    <param name="optData" type="OptimizationData"/>
+                </params>
+                <comment line="155">
+                    Set up base class and perform computation.                    
+                </comment>
+            </method>
+            <javadoc line="158">
+                {@inheritDoc}                
+                <param>
+                    optData Optimization data.
+                      In addition to those documented in{@link LinearOptimizer#parseOptimizationData(OptimizationData[])LinearOptimizer}, this method will register the following data:
+                      &lt;ul&gt;
+                      &lt;li&gt;{@link SolutionCallback}&lt;/li&gt;
+                      &lt;li&gt;{@link PivotSelectionRule}&lt;/li&gt;
+                      &lt;/ul&gt;                    
+                </param>
+            </javadoc>
+            <method name="parseOptimizationData" type="void" line="171">
+                <params>
+                    <param name="optData" type="OptimizationData"/>
+                </params>
+                <comment line="173">
+                    Allow base class to register its own data.                    
+                </comment>
+                <comment line="176">
+                    reset the callback before parsing                    
+                </comment>
+                <scope line="178">
+                    <scope line="179"/>
+                    <scope line="183"/>
+                </scope>
+            </method>
+            <javadoc line="190">
                 Returns the column with the most negative coefficient in the objective function row.                
                 <param>
                     tableau Simple tableau for the problem.                    
@@ -121,25 +190,60 @@
                     the column with the most negative coefficient.                    
                 </return>
             </javadoc>
-            <method name="getPivotColumn" type="Integer" line="123">
+            <method name="getPivotColumn" type="Integer" line="196">
                 <params>
                     <param name="tableau" type="SimplexTableau"/>
                 </params>
-                <comment line="129">
+                <comment line="202">
                     check if the entry is strictly smaller than the current minimum
                      do not use a ulp/epsilon check                    
                 </comment>
-                <declaration name="minValue" type="double" line="124"/>
-                <declaration name="minPos" type="Integer" line="125"/>
-                <scope line="126">
-                    <declaration name="entry" type="double" line="127"/>
-                    <scope line="130"/>
+                <comment line="208">
+                    Bland&apos;s rule: chose the entering column with the lowest index                    
+                </comment>
+                <declaration name="minValue" type="double" line="197"/>
+                <declaration name="minPos" type="Integer" line="198"/>
+                <scope line="199">
+                    <declaration name="entry" type="double" line="200"/>
+                    <scope line="203">
+                        <scope line="208"/>
+                    </scope>
                 </scope>
             </method>
-            <javadoc line="138">
+            <javadoc line="216">
+                Checks whether the given column is valid pivot column, i.e. will result
+                  in a valid pivot row.
+                  &lt;p&gt;
+                  When applying Bland&apos;s rule to select the pivot column, it may happen that
+                  there is no corresponding pivot row. This method will check if the selected
+                  pivot column will return a valid pivot row.                
+                <param>
+                    tableau simplex tableau for the problem                    
+                </param>
+                <param>
+                    col the column to test                    
+                </param>
+                <return>
+                    {@code true} if the pivot column is valid, {@code false} otherwise                    
+                </return>
+            </javadoc>
+            <method name="isValidPivotColumn" type="boolean" line="228">
+                <params>
+                    <param name="tableau" type="SimplexTableau"/>
+                    <param name="col" type="int"/>
+                </params>
+                <comment line="233">
+                    do the same check as in getPivotRow                    
+                </comment>
+                <scope line="229">
+                    <declaration name="entry" type="double" line="230"/>
+                    <scope line="233"/>
+                </scope>
+            </method>
+            <javadoc line="240">
                 Returns the row with the minimum ratio as given by the minimum ratio test (MRT).                
                 <param>
-                    tableau Simple tableau for the problem.                    
+                    tableau Simplex tableau for the problem.                    
                 </param>
                 <param>
                     col Column to test the ratio of (see {@link #getPivotColumn(SimplexTableau)}).                    
@@ -148,73 +252,67 @@
                     the row with the minimum ratio.                    
                 </return>
             </javadoc>
-            <method name="getPivotRow" type="Integer" line="145">
+            <method name="getPivotRow" type="Integer" line="247">
                 <params>
                     <param name="tableau" type="SimplexTableau"/>
                     <param name="col" type="int"/>
                 </params>
-                <comment line="147">
+                <comment line="249">
                     create a list of all the rows that tie for the lowest score in the minimum ratio test                    
                 </comment>
-                <comment line="156">
+                <comment line="256">
+                    only consider pivot elements larger than the cutOff threshold
+                     selecting others may lead to degeneracy or numerical instabilities                    
+                </comment>
+                <comment line="260">
                     check if the entry is strictly equal to the current min ratio
                      do not use a ulp/epsilon check                    
                 </comment>
-                <comment line="172">
+                <comment line="276">
                     there&apos;s a degeneracy as indicated by a tie in the minimum ratio test                    
                 </comment>
-                <comment line="174">
+                <comment line="278">
                     1. check if there&apos;s an artificial variable that can be forced out of the basis                    
                 </comment>
-                <comment line="187">
+                <comment line="291">
                     2. apply Bland&apos;s rule to prevent cycling:
                         take the row for which the corresponding basic variable has the smallest index
                     
                      see http:www.stanford.edu/class/msande310/blandrule.pdf
-                     see http:en.wikipedia.org/wiki/Bland%27s_rule (not equivalent to the above paper)
-                    
-                     Additional heuristic: if we did not get a solution after half of maxIterations
-                                           revert to the simple case of just returning the top-most row
-                     This heuristic is based on empirical data gathered while investigating MATH-828.                    
+                     see http:en.wikipedia.org/wiki/Bland%27s_rule (not equivalent to the above paper)                    
                 </comment>
-                <declaration name="minRatioPositions" type="List&lt;Integer&gt;" line="147"/>
-                <declaration name="minRatio" type="double" line="148"/>
-                <scope line="149">
-                    <declaration name="rhs" type="double" line="150"/>
-                    <declaration name="entry" type="double" line="151"/>
-                    <scope line="153">
-                        <declaration name="ratio" type="double" line="154"/>
-                        <declaration name="cmp" type="int" line="157"/>
-                        <scope line="158"/>
-                        <scope line="160"/>
+                <declaration name="minRatioPositions" type="List&amp;lt;Integer&amp;gt;" line="249"/>
+                <declaration name="minRatio" type="double" line="250"/>
+                <scope line="251">
+                    <declaration name="rhs" type="double" line="252"/>
+                    <declaration name="entry" type="double" line="253"/>
+                    <scope line="257">
+                        <declaration name="ratio" type="double" line="258"/>
+                        <declaration name="cmp" type="int" line="261"/>
+                        <scope line="262"/>
+                        <scope line="264"/>
                     </scope>
                 </scope>
-                <scope line="168"/>
-                <scope line="170">
-                    <scope line="174">
-                        <scope line="175">
-                            <scope line="176">
-                                <declaration name="column" type="int" line="177"/>
-                                <declaration name="entry" type="double" line="178"/>
-                                <scope line="179"/>
+                <scope line="272"/>
+                <scope line="274">
+                    <scope line="278">
+                        <scope line="279">
+                            <scope line="280">
+                                <declaration name="column" type="int" line="281"/>
+                                <declaration name="entry" type="double" line="282"/>
+                                <scope line="283"/>
                             </scope>
                         </scope>
                     </scope>
-                    <scope line="195">
-                        <declaration name="minRow" type="Integer" line="196"/>
-                        <declaration name="minIndex" type="int" line="197"/>
-                        <declaration name="varStart" type="int" line="198"/>
-                        <declaration name="varEnd" type="int" line="199"/>
-                        <scope line="200">
-                            <scope line="201">
-                                <declaration name="basicRow" type="Integer" line="202"/>
-                                <scope line="203"/>
-                            </scope>
-                        </scope>
+                    <declaration name="minRow" type="Integer" line="296"/>
+                    <declaration name="minIndex" type="int" line="297"/>
+                    <scope line="298">
+                        <declaration name="basicVar" type="int" line="299"/>
+                        <scope line="300"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="215">
+            <javadoc line="310">
                 Runs one iteration of the Simplex method on the given model.                
                 <param>
                     tableau Simple tableau for the problem.                    
@@ -226,27 +324,15 @@
                     UnboundedSolutionException if the model is found not to have a bounded solution.                    
                 </throws>
             </javadoc>
-            <method name="doIteration" type="void" line="224">
+            <method name="doIteration" type="void" line="319">
                 <params>
                     <param name="tableau" type="SimplexTableau"/>
                 </params>
-                <comment line="235">
-                    set the pivot element to 1                    
-                </comment>
-                <comment line="239">
-                    set the rest of the pivot column to 0                    
-                </comment>
-                <declaration name="pivotCol" type="Integer" line="228"/>
-                <declaration name="pivotRow" type="Integer" line="229"/>
-                <scope line="230"/>
-                <declaration name="pivotVal" type="double" line="235"/>
-                <scope line="239">
-                    <scope line="240">
-                        <declaration name="multiplier" type="double" line="241"/>
-                    </scope>
-                </scope>
+                <declaration name="pivotCol" type="Integer" line="323"/>
+                <declaration name="pivotRow" type="Integer" line="324"/>
+                <scope line="325"/>
             </method>
-            <javadoc line="247">
+            <javadoc line="332">
                 Solves Phase 1 of the Simplex method.                
                 <param>
                     tableau Simple tableau for the problem.                    
@@ -261,26 +347,48 @@
                     NoFeasibleSolutionException if there is no feasible solution?                    
                 </throws>
             </javadoc>
-            <method name="solvePhase1" type="void" line="258">
+            <method name="solvePhase1" type="void" line="343">
                 <params>
                     <param name="tableau" type="SimplexTableau"/>
                 </params>
-                <comment line="261">
+                <comment line="346">
                     make sure we&apos;re in Phase 1                    
                 </comment>
-                <comment line="270">
+                <comment line="355">
                     if W is not zero then we have no feasible solution                    
                 </comment>
-                <scope line="261"/>
-                <scope line="265"/>
-                <scope line="270"/>
+                <scope line="346"/>
+                <scope line="350"/>
+                <scope line="355"/>
             </method>
-            <javadoc line="275">
+            <javadoc line="360">
                 {@inheritDoc}                
             </javadoc>
-            <method name="doOptimize" type="PointValuePair" line="280">
-                <declaration name="tableau" type="SimplexTableau" line="281"/>
-                <scope line="293"/>
+            <method name="doOptimize" type="PointValuePair" line="365">
+                <comment line="368">
+                    reset the tableau to indicate a non-feasible solution in case
+                     we do not pass phase 1 successfully                    
+                </comment>
+                <comment line="385">
+                    after phase 1, we are sure to have a feasible solution                    
+                </comment>
+                <comment line="394">
+                    check that the solution respects the nonNegative restriction in case
+                     the epsilon/cutOff values are too large for the actual linear problem
+                     (e.g. with very small constraint coefficients), the solver might actually
+                     find a non-valid solution (with negative coefficients).                    
+                </comment>
+                <scope line="369"/>
+                <declaration name="tableau" type="SimplexTableau" line="373"/>
+                <scope line="385"/>
+                <scope line="389"/>
+                <declaration name="solution" type="PointValuePair" line="397"/>
+                <scope line="398">
+                    <declaration name="coeff" type="double[]" line="399"/>
+                    <scope line="400">
+                        <scope line="401"/>
+                    </scope>
+                </scope>
             </method>
         </class>
     </source>

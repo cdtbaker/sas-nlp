@@ -1,4 +1,29 @@
-/** 
+/*
+ * Copyright (c) 2008, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
+/**
  * This package provides a mechanism for defining and
  * inserting tracepoints into Java-technology based applications, which
  * can then be monitored by the tracing tools available on the system.
@@ -44,15 +69,18 @@
  * the probe and makes its parameter values visible to any associated tracing
  * mechanism.
  * <p>
- * User-defined interfaces which represent providers must extend the{@code Provider} interface.  To activate the system-defined
- * tracing mechanisms, you must obtain an instance of the{@code ProviderFactory} class, and pass the class of the provider to
+ * User-defined interfaces which represent providers must extend the
+ * {@code Provider} interface.  To activate the system-defined
+ * tracing mechanisms, you must obtain an instance of the
+ * {@code ProviderFactory} class, and pass the class of the provider to
  * the {@code createProvider()} method.  The returned instance is then used to
  * trigger the probes later in the application.
  * <p>
  * In addition to triggering the probes, the provider instance can be used
  * to obtain direct references to the {@code Probe} objects, which can be used
  * directly for triggering, or can be queried to determine whether the probe is
- * currently being traced.  The {@code Provider} interface also defines a{@code Provider.dispose()} method which is used to free up any resources
+ * currently being traced.  The {@code Provider} interface also defines a
+ * {@code Provider.dispose()} method which is used to free up any resources
  * that might be associated with that provider.
  * <p>
  * When a probe is triggered, any activated tracing system will be given
@@ -73,24 +101,29 @@
  * <p>
  * Here is a very small and simple usage example:
  * <p>
- * <PRE>
- * import com.sun.tracing.Provider;
- * import com.sun.tracing.ProviderFactory;
- * interface MyProvider extends Provider {
- * void startProbe();
- * void finishProbe(int value);
- * }
- * public class MyApplication {
- * public static void main(String argv[]) {
- * ProviderFactory factory = ProviderFactory.getDefaultFactory();
- * MyProvider trace = factory.createProvider(MyProvider.class);
- * trace.startProbe();
- * int result = foo();
- * trace.finishProbe(result);
- * trace.dispose();
- * }
- * }
- * </PRE>
+ *
+<PRE>
+   import com.sun.tracing.Provider;
+   import com.sun.tracing.ProviderFactory;
+
+   interface MyProvider extends Provider {
+       void startProbe();
+       void finishProbe(int value);
+   }
+
+   public class MyApplication {
+       public static void main(String argv[]) {
+           ProviderFactory factory = ProviderFactory.getDefaultFactory();
+           MyProvider trace = factory.createProvider(MyProvider.class);
+
+           trace.startProbe();
+           int result = foo();
+           trace.finishProbe(result);
+
+           trace.dispose();
+       }
+   }
+</PRE>
  * <p>
  * The Java Development Kit (JDK) currently only includes one system-defined
  * tracing framework: DTrace. DTrace is enabled automatically whenever an
@@ -99,7 +132,9 @@
  * DTrace scripts as soon as the provider is created. At the tracepoint, an
  * associated DTrace script is informed of the creation of the provider, and
  * it takes whatever action it is designed to take. Tracepoints in the
- * program have the following DTrace probe names:<br>{@code <provider><pid>:<module>:<function>:<probe>}Where:
+ * program have the following DTrace probe names:<br>
+ *   {@code <provider><pid>:<module>:<function>:<probe>}
+ * Where:
  * <ul>
  * <li>{@code <provider>} the provider name as specified by the application</li>
  * <li>{@code <pid>} the operating system process ID</li>
@@ -120,16 +155,17 @@
  * are passed by value (boxed values are unboxed), floating-point types are
  * passed as encoded integer
  * arguments, and {@code java.lang.String} objects are converted
- * to UTF8 strings, so they can be read into the DTrace script using the{@code copyinstr()} intrinsic.  Non-string and non-boxed primitive
+ * to UTF8 strings, so they can be read into the DTrace script using the
+ * {@code copyinstr()} intrinsic.  Non-string and non-boxed primitive
  * reference arguments are only
  * placeholders and have no value.
  * <p>
  * Using the example above, with a theoretical process ID of 123, these are
  * the probes that can be traced from DTrace:
- * <PRE>
- * MyProvider123:::startProbe
- * MyProvider123:::finishProbe
- * </PRE>
+<PRE>
+    MyProvider123:::startProbe
+    MyProvider123:::finishProbe
+</PRE>
  * When {@code finishProbe} executes, {@code arg0} will contain the
  * value of {@code result}.
  * <p>
@@ -138,8 +174,10 @@
  * <ul>
  * <li>DTrace is not supported on the underlying system.</li>
  * <li>The property {@code com.sun.tracing.dtrace} is set to "disable".</li>
- * <li>The RuntimePermission {@code com.sun.tracing.dtrace.createProvider}is denied to the process.</li>
+ * <li>The RuntimePermission {@code com.sun.tracing.dtrace.createProvider}
+ * is denied to the process.</li>
  * </ul>
  * <p>
  */
+
 package com.sun.tracing;

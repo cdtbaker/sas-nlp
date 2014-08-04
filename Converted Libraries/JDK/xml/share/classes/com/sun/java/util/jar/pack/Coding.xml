@@ -6,212 +6,11 @@
         <import package="java.util.HashMap"/>
         <import package="java.util.Map"/>
         <import package="com.sun.java.util.jar.pack.Constants"/>
-        <class name="Coding" line="34">
-            <comment line="42">
-                Coding schema for single integers, parameterized by (B,H,S):
-                
-                Let B in [1,5], H in [1,256], S in [0,3].
-                (S limit is arbitrary.  B follows the 32-bit limit.  H is byte size.)
-                
-                A given (B,H,S) code varies in length from 1 to B bytes.
-                
-                The 256 values a byte may take on are divided into L=(256-H) and H
-                values, with all the H values larger than the L values.
-                (That is, the L values are [0,L) and the H are [L,256).)
-                
-                The last byte is always either the B-th byte, a byte with &quot;L value&quot;
-                (&lt;L), or both.  There is no other byte that satisfies these conditions.
-                All bytes before the last always have &quot;H values&quot; (&gt;=L).
-                
-                Therefore, if L==0, the code always has the full length of B bytes.
-                The coding then becomes a classic B-byte little-endian unsigned integer.
-                (Also, if L==128, the high bit of each byte acts signals the presence
-                of a following byte, up to the maximum length.)
-                
-                In the unsigned case (S==0), the coding is compact and monotonic
-                in the ordering of byte sequences defined by appending zero bytes
-                to pad them to a common length B, reversing them, and ordering them
-                lexicographically.  (This agrees with &quot;little-endian&quot; byte order.)
-                
-                Therefore, the unsigned value of a byte sequence may be defined as:
-                &lt;pre&gt;
-                U(b0)           == b0
-                in [0..L)
-                or [0..256) if B==1 ()
-                
-                U(b0,b1)        == b0 + b1H
-                in [L..L(1+H))
-                or [L..L(1+H) + H^2) if B==2
-                
-                U(b0,b1,b2)     == b0 + b1H + b2H^2
-                in [L(1+H)..L(1+H+H^2))
-                or [L(1+H)..L(1+H+H^2) + H^3) if B==3
-                
-                U(b[i]: i&lt;n)    == Sum[i&lt;n]( b[i]  H^i )
-                up to  LSum[i&lt;n]( H^i )
-                or to  LSum[i&lt;n]( H^i ) + H^n if n==B
-                &lt;pre&gt;
-                
-                () If B==1, the values H,L play no role in the coding.
-                As a convention, we require that any (1,H,S) code must always
-                encode values less than H.  Thus, a simple unsigned byte is coded
-                specifically by the code (1,256,0).
-                
-                (Properly speaking, the unsigned case should be parameterized as
-                S==Infinity.  If the schema were regular, the case S==0 would really
-                denote a numbering in which all coded values are negative.)
-                
-                If S&gt;0, the unsigned value of a byte sequence is regarded as a binary
-                integer.  If any of the S low-order bits are zero, the corresponding
-                signed value will be non-negative.  If all of the S low-order bits
-                (S&gt;0) are one, the the corresponding signed value will be negative.
-                
-                The non-negative signed values are compact and monotonically increasing
-                (from 0) in the ordering of the corresponding unsigned values.
-                
-                The negative signed values are compact and monotonically decreasing
-                (from -1) in the ordering of the corresponding unsigned values.
-                
-                In essence, the low-order S bits function as a collective sign bit
-                for negative signed numbers, and as a low-order base-(2^S-1) digit
-                for non-negative signed numbers.
-                
-                Therefore, the signed value corresponding to an unsigned value is:
-                &lt;pre&gt;
-                Sgn(x)  == x                               if S==0
-                Sgn(x)  == (x  2^S)(2^S-1) + (x % 2^S),  if S&gt;0, (x % 2^S) &lt; 2^S-1
-                Sgn(x)  == -(x  2^S)-1,                   if S&gt;0, (x % 2^S) == 2^S-1
-                &lt;pre&gt;
-                
-                Finally, the value of a byte sequence, given the coding parameters
-                (B,H,S), is defined as:
-                &lt;pre&gt;
-                V(b[i]: i&lt;n)  == Sgn(U(b[i]: i&lt;n))
-                &lt;pre&gt;
-                
-                The extremal positive and negative signed value for a given range
-                of unsigned values may be found by sign-encoding the largest unsigned
-                value which is not 2^S-1 mod 2^S, and that which is, respectively.
-                
-                Because B,H,S are variable, this is not a single coding but a schema
-                of codings.  For optimal compression, it is necessary to adaptively
-                select specific codings to the data being compressed.
-                
-                For example, if a sequence of values happens never to be negative,
-                S==0 is the best choice.  If the values are equally balanced between
-                negative and positive, S==1.  If negative values are rare, then S&gt;1
-                is more appropriate.
-                
-                A (B,H,S) encoding is called a &quot;subrange&quot; if it does not encode
-                the largest 32-bit value, and if the number R of values it does
-                encode can be expressed as a positive 32-bit value.  (Note that
-                B=1 implies R&lt;=256, B=2 implies R&lt;=65536, etc.)
-                
-                A delta version of a given (B,H,S) coding encodes an array of integers
-                by writing their successive differences in the (B,H,S) coding.
-                The original integers themselves may be recovered by making a
-                running accumulation of sum of the differences as they are read.
-                
-                As a special case, if a (B,H,S) encoding is a subrange, its delta
-                version will only encode arrays of numbers in the coding&apos;s unsigned
-                range, [0..R-1].  The coding of deltas is still in the normal signed
-                range, if S!=0.  During delta encoding, all subtraction results are
-                reduced to the signed range, by adding multiples of R.  Likewise,
-                .     during encoding, all addition results are reduced to the unsigned range.
-                This special case for subranges allows the benefits of wraparound
-                when encoding correlated sequences of very small positive numbers.                
-            </comment>
-            <comment line="157">
-                Code-specific limits:                
-            </comment>
-            <comment line="228">
-                Some of the arithmetic below is on unsigned 32-bit integers.
-                 These must be represented in Java as longs in the range [0..2^32-1].
-                 The conversion to a signed int is just the Java cast (int), but
-                 the conversion to an unsigned int is the following little method:                
-            </comment>
-            <comment line="236">
-                Sign encoding:                
-            </comment>
-            <comment line="292">
-                Top-level coding of single integers:                
-            </comment>
-            <comment line="332">
-                The Stream version doesn&apos;t fetch a byte unless it is needed for coding.                
-            </comment>
-            <comment line="349">
-                                
-            </comment>
-            <comment line="350">
-                                
-            </comment>
-            <comment line="351">
-                                
-            </comment>
-            <comment line="353">
-                END OF STATICS.                
-            </comment>
-            <comment line="355">
-                                
-            </comment>
-            <comment line="355">
-                # bytes (1..5)                
-            </comment>
-            <comment line="356">
-                                
-            </comment>
-            <comment line="356">
-                # codes requiring a higher byte                
-            </comment>
-            <comment line="357">
-                                
-            </comment>
-            <comment line="357">
-                # codes requiring a higher byte                
-            </comment>
-            <comment line="358">
-                                
-            </comment>
-            <comment line="358">
-                # low-order bits representing sign                
-            </comment>
-            <comment line="359">
-                                
-            </comment>
-            <comment line="359">
-                type of delta encoding (0 == none)                
-            </comment>
-            <comment line="360">
-                smallest representable value                
-            </comment>
-            <comment line="361">
-                largest representable value                
-            </comment>
-            <comment line="362">
-                smallest representable uns. value                
-            </comment>
-            <comment line="363">
-                largest representable uns. value                
-            </comment>
-            <comment line="364">
-                smallest repr. value, given # bytes                
-            </comment>
-            <comment line="365">
-                largest repr. value, given # bytes                
-            </comment>
-            <comment line="446">
-                object-oriented code/decode                
-            </comment>
-            <comment line="454">
-                Stream versions                
-            </comment>
-            <comment line="465">
-                Stream/array versions                
-            </comment>
+        <class name="Coding" line="8">
             <implements interface="Comparable"/>
             <implements interface="CodingMethod"/>
             <implements interface="Histogram.BitMetric"/>
-            <javadoc line="34">
+            <javadoc line="8">
                 Define the conversions between sequences of small integers and raw bytes.
                   This is a schema of encodings which incorporates varying lengths,
                   varying degrees of length variability, and varying amounts of signed-ness.                
@@ -219,167 +18,91 @@
                     John Rose                    
                 </author>
             </javadoc>
-            <method name="saturate32" type="int" line="157">
+            <method name="saturate32" type="int" line="15">
                 <params>
                     <param name="x" type="long"/>
                 </params>
             </method>
-            <method name="codeRangeLong" type="long" line="162">
+            <method name="codeRangeLong" type="long" line="20">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                 </params>
             </method>
-            <method name="codeRangeLong" type="long" line="165">
+            <method name="codeRangeLong" type="long" line="23">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="nMax" type="int"/>
                 </params>
-                <comment line="167">
-                    Code range for a all (B,H) codes of length &lt;=nMax (&lt;=B).
-                     n &lt; B:   L*Sum[i&lt;n]( H^i )
-                     n == B:  L*Sum[i&lt;B]( H^i ) + H^B                    
-                </comment>
-                <comment line="173">
-                    no codes of zero length                    
-                </comment>
-                <comment line="174">
-                    special case; see (**) above                    
-                </comment>
-                <declaration name="L" type="int" line="174"/>
-                <declaration name="sum" type="long" line="175"/>
-                <declaration name="H_i" type="long" line="176"/>
-                <scope line="177"/>
+                <declaration name="L" type="int" line="29"/>
+                <declaration name="sum" type="long" line="30"/>
+                <declaration name="H_i" type="long" line="31"/>
+                <scope line="32"/>
             </method>
-            <javadoc line="186">
+            <javadoc line="40">
                 Largest int representable by (B,H,S) in up to nMax bytes.                
             </javadoc>
-            <method name="codeMax" type="int" line="187">
+            <method name="codeMax" type="int" line="43">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                     <param name="nMax" type="int"/>
                 </params>
-                <comment line="189">
-                    assert(S &gt;= 0 &amp;&amp; S &lt;= S_MAX);                    
-                </comment>
-                <comment line="192">
-                    degenerate max value for empty set of codes                    
-                </comment>
-                <comment line="199">
-                    No positive codings at all.                    
-                </comment>
-                <comment line="201">
-                    check for 32-bit wraparound:                    
-                </comment>
-                <declaration name="range" type="long" line="189"/>
-                <declaration name="maxPos" type="long" line="194"/>
-                <scope line="195"/>
-                <declaration name="smax" type="int" line="199"/>
+                <declaration name="range" type="long" line="44"/>
+                <declaration name="maxPos" type="long" line="47"/>
+                <scope line="48"/>
+                <declaration name="smax" type="int" line="52"/>
             </method>
-            <javadoc line="205">
+            <javadoc line="56">
                 Smallest int representable by (B,H,S) in up to nMax bytes.
                   Returns Integer.MIN_VALUE if 32-bit wraparound covers
                   the entire negative range.                
             </javadoc>
-            <method name="codeMin" type="int" line="209">
+            <method name="codeMin" type="int" line="61">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                     <param name="nMax" type="int"/>
                 </params>
-                <comment line="211">
-                    assert(S &gt;= 0 &amp;&amp; S &lt;= S_MAX);                    
-                </comment>
-                <comment line="214">
-                    Can code negative values via 32-bit wraparound.                    
-                </comment>
-                <comment line="224">
-                    No negative codings at all.                    
-                </comment>
-                <declaration name="range" type="long" line="211"/>
-                <scope line="212"/>
-                <scope line="216"/>
-                <declaration name="maxNeg" type="long" line="219"/>
+                <declaration name="range" type="long" line="62"/>
+                <scope line="63"/>
+                <scope line="66"/>
+                <declaration name="maxNeg" type="long" line="69"/>
             </method>
-            <method name="toUnsigned32" type="long" line="231">
+            <method name="toUnsigned32" type="long" line="74">
                 <params>
                     <param name="sx" type="int"/>
                 </params>
             </method>
-            <method name="isNegativeCode" type="boolean" line="236">
+            <method name="isNegativeCode" type="boolean" line="77">
                 <params>
                     <param name="ux" type="long"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="239">
-                    can be out of 32-bit range; who cares                    
-                </comment>
-                <declaration name="Smask" type="int" line="239"/>
+                <declaration name="Smask" type="int" line="80"/>
             </method>
-            <method name="hasNegativeCode" type="boolean" line="242">
+            <method name="hasNegativeCode" type="boolean" line="83">
                 <params>
                     <param name="sx" type="int"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="245">
-                    If S&gt;=2 very low negatives are coded by 32-bit-wrapped positives.
-                     The lowest negative representable by a negative coding is
-                     ~(umax32 &gt;&gt; S), and the next lower number is coded by wrapping
-                     the highest positive:
-                        CodePos(umax32-1)  -&gt;  (umax32-1)-((umax32-1)&gt;&gt;S)
-                     which simplifies to ~(umax32 &gt;&gt; S)-1.                    
-                </comment>
             </method>
-            <method name="decodeSign32" type="int" line="252">
+            <method name="decodeSign32" type="int" line="87">
                 <params>
                     <param name="ux" type="long"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="254">
-                    must be unsigned 32-bit number                    
-                </comment>
-                <comment line="257">
-                    cast to signed int                    
-                </comment>
-                <comment line="261">
-                    Sgn(x)  == -(x / 2^S)-1                    
-                </comment>
-                <comment line="264">
-                    Sgn(x)  == (x / 2^S)*(2^S-1) + (x % 2^S)                    
-                </comment>
-                <comment line="267">
-                    Assert special case of S==1:                    
-                </comment>
-                <scope line="255"/>
-                <declaration name="sx" type="int" line="258"/>
-                <scope line="259"/>
-                <scope line="262"/>
             </method>
-            <method name="encodeSign32" type="long" line="270">
+            <method name="encodeSign32" type="long" line="102">
                 <params>
                     <param name="sx" type="int"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="273">
-                    unsigned 32-bit int                    
-                </comment>
-                <comment line="278">
-                    InvSgn(sx) = (sx / (2^S-1))*2^S + (sx % (2^S-1))                    
-                </comment>
-                <comment line="281">
-                    InvSgn(sx) = (-sx-1)*2^S + (2^S-1)                    
-                </comment>
-                <scope line="271"/>
-                <declaration name="Smask" type="int" line="274"/>
-                <declaration name="ux" type="long" line="275"/>
-                <scope line="276"/>
-                <scope line="279"/>
             </method>
-            <method name="writeInt" type="void" line="292">
+            <method name="writeInt" type="void" line="118">
                 <params>
                     <param name="out" type="byte[]"/>
                     <param name="outpos" type="int[]"/>
@@ -388,22 +111,8 @@
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="310">
-                    Report number of bytes written by updating outpos[0]:                    
-                </comment>
-                <comment line="312">
-                    Check right away for mis-coding.
-                    assert(sx == readInt(out, new int[1], B, H, S));                    
-                </comment>
-                <declaration name="ux" type="long" line="293"/>
-                <declaration name="L" type="int" line="297"/>
-                <declaration name="sum" type="long" line="298"/>
-                <declaration name="pos" type="int" line="299"/>
-                <scope line="300">
-                    <declaration name="b_i" type="int" line="304"/>
-                </scope>
             </method>
-            <method name="readInt" type="int" line="314">
+            <method name="readInt" type="int" line="135">
                 <params>
                     <param name="in" type="byte[]"/>
                     <param name="inpos" type="int[]"/>
@@ -411,382 +120,329 @@
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="316">
-                    U(b[i]: i&lt;n) == Sum[i&lt;n]( b[i] * H^i )                    
-                </comment>
-                <comment line="327">
-                    assert(sum &gt;= 0 &amp;&amp; sum &lt; codeRangeLong(B, H));
-                     Report number of bytes read by updating inpos[0]:                    
-                </comment>
-                <declaration name="L" type="int" line="316"/>
-                <declaration name="sum" type="long" line="317"/>
-                <declaration name="H_i" type="long" line="318"/>
-                <declaration name="pos" type="int" line="319"/>
-                <scope line="320">
-                    <declaration name="b_i" type="int" line="321"/>
+                <declaration name="L" type="int" line="136"/>
+                <declaration name="sum" type="long" line="137"/>
+                <declaration name="H_i" type="long" line="138"/>
+                <declaration name="pos" type="int" line="139"/>
+                <scope line="140">
+                    <declaration name="b_i" type="int" line="141"/>
                 </scope>
             </method>
-            <method name="readIntFrom" type="int" line="332">
+            <method name="readIntFrom" type="int" line="149">
                 <params>
                     <param name="in" type="InputStream"/>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                 </params>
-                <comment line="334">
-                    U(b[i]: i&lt;n) == Sum[i&lt;n]( b[i] * H^i )                    
-                </comment>
-                <declaration name="L" type="int" line="334"/>
-                <declaration name="sum" type="long" line="335"/>
-                <declaration name="H_i" type="long" line="336"/>
-                <scope line="337">
-                    <declaration name="b_i" type="int" line="338"/>
+                <declaration name="L" type="int" line="150"/>
+                <declaration name="sum" type="long" line="151"/>
+                <declaration name="H_i" type="long" line="152"/>
+                <scope line="153">
+                    <declaration name="b_i" type="int" line="154"/>
                 </scope>
             </method>
-            <declaration name="B_MAX" type="int" line="348"/>
-            <declaration name="H_MAX" type="int" line="349"/>
-            <declaration name="S_MAX" type="int" line="350"/>
-            <declaration name="B" type="int" line="354"/>
-            <declaration name="H" type="int" line="355"/>
-            <declaration name="L" type="int" line="356"/>
-            <declaration name="S" type="int" line="357"/>
-            <declaration name="del" type="int" line="358"/>
-            <declaration name="min" type="int" line="359"/>
-            <declaration name="max" type="int" line="360"/>
-            <declaration name="umin" type="int" line="361"/>
-            <declaration name="umax" type="int" line="362"/>
-            <declaration name="byteMin" type="int[]" line="363"/>
-            <declaration name="byteMax" type="int[]" line="364"/>
-            <method name="Coding" type="constructor" line="366">
+            <declaration name="B_MAX" type="int" line="163"/>
+            <declaration name="H_MAX" type="int" line="164"/>
+            <declaration name="S_MAX" type="int" line="165"/>
+            <declaration name="B" type="int" line="166"/>
+            <declaration name="H" type="int" line="167"/>
+            <declaration name="L" type="int" line="168"/>
+            <declaration name="S" type="int" line="169"/>
+            <declaration name="del" type="int" line="170"/>
+            <declaration name="min" type="int" line="171"/>
+            <declaration name="max" type="int" line="172"/>
+            <declaration name="umin" type="int" line="173"/>
+            <declaration name="umax" type="int" line="174"/>
+            <declaration name="byteMin" type="int[]" line="175"/>
+            <declaration name="byteMax" type="int[]" line="176"/>
+            <method name="Coding" type="constructor" line="177">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                 </params>
             </method>
-            <method name="Coding" type="constructor" line="369">
+            <method name="Coding" type="constructor" line="180">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                     <param name="del" type="int"/>
                 </params>
-                <scope line="382"/>
+                <scope line="192"/>
             </method>
-            <method name="equals" type="boolean" line="388">
+            <method name="equals" type="boolean" line="197">
                 <params>
                     <param name="x" type="Object"/>
                 </params>
-                <declaration name="that" type="Coding" line="390"/>
+                <declaration name="that" type="Coding" line="199"/>
             </method>
-            <method name="hashCode" type="int" line="398"/>
-            <declaration name="codeMap" type="Map&lt;Coding,Coding&gt;" line="402"/>
-            <method name="of" type="Coding" line="404">
+            <method name="hashCode" type="int" line="206"/>
+            <declaration name="codeMap" type="Map&amp;lt;Coding,Coding&amp;gt;" line="209"/>
+            <method name="of" type="Coding" line="210">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                     <param name="del" type="int"/>
                 </params>
-                <declaration name="x0" type="Coding" line="406"/>
-                <declaration name="x1" type="Coding" line="407"/>
+                <declaration name="x0" type="Coding" line="212"/>
+                <declaration name="x1" type="Coding" line="213"/>
             </method>
-            <method name="of" type="Coding" line="412">
+            <method name="of" type="Coding" line="217">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                 </params>
             </method>
-            <method name="of" type="Coding" line="416">
+            <method name="of" type="Coding" line="220">
                 <params>
                     <param name="B" type="int"/>
                     <param name="H" type="int"/>
                     <param name="S" type="int"/>
                 </params>
             </method>
-            <method name="canRepresentValue" type="boolean" line="420">
+            <method name="canRepresentValue" type="boolean" line="223">
                 <params>
                     <param name="x" type="int"/>
                 </params>
             </method>
-            <javadoc line="426">
+            <javadoc line="227">
                 Can this coding represent a single value, possibly a delta?
                   This ignores the D property.  That is, for delta codings,
                   this tests whether a delta value of &apos;x&apos; can be coded.
                   For signed delta codings which produce unsigned end values,
                   use canRepresentUnsigned.                
             </javadoc>
-            <method name="canRepresentSigned" type="boolean" line="432">
+            <method name="canRepresentSigned" type="boolean" line="234">
                 <params>
                     <param name="x" type="int"/>
                 </params>
             </method>
-            <javadoc line="435">
+            <javadoc line="237">
                 Can this coding, apart from its S property,
                   represent a single value?  (Negative values
                   can only be represented via 32-bit overflow,
                   so this returns true for negative values
                   if isFullRange is true.)                
             </javadoc>
-            <method name="canRepresentUnsigned" type="boolean" line="441">
+            <method name="canRepresentUnsigned" type="boolean" line="244">
                 <params>
                     <param name="x" type="int"/>
                 </params>
             </method>
-            <method name="readFrom" type="int" line="446">
+            <method name="readFrom" type="int" line="247">
                 <params>
                     <param name="in" type="byte[]"/>
                     <param name="inpos" type="int[]"/>
                 </params>
             </method>
-            <method name="writeTo" type="void" line="449">
+            <method name="writeTo" type="void" line="250">
                 <params>
                     <param name="out" type="byte[]"/>
                     <param name="outpos" type="int[]"/>
                     <param name="x" type="int"/>
                 </params>
             </method>
-            <method name="readFrom" type="int" line="454">
+            <method name="readFrom" type="int" line="253">
                 <params>
                     <param name="in" type="InputStream"/>
                 </params>
             </method>
-            <method name="writeTo" type="void" line="457">
+            <method name="writeTo" type="void" line="256">
                 <params>
                     <param name="out" type="OutputStream"/>
                     <param name="x" type="int"/>
                 </params>
-                <declaration name="buf" type="byte[]" line="458"/>
-                <declaration name="pos" type="int[]" line="459"/>
+                <declaration name="buf" type="byte[]" line="257"/>
+                <declaration name="pos" type="int[]" line="258"/>
             </method>
-            <method name="readArrayFrom" type="void" line="465">
+            <method name="readArrayFrom" type="void" line="262">
                 <params>
                     <param name="in" type="InputStream"/>
                     <param name="a" type="int[]"/>
                     <param name="start" type="int"/>
                     <param name="end" type="int"/>
                 </params>
-                <comment line="467">
-                    %%% use byte[] buffer                    
-                </comment>
-                <comment line="475">
-                    Reduce array values to the required range.                    
-                </comment>
-                <scope line="470">
-                    <declaration name="state" type="long" line="471"/>
-                    <scope line="472">
-                        <scope line="475"/>
+                <scope line="264">
+                    <declaration name="state" type="long" line="265"/>
+                    <scope line="266">
+                        <scope line="268"/>
                     </scope>
                 </scope>
             </method>
-            <method name="writeArrayTo" type="void" line="482">
+            <method name="writeArrayTo" type="void" line="275">
                 <params>
                     <param name="out" type="OutputStream"/>
                     <param name="a" type="int[]"/>
                     <param name="start" type="int"/>
                     <param name="end" type="int"/>
                 </params>
-                <comment line="495">
-                    The following code is a buffered version of this loop:
-                        for (int i = start; i &lt; end; i++)
-                            writeTo(out, a[i]);                    
-                </comment>
-                <scope line="484">
-                    <declaration name="deltas" type="int[]" line="485"/>
+                <scope line="277">
+                    <declaration name="deltas" type="int[]" line="278"/>
                 </scope>
-                <declaration name="buf" type="byte[]" line="497"/>
-                <declaration name="bufmax" type="int" line="498"/>
-                <declaration name="pos" type="int[]" line="499"/>
-                <scope line="500">
-                    <scope line="501"/>
+                <declaration name="buf" type="byte[]" line="285"/>
+                <declaration name="bufmax" type="int" line="286"/>
+                <declaration name="pos" type="int[]" line="287"/>
+                <scope line="288">
+                    <scope line="289"/>
                 </scope>
             </method>
-            <javadoc line="510">
+            <javadoc line="297">
                 Tell if the range of this coding (number of distinct
                   representable values) can be expressed in 32 bits.                
             </javadoc>
-            <method name="isSubrange" type="boolean" line="513"/>
-            <javadoc line="518">
+            <method name="isSubrange" type="boolean" line="301"/>
+            <javadoc line="304">
                 Tell if this coding can represent all 32-bit values.
                   Note:  Some codings, such as unsigned ones, can be neither
                   subranges nor full-range codings.                
             </javadoc>
-            <method name="isFullRange" type="boolean" line="522"/>
-            <javadoc line="526">
+            <method name="isFullRange" type="boolean" line="309"/>
+            <javadoc line="312">
                 Return the number of values this coding (a subrange) can represent.                
             </javadoc>
-            <method name="getRange" type="int" line="527">
-                <comment line="530">
-                    range includes both min &amp; max                    
-                </comment>
-            </method>
-            <method name="setB" type="Coding" line="532">
+            <method name="getRange" type="int" line="315"/>
+            <method name="setB" type="Coding" line="319">
                 <params>
                     <param name="B" type="int"/>
                 </params>
             </method>
-            <method name="setH" type="Coding" line="533">
+            <method name="setH" type="Coding" line="322">
                 <params>
                     <param name="H" type="int"/>
                 </params>
             </method>
-            <method name="setS" type="Coding" line="534">
+            <method name="setS" type="Coding" line="325">
                 <params>
                     <param name="S" type="int"/>
                 </params>
             </method>
-            <method name="setL" type="Coding" line="535">
+            <method name="setL" type="Coding" line="328">
                 <params>
                     <param name="L" type="int"/>
                 </params>
             </method>
-            <method name="setD" type="Coding" line="536">
+            <method name="setD" type="Coding" line="331">
                 <params>
                     <param name="del" type="int"/>
                 </params>
             </method>
-            <method name="getDeltaCoding" type="Coding" line="537"/>
-            <javadoc line="539">
+            <method name="getDeltaCoding" type="Coding" line="334"/>
+            <javadoc line="337">
                 Return a coding suitable for representing summed, modulo-reduced values.                
             </javadoc>
-            <method name="getValueCoding" type="Coding" line="540"/>
-            <javadoc line="547">
+            <method name="getValueCoding" type="Coding" line="340"/>
+            <javadoc line="344">
                 Reduce the given value to be within this coding&apos;s unsigned range,
                   by adding or subtracting a multiple of (max-min+1).                
             </javadoc>
-            <method name="reduceToUnsignedRange" type="int" line="550">
+            <method name="reduceToUnsignedRange" type="int" line="348">
                 <params>
                     <param name="value" type="long"/>
                 </params>
-                <comment line="553">
-                    already in unsigned range                    
-                </comment>
-                <declaration name="range" type="int" line="554"/>
+                <declaration name="range" type="int" line="350"/>
             </method>
-            <method name="reduceToSignedRange" type="int" line="562">
+            <method name="reduceToSignedRange" type="int" line="357">
                 <params>
                     <param name="value" type="int"/>
                 </params>
-                <comment line="565">
-                    already in signed range                    
-                </comment>
             </method>
-            <method name="reduceToSignedRange" type="int" line="568">
+            <method name="reduceToSignedRange" type="int" line="361">
                 <params>
                     <param name="value" type="int"/>
                     <param name="min" type="int"/>
                     <param name="max" type="int"/>
                 </params>
-                <comment line="575">
-                    32-bit overflow, but the next &apos;%=&apos; op needs to be unsigned                    
-                </comment>
-                <declaration name="range" type="int" line="569"/>
-                <declaration name="value0" type="int" line="571"/>
-                <scope line="573"/>
+                <declaration name="range" type="int" line="362"/>
+                <declaration name="value0" type="int" line="364"/>
+                <scope line="366"/>
             </method>
-            <javadoc line="585">
+            <javadoc line="376">
                 Does this coding support at least one negative value?
                   Includes codings that can do so via 32-bit wraparound.                
             </javadoc>
-            <method name="isSigned" type="boolean" line="588"/>
-            <javadoc line="591">
+            <method name="isSigned" type="boolean" line="380"/>
+            <javadoc line="383">
                 Does this coding code arrays by making successive differences?                
             </javadoc>
-            <method name="isDelta" type="boolean" line="592"/>
-            <method name="B" type="int" line="596"/>
-            <method name="H" type="int" line="597"/>
-            <method name="L" type="int" line="598"/>
-            <method name="S" type="int" line="599"/>
-            <method name="del" type="int" line="600"/>
-            <method name="min" type="int" line="601"/>
-            <method name="max" type="int" line="602"/>
-            <method name="umin" type="int" line="603"/>
-            <method name="umax" type="int" line="604"/>
-            <method name="byteMin" type="int" line="605">
+            <method name="isDelta" type="boolean" line="386"/>
+            <method name="B" type="int" line="389"/>
+            <method name="H" type="int" line="392"/>
+            <method name="L" type="int" line="395"/>
+            <method name="S" type="int" line="398"/>
+            <method name="del" type="int" line="401"/>
+            <method name="min" type="int" line="404"/>
+            <method name="max" type="int" line="407"/>
+            <method name="umin" type="int" line="410"/>
+            <method name="umax" type="int" line="413"/>
+            <method name="byteMin" type="int" line="416">
                 <params>
                     <param name="b" type="int"/>
                 </params>
             </method>
-            <method name="byteMax" type="int" line="606">
+            <method name="byteMax" type="int" line="419">
                 <params>
                     <param name="b" type="int"/>
                 </params>
             </method>
-            <method name="compareTo" type="int" line="608">
+            <method name="compareTo" type="int" line="422">
                 <params>
                     <param name="x" type="Object"/>
                 </params>
-                <declaration name="that" type="Coding" line="609"/>
-                <declaration name="dkey" type="int" line="610"/>
+                <declaration name="that" type="Coding" line="423"/>
+                <declaration name="dkey" type="int" line="424"/>
             </method>
-            <javadoc line="620">
+            <javadoc line="430">
                 Heuristic measure of the difference between two codings.                
             </javadoc>
-            <method name="distanceFrom" type="int" line="621">
+            <method name="distanceFrom" type="int" line="433">
                 <params>
                     <param name="that" type="Coding"/>
                 </params>
-                <comment line="633">
-                    Distance in log space of H (&lt;=128) and L (&lt;128).                    
-                </comment>
-                <comment line="636">
-                    Double the accuracy of the log:                    
-                </comment>
-                <declaration name="diffdel" type="int" line="622"/>
-                <declaration name="diffS" type="int" line="624"/>
-                <declaration name="diffB" type="int" line="626"/>
-                <declaration name="diffHL" type="int" line="628"/>
-                <scope line="629"/>
-                <scope line="631">
-                    <declaration name="thisHL" type="int" line="633"/>
-                    <declaration name="thatHL" type="int" line="634"/>
+                <declaration name="diffdel" type="int" line="434"/>
+                <declaration name="diffS" type="int" line="436"/>
+                <declaration name="diffB" type="int" line="438"/>
+                <declaration name="diffHL" type="int" line="440"/>
+                <scope line="441"/>
+                <scope line="444">
+                    <declaration name="thisHL" type="int" line="445"/>
+                    <declaration name="thatHL" type="int" line="446"/>
                 </scope>
-                <declaration name="norm" type="int" line="643"/>
+                <declaration name="norm" type="int" line="452"/>
             </method>
-            <method name="getHL" type="int" line="647">
-                <comment line="649">
-                    Follow H in log space by the multiplicative inverse of L.                    
-                </comment>
-            </method>
-            <javadoc line="654">
+            <method name="getHL" type="int" line="456"/>
+            <javadoc line="461">
                 ceiling(log[2](x)): {1-&gt;0, 2-&gt;1, 3-&gt;2, 4-&gt;2, ...}                
             </javadoc>
-            <method name="ceil_lg2" type="int" line="655">
+            <method name="ceil_lg2" type="int" line="464">
                 <params>
                     <param name="x" type="int"/>
                 </params>
-                <comment line="657">
-                    x in range (int.MIN_VALUE -&gt; 32)                    
-                </comment>
-                <declaration name="lg" type="int" line="658"/>
-                <scope line="659"/>
+                <declaration name="lg" type="int" line="467"/>
+                <scope line="468"/>
             </method>
-            <declaration name="byteBitWidths" type="byte[]" line="666"/>
-            <scope line="667">
-                <scope line="668"/>
-                <scope line="671"/>
+            <declaration name="byteBitWidths" type="byte[]" line="474"/>
+            <scope line="475">
+                <scope line="476"/>
+                <scope line="479"/>
             </scope>
-            <javadoc line="676">
+            <javadoc line="483">
                 Number of significant bits in i, not counting sign bits.
                   For positive i, it is ceil_lg2(i + 1).                
             </javadoc>
-            <method name="bitWidth" type="int" line="679">
+            <method name="bitWidth" type="int" line="487">
                 <params>
                     <param name="i" type="int"/>
                 </params>
-                <comment line="681">
-                    change sign                    
-                </comment>
-                <comment line="698">
-                    assert(w == ceil_lg2(i + 1));                    
-                </comment>
-                <declaration name="w" type="int" line="681"/>
-                <declaration name="lo" type="int" line="682"/>
-                <declaration name="hi" type="int" line="685"/>
-                <scope line="687"/>
-                <scope line="692"/>
+                <declaration name="w" type="int" line="489"/>
+                <declaration name="lo" type="int" line="490"/>
+                <declaration name="hi" type="int" line="492"/>
+                <scope line="494"/>
+                <scope line="499"/>
             </method>
-            <javadoc line="701">
+            <javadoc line="506">
                 Create an array of successive differences.
                   If min==max, accept any and all 32-bit overflow.
                   Otherwise, avoid 32-bit overflow, and reduce all differences
@@ -794,7 +450,7 @@
                   multiples of the range cardinality (max-min+1).
                   Also, the values are assumed to be in the range [0..(max-min)].                
             </javadoc>
-            <method name="makeDeltas" type="int[]" line="709">
+            <method name="makeDeltas" type="int[]" line="514">
                 <params>
                     <param name="values" type="int[]"/>
                     <param name="start" type="int"/>
@@ -802,176 +458,130 @@
                     <param name="min" type="int"/>
                     <param name="max" type="int"/>
                 </params>
-                <comment line="726">
-                    no overflow                    
-                </comment>
-                <comment line="728">
-                    Reduce delta values to the required range.                    
-                </comment>
-                <declaration name="count" type="int" line="711"/>
-                <declaration name="deltas" type="int[]" line="712"/>
-                <declaration name="state" type="int" line="713"/>
-                <scope line="714">
-                    <scope line="715">
-                        <declaration name="value" type="int" line="716"/>
+                <declaration name="count" type="int" line="516"/>
+                <declaration name="deltas" type="int[]" line="517"/>
+                <declaration name="state" type="int" line="518"/>
+                <scope line="519">
+                    <scope line="520">
+                        <declaration name="value" type="int" line="521"/>
                     </scope>
                 </scope>
-                <scope line="720">
-                    <scope line="721">
-                        <declaration name="value" type="int" line="722"/>
-                        <declaration name="delta" type="int" line="724"/>
+                <scope line="526">
+                    <scope line="527">
+                        <declaration name="value" type="int" line="528"/>
+                        <declaration name="delta" type="int" line="530"/>
                     </scope>
                 </scope>
             </method>
-            <method name="canRepresent" type="boolean" line="735">
+            <method name="canRepresent" type="boolean" line="539">
                 <params>
                     <param name="minValue" type="int"/>
                     <param name="maxValue" type="int"/>
                 </params>
-                <comment line="740">
-                    We will force the values to reduce to the right subrange.                    
-                </comment>
-                <comment line="744">
-                    Huge range; delta values must assume full 32-bit range.                    
-                </comment>
-                <comment line="749">
-                    final values must be representable                    
-                </comment>
-                <scope line="737">
-                    <scope line="738"/>
-                    <scope line="742"/>
+                <scope line="541">
+                    <scope line="542"/>
+                    <scope line="545"/>
                 </scope>
             </method>
-            <method name="canRepresent" type="boolean" line="753">
+            <method name="canRepresent" type="boolean" line="551">
                 <params>
                     <param name="values" type="int[]"/>
                     <param name="start" type="int"/>
                     <param name="end" type="int"/>
                 </params>
-                <comment line="758">
-                    Calculate max, min:                    
-                </comment>
-                <declaration name="len" type="int" line="754"/>
-                <declaration name="lmax" type="int" line="758"/>
-                <declaration name="lmin" type="int" line="759"/>
-                <scope line="760">
-                    <declaration name="value" type="int" line="761"/>
+                <declaration name="len" type="int" line="552"/>
+                <declaration name="lmax" type="int" line="555"/>
+                <declaration name="lmin" type="int" line="556"/>
+                <scope line="557">
+                    <declaration name="value" type="int" line="558"/>
                 </scope>
             </method>
-            <method name="getBitLength" type="double" line="768">
+            <method name="getBitLength" type="double" line="564">
                 <params>
                     <param name="value" type="int"/>
                 </params>
             </method>
-            <javadoc line="772">
+            <javadoc line="567">
                 How many bytes are in the coding of this value?
                   Returns Integer.MAX_VALUE if the value has no coding.
                   The coding must not be a delta coding, since there is no
                   definite size for a single value apart from its context.                
             </javadoc>
-            <method name="getLength" type="int" line="777">
+            <method name="getLength" type="int" line="573">
                 <params>
                     <param name="value" type="int"/>
                 </params>
-                <scope line="778"/>
-                <scope line="783">
-                    <scope line="784"/>
+                <scope line="574"/>
+                <scope line="578">
+                    <scope line="579"/>
                 </scope>
-                <scope line="787">
-                    <scope line="788"/>
+                <scope line="583">
+                    <scope line="584"/>
                 </scope>
             </method>
-            <method name="getLength" type="int" line="795">
+            <method name="getLength" type="int" line="590">
                 <params>
                     <param name="values" type="int[]"/>
                     <param name="start" type="int"/>
                     <param name="end" type="int"/>
                 </params>
-                <comment line="806">
-                    return Coding.of(B, H, S).getLength(deltas, 0, len);                    
-                </comment>
-                <comment line="810">
-                    at least 1 byte per                    
-                </comment>
-                <comment line="811">
-                    add extra bytes for extra-long values                    
-                </comment>
-                <comment line="813">
-                    what is the coding interval [min..max] for n bytes?                    
-                </comment>
-                <comment line="816">
-                    count of guys longer than n bytes                    
-                </comment>
-                <comment line="825">
-                    no more passes needed                    
-                </comment>
-                <comment line="826">
-                    cannot represent!                    
-                </comment>
-                <declaration name="len" type="int" line="796"/>
-                <scope line="799">
-                    <declaration name="deltas" type="int[]" line="800"/>
+                <declaration name="len" type="int" line="591"/>
+                <scope line="594">
+                    <declaration name="deltas" type="int[]" line="595"/>
                 </scope>
-                <declaration name="sum" type="int" line="809"/>
-                <scope line="811">
-                    <declaration name="lmax" type="int" line="813"/>
-                    <declaration name="lmin" type="int" line="814"/>
-                    <declaration name="longer" type="int" line="815"/>
-                    <scope line="816">
-                        <declaration name="value" type="int" line="817"/>
-                        <scope line="818"/>
-                        <scope line="820"/>
+                <declaration name="sum" type="int" line="601"/>
+                <scope line="602">
+                    <declaration name="lmax" type="int" line="603"/>
+                    <declaration name="lmin" type="int" line="604"/>
+                    <declaration name="longer" type="int" line="605"/>
+                    <scope line="606">
+                        <declaration name="value" type="int" line="607"/>
+                        <scope line="608"/>
+                        <scope line="611"/>
                     </scope>
                 </scope>
             </method>
-            <method name="getMetaCoding" type="byte[]" line="831">
+            <method name="getMetaCoding" type="byte[]" line="621">
                 <params>
                     <param name="dflt" type="Coding"/>
                 </params>
-                <declaration name="canonicalIndex" type="int" line="833"/>
+                <declaration name="canonicalIndex" type="int" line="623"/>
             </method>
-            <method name="parseMetaCoding" type="int" line="842">
+            <method name="parseMetaCoding" type="int" line="627">
                 <params>
                     <param name="bytes" type="byte[]"/>
                     <param name="pos" type="int"/>
                     <param name="dflt" type="Coding"/>
                     <param name="res" type="CodingMethod"/>
                 </params>
-                <comment line="869">
-                    backup                    
-                </comment>
-                <declaration name="op" type="int" line="843"/>
-                <scope line="844">
-                    <declaration name="c" type="Coding" line="845"/>
+                <declaration name="op" type="int" line="628"/>
+                <scope line="629">
+                    <declaration name="c" type="Coding" line="630"/>
                 </scope>
-                <scope line="850">
-                    <declaration name="dsb" type="int" line="851"/>
-                    <declaration name="H_1" type="int" line="852"/>
-                    <declaration name="del" type="int" line="853"/>
-                    <declaration name="S" type="int" line="854"/>
-                    <declaration name="B" type="int" line="855"/>
-                    <declaration name="H" type="int" line="856"/>
-                    <scope line="862"/>
+                <scope line="635">
+                    <declaration name="dsb" type="int" line="636"/>
+                    <declaration name="H_1" type="int" line="637"/>
+                    <declaration name="del" type="int" line="638"/>
+                    <declaration name="S" type="int" line="639"/>
+                    <declaration name="B" type="int" line="640"/>
+                    <declaration name="H" type="int" line="641"/>
+                    <scope line="642"/>
                 </scope>
             </method>
-            <method name="keyString" type="String" line="872"/>
-            <method name="toString" type="String" line="876">
-                <comment line="879">
-                    If -ea, print out more informative strings!
-                    assert((str = stringForDebug()) != null);                    
-                </comment>
-                <declaration name="str" type="String" line="877"/>
+            <method name="keyString" type="String" line="650"/>
+            <method name="toString" type="String" line="653">
+                <declaration name="str" type="String" line="654"/>
             </method>
-            <declaration name="verboseStringForDebug" type="boolean" line="883"/>
-            <method name="stringForDebug" type="String" line="884">
-                <declaration name="minS" type="String" line="885"/>
-                <declaration name="maxS" type="String" line="886"/>
-                <declaration name="str" type="String" line="887"/>
-                <scope line="892">
-                    <declaration name="prev_range" type="int" line="894"/>
-                    <scope line="895">
-                        <declaration name="range_n" type="int" line="896"/>
-                        <declaration name="rngS" type="String" line="900"/>
+            <declaration name="verboseStringForDebug" type="boolean" line="657"/>
+            <method name="stringForDebug" type="String" line="658">
+                <declaration name="minS" type="String" line="659"/>
+                <declaration name="maxS" type="String" line="660"/>
+                <declaration name="str" type="String" line="661"/>
+                <scope line="664">
+                    <declaration name="prev_range" type="int" line="666"/>
+                    <scope line="667">
+                        <declaration name="range_n" type="int" line="668"/>
+                        <declaration name="rngS" type="String" line="672"/>
                     </scope>
                 </scope>
             </method>

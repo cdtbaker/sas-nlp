@@ -306,7 +306,8 @@ public class XMLFromSource {
 					if(startChar == -1){
 						return 0;
 					}
-					
+					if(line<source.length-1){
+
 					while(indexOfInclTab(source[line]) == startChar && source[line].trim().startsWith("//")){
 						
 						
@@ -314,6 +315,7 @@ public class XMLFromSource {
 						if(line == source.length-1){
 							break;
 						}
+					}
 					}
 					return line - start;
 				}

@@ -1,10 +1,36 @@
+/*
+ * Copyright (c) 2000, 2004, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
 package javax.print.attribute.standard;
+
 import javax.print.attribute.Attribute;
 import javax.print.attribute.EnumSyntax;
 import javax.print.attribute.DocAttribute;
 import javax.print.attribute.PrintRequestAttribute;
 import javax.print.attribute.PrintJobAttribute;
-/** 
+
+/**
  * Class Sides is a printing attribute class, an enumeration, that specifies
  * how print-stream pages are to be imposed upon the sides of an instance of a
  * selected medium, i.e., an impression.
@@ -12,12 +38,14 @@ import javax.print.attribute.PrintJobAttribute;
  * The effect of a Sides attribute on a multidoc print job (a job with multiple
  * documents) depends on whether all the docs have the same sides values
  * specified or whether different docs have different sides values specified,
- * and on the (perhaps defaulted) value of the {@link MultipleDocumentHandlingMultipleDocumentHandling} attribute.
+ * and on the (perhaps defaulted) value of the {@link MultipleDocumentHandling
+ * MultipleDocumentHandling} attribute.
  * <UL>
  * <LI>
  * If all the docs have the same sides value <I>n</I> specified, then any value
  * of {@link MultipleDocumentHandling MultipleDocumentHandling} makes sense,
- * and the printer's processing depends on the {@link MultipleDocumentHandlingMultipleDocumentHandling} value:
+ * and the printer's processing depends on the {@link MultipleDocumentHandling
+ * MultipleDocumentHandling} value:
  * <UL>
  * <LI>
  * SINGLE_DOCUMENT -- All the input docs will be combined together into one
@@ -86,78 +114,109 @@ import javax.print.attribute.PrintJobAttribute;
  * integer value is the IPP enum value.  The <code>toString()</code> method
  * returns the IPP string representation of the attribute value.
  * <P>
+ *
  * @author  Alan Kaminsky
  */
-public final class Sides extends EnumSyntax implements DocAttribute, PrintRequestAttribute, PrintJobAttribute {
-  private static final long serialVersionUID=-6890309414893262822L;
-  /** 
- * Imposes each consecutive print-stream page upon the same side of
- * consecutive media sheets.
- */
-  public static final Sides ONE_SIDED=new Sides(0);
-  /** 
- * Imposes each consecutive pair of print-stream pages upon front and back
- * sides of consecutive media sheets, such that the orientation of each
- * pair of print-stream pages on the medium would be correct for the
- * reader as if for binding on the long edge. This imposition is also
- * known as "duplex" (see {@link #DUPLEX <CODE>DUPLEX</CODE>}).
- */
-  public static final Sides TWO_SIDED_LONG_EDGE=new Sides(1);
-  /** 
- * Imposes each consecutive pair of print-stream pages upon front and back
- * sides of consecutive media sheets, such that the orientation of each
- * pair of print-stream pages on the medium would be correct for the
- * reader as if for binding on the short edge. This imposition is also
- * known as "tumble" (see {@link #TUMBLE <CODE>TUMBLE</CODE>}).
- */
-  public static final Sides TWO_SIDED_SHORT_EDGE=new Sides(2);
-  /** 
- * An alias for "two sided long edge" (see {@link #TWO_SIDED_LONG_EDGE<CODE>TWO_SIDED_LONG_EDGE</CODE>}).
- */
-  public static final Sides DUPLEX=TWO_SIDED_LONG_EDGE;
-  /** 
- * An alias for "two sided short edge" (see {@link #TWO_SIDED_SHORT_EDGE<CODE>TWO_SIDED_SHORT_EDGE</CODE>}).
- */
-  public static final Sides TUMBLE=TWO_SIDED_SHORT_EDGE;
-  /** 
- * Construct a new sides enumeration value with the given integer value.
- * @param value  Integer value.
- */
-  protected Sides(  int value){
-    super(value);
-  }
-  private static final String[] myStringTable={"one-sided","two-sided-long-edge","two-sided-short-edge"};
-  private static final Sides[] myEnumValueTable={ONE_SIDED,TWO_SIDED_LONG_EDGE,TWO_SIDED_SHORT_EDGE};
-  /** 
- * Returns the string table for class Sides.
- */
-  protected String[] getStringTable(){
-    return myStringTable;
-  }
-  /** 
- * Returns the enumeration value table for class Sides.
- */
-  protected EnumSyntax[] getEnumValueTable(){
-    return myEnumValueTable;
-  }
-  /** 
- * Get the printing attribute class which is to be used as the "category"
- * for this printing attribute value.
- * <P>
- * For class Sides, the category is class Sides itself.
- * @return  Printing attribute class (category), an instance of class{@link java.lang.Class java.lang.Class}.
- */
-  public final Class<? extends Attribute> getCategory(){
-    return Sides.class;
-  }
-  /** 
- * Get the name of the category of which this attribute value is an
- * instance.
- * <P>
- * For class Sides, the category name is <CODE>"sides"</CODE>.
- * @return  Attribute category name.
- */
-  public final String getName(){
-    return "sides";
-  }
+
+public final class Sides extends EnumSyntax
+    implements DocAttribute, PrintRequestAttribute, PrintJobAttribute {
+
+    private static final long serialVersionUID = -6890309414893262822L;
+
+    /**
+     * Imposes each consecutive print-stream page upon the same side of
+     * consecutive media sheets.
+     */
+    public static final Sides ONE_SIDED = new Sides(0);
+
+    /**
+     * Imposes each consecutive pair of print-stream pages upon front and back
+     * sides of consecutive media sheets, such that the orientation of each
+     * pair of print-stream pages on the medium would be correct for the
+     * reader as if for binding on the long edge. This imposition is also
+     * known as "duplex" (see {@link #DUPLEX <CODE>DUPLEX</CODE>}).
+     */
+    public static final Sides TWO_SIDED_LONG_EDGE = new Sides(1);
+
+    /**
+     * Imposes each consecutive pair of print-stream pages upon front and back
+     * sides of consecutive media sheets, such that the orientation of each
+     * pair of print-stream pages on the medium would be correct for the
+     * reader as if for binding on the short edge. This imposition is also
+     * known as "tumble" (see {@link #TUMBLE <CODE>TUMBLE</CODE>}).
+     */
+    public static final Sides TWO_SIDED_SHORT_EDGE = new Sides(2);
+
+    /**
+     * An alias for "two sided long edge" (see {@link #TWO_SIDED_LONG_EDGE
+     * <CODE>TWO_SIDED_LONG_EDGE</CODE>}).
+     */
+    public static final Sides DUPLEX = TWO_SIDED_LONG_EDGE;
+
+    /**
+     * An alias for "two sided short edge" (see {@link #TWO_SIDED_SHORT_EDGE
+     * <CODE>TWO_SIDED_SHORT_EDGE</CODE>}).
+     */
+    public static final Sides TUMBLE = TWO_SIDED_SHORT_EDGE;
+
+    /**
+     * Construct a new sides enumeration value with the given integer value.
+     *
+     * @param  value  Integer value.
+     */
+    protected Sides(int value) {
+        super (value);
+    }
+
+    private static final String[] myStringTable = {
+        "one-sided",
+        "two-sided-long-edge",
+        "two-sided-short-edge"
+    };
+
+    private static final Sides[] myEnumValueTable = {
+        ONE_SIDED,
+        TWO_SIDED_LONG_EDGE,
+        TWO_SIDED_SHORT_EDGE
+    };
+
+    /**
+     * Returns the string table for class Sides.
+     */
+    protected String[] getStringTable() {
+        return myStringTable;
+    }
+
+    /**
+     * Returns the enumeration value table for class Sides.
+     */
+    protected EnumSyntax[] getEnumValueTable() {
+        return myEnumValueTable;
+    }
+
+    /**
+     * Get the printing attribute class which is to be used as the "category"
+     * for this printing attribute value.
+     * <P>
+     * For class Sides, the category is class Sides itself.
+     *
+     * @return  Printing attribute class (category), an instance of class
+     *          {@link java.lang.Class java.lang.Class}.
+     */
+    public final Class<? extends Attribute> getCategory() {
+        return Sides.class;
+    }
+
+    /**
+     * Get the name of the category of which this attribute value is an
+     * instance.
+     * <P>
+     * For class Sides, the category name is <CODE>"sides"</CODE>.
+     *
+     * @return  Attribute category name.
+     */
+    public final String getName() {
+        return "sides";
+    }
+
 }

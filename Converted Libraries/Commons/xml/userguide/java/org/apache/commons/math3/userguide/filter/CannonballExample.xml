@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <source package="org.apache.commons.math3.userguide.filter">
+        <import package="java.awt.Color"/>
+        <import package="java.awt.Component"/>
+        <import package="java.awt.Font"/>
+        <import package="java.util.ArrayList"/>
+        <import package="java.util.List"/>
+        <import package="javax.swing.BorderFactory"/>
+        <import package="javax.swing.BoxLayout"/>
+        <import package="javax.swing.JComponent"/>
+        <import package="javax.swing.JPanel"/>
+        <import package="org.apache.commons.math3.filter.DefaultMeasurementModel"/>
+        <import package="org.apache.commons.math3.filter.DefaultProcessModel"/>
+        <import package="org.apache.commons.math3.filter.KalmanFilter"/>
+        <import package="org.apache.commons.math3.filter.MeasurementModel"/>
+        <import package="org.apache.commons.math3.filter.ProcessModel"/>
+        <import package="org.apache.commons.math3.linear.MatrixUtils"/>
+        <import package="org.apache.commons.math3.linear.RealMatrix"/>
+        <import package="org.apache.commons.math3.linear.RealVector"/>
+        <import package="org.apache.commons.math3.random.RandomGenerator"/>
+        <import package="org.apache.commons.math3.random.Well19937c"/>
+        <import package="org.apache.commons.math3.userguide.ExampleUtils"/>
+        <import package="org.apache.commons.math3.userguide.ExampleUtils.ExampleFrame"/>
+        <import package="org.apache.commons.math3.util.FastMath"/>
+        <import package="com.xeiam.xchart.Chart"/>
+        <import package="com.xeiam.xchart.ChartBuilder"/>
+        <import package="com.xeiam.xchart.Series"/>
+        <import package="com.xeiam.xchart.SeriesLineStyle"/>
+        <import package="com.xeiam.xchart.SeriesMarker"/>
+        <import package="com.xeiam.xchart.XChartPanel"/>
+        <import package="com.xeiam.xchart.StyleManager.ChartType"/>
+        <import package="com.xeiam.xchart.StyleManager.LegendPosition"/>
+        <class name="CannonballExample" line="51">
+            <class name="Cannonball" line="53">
+                <declaration name="gravity" type="double[]" line="55"/>
+                <declaration name="velocity" type="double[]" line="56"/>
+                <declaration name="location" type="double[]" line="57"/>
+                <declaration name="timeslice" type="double" line="59"/>
+                <declaration name="measurementNoise" type="double" line="60"/>
+                <declaration name="rng" type="RandomGenerator" line="62"/>
+                <method name="Cannonball" type="constructor" line="64">
+                    <params>
+                        <param name="timeslice" type="double"/>
+                        <param name="angle" type="double"/>
+                        <param name="initialVelocity" type="double"/>
+                        <param name="measurementNoise" type="double"/>
+                        <param name="seed" type="int"/>
+                    </params>
+                    <declaration name="angleInRadians" type="double" line="67"/>
+                </method>
+                <method name="getX" type="double" line="79"/>
+                <method name="getY" type="double" line="83"/>
+                <method name="getMeasuredX" type="double" line="87"/>
+                <method name="getMeasuredY" type="double" line="91"/>
+                <method name="getXVelocity" type="double" line="95"/>
+                <method name="getYVelocity" type="double" line="99"/>
+                <method name="step" type="void" line="103">
+                    <comment line="105">
+                        Break gravitational force into a smaller time slice.                        
+                    </comment>
+                    <comment line="111">
+                        Apply the acceleration to velocity.                        
+                    </comment>
+                    <comment line="119">
+                        Cannonballs shouldn&apos;t go into the ground.                        
+                    </comment>
+                    <declaration name="slicedGravity" type="double[]" line="105"/>
+                    <scope line="106"/>
+                    <declaration name="slicedVelocity" type="double[]" line="111"/>
+                    <scope line="112"/>
+                    <scope line="119"/>
+                </method>
+            </class>
+            <method name="cannonballTest" type="void" line="125">
+                <params>
+                    <param name="chart" type="Chart"/>
+                </params>
+                <comment line="128">
+                    time interval for each iteration                    
+                </comment>
+                <comment line="130">
+                    the number of iterations to run                    
+                </comment>
+                <comment line="132">
+                    measurement noise (m)                    
+                </comment>
+                <comment line="134">
+                    initial velocity of the cannonball                    
+                </comment>
+                <comment line="136">
+                    shooting angle                    
+                </comment>
+                <comment line="139">
+                    the cannonball itself                    
+                </comment>
+                <comment line="142">
+                    A = [ 1, dt, 0,  0 ]  =&gt;  x(n+1) = x(n) + vx(n)
+                         [ 0,  1, 0,  0 ]  =&gt; vx(n+1) =        vx(n)
+                         [ 0,  0, 1, dt ]  =&gt;  y(n+1) =              y(n) + vy(n)
+                         [ 0,  0, 0,  1 ]  =&gt; vy(n+1) =                     vy(n)                    
+                </comment>
+                <comment line="153">
+                    The control vector, which adds acceleration to the kinematic equations.
+                     0          =&gt;  x(n+1) =  x(n+1)
+                     0          =&gt; vx(n+1) = vx(n+1)
+                     -9.81*dt^2 =&gt;  y(n+1) =  y(n+1) - 1/2 * 9.81 * dt^2
+                     -9.81*dt   =&gt; vy(n+1) = vy(n+1) - 9.81 * dt                    
+                </comment>
+                <comment line="161">
+                    The control matrix B only update y and vy, see control vector                    
+                </comment>
+                <comment line="169">
+                    After state transition and control, here are the equations:
+                    
+                      x(n+1) = x(n) + vx(n)
+                     vx(n+1) = vx(n)
+                      y(n+1) = y(n) + vy(n) - 0.5 * 9.81 * dt^2
+                     vy(n+1) = vy(n) + -9.81 * dt
+                    
+                     Which, if you recall, are the equations of motion for a parabola.                    
+                </comment>
+                <comment line="178">
+                    We only observe the x/y position of the cannonball                    
+                </comment>
+                <comment line="186">
+                    This is our guess of the initial state.  I intentionally set the Y value
+                     wrong to illustrate how fast the Kalman filter will pick up on that.                    
+                </comment>
+                <comment line="192">
+                    The initial error covariance matrix, the variance = noise^2                    
+                </comment>
+                <comment line="201">
+                    we assume no process noise -&gt; zero matrix                    
+                </comment>
+                <comment line="204">
+                    the measurement covariance matrix                    
+                </comment>
+                <comment line="225">
+                    get real location                    
+                </comment>
+                <comment line="229">
+                    get measured location                    
+                </comment>
+                <comment line="236">
+                    iterate the cannon simulation to the next timeslice.                    
+                </comment>
+                <comment line="243">
+                    update the kalman filter with the measurements                    
+                </comment>
+                <declaration name="dt" type="double" line="128"/>
+                <declaration name="iterations" type="int" line="130"/>
+                <declaration name="measurementNoise" type="double" line="132"/>
+                <declaration name="initialVelocity" type="double" line="134"/>
+                <declaration name="angle" type="double" line="136"/>
+                <declaration name="cannonball" type="Cannonball" line="139"/>
+                <declaration name="A" type="RealMatrix" line="145"/>
+                <declaration name="controlVector" type="RealVector" line="157"/>
+                <declaration name="B" type="RealMatrix" line="161"/>
+                <declaration name="H" type="RealMatrix" line="178"/>
+                <declaration name="speedX" type="double" line="187"/>
+                <declaration name="speedY" type="double" line="188"/>
+                <declaration name="initialState" type="RealVector" line="189"/>
+                <declaration name="var" type="double" line="192"/>
+                <declaration name="initialErrorCovariance" type="RealMatrix" line="193"/>
+                <declaration name="Q" type="RealMatrix" line="201"/>
+                <declaration name="R" type="RealMatrix" line="204"/>
+                <declaration name="pm" type="ProcessModel" line="211"/>
+                <declaration name="mm" type="MeasurementModel" line="212"/>
+                <declaration name="filter" type="KalmanFilter" line="213"/>
+                <declaration name="realX" type="List&amp;lt;Number&amp;gt;" line="215"/>
+                <declaration name="realY" type="List&amp;lt;Number&amp;gt;" line="216"/>
+                <declaration name="measuredX" type="List&amp;lt;Number&amp;gt;" line="217"/>
+                <declaration name="measuredY" type="List&amp;lt;Number&amp;gt;" line="218"/>
+                <declaration name="kalmanX" type="List&amp;lt;Number&amp;gt;" line="219"/>
+                <declaration name="kalmanY" type="List&amp;lt;Number&amp;gt;" line="220"/>
+                <scope line="222">
+                    <declaration name="mx" type="double" line="229"/>
+                    <declaration name="my" type="double" line="230"/>
+                    <declaration name="state" type="double[]" line="238"/>
+                </scope>
+                <declaration name="dataset" type="Series" line="250"/>
+            </method>
+            <method name="createChart" type="Chart" line="263">
+                <params>
+                    <param name="title" type="String"/>
+                    <param name="position" type="LegendPosition"/>
+                </params>
+                <comment line="267">
+                    Customize Chart                    
+                </comment>
+                <declaration name="chart" type="Chart" line="264"/>
+            </method>
+            <method name="createComponent" type="JComponent" line="284">
+                <declaration name="container" type="JComponent" line="285"/>
+                <declaration name="chart" type="Chart" line="288"/>
+            </method>
+            <class name="Display" line="296">
+                <extends class="ExampleFrame"/>
+                <declaration name="container" type="JComponent" line="299"/>
+                <method name="Display" type="constructor" line="301">
+                    <declaration name="comp" type="JComponent" line="306"/>
+                </method>
+                <method name="getMainPanel" type="Component" line="313"/>
+            </class>
+            <method name="main" type="void" line="318">
+                <params>
+                    <param name="args" type="String[]"/>
+                </params>
+            </method>
+        </class>
+    </source>

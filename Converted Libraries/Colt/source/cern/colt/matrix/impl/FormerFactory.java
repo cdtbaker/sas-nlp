@@ -1,14 +1,17 @@
 package cern.colt.matrix.impl;
-/** 
+
+
+/**
  * Factory producing implementations of {@link cern.colt.matrix.impl.Former} via method create();
  * Implementations of can use existing libraries such as corejava.PrintfFormat or corejava.Format or other.
  * Serves to isolate the interface of String formatting from the actual implementation.
  * If you want to plug in a different String formatting implementation, simply replace this class with your alternative.
+ *
  * @author wolfgang.hoschek@cern.ch
  * @version 1.0, 21/07/00
  */
 public class FormerFactory {
-  /** 
+/**
  * Constructs and returns a new format instance.
  * @param s the format string following printf conventions.
  * The string has a prefix, a format code and a suffix. The prefix and suffix
@@ -41,16 +44,21 @@ public class FormerFactory {
  * </ul>
  * @exception IllegalArgumentException if bad format
  */
-  public Former create(  final String format){
-    return new Former(){
-      private corejava.Format f=(format != null ? new corejava.Format(format) : null);
-      public String form(      double value){
-        if (f == null || value == Double.POSITIVE_INFINITY || value == Double.NEGATIVE_INFINITY || value != value) {
-          return String.valueOf(value);
-        }
-        return f.format(value);
-      }
-    }
-;
-  }
+public Former create(final String format) {
+	return new Former() {
+		//private FormatStringBuffer f = (format!=null ? new corejava.FormatStringBuffer(format) : null);
+		private corejava.Format f = (format!=null ? new corejava.Format(format) : null);
+		//private corejava.PrintfFormat f = (format!=null ? new corejava.PrintfFormat(format) : null);
+		public String form(double value) {
+			if (f==null || value == Double.POSITIVE_INFINITY || value == Double.NEGATIVE_INFINITY || value != value) {
+				// value != value <==> Double.isNaN(value)
+				// Work around bug in corejava.Format.form() for inf, -inf, NaN
+				return String.valueOf(value);
+			}
+		//return f.format(value).toString();
+		return f.format(value);
+		//return f.sprintf(value);
+		}
+	};
+}
 }

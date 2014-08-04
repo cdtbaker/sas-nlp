@@ -12,7 +12,7 @@ import main.commentextraction.com.jml.output.XMLOutputter;
 public class StandaloneXmlConverter {
 
 	public static void main (String[] args){
-		String path ="C:/Users/Danny/Desktop/Converted Libraries";
+		String path ="C:/Users/Danny/Desktop/cv";
 		
 		for(File f : getJavaFiles(path)){
 			XMLOutputter output = new XMLOutputter(XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,true));//change last boolean to false if comments do 

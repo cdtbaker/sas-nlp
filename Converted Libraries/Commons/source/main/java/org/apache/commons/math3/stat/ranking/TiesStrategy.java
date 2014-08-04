@@ -1,5 +1,23 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.commons.math3.stat.ranking;
-/** 
+
+/**
  * Strategies for handling tied values in rank transformations.
  * <ul>
  * <li>SEQUENTIAL - Ties are assigned ranks in order of occurrence in the original array,
@@ -14,22 +32,24 @@ package org.apache.commons.math3.stat.ranking;
  * applicable values. The assigned rank will always be an integer, (inclusively)
  * between the values returned by the MINIMUM and MAXIMUM strategies.</li>
  * </ul>
+ *
  * @since 2.0
  * @version $Id: TiesStrategy.java 1416643 2012-12-03 19:37:14Z tn $
  */
-public enum TiesStrategy {/** 
- * Ties assigned sequential ranks in order of occurrence 
- */
-SEQUENTIAL, /** 
- * Ties get the minimum applicable rank 
- */
-MINIMUM, /** 
- * Ties get the maximum applicable rank 
- */
-MAXIMUM, /** 
- * Ties get the average of applicable ranks 
- */
-AVERAGE, /** 
- * Ties get a random integral value from among applicable ranks 
- */
-RANDOM}
+public enum TiesStrategy {
+
+    /** Ties assigned sequential ranks in order of occurrence */
+    SEQUENTIAL,
+
+    /** Ties get the minimum applicable rank */
+    MINIMUM,
+
+    /** Ties get the maximum applicable rank */
+    MAXIMUM,
+
+    /** Ties get the average of applicable ranks */
+    AVERAGE,
+
+    /** Ties get a random integral value from among applicable ranks */
+    RANDOM
+}

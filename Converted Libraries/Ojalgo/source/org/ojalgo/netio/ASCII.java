@@ -1,5 +1,27 @@
+/*
+ * Copyright 1997-2014 Optimatika (www.optimatika.se)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.ojalgo.netio;
-/** 
+
+/**
  * <table><tr>
  * <th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th>
  * </tr><tr>
@@ -36,91 +58,109 @@ package org.ojalgo.netio;
  * <th>120</th><td>x</td><td>y</td><td>z</td><td>{</td><td>|</td><td>}</td><td>~</td><td>DEL</td>
  * </tr></table>
  * http://www.lammertbies.nl/comm/info/ascii-characters.html
+ *
  * @author apete
  */
 public abstract class ASCII {
-  public static final char COMMA=',';
-  public static final char CR=(char)13;
-  public static final char DECIMAL_NINE='9';
-  public static final char DECIMAL_ZERO='0';
-  public static final char DEL=(char)127;
-  public static final char EQUALS='=';
-  public static final char HT=(char)9;
-  public static final char LCB='{';
-  public static final char LF=(char)10;
-  public static final char LOWERCASE_A='a';
-  public static final char LOWERCASE_Z='z';
-  public static final char NBSP=(char)160;
-  public static final char NULL=(char)0;
-  public static final char RCB='}';
-  public static final char SEMICOLON=(char)59;
-  public static final char SP=(char)32;
-  public static final char UNDERSCORE=(char)95;
-  public static final char UPPERCASE_A='A';
-  public static final char UPPERCASE_Z='Z';
-  public static boolean isAlphabetic(  final int aChar){
-    return ASCII.isLowercase(aChar) || ASCII.isUppercase(aChar);
-  }
-  public static boolean isAlphanumeric(  final int aChar){
-    return ASCII.isAlphabetic(aChar) || ASCII.isDigit(aChar);
-  }
-  /** 
- * @return True if aChar is an ASCII character.
- */
-  public static boolean isAscii(  final int aChar){
-    return (NULL <= aChar) && (aChar <= DEL);
-  }
-  public static boolean isControl(  final int aChar){
-    return ((NULL <= aChar) && (aChar < SP)) || (aChar == DEL);
-  }
-  public static boolean isDigit(  final int aChar){
-    return (DECIMAL_ZERO <= aChar) && (aChar <= DECIMAL_NINE);
-  }
-  public static boolean isGraph(  final int aChar){
-    return (SP < aChar) && (aChar < DEL);
-  }
-  /** 
- * @return true if aChar is an lowercase character
- */
-  public static boolean isLowercase(  final int aChar){
-    return (LOWERCASE_A <= aChar) && (aChar <= LOWERCASE_Z);
-  }
-  public static boolean isPrintable(  final int aChar){
-    return (SP <= aChar) && (aChar < DEL);
-  }
-  /** 
- * Not sure this is correct
- */
-  public static boolean isPunctuation(  final int aChar){
-    return ASCII.isGraph(aChar) && !ASCII.isAlphanumeric(aChar);
-  }
-  public static boolean isSpace(  final int aChar){
-    return (aChar == SP) || ((9 <= aChar) && (aChar <= 13));
-  }
-  /** 
- * @return true if aChar is an uppercase character
- */
-  public static boolean isUppercase(  final int aChar){
-    return (UPPERCASE_A <= aChar) && (aChar <= UPPERCASE_Z);
-  }
-  /** 
- * If aChar is an uppercase character it is converted to the corresponding
- * lowercase character. Otherwise it is returned unaltered.
- */
-  public static int toLowercase(  final int aChar){
-    return ASCII.isUppercase(aChar) ? aChar + SP : aChar;
-  }
-  public static int toPrintable(  final int aChar){
-    return ASCII.isPrintable(aChar) ? aChar : SP;
-  }
-  /** 
- * If aChar is a lowercase character it is converted to the corresponding
- * uppercase character. Otherwise it is returned unaltered.
- */
-  public static int toUppercase(  final int aChar){
-    return ASCII.isLowercase(aChar) ? aChar - SP : aChar;
-  }
-  private ASCII(){
-    super();
-  }
+
+    public static final char COMMA = ',';
+    public static final char CR = (char) 13; // Carriage Return
+    public static final char DECIMAL_NINE = '9';
+    public static final char DECIMAL_ZERO = '0';
+    public static final char DEL = (char) 127;
+    public static final char EQUALS = '=';
+    public static final char HT = (char) 9; // TAB (Horizontal Tab)
+    public static final char LCB = '{'; // Left Curly Bracket
+    public static final char LF = (char) 10; // Line Feed
+    public static final char LOWERCASE_A = 'a';
+    public static final char LOWERCASE_Z = 'z';
+    public static final char NBSP = (char) 160; // Non Breaking SPace
+    public static final char NULL = (char) 0;
+    public static final char RCB = '}'; // Right Curly Bracket
+    public static final char SEMICOLON = (char) 59;
+    public static final char SP = (char) 32; // SPace
+    public static final char UNDERSCORE = (char) 95;
+    public static final char UPPERCASE_A = 'A';
+    public static final char UPPERCASE_Z = 'Z';
+
+    public static boolean isAlphabetic(final int aChar) {
+        return ASCII.isLowercase(aChar) || ASCII.isUppercase(aChar);
+    }
+
+    public static boolean isAlphanumeric(final int aChar) {
+        return ASCII.isAlphabetic(aChar) || ASCII.isDigit(aChar);
+    }
+
+    /**
+     * @return True if aChar is an ASCII character.
+     */
+    public static boolean isAscii(final int aChar) {
+        return (NULL <= aChar) && (aChar <= DEL);
+    }
+
+    public static boolean isControl(final int aChar) {
+        return ((NULL <= aChar) && (aChar < SP)) || (aChar == DEL);
+    }
+
+    public static boolean isDigit(final int aChar) {
+        return (DECIMAL_ZERO <= aChar) && (aChar <= DECIMAL_NINE);
+    }
+
+    public static boolean isGraph(final int aChar) {
+        return (SP < aChar) && (aChar < DEL);
+    }
+
+    /**
+     * @return true if aChar is an lowercase character
+     */
+    public static boolean isLowercase(final int aChar) {
+        return (LOWERCASE_A <= aChar) && (aChar <= LOWERCASE_Z);
+    }
+
+    public static boolean isPrintable(final int aChar) {
+        return (SP <= aChar) && (aChar < DEL);
+    }
+
+    /**
+     * Not sure this is correct
+     */
+    public static boolean isPunctuation(final int aChar) {
+        return ASCII.isGraph(aChar) && !ASCII.isAlphanumeric(aChar);
+    }
+
+    public static boolean isSpace(final int aChar) {
+        return (aChar == SP) || ((9 <= aChar) && (aChar <= 13));
+    }
+
+    /**
+     * @return true if aChar is an uppercase character
+     */
+    public static boolean isUppercase(final int aChar) {
+        return (UPPERCASE_A <= aChar) && (aChar <= UPPERCASE_Z);
+    }
+
+    /**
+     * If aChar is an uppercase character it is converted to the corresponding
+     * lowercase character. Otherwise it is returned unaltered.
+     */
+    public static int toLowercase(final int aChar) {
+        return ASCII.isUppercase(aChar) ? aChar + SP : aChar;
+    }
+
+    public static int toPrintable(final int aChar) {
+        return ASCII.isPrintable(aChar) ? aChar : SP;
+    }
+
+    /**
+     * If aChar is a lowercase character it is converted to the corresponding
+     * uppercase character. Otherwise it is returned unaltered.
+     */
+    public static int toUppercase(final int aChar) {
+        return ASCII.isLowercase(aChar) ? aChar - SP : aChar;
+    }
+
+    private ASCII() {
+        super();
+    }
+
 }

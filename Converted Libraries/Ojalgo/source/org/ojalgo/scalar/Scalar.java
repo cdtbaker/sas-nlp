@@ -1,7 +1,31 @@
+/*
+ * Copyright 1997-2014 Optimatika (www.optimatika.se)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.ojalgo.scalar;
+
 import java.math.BigDecimal;
+
 import org.ojalgo.type.context.NumberContext;
-/** 
+
+/**
  * <p>
  * A {@linkplain Scalar} is:
  * <ol>
@@ -38,6 +62,7 @@ import org.ojalgo.type.context.NumberContext;
  * A division ring is a ring in which division is possible. Division rings differ from fields only in that their
  * multiplication is not required to be commutative.
  * </p>
+ * 
  * @author apete
  * @see <a href="http://en.wikipedia.org/wiki/Operation_%28mathematics%29">Operation</a>
  * @see <a href="http://en.wikipedia.org/wiki/Group_%28mathematics%29">Group</a>
@@ -47,193 +72,253 @@ import org.ojalgo.type.context.NumberContext;
  * @see <a href="http://en.wikipedia.org/wiki/Vector_space">Vector space</a>
  */
 public interface Scalar<N extends Number> extends Comparable<N> {
-public interface Factory<N extends Number> {
-    N cast(    double value);
-    N cast(    Number number);
-    Scalar<N> convert(    double value);
-    Scalar<N> convert(    Number number);
-    /** 
- * @return The multiplicative identity element
- */
-    Scalar<N> one();
-    /** 
- * @return The additive identity element
- */
-    Scalar<N> zero();
-  }
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> add(  double arg);
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> add(  N arg);
-  /** 
- * @see #conjugate()
- * @see #invert()
- * @see #negate()
- */
-  Scalar<N> conjugate();
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> divide(  double arg);
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> divide(  N arg);
-  double doubleValue();
-  N getNumber();
-  /** 
- * @see #conjugate()
- * @see #invert()
- * @see #negate()
- */
-  Scalar<N> invert();
-  /** 
- * @return true if this is equal to its own modulus (non-negative real part and no imaginary part); otherwise false.
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isAbsolute();
-  /** 
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isInfinite();
-  /** 
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isNaN();
-  /** 
- * Strictly Positive, and definately real. Real, as defined by {@link #isReal()}, not zero, as defined by{@link #isZero()}, and > 0.0.
- * @return true if the real part is strictly positive (not zero) and the imaginary part negligible; otherwise false.
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isPositive();
-  /** 
- * @return true if there is the imaginary part is negligible; otherwise false.
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isReal();
-  /** 
- * Intends to capture if a scalar is numerically/practically zero, and in a way that is concistent between different
- * implementations. The potential exactness of {@link BigScalar} and {@link RationalNumber} should not be reflected
- * here.
- * @return true if the modulus is (practically) zero; otherwise false.
- * @see #isAbsolute()
- * @see #isInfinite()
- * @see #isNaN()
- * @see #isReal()
- * @see #isPositive()
- * @see #isZero()
- */
-  boolean isZero();
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> multiply(  double arg);
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> multiply(  N arg);
-  /** 
- * @see #conjugate()
- * @see #invert()
- * @see #negate()
- */
-  Scalar<N> negate();
-  double norm();
-  Scalar<N> signum();
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> subtract(  double arg);
-  /** 
- * @see #add(double)
- * @see #add(Number)
- * @see #divide(double)
- * @see #divide(Number)
- * @see #multiply(double)
- * @see #multiply(Number)
- * @see #subtract(double)
- * @see #subtract(Number)
- */
-  Scalar<N> subtract(  N arg);
-  BigDecimal toBigDecimal();
-  String toPlainString(  NumberContext context);
-  String toString(  NumberContext context);
+
+    public interface Factory<N extends Number> {
+
+        N cast(double value);
+
+        N cast(Number number);
+
+        Scalar<N> convert(double value);
+
+        Scalar<N> convert(Number number);
+
+        /**
+         * @return The multiplicative identity element
+         */
+        Scalar<N> one();
+
+        /**
+         * @return The additive identity element
+         */
+        Scalar<N> zero();
+
+    }
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> add(double arg);
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> add(N arg);
+
+    /**
+     * @see #conjugate()
+     * @see #invert()
+     * @see #negate()
+     */
+    Scalar<N> conjugate();
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> divide(double arg);
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> divide(N arg);
+
+    double doubleValue();
+
+    N getNumber();
+
+    /**
+     * @see #conjugate()
+     * @see #invert()
+     * @see #negate()
+     */
+    Scalar<N> invert();
+
+    /**
+     * @return true if this is equal to its own norm (non-negative real part and no imaginary part); otherwise false.
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     */
+    boolean isAbsolute();
+
+    /**
+     * Not relevant for all implementations. It's essntially {@linkplain Double#isInfinite(double)}.
+     * 
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     * @deprecated v36 Only plan to keep {@link #isAbsolute()} and {@link #isZero()}.
+     */
+    @Deprecated
+    boolean isInfinite();
+
+    /**
+     * Not relevant for all implementations. It's essntially {@linkplain Double#isNaN(double)}.
+     * 
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     * @deprecated v36 Only plan to keep {@link #isAbsolute()} and {@link #isZero()}.
+     */
+    @Deprecated
+    boolean isNaN();
+
+    /**
+     * Defined as {@link #isAbsolute()} but not {@link #isZero()}. A small range of values around zero are treated as
+     * zeros. Values within that range are not "positive". Very small positive values are not recognised as positive -
+     * they're zero.
+     * 
+     * @return true if the real part is strictly positive (not zero) and the imaginary part negligible; otherwise false.
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     * @deprecated v36 Only plan to keep {@link #isAbsolute()} and {@link #isZero()}.
+     */
+    @Deprecated
+    boolean isPositive();
+
+    /**
+     * @return true if there is the imaginary part is negligible; otherwise false.
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     * @deprecated v36 Only plan to keep {@link #isAbsolute()} and {@link #isZero()}.
+     */
+    @Deprecated
+    boolean isReal();
+
+    /**
+     * Typically a small range around zero should be interpreted as zero. The exact size of that range depends on the
+     * characteristics/capabillities of the specific implementation. The potential exactness of {@link BigScalar} and
+     * {@link RationalNumber} should be reflected here as having small(er) zero-intevalls. Should never test for just
+     * exact zero <code>==0.0</code>.
+     * 
+     * @return true if the norm, modulus or absolute value is (practically) zero; otherwise false.
+     * @see #isAbsolute()
+     * @see #isInfinite()
+     * @see #isNaN()
+     * @see #isReal()
+     * @see #isPositive()
+     * @see #isZero()
+     */
+    boolean isZero();
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> multiply(double arg);
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> multiply(N arg);
+
+    /**
+     * @see #conjugate()
+     * @see #invert()
+     * @see #negate()
+     */
+    Scalar<N> negate();
+
+    /**
+     * this = signum(this) * norm(this)
+     * 
+     * @return norm(this)
+     */
+    double norm();
+
+    /**
+     * this = signum(this) * norm(this)
+     * 
+     * @return signum(this)
+     */
+    Scalar<N> signum();
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> subtract(double arg);
+
+    /**
+     * @see #add(double)
+     * @see #add(Number)
+     * @see #divide(double)
+     * @see #divide(Number)
+     * @see #multiply(double)
+     * @see #multiply(Number)
+     * @see #subtract(double)
+     * @see #subtract(Number)
+     */
+    Scalar<N> subtract(N arg);
+
+    BigDecimal toBigDecimal();
+
+    String toPlainString(NumberContext context);
+
+    String toString(NumberContext context);
+
 }

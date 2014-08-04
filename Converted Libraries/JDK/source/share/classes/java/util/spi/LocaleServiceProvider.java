@@ -1,6 +1,33 @@
+/*
+ * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
+
 package java.util.spi;
+
 import java.util.Locale;
-/** 
+
+/**
  * <p>
  * This is the super class of all the locale sensitive service provider
  * interfaces (SPIs).
@@ -36,7 +63,8 @@ import java.util.Locale;
  * queried to locate the configuration file; this is not necessarily the class loader
  * that loaded the file.
  * <p>
- * For example, an implementation of the{@link java.text.spi.DateFormatProvider DateFormatProvider} class should
+ * For example, an implementation of the
+ * {@link java.text.spi.DateFormatProvider DateFormatProvider} class should
  * take the form of a jar file which contains the file:
  * <pre>
  * META-INF/services/java.text.spi.DateFormatProvider
@@ -64,7 +92,9 @@ import java.util.Locale;
  * supports the requested locale, the methods go through a list of candidate
  * locales and repeat the availability check for each until a match is found.
  * The algorithm used for creating a list of candidate locales is same as
- * the one used by <code>ResourceBunlde</code> by default (see{@link java.util.ResourceBundle.Control#getCandidateLocales getCandidateLocales}for the details).  Even if a locale is resolved from the candidate list,
+ * the one used by <code>ResourceBunlde</code> by default (see
+ * {@link java.util.ResourceBundle.Control#getCandidateLocales getCandidateLocales}
+ * for the details).  Even if a locale is resolved from the candidate list,
  * methods that return requested objects or names are invoked with the original
  * requested locale including extensions.  The Java runtime environment must
  * support the root locale for all locale sensitive services in order to
@@ -80,25 +110,29 @@ import java.util.Locale;
  * feasible to cover them completely. If the Java runtime environment or a
  * provider returns null instead of a name, the lookup will proceed as
  * described above as if the locale was not supported.
+ *
  * @since        1.6
  */
 public abstract class LocaleServiceProvider {
-  /** 
- * Sole constructor.  (For invocation by subclass constructors, typically
- * implicit.)
- */
-  protected LocaleServiceProvider(){
-  }
-  /** 
- * Returns an array of all locales for which this locale service provider
- * can provide localized objects or names.
- * <p>
- * <b>Note:</b> Extensions in a <code>Locale</code> are ignored during
- * service provider lookup.  So the array returned by this method should
- * not include two or more <code>Locale</code> objects only differing in
- * their extensions.
- * @return An array of all locales for which this locale service provider
- * can provide localized objects or names.
- */
-  public abstract Locale[] getAvailableLocales();
+
+    /**
+     * Sole constructor.  (For invocation by subclass constructors, typically
+     * implicit.)
+     */
+    protected LocaleServiceProvider() {
+    }
+
+    /**
+     * Returns an array of all locales for which this locale service provider
+     * can provide localized objects or names.
+     * <p>
+     * <b>Note:</b> Extensions in a <code>Locale</code> are ignored during
+     * service provider lookup.  So the array returned by this method should
+     * not include two or more <code>Locale</code> objects only differing in
+     * their extensions.
+     *
+     * @return An array of all locales for which this locale service provider
+     * can provide localized objects or names.
+     */
+    public abstract Locale[] getAvailableLocales();
 }

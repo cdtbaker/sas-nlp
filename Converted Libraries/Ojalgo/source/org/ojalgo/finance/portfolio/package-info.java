@@ -1,4 +1,4 @@
-/** 
+/**
  * Classes in this package relate to modelling of financial investment
  * portfolios, and Modern Portfolio Theory.
  * <ul><li>

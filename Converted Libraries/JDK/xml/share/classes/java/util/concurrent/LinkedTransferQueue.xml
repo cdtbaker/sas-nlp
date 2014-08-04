@@ -7,7 +7,7 @@
         <import package="java.util.Queue"/>
         <import package="java.util.concurrent.TimeUnit"/>
         <import package="java.util.concurrent.locks.LockSupport"/>
-        <class name="LinkedTransferQueue" line="46">
+        <class name="LinkedTransferQueue" line="9">
             <type_params>
                 <type_param name="E"/>
             </type_params>
@@ -16,360 +16,13 @@
                     <type_param name="E"/>
                 </type_params>
             </extends>
-            <comment line="90">
-                Overview of Dual Queues with Slack 
-                
-                 Dual Queues, introduced by Scherer and Scott
-                 (http:www.cs.rice.edu~wns1papers2004-DISC-DDS.pdf) are
-                 (linked) queues in which nodes may represent either data or
-                 requests.  When a thread tries to enqueue a data node, but
-                 encounters a request node, it instead &quot;matches&quot; and removes it;
-                 and vice versa for enqueuing requests. Blocking Dual Queues
-                 arrange that threads enqueuing unmatched requests block until
-                 other threads provide the match. Dual Synchronous Queues (see
-                 Scherer, Lea, &amp; Scott
-                 http:www.cs.rochester.eduuscottpapers2009_Scherer_CACM_SSQ.pdf)
-                 additionally arrange that threads enqueuing unmatched data also
-                 block.  Dual Transfer Queues support all of these modes, as
-                 dictated by callers.
-                
-                 A FIFO dual queue may be implemented using a variation of the
-                 Michael &amp; Scott (M&amp;S) lock-free queue algorithm
-                 (http:www.cs.rochester.eduuscottpapers1996_PODC_queues.pdf).
-                 It maintains two pointer fields, &quot;head&quot;, pointing to a
-                 (matched) node that in turn points to the first actual
-                 (unmatched) queue node (or null if empty); and &quot;tail&quot; that
-                 points to the last node on the queue (or again null if
-                 empty). For example, here is a possible queue with four data
-                 elements:
-                
-                  head                tail
-                    |                   |
-                    v                   v
-                    M -&gt; U -&gt; U -&gt; U -&gt; U
-                
-                 The M&amp;S queue algorithm is known to be prone to scalability and
-                 overhead limitations when maintaining (via CAS) these head and
-                 tail pointers. This has led to the development of
-                 contention-reducing variants such as elimination arrays (see
-                 Moir et al http:portal.acm.orgcitation.cfm?id=1074013) and
-                 optimistic back pointers (see Ladan-Mozes &amp; Shavit
-                 http:people.csail.mit.eduedyapublicationsOptimisticFIFOQueue-journal.pdf).
-                 However, the nature of dual queues enables a simpler tactic for
-                 improving M&amp;S-style implementations when dual-ness is needed.
-                
-                 In a dual queue, each node must atomically maintain its match
-                 status. While there are other possible variants, we implement
-                 this here as: for a data-mode node, matching entails CASing an
-                 &quot;item&quot; field from a non-null data value to null upon match, and
-                 vice-versa for request nodes, CASing from null to a data
-                 value. (Note that the linearization properties of this style of
-                 queue are easy to verify -- elements are made available by
-                 linking, and unavailable by matching.) Compared to plain M&amp;S
-                 queues, this property of dual queues requires one additional
-                 successful atomic operation per enqdeq pair. But it also
-                 enables lower cost variants of queue maintenance mechanics. (A
-                 variation of this idea applies even for non-dual queues that
-                 support deletion of interior elements, such as
-                 j.u.c.ConcurrentLinkedQueue.)
-                
-                 Once a node is matched, its match status can never again
-                 change.  We may thus arrange that the linked list of them
-                 contain a prefix of zero or more matched nodes, followed by a
-                 suffix of zero or more unmatched nodes. (Note that we allow
-                 both the prefix and suffix to be zero length, which in turn
-                 means that we do not use a dummy header.)  If we were not
-                 concerned with either time or space efficiency, we could
-                 correctly perform enqueue and dequeue operations by traversing
-                 from a pointer to the initial node; CASing the item of the
-                 first unmatched node on match and CASing the next field of the
-                 trailing node on appends. (Plus some special-casing when
-                 initially empty).  While this would be a terrible idea in
-                 itself, it does have the benefit of not requiring ANY atomic
-                 updates on headtail fields.
-                
-                 We introduce here an approach that lies between the extremes of
-                 never versus always updating queue (head and tail) pointers.
-                 This offers a tradeoff between sometimes requiring extra
-                 traversal steps to locate the first andor last unmatched
-                 nodes, versus the reduced overhead and contention of fewer
-                 updates to queue pointers. For example, a possible snapshot of
-                 a queue is:
-                
-                  head           tail
-                    |              |
-                    v              v
-                    M -&gt; M -&gt; U -&gt; U -&gt; U -&gt; U
-                
-                 The best value for this &quot;slack&quot; (the targeted maximum distance
-                 between the value of &quot;head&quot; and the first unmatched node, and
-                 similarly for &quot;tail&quot;) is an empirical matter. We have found
-                 that using very small constants in the range of 1-3 work best
-                 over a range of platforms. Larger values introduce increasing
-                 costs of cache misses and risks of long traversal chains, while
-                 smaller values increase CAS contention and overhead.
-                
-                 Dual queues with slack differ from plain M&amp;S dual queues by
-                 virtue of only sometimes updating head or tail pointers when
-                 matching, appending, or even traversing nodes; in order to
-                 maintain a targeted slack.  The idea of &quot;sometimes&quot; may be
-                 operationalized in several ways. The simplest is to use a
-                 per-operation counter incremented on each traversal step, and
-                 to try (via CAS) to update the associated queue pointer
-                 whenever the count exceeds a threshold. Another, that requires
-                 more overhead, is to use random number generators to update
-                 with a given probability per traversal step.
-                
-                 In any strategy along these lines, because CASes updating
-                 fields may fail, the actual slack may exceed targeted
-                 slack. However, they may be retried at any time to maintain
-                 targets.  Even when using very small slack values, this
-                 approach works well for dual queues because it allows all
-                 operations up to the point of matching or appending an item
-                 (hence potentially allowing progress by another thread) to be
-                 read-only, thus not introducing any further contention. As
-                 described below, we implement this by performing slack
-                 maintenance retries only after these points.
-                
-                 As an accompaniment to such techniques, traversal overhead can
-                 be further reduced without increasing contention of head
-                 pointer updates: Threads may sometimes shortcut the &quot;next&quot; link
-                 path from the current &quot;head&quot; node to be closer to the currently
-                 known first unmatched node, and similarly for tail. Again, this
-                 may be triggered with using thresholds or randomization.
-                
-                 These ideas must be further extended to avoid unbounded amounts
-                 of costly-to-reclaim garbage caused by the sequential &quot;next&quot;
-                 links of nodes starting at old forgotten head nodes: As first
-                 described in detail by Boehm
-                 (http:portal.acm.orgcitation.cfm?doid=503272.503282) if a GC
-                 delays noticing that any arbitrarily old node has become
-                 garbage, all newer dead nodes will also be unreclaimed.
-                 (Similar issues arise in non-GC environments.)  To cope with
-                 this in our implementation, upon CASing to advance the head
-                 pointer, we set the &quot;next&quot; link of the previous head to point
-                 only to itself; thus limiting the length of connected dead lists.
-                 (We also take similar care to wipe out possibly garbage
-                 retaining values held in other Node fields.)  However, doing so
-                 adds some further complexity to traversal: If any &quot;next&quot;
-                 pointer links to itself, it indicates that the current thread
-                 has lagged behind a head-update, and so the traversal must
-                 continue from the &quot;head&quot;.  Traversals trying to find the
-                 current tail starting from &quot;tail&quot; may also encounter
-                 self-links, in which case they also continue at &quot;head&quot;.
-                
-                 It is tempting in slack-based scheme to not even use CAS for
-                 updates (similarly to Ladan-Mozes &amp; Shavit). However, this
-                 cannot be done for head updates under the above link-forgetting
-                 mechanics because an update may leave head at a detached node.
-                 And while direct writes are possible for tail updates, they
-                 increase the risk of long retraversals, and hence long garbage
-                 chains, which can be much more costly than is worthwhile
-                 considering that the cost difference of performing a CAS vs
-                 write is smaller when they are not triggered on each operation
-                 (especially considering that writes and CASes equally require
-                 additional GC bookkeeping (&quot;write barriers&quot;) that are sometimes
-                 more costly than the writes themselves because of contention).
-                
-                  Overview of implementation 
-                
-                 We use a threshold-based approach to updates, with a slack
-                 threshold of two -- that is, we update headtail when the
-                 current pointer appears to be two or more steps away from the
-                 firstlast node. The slack value is hard-wired: a path greater
-                 than one is naturally implemented by checking equality of
-                 traversal pointers except when the list has only one element,
-                 in which case we keep slack threshold at one. Avoiding tracking
-                 explicit counts across method calls slightly simplifies an
-                 already-messy implementation. Using randomization would
-                 probably work better if there were a low-quality dirt-cheap
-                 per-thread one available, but even ThreadLocalRandom is too
-                 heavy for these purposes.
-                
-                 With such a small slack threshold value, it is not worthwhile
-                 to augment this with path short-circuiting (i.e., unsplicing
-                 interior nodes) except in the case of cancellationremoval (see
-                 below).
-                
-                 We allow both the head and tail fields to be null before any
-                 nodes are enqueued; initializing upon first append.  This
-                 simplifies some other logic, as well as providing more
-                 efficient explicit control paths instead of letting JVMs insert
-                 implicit NullPointerExceptions when they are null.  While not
-                 currently fully implemented, we also leave open the possibility
-                 of re-nulling these fields when empty (which is complicated to
-                 arrange, for little benefit.)
-                
-                 All enqueuedequeue operations are handled by the single method
-                 &quot;xfer&quot; with parameters indicating whether to act as some form
-                 of offer, put, poll, take, or transfer (each possibly with
-                 timeout). The relative complexity of using one monolithic
-                 method outweighs the code bulk and maintenance problems of
-                 using separate methods for each case.
-                
-                 Operation consists of up to three phases. The first is
-                 implemented within method xfer, the second in tryAppend, and
-                 the third in method awaitMatch.
-                
-                 1. Try to match an existing node
-                
-                    Starting at head, skip already-matched nodes until finding
-                    an unmatched node of opposite mode, if one exists, in which
-                    case matching it and returning, also if necessary updating
-                    head to one past the matched node (or the node itself if the
-                    list has no other unmatched nodes). If the CAS misses, then
-                    a loop retries advancing head by two steps until either
-                    success or the slack is at most two. By requiring that each
-                    attempt advances head by two (if applicable), we ensure that
-                    the slack does not grow without bound. Traversals also check
-                    if the initial head is now off-list, in which case they
-                    start at the new head.
-                
-                    If no candidates are found and the call was untimed
-                    polloffer, (argument &quot;how&quot; is NOW) return.
-                
-                 2. Try to append a new node (method tryAppend)
-                
-                    Starting at current tail pointer, find the actual last node
-                    and try to append a new node (or if head was null, establish
-                    the first node). Nodes can be appended only if their
-                    predecessors are either already matched or are of the same
-                    mode. If we detect otherwise, then a new node with opposite
-                    mode must have been appended during traversal, so we must
-                    restart at phase 1. The traversal and update steps are
-                    otherwise similar to phase 1: Retrying upon CAS misses and
-                    checking for staleness.  In particular, if a self-link is
-                    encountered, then we can safely jump to a node on the list
-                    by continuing the traversal at current head.
-                
-                    On successful append, if the call was ASYNC, return.
-                
-                 3. Await match or cancellation (method awaitMatch)
-                
-                    Wait for another thread to match node; instead cancelling if
-                    the current thread was interrupted or the wait timed out. On
-                    multiprocessors, we use front-of-queue spinning: If a node
-                    appears to be the first unmatched node in the queue, it
-                    spins a bit before blocking. In either case, before blocking
-                    it tries to unsplice any nodes between the current &quot;head&quot;
-                    and the first unmatched node.
-                
-                    Front-of-queue spinning vastly improves performance of
-                    heavily contended queues. And so long as it is relatively
-                    brief and &quot;quiet&quot;, spinning does not much impact performance
-                    of less-contended queues.  During spins threads check their
-                    interrupt status and generate a thread-local random number
-                    to decide to occasionally perform a Thread.yield. While
-                    yield has underdefined specs, we assume that might it help,
-                    and will not hurt in limiting impact of spinning on busy
-                    systems.  We also use smaller (12) spins for nodes that are
-                    not known to be front but whose predecessors have not
-                    blocked -- these &quot;chained&quot; spins avoid artifacts of
-                    front-of-queue rules which otherwise lead to alternating
-                    nodes spinning vs blocking. Further, front threads that
-                    represent phase changes (from data to request node or vice
-                    versa) compared to their predecessors receive additional
-                    chained spins, reflecting longer paths typically required to
-                    unblock threads during phase changes.
-                
-                
-                  Unlinking removed interior nodes 
-                
-                 In addition to minimizing garbage retention via self-linking
-                 described above, we also unlink removed interior nodes. These
-                 may arise due to timed out or interrupted waits, or calls to
-                 remove(x) or Iterator.remove.  Normally, given a node that was
-                 at one time known to be the predecessor of some node s that is
-                 to be removed, we can unsplice s by CASing the next field of
-                 its predecessor if it still points to s (otherwise s must
-                 already have been removed or is now offlist). But there are two
-                 situations in which we cannot guarantee to make node s
-                 unreachable in this way: (1) If s is the trailing node of list
-                 (i.e., with null next), then it is pinned as the target node
-                 for appends, so can only be removed later after other nodes are
-                 appended. (2) We cannot necessarily unlink s given a
-                 predecessor node that is matched (including the case of being
-                 cancelled): the predecessor may already be unspliced, in which
-                 case some previous reachable node may still point to s.
-                 (For further explanation see Herlihy &amp; Shavit &quot;The Art of
-                 Multiprocessor Programming&quot; chapter 9).  Although, in both
-                 cases, we can rule out the need for further action if either s
-                 or its predecessor are (or can be made to be) at, or fall off
-                 from, the head of list.
-                
-                 Without taking these into account, it would be possible for an
-                 unbounded number of supposedly removed nodes to remain
-                 reachable.  Situations leading to such buildup are uncommon but
-                 can occur in practice; for example when a series of short timed
-                 calls to poll repeatedly time out but never otherwise fall off
-                 the list because of an untimed call to take at the front of the
-                 queue.
-                
-                 When these cases arise, rather than always retraversing the
-                 entire list to find an actual predecessor to unlink (which
-                 won&apos;t help for case (1) anyway), we record a conservative
-                 estimate of possible unsplice failures (in &quot;sweepVotes&quot;).
-                 We trigger a full sweep when the estimate exceeds a threshold
-                 (&quot;SWEEP_THRESHOLD&quot;) indicating the maximum number of estimated
-                 removal failures to tolerate before sweeping through, unlinking
-                 cancelled nodes that were not unlinked upon initial removal.
-                 We perform sweeps by the thread hitting threshold (rather than
-                 background threads or by spreading work to other threads)
-                 because in the main contexts in which removal occurs, the
-                 caller is already timed-out, cancelled, or performing a
-                 potentially O(n) operation (e.g. remove(x)), none of which are
-                 time-critical enough to warrant the overhead that alternatives
-                 would impose on other threads.
-                
-                 Because the sweepVotes estimate is conservative, and because
-                 nodes become unlinked &quot;naturally&quot; as they fall off the head of
-                 the queue, and because we allow votes to accumulate even while
-                 sweeps are in progress, there are typically significantly fewer
-                 such nodes than estimated.  Choice of a threshold value
-                 balances the likelihood of wasted effort and contention, versus
-                 providing a worst-case bound on retention of interior nodes in
-                 quiescent queues. The value defined below was chosen
-                 empirically to balance these under various timeout scenarios.
-                
-                 Note that we cannot self-link unlinked interior nodes during
-                 sweeps. However, the associated garbage chains terminate when
-                 some successor ultimately falls off the head of the list and is
-                 self-linked.                
-            </comment>
-            <comment line="568">
-                CAS methods for fields                
-            </comment>
-            <comment line="581">
-                Possible values for &quot;how&quot; argument in xfer method.                
-            </comment>
-            <comment line="584">
-                for untimed poll, tryTransfer                
-            </comment>
-            <comment line="585">
-                for offer, put, add                
-            </comment>
-            <comment line="586">
-                for transfer, take                
-            </comment>
-            <comment line="587">
-                for timed poll, tryTransfer                
-            </comment>
-            <comment line="757">
-                                
-            </comment>
-            <comment line="915">
-                                
-            </comment>
-            <comment line="1332">
-                Unsafe mechanics                
-            </comment>
             <implements interface="TransferQueue">
                 <type_params>
                     <type_param name="E"/>
                 </type_params>
             </implements>
             <implements interface="java.io.Serializable"/>
-            <javadoc line="46">
+            <javadoc line="9">
                 An unbounded {@link TransferQueue} based on linked nodes.
                   This queue orders elements FIFO (first-in-first-out) with respect
                   to any given producer.  The &lt;em&gt;head&lt;/em&gt; of the queue is that
@@ -402,16 +55,16 @@
                 </author>
                 <param>
                     &lt;E&gt;
-                       the type of elements held in this collection                    
+                      the type of elements held in this collection                    
                 </param>
             </javadoc>
-            <declaration name="serialVersionUID" type="long" line="87"/>
-            <declaration name="MP" type="boolean" line="410"/>
-            <javadoc line="410">
+            <declaration name="serialVersionUID" type="long" line="40"/>
+            <declaration name="MP" type="boolean" line="41"/>
+            <javadoc line="41">
                 True if on multiprocessor                
             </javadoc>
-            <declaration name="FRONT_SPINS" type="int" line="414"/>
-            <javadoc line="414">
+            <declaration name="FRONT_SPINS" type="int" line="45"/>
+            <javadoc line="45">
                 The number of times to spin (with randomly interspersed calls
                   to Thread.yield) on multiprocessor before blocking when a node
                   is apparently the first waiter in the queue.  See above for
@@ -419,94 +72,61 @@
                   derived -- it works pretty well across a variety of processors,
                   numbers of CPUs, and OSes.                
             </javadoc>
-            <declaration name="CHAINED_SPINS" type="int" line="424"/>
-            <javadoc line="424">
+            <declaration name="CHAINED_SPINS" type="int" line="54"/>
+            <javadoc line="54">
                 The number of times to spin before blocking when a node is
                   preceded by another node that is apparently spinning.  Also
                   serves as an increment to FRONT_SPINS on phase changes, and as
                   base average frequency for yielding during spins. Must be a
                   power of two.                
             </javadoc>
-            <declaration name="SWEEP_THRESHOLD" type="int" line="433"/>
-            <javadoc line="433">
+            <declaration name="SWEEP_THRESHOLD" type="int" line="62"/>
+            <javadoc line="62">
                 The maximum number of estimated removal failures (sweepVotes)
                   to tolerate before sweeping through the queue unlinking
                   cancelled nodes that were not unlinked upon initial
                   removal. See above for explanation. The value must be at least
                   two to avoid useless sweeps when removing trailing nodes.                
             </javadoc>
-            <class name="Node" line="442">
-                <comment line="450">
-                    false if this is a request node                    
-                </comment>
-                <comment line="451">
-                    initially non-null if isData; CASed to match                    
-                </comment>
-                <comment line="453">
-                    null until waiting                    
-                </comment>
-                <comment line="455">
-                    CAS methods for fields                    
-                </comment>
-                <comment line="538">
-                    Unsafe mechanics                    
-                </comment>
-                <comment line="823">
-                    next node to return item for                    
-                </comment>
-                <comment line="824">
-                    the corresponding item                    
-                </comment>
-                <comment line="825">
-                    last returned node, to support remove                    
-                </comment>
-                <comment line="826">
-                    predecessor to unlink lastRet                    
-                </comment>
-                <javadoc line="442">
+            <class name="Node" line="70">
+                <javadoc line="70">
                     Queue nodes. Uses Object, not E, for items to allow forgetting
                       them after use.  Relies heavily on Unsafe mechanics to minimize
                       unnecessary ordering constraints: Writes that are intrinsically
                       ordered wrt other accesses or CASes use simple relaxed forms.                    
                 </javadoc>
-                <declaration name="isData" type="boolean" line="449"/>
-                <declaration name="item" type="Object" line="450"/>
-                <declaration name="next" type="Node" line="451"/>
-                <declaration name="waiter" type="Thread" line="452"/>
-                <method name="casNext" type="boolean" line="455">
+                <declaration name="isData" type="boolean" line="77"/>
+                <declaration name="item" type="Object" line="78"/>
+                <declaration name="next" type="Node" line="79"/>
+                <declaration name="waiter" type="Thread" line="80"/>
+                <method name="casNext" type="boolean" line="81">
                     <params>
                         <param name="cmp" type="Node"/>
                         <param name="val" type="Node"/>
                     </params>
                 </method>
-                <method name="casItem" type="boolean" line="459">
+                <method name="casItem" type="boolean" line="84">
                     <params>
                         <param name="cmp" type="Object"/>
                         <param name="val" type="Object"/>
                     </params>
-                    <comment line="461">
-                        assert cmp == null || cmp.getClass() != Node.class;                        
-                    </comment>
                 </method>
-                <javadoc line="464">
+                <javadoc line="87">
                     Constructs a new node.  Uses relaxed write because item can
                       only be seen after publication via casNext.                    
                 </javadoc>
-                <method name="Node" type="constructor" line="468">
+                <method name="Node" type="constructor" line="91">
                     <params>
                         <param name="item" type="Object"/>
                         <param name="isData" type="boolean"/>
                     </params>
-                    <comment line="470">
-                        relaxed write                        
-                    </comment>
                 </method>
-                <javadoc line="473">
+                <javadoc line="95">
                     Links node to itself to avoid garbage retention.  Called
                       only after CASing head field, so uses relaxed write.                    
                 </javadoc>
-                <method name="forgetNext" type="void" line="477"/>
-                <javadoc line="481">
+                <method name="forgetNext" type="void" line="99"/>
+                <javadoc line="102">
                     Sets item to self and waiter to null, to avoid garbage
                       retention after matching or cancelling. Uses relaxed writes
                       because order is already constrained in the only calling
@@ -515,95 +135,89 @@
                       follows either CAS or return from park (if ever parked;
                       else we don&apos;t care).                    
                 </javadoc>
-                <method name="forgetContents" type="void" line="490"/>
-                <javadoc line="495">
+                <method name="forgetContents" type="void" line="111"/>
+                <javadoc line="115">
                     Returns true if this node has been matched, including the
                       case of artificial matches due to cancellation.                    
                 </javadoc>
-                <method name="isMatched" type="boolean" line="499">
-                    <declaration name="x" type="Object" line="500"/>
+                <method name="isMatched" type="boolean" line="119">
+                    <declaration name="x" type="Object" line="120"/>
                 </method>
-                <javadoc line="504">
+                <javadoc line="123">
                     Returns true if this is an unmatched request node.                    
                 </javadoc>
-                <method name="isUnmatchedRequest" type="boolean" line="507"/>
-                <javadoc line="511">
+                <method name="isUnmatchedRequest" type="boolean" line="126"/>
+                <javadoc line="129">
                     Returns true if a node with the given mode cannot be
                       appended to this node because this node is unmatched and
                       has opposite data mode.                    
                 </javadoc>
-                <method name="cannotPrecede" type="boolean" line="516">
+                <method name="cannotPrecede" type="boolean" line="134">
                     <params>
                         <param name="haveData" type="boolean"/>
                     </params>
-                    <declaration name="d" type="boolean" line="517"/>
-                    <declaration name="x" type="Object" line="518"/>
+                    <declaration name="d" type="boolean" line="135"/>
+                    <declaration name="x" type="Object" line="136"/>
                 </method>
-                <javadoc line="522">
+                <javadoc line="139">
                     Tries to artificially match a data node -- used by remove.                    
                 </javadoc>
-                <method name="tryMatchData" type="boolean" line="525">
-                    <comment line="527">
-                        assert isData;                        
-                    </comment>
-                    <declaration name="x" type="Object" line="527"/>
-                    <scope line="528"/>
+                <method name="tryMatchData" type="boolean" line="142">
+                    <declaration name="x" type="Object" line="143"/>
+                    <scope line="144"/>
                 </method>
-                <declaration name="serialVersionUID" type="long" line="535"/>
-                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="538"/>
-                <declaration name="itemOffset" type="long" line="539"/>
-                <declaration name="nextOffset" type="long" line="540"/>
-                <declaration name="waiterOffset" type="long" line="541"/>
-                <scope line="542">
-                    <scope line="543">
-                        <declaration name="k" type="Class" line="545"/>
+                <declaration name="serialVersionUID" type="long" line="150"/>
+                <declaration name="UNSAFE" type="sun.misc.Unsafe" line="151"/>
+                <declaration name="itemOffset" type="long" line="152"/>
+                <declaration name="nextOffset" type="long" line="153"/>
+                <declaration name="waiterOffset" type="long" line="154"/>
+                <scope line="155">
+                    <scope line="156">
+                        <declaration name="k" type="Class" line="158"/>
                     </scope>
-                    <scope line="552"/>
+                    <scope line="163"/>
                 </scope>
             </class>
-            <declaration name="head" type="Node" line="558"/>
-            <javadoc line="558">
+            <declaration name="head" type="Node" line="168"/>
+            <javadoc line="168">
                 head of the queue; null until first enqueue                
             </javadoc>
-            <declaration name="tail" type="Node" line="561"/>
-            <javadoc line="561">
+            <declaration name="tail" type="Node" line="172"/>
+            <javadoc line="172">
                 tail of the queue; null until first append                
             </javadoc>
-            <declaration name="sweepVotes" type="int" line="564"/>
-            <javadoc line="564">
+            <declaration name="sweepVotes" type="int" line="176"/>
+            <javadoc line="176">
                 The number of apparent failures to unsplice removed nodes                
             </javadoc>
-            <method name="casTail" type="boolean" line="568">
+            <method name="casTail" type="boolean" line="180">
                 <params>
                     <param name="cmp" type="Node"/>
                     <param name="val" type="Node"/>
                 </params>
             </method>
-            <method name="casHead" type="boolean" line="572">
+            <method name="casHead" type="boolean" line="183">
                 <params>
                     <param name="cmp" type="Node"/>
                     <param name="val" type="Node"/>
                 </params>
             </method>
-            <method name="casSweepVotes" type="boolean" line="576">
+            <method name="casSweepVotes" type="boolean" line="186">
                 <params>
                     <param name="cmp" type="int"/>
                     <param name="val" type="int"/>
                 </params>
             </method>
-            <declaration name="NOW" type="int" line="583"/>
-            <declaration name="ASYNC" type="int" line="584"/>
-            <declaration name="SYNC" type="int" line="585"/>
-            <declaration name="TIMED" type="int" line="586"/>
-            <method name="cast" type="E" line="589">
+            <declaration name="NOW" type="int" line="189"/>
+            <declaration name="ASYNC" type="int" line="190"/>
+            <declaration name="SYNC" type="int" line="191"/>
+            <declaration name="TIMED" type="int" line="192"/>
+            <method name="cast" type="E" line="193">
                 <params>
                     <param name="item" type="Object"/>
                 </params>
-                <comment line="591">
-                    assert item == null || item.getClass() != Node.class;                    
-                </comment>
             </method>
-            <javadoc line="594">
+            <javadoc line="196">
                 Implements all queuing methods. See above for explanation.                
                 <param>
                     e the item or null for take                    
@@ -624,73 +238,34 @@
                     NullPointerException if haveData mode but e is null                    
                 </throws>
             </javadoc>
-            <method name="xfer" type="E" line="604">
+            <method name="xfer" type="E" line="205">
                 <params>
                     <param name="e" type="E"/>
                     <param name="haveData" type="boolean"/>
                     <param name="how" type="int"/>
                     <param name="nanos" type="long"/>
                 </params>
-                <comment line="608">
-                    the node to append, if needed                    
-                </comment>
-                <comment line="611">
-                    restart on append race                    
-                </comment>
-                <comment line="613">
-                    find &amp; match first node                    
-                </comment>
-                <comment line="616">
-                    unmatched                    
-                </comment>
-                <comment line="617">
-                    can&apos;t match                    
-                </comment>
-                <comment line="619">
-                    match                    
-                </comment>
-                <comment line="621">
-                    update by 2 unless singleton                    
-                </comment>
-                <comment line="625">
-                    advance and retry                    
-                </comment>
-                <comment line="628">
-                    unless slack &lt; 2                    
-                </comment>
-                <comment line="635">
-                    Use head if p offlist                    
-                </comment>
-                <comment line="638">
-                    No matches available                    
-                </comment>
-                <comment line="643">
-                    lost race vs opposite mode                    
-                </comment>
-                <comment line="647">
-                    not waiting                    
-                </comment>
-                <declaration name="s" type="Node" line="607"/>
-                <scope line="610">
-                    <scope line="612">
-                        <declaration name="isData" type="boolean" line="613"/>
-                        <declaration name="item" type="Object" line="614"/>
-                        <scope line="615">
-                            <scope line="618">
-                                <scope line="619">
-                                    <declaration name="n" type="Node" line="620"/>
-                                    <scope line="621"/>
+                <declaration name="s" type="Node" line="207"/>
+                <scope line="208">
+                    <scope line="209">
+                        <declaration name="isData" type="boolean" line="210"/>
+                        <declaration name="item" type="Object" line="211"/>
+                        <scope line="212">
+                            <scope line="214">
+                                <scope line="215">
+                                    <declaration name="n" type="Node" line="216"/>
+                                    <scope line="217"/>
                                 </scope>
                             </scope>
                         </scope>
-                        <declaration name="n" type="Node" line="633"/>
+                        <declaration name="n" type="Node" line="227"/>
                     </scope>
-                    <scope line="637">
-                        <declaration name="pred" type="Node" line="640"/>
+                    <scope line="230">
+                        <declaration name="pred" type="Node" line="232"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="650">
+            <javadoc line="239">
                 Tries to append node s as tail.                
                 <param>
                     s the node to append                    
@@ -704,50 +279,20 @@
                       predecessor                    
                 </return>
             </javadoc>
-            <method name="tryAppend" type="Node" line="659">
+            <method name="tryAppend" type="Node" line="247">
                 <params>
                     <param name="s" type="Node"/>
                     <param name="haveData" type="boolean"/>
                 </params>
-                <comment line="661">
-                    move p to last node and append                    
-                </comment>
-                <comment line="662">
-                    temps for reads of next &amp; tail                    
-                </comment>
-                <comment line="665">
-                    initialize                    
-                </comment>
-                <comment line="668">
-                    lost race vs opposite mode                    
-                </comment>
-                <comment line="669">
-                    not last; keep traversing                    
-                </comment>
-                <comment line="670">
-                    stale tail                    
-                </comment>
-                <comment line="671">
-                    restart if off list                    
-                </comment>
-                <comment line="673">
-                    re-read on CAS failure                    
-                </comment>
-                <comment line="675">
-                    update if slack now &gt;= 2                    
-                </comment>
-                <comment line="678">
-                    advance and retry                    
-                </comment>
-                <scope line="660">
-                    <declaration name="n" type="Node" line="661"/>
-                    <scope line="662"/>
-                    <scope line="673">
-                        <scope line="674"/>
+                <scope line="248">
+                    <declaration name="n" type="Node" line="249"/>
+                    <scope line="250"/>
+                    <scope line="256">
+                        <scope line="257"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="685">
+            <javadoc line="264">
                 Spins/yields/blocks until node s is matched or caller gives up.                
                 <param>
                     s the waiting node                    
@@ -770,7 +315,7 @@
                     matched item, or e if unmatched on interrupt or timeout                    
                 </return>
             </javadoc>
-            <method name="awaitMatch" type="E" line="697">
+            <method name="awaitMatch" type="E" line="275">
                 <params>
                     <param name="s" type="Node"/>
                     <param name="pred" type="Node"/>
@@ -778,213 +323,120 @@
                     <param name="timed" type="boolean"/>
                     <param name="nanos" type="long"/>
                 </params>
-                <comment line="701">
-                    initialized after first item and cancel checks                    
-                </comment>
-                <comment line="702">
-                    bound if needed                    
-                </comment>
-                <comment line="706">
-                    matched                    
-                </comment>
-                <comment line="707">
-                    assert item != s;                    
-                </comment>
-                <comment line="708">
-                    avoid garbage                    
-                </comment>
-                <comment line="712">
-                    cancel                    
-                </comment>
-                <comment line="717">
-                    establish spins at/near front                    
-                </comment>
-                <comment line="721">
-                    spin                    
-                </comment>
-                <comment line="724">
-                    occasionally yield                    
-                </comment>
-                <comment line="727">
-                    request unpark then recheck                    
-                </comment>
-                <declaration name="lastTime" type="long" line="698"/>
-                <declaration name="w" type="Thread" line="699"/>
-                <declaration name="spins" type="int" line="700"/>
-                <declaration name="randomYields" type="ThreadLocalRandom" line="701"/>
-                <scope line="703">
-                    <declaration name="item" type="Object" line="704"/>
-                    <scope line="705"/>
-                    <scope line="711"/>
-                    <scope line="716"/>
-                    <scope line="720"/>
-                    <scope line="725"/>
-                    <scope line="728">
-                        <declaration name="now" type="long" line="729"/>
+                <declaration name="lastTime" type="long" line="276"/>
+                <declaration name="w" type="Thread" line="277"/>
+                <declaration name="spins" type="int" line="278"/>
+                <declaration name="randomYields" type="ThreadLocalRandom" line="279"/>
+                <scope line="280">
+                    <declaration name="item" type="Object" line="281"/>
+                    <scope line="282"/>
+                    <scope line="286"/>
+                    <scope line="290"/>
+                    <scope line="293"/>
+                    <scope line="297"/>
+                    <scope line="300">
+                        <declaration name="now" type="long" line="301"/>
                     </scope>
-                    <scope line="734"/>
+                    <scope line="305"/>
                 </scope>
             </method>
-            <javadoc line="740">
+            <javadoc line="310">
                 Returns spin/yield value for a node with given predecessor and
                   data mode. See above for explanation.                
             </javadoc>
-            <method name="spinsFor" type="int" line="744">
+            <method name="spinsFor" type="int" line="314">
                 <params>
                     <param name="pred" type="Node"/>
                     <param name="haveData" type="boolean"/>
                 </params>
-                <comment line="747">
-                    phase change                    
-                </comment>
-                <comment line="749">
-                    probably at front                    
-                </comment>
-                <comment line="751">
-                    pred apparently spinning                    
-                </comment>
-                <scope line="745"/>
+                <scope line="315"/>
             </method>
-            <javadoc line="758">
+            <javadoc line="322">
                 Returns the successor of p, or the head node if p.next has been
                   linked to self, which will only be true if traversing with a
                   stale pointer that is now off the list.                
             </javadoc>
-            <method name="succ" type="Node" line="763">
+            <method name="succ" type="Node" line="327">
                 <params>
                     <param name="p" type="Node"/>
                 </params>
-                <declaration name="next" type="Node" line="764"/>
+                <declaration name="next" type="Node" line="328"/>
             </method>
-            <javadoc line="768">
+            <javadoc line="331">
                 Returns the first unmatched node of the given mode, or null if
                   none.  Used by methods isEmpty, hasWaitingConsumer.                
             </javadoc>
-            <method name="firstOfMode" type="Node" line="772">
+            <method name="firstOfMode" type="Node" line="335">
                 <params>
                     <param name="isData" type="boolean"/>
                 </params>
-                <scope line="773"/>
+                <scope line="336"/>
             </method>
-            <javadoc line="780">
+            <javadoc line="341">
                 Returns the item in the first unmatched node with isData; or
                   null if none.  Used by peek.                
             </javadoc>
-            <method name="firstDataItem" type="E" line="784">
-                <scope line="785">
-                    <declaration name="item" type="Object" line="786"/>
-                    <scope line="787"/>
+            <method name="firstDataItem" type="E" line="345">
+                <scope line="346">
+                    <declaration name="item" type="Object" line="347"/>
+                    <scope line="348"/>
                 </scope>
             </method>
-            <javadoc line="797">
+            <javadoc line="355">
                 Traverses and counts unmatched nodes of the given mode.
                   Used by methods size and getWaitingConsumerCount.                
             </javadoc>
-            <method name="countOfMode" type="int" line="801">
+            <method name="countOfMode" type="int" line="359">
                 <params>
                     <param name="data" type="boolean"/>
                 </params>
-                <comment line="808">
-                    saturated                    
-                </comment>
-                <declaration name="count" type="int" line="802"/>
-                <scope line="803">
-                    <scope line="804"/>
-                    <declaration name="n" type="Node" line="810"/>
-                    <scope line="813"/>
+                <declaration name="count" type="int" line="360"/>
+                <scope line="361">
+                    <scope line="362"/>
+                    <declaration name="n" type="Node" line="366"/>
+                    <scope line="368"/>
                 </scope>
             </method>
-            <class name="Itr" line="821">
-                <comment line="450">
-                    false if this is a request node                    
-                </comment>
-                <comment line="451">
-                    initially non-null if isData; CASed to match                    
-                </comment>
-                <comment line="453">
-                    null until waiting                    
-                </comment>
-                <comment line="455">
-                    CAS methods for fields                    
-                </comment>
-                <comment line="538">
-                    Unsafe mechanics                    
-                </comment>
-                <comment line="823">
-                    next node to return item for                    
-                </comment>
-                <comment line="824">
-                    the corresponding item                    
-                </comment>
-                <comment line="825">
-                    last returned node, to support remove                    
-                </comment>
-                <comment line="826">
-                    predecessor to unlink lastRet                    
-                </comment>
+            <class name="Itr" line="375">
                 <implements interface="Iterator">
                     <type_params>
                         <type_param name="E"/>
                     </type_params>
                 </implements>
-                <declaration name="nextNode" type="Node" line="822"/>
-                <declaration name="nextItem" type="E" line="823"/>
-                <declaration name="lastRet" type="Node" line="824"/>
-                <declaration name="lastPred" type="Node" line="825"/>
-                <javadoc line="827">
+                <declaration name="nextNode" type="Node" line="376"/>
+                <declaration name="nextItem" type="E" line="377"/>
+                <declaration name="lastRet" type="Node" line="378"/>
+                <declaration name="lastPred" type="Node" line="379"/>
+                <javadoc line="380">
                     Moves to next node after prev, or first node if prev null.                    
                 </javadoc>
-                <method name="advance" type="void" line="830">
+                <method name="advance" type="void" line="383">
                     <params>
                         <param name="prev" type="Node"/>
                     </params>
-                    <comment line="832">
-                        To track and avoid buildup of deleted nodes in the face
-                         of calls to both Queue.remove and Itr.remove, we must
-                         include variants of unsplice and sweep upon each
-                         advance: Upon Itr.remove, we may need to catch up links
-                         from lastPred, and upon other removes, we might need to
-                         skip ahead from stale nodes and unsplice deleted ones
-                         found while advancing.                        
-                    </comment>
-                    <comment line="842">
-                        reset lastPred upon possible deletion of lastRet                        
-                    </comment>
-                    <comment line="844">
-                        next lastPred is old lastRet                        
-                    </comment>
-                    <comment line="846">
-                        at start of list                        
-                    </comment>
-                    <comment line="848">
-                        help with removal of lastPred.next                        
-                    </comment>
-                    <comment line="875">
-                        assert s.isMatched();                        
-                    </comment>
-                    <declaration name="r" type="Node" line="841"/>
-                    <scope line="846">
-                        <declaration name="s" type="Node" line="847"/>
+                    <declaration name="r" type="Node" line="384"/>
+                    <scope line="387">
+                        <declaration name="s" type="Node" line="388"/>
                     </scope>
-                    <scope line="856">
-                        <scope line="860"/>
-                        <declaration name="item" type="Object" line="864"/>
-                        <scope line="865">
-                            <scope line="866"/>
+                    <scope line="392">
+                        <scope line="395"/>
+                        <declaration name="item" type="Object" line="399"/>
+                        <scope line="400">
+                            <scope line="401"/>
                         </scope>
                     </scope>
                 </method>
-                <method name="Itr" type="constructor" line="888"/>
-                <method name="hasNext" type="boolean" line="892"/>
-                <method name="next" type="E" line="896">
-                    <declaration name="p" type="Node" line="897"/>
-                    <declaration name="e" type="E" line="899"/>
+                <method name="Itr" type="constructor" line="416"/>
+                <method name="hasNext" type="boolean" line="419"/>
+                <method name="next" type="E" line="422">
+                    <declaration name="p" type="Node" line="423"/>
+                    <declaration name="e" type="E" line="425"/>
                 </method>
-                <method name="remove" type="void" line="904">
-                    <declaration name="lastRet" type="Node" line="905"/>
+                <method name="remove" type="void" line="429">
+                    <declaration name="lastRet" type="Node" line="430"/>
                 </method>
             </class>
-            <javadoc line="916">
+            <javadoc line="436">
                 Unsplices (now or later) the given deleted/cancelled node with
                   the given predecessor.                
                 <param>
@@ -995,100 +447,57 @@
                     s the node to be unspliced                    
                 </param>
             </javadoc>
-            <method name="unsplice" type="void" line="924">
+            <method name="unsplice" type="void" line="443">
                 <params>
                     <param name="pred" type="Node"/>
                     <param name="s" type="Node"/>
                 </params>
-                <comment line="926">
-                    forget unneeded fields                    
-                </comment>
-                <comment line="927">
-                    See above for rationale. Briefly: if pred still points to
-                     s, try to unlink s.  If s cannot be unlinked, because it is
-                     trailing node or pred might be unlinked, and neither pred
-                     nor s are head or offlist, add to sweepVotes, and if enough
-                     votes have accumulated, sweep.                    
-                </comment>
-                <comment line="938">
-                    check if at, or could be, head                    
-                </comment>
-                <comment line="941">
-                    at head or list empty                    
-                </comment>
-                <comment line="946">
-                    now empty                    
-                </comment>
-                <comment line="948">
-                    advance head                    
-                </comment>
-                <comment line="950">
-                    recheck if offlist                    
-                </comment>
-                <comment line="951">
-                    sweep now if enough votes                    
-                </comment>
-                <scope line="933">
-                    <declaration name="n" type="Node" line="934"/>
-                    <scope line="936">
-                        <scope line="937">
-                            <declaration name="h" type="Node" line="938"/>
-                            <declaration name="hn" type="Node" line="943"/>
+                <scope line="445">
+                    <declaration name="n" type="Node" line="446"/>
+                    <scope line="447">
+                        <scope line="448">
+                            <declaration name="h" type="Node" line="449"/>
+                            <declaration name="hn" type="Node" line="452"/>
                         </scope>
-                        <scope line="949">
-                            <scope line="950">
-                                <declaration name="v" type="int" line="951"/>
-                                <scope line="952"/>
-                                <scope line="956"/>
+                        <scope line="456">
+                            <scope line="457">
+                                <declaration name="v" type="int" line="458"/>
+                                <scope line="459"/>
+                                <scope line="462"/>
                             </scope>
                         </scope>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="966">
+            <javadoc line="471">
                 Unlinks matched (typically cancelled) nodes encountered in a
                   traversal from head.                
             </javadoc>
-            <method name="sweep" type="void" line="970">
-                <comment line="974">
-                    Unmatched nodes are never self-linked                    
-                </comment>
-                <comment line="976">
-                    trailing node is pinned                    
-                </comment>
-                <comment line="978">
-                    stale                    
-                </comment>
-                <comment line="979">
-                    No need to also check for p == s, since that implies s == n                    
-                </comment>
-                <scope line="971"/>
+            <method name="sweep" type="void" line="475">
+                <scope line="476"/>
             </method>
-            <javadoc line="985">
+            <javadoc line="483">
                 Main implementation of remove(Object)                
             </javadoc>
-            <method name="findAndRemove" type="boolean" line="988">
+            <method name="findAndRemove" type="boolean" line="486">
                 <params>
                     <param name="e" type="Object"/>
                 </params>
-                <comment line="1003">
-                    stale                    
-                </comment>
-                <scope line="989">
-                    <scope line="990">
-                        <declaration name="item" type="Object" line="991"/>
-                        <scope line="992">
-                            <scope line="994"/>
+                <scope line="487">
+                    <scope line="488">
+                        <declaration name="item" type="Object" line="489"/>
+                        <scope line="490">
+                            <scope line="491"/>
                         </scope>
-                        <scope line="1002"/>
+                        <scope line="498"/>
                     </scope>
                 </scope>
             </method>
-            <javadoc line="1012">
+            <javadoc line="506">
                 Creates an initially empty {@code LinkedTransferQueue}.                
             </javadoc>
-            <method name="LinkedTransferQueue" type="constructor" line="1015"/>
-            <javadoc line="1018">
+            <method name="LinkedTransferQueue" type="constructor" line="509"/>
+            <javadoc line="511">
                 Creates a {@code LinkedTransferQueue}initially containing the elements of the given collection,
                   added in traversal order of the collection&apos;s iterator.                
                 <param>
@@ -1099,24 +508,24 @@
                       of its elements are null                    
                 </throws>
             </javadoc>
-            <method name="LinkedTransferQueue" type="constructor" line="1027">
+            <method name="LinkedTransferQueue" type="constructor" line="518">
                 <params>
-                    <param name="c" type="Collection<? extends E>"/>
+                    <param name="c" type="Collection&lt;? extends E&gt;"/>
                 </params>
             </method>
-            <javadoc line="1032">
+            <javadoc line="522">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never block.                
                 <throws>
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="put" type="void" line="1038">
+            <method name="put" type="void" line="527">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="1042">
+            <javadoc line="530">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never block or
                   return {@code false}.                
@@ -1127,14 +536,14 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="offer" type="boolean" line="1051">
+            <method name="offer" type="boolean" line="537">
                 <params>
                     <param name="e" type="E"/>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
             </method>
-            <javadoc line="1056">
+            <javadoc line="541">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never return {@code false}.                
                 <return>
@@ -1144,12 +553,12 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="offer" type="boolean" line="1063">
+            <method name="offer" type="boolean" line="547">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="1068">
+            <javadoc line="551">
                 Inserts the specified element at the tail of this queue.
                   As the queue is unbounded, this method will never throw{@link IllegalStateException} or return {@code false}.                
                 <return>
@@ -1159,12 +568,12 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="add" type="boolean" line="1076">
+            <method name="add" type="boolean" line="557">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="1081">
+            <javadoc line="561">
                 Transfers the element to a waiting consumer immediately, if possible.
                   &lt;p&gt;More precisely, transfers the specified element immediately
                   if there exists a consumer already waiting to receive it (in{@link #take} or timed {@link #poll(long,TimeUnit) poll}),
@@ -1173,12 +582,12 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="tryTransfer" type="boolean" line="1091">
+            <method name="tryTransfer" type="boolean" line="568">
                 <params>
                     <param name="e" type="E"/>
                 </params>
             </method>
-            <javadoc line="1095">
+            <javadoc line="571">
                 Transfers the element to a consumer, waiting if necessary to do so.
                   &lt;p&gt;More precisely, transfers the specified element immediately
                   if there exists a consumer already waiting to receive it (in{@link #take} or timed {@link #poll(long,TimeUnit) poll}),
@@ -1188,16 +597,13 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="transfer" type="void" line="1106">
+            <method name="transfer" type="void" line="579">
                 <params>
                     <param name="e" type="E"/>
                 </params>
-                <comment line="1109">
-                    failure possible only due to interrupt                    
-                </comment>
-                <scope line="1107"/>
+                <scope line="580"/>
             </method>
-            <javadoc line="1113">
+            <javadoc line="585">
                 Transfers the element to a consumer if it is possible to do so
                   before the timeout elapses.
                   &lt;p&gt;More precisely, transfers the specified element immediately
@@ -1210,54 +616,54 @@
                     NullPointerException if the specified element is null                    
                 </throws>
             </javadoc>
-            <method name="tryTransfer" type="boolean" line="1128">
+            <method name="tryTransfer" type="boolean" line="596">
                 <params>
                     <param name="e" type="E"/>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
             </method>
-            <method name="take" type="E" line="1136">
-                <declaration name="e" type="E" line="1137"/>
+            <method name="take" type="E" line="601">
+                <declaration name="e" type="E" line="602"/>
             </method>
-            <method name="poll" type="E" line="1144">
+            <method name="poll" type="E" line="607">
                 <params>
                     <param name="timeout" type="long"/>
                     <param name="unit" type="TimeUnit"/>
                 </params>
-                <declaration name="e" type="E" line="1145"/>
+                <declaration name="e" type="E" line="608"/>
             </method>
-            <method name="poll" type="E" line="1151"/>
-            <javadoc line="1155">
+            <method name="poll" type="E" line="612"/>
+            <javadoc line="615">
                 @throws NullPointerException     {@inheritDoc}                
                 <throws>
                     IllegalArgumentException {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="drainTo" type="int" line="1159">
+            <method name="drainTo" type="int" line="619">
                 <params>
-                    <param name="c" type="Collection<? super E>"/>
+                    <param name="c" type="Collection&lt;? super E&gt;"/>
                 </params>
-                <declaration name="n" type="int" line="1164"/>
-                <declaration name="e" type="E" line="1165"/>
-                <scope line="1166"/>
+                <declaration name="n" type="int" line="622"/>
+                <declaration name="e" type="E" line="623"/>
+                <scope line="624"/>
             </method>
-            <javadoc line="1173">
+            <javadoc line="630">
                 @throws NullPointerException     {@inheritDoc}                
                 <throws>
                     IllegalArgumentException {@inheritDoc}                    
                 </throws>
             </javadoc>
-            <method name="drainTo" type="int" line="1177">
+            <method name="drainTo" type="int" line="634">
                 <params>
-                    <param name="c" type="Collection<? super E>"/>
+                    <param name="c" type="Collection&lt;? super E&gt;"/>
                     <param name="maxElements" type="int"/>
                 </params>
-                <declaration name="n" type="int" line="1182"/>
-                <declaration name="e" type="E" line="1183"/>
-                <scope line="1184"/>
+                <declaration name="n" type="int" line="637"/>
+                <declaration name="e" type="E" line="638"/>
+                <scope line="639"/>
             </method>
-            <javadoc line="1191">
+            <javadoc line="645">
                 Returns an iterator over the elements in this queue in proper sequence.
                   The elements will be returned in order from first (head) to last (tail).
                   &lt;p&gt;The returned iterator is a &quot;weakly consistent&quot; iterator that
@@ -1269,19 +675,19 @@
                     an iterator over the elements in this queue in proper sequence                    
                 </return>
             </javadoc>
-            <method name="iterator" type="Iterator<E>" line="1204"/>
-            <method name="peek" type="E" line="1208"/>
-            <javadoc line="1212">
+            <method name="iterator" type="Iterator&lt;E&gt;" line="655"/>
+            <method name="peek" type="E" line="658"/>
+            <javadoc line="661">
                 Returns {@code true} if this queue contains no elements.                
                 <return>
                     {@code true} if this queue contains no elements                    
                 </return>
             </javadoc>
-            <method name="isEmpty" type="boolean" line="1217">
-                <scope line="1218"/>
+            <method name="isEmpty" type="boolean" line="665">
+                <scope line="666"/>
             </method>
-            <method name="hasWaitingConsumer" type="boolean" line="1225"/>
-            <javadoc line="1229">
+            <method name="hasWaitingConsumer" type="boolean" line="671"/>
+            <javadoc line="674">
                 Returns the number of elements in this queue.  If this queue
                   contains more than {@code Integer.MAX_VALUE} elements, returns{@code Integer.MAX_VALUE}.
                   &lt;p&gt;Beware that, unlike in most collections, this method is
@@ -1292,9 +698,9 @@
                     the number of elements in this queue                    
                 </return>
             </javadoc>
-            <method name="size" type="int" line="1241"/>
-            <method name="getWaitingConsumerCount" type="int" line="1245"/>
-            <javadoc line="1249">
+            <method name="size" type="int" line="683"/>
+            <method name="getWaitingConsumerCount" type="int" line="686"/>
+            <javadoc line="689">
                 Removes a single instance of the specified element from this queue,
                   if it is present.  More formally, removes an element {@code e} such
                   that {@code o.equals(e)}, if this queue contains one or more such
@@ -1308,12 +714,12 @@
                     {@code true} if this queue changed as a result of the call                    
                 </return>
             </javadoc>
-            <method name="remove" type="boolean" line="1260">
+            <method name="remove" type="boolean" line="699">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
             </method>
-            <javadoc line="1264">
+            <javadoc line="702">
                 Returns {@code true} if this queue contains the specified element.
                   More formally, returns {@code true} if and only if this queue contains
                   at least one element {@code e} such that {@code o.equals(e)}.                
@@ -1324,23 +730,23 @@
                     {@code true} if this queue contains the specified element                    
                 </return>
             </javadoc>
-            <method name="contains" type="boolean" line="1272">
+            <method name="contains" type="boolean" line="709">
                 <params>
                     <param name="o" type="Object"/>
                 </params>
-                <scope line="1274">
-                    <declaration name="item" type="Object" line="1275"/>
-                    <scope line="1276"/>
+                <scope line="711">
+                    <declaration name="item" type="Object" line="712"/>
+                    <scope line="713"/>
                 </scope>
             </method>
-            <javadoc line="1286">
+            <javadoc line="720">
                 Always returns {@code Integer.MAX_VALUE} because a{@code LinkedTransferQueue} is not capacity constrained.                
                 <return>
                     {@code Integer.MAX_VALUE} (as specified by{@link BlockingQueue#remainingCapacity()})                    
                 </return>
             </javadoc>
-            <method name="remainingCapacity" type="int" line="1293"/>
-            <javadoc line="1297">
+            <method name="remainingCapacity" type="int" line="724"/>
+            <javadoc line="727">
                 Saves the state to a stream (that is, serializes it).                
                 <serialData>
                     All of the elements (each an {@code E}) in
@@ -1350,38 +756,35 @@
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="writeObject" type="void" line="1305">
+            <method name="writeObject" type="void" line="733">
                 <params>
                     <param name="s" type="java.io.ObjectOutputStream"/>
                 </params>
-                <comment line="1310">
-                    Use trailing null as sentinel                    
-                </comment>
             </method>
-            <javadoc line="1313">
+            <javadoc line="738">
                 Reconstitutes the Queue instance from a stream (that is,
                   deserializes it).                
                 <param>
                     s the stream                    
                 </param>
             </javadoc>
-            <method name="readObject" type="void" line="1320">
+            <method name="readObject" type="void" line="743">
                 <params>
                     <param name="s" type="java.io.ObjectInputStream"/>
                 </params>
-                <scope line="1322">
-                    <declaration name="item" type="E" line="1323"/>
+                <scope line="745">
+                    <declaration name="item" type="E" line="746"/>
                 </scope>
             </method>
-            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="1333"/>
-            <declaration name="headOffset" type="long" line="1334"/>
-            <declaration name="tailOffset" type="long" line="1335"/>
-            <declaration name="sweepVotesOffset" type="long" line="1336"/>
-            <scope line="1337">
-                <scope line="1338">
-                    <declaration name="k" type="Class" line="1340"/>
+            <declaration name="UNSAFE" type="sun.misc.Unsafe" line="751"/>
+            <declaration name="headOffset" type="long" line="752"/>
+            <declaration name="tailOffset" type="long" line="753"/>
+            <declaration name="sweepVotesOffset" type="long" line="754"/>
+            <scope line="755">
+                <scope line="756">
+                    <declaration name="k" type="Class" line="758"/>
                 </scope>
-                <scope line="1347"/>
+                <scope line="763"/>
             </scope>
         </class>
     </source>

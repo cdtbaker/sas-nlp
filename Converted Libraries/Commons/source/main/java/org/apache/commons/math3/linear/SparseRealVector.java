@@ -1,12 +1,32 @@
-package org.apache.commons.math3.linear;
-/** 
- * Marker class for RealVectors that require sparse backing storage
- * @version $Id: SparseRealVector.java 1416643 2012-12-03 19:37:14Z tn $
- * @since 2.0
- * @deprecated As of version 3.1, this class is deprecated, for reasons exposed
- * in this JIRA
- * <a href="https://issues.apache.org/jira/browse/MATH-870">ticket</a>. This
- * class will be removed in version 4.0.
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
-@Deprecated public abstract class SparseRealVector extends RealVector {
-}
+package org.apache.commons.math3.linear;
+
+/**
+ * Marker class for RealVectors that require sparse backing storage
+ * <p>
+ *  Caveat: Implementation are allowed to assume that, for any {@code x},
+ *  the equality {@code x * 0d == 0d} holds. But it is is not true for
+ *  {@code NaN}. Moreover, zero entries will lose their sign.
+ *  Some operations (that involve {@code NaN} and/or infinities) may
+ *  thus give incorrect results, like multiplications, divisions or
+ *  functions mapping.
+ * </p>
+ * @version $Id: SparseRealVector.java 1570254 2014-02-20 16:16:19Z luc $
+ * @since 2.0
+ */
+public abstract class SparseRealVector extends RealVector {}
