@@ -1,25 +1,25 @@
 package main.analyses.SimpleRangeAnalysis;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-
-import edu.cmu.cs.crystal.bridge.LatticeElement;
-import edu.cmu.cs.crystal.flow.ILabel;
+import org.eclipse.jdt.core.dom.NumberLiteral;
+import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.InfixExpression.Operator;
 import edu.cmu.cs.crystal.flow.ILatticeOperations;
-import edu.cmu.cs.crystal.flow.IResult;
 import edu.cmu.cs.crystal.simple.AbstractingTransferFunction;
 import edu.cmu.cs.crystal.simple.TupleLatticeElement;
 import edu.cmu.cs.crystal.simple.TupleLatticeOperations;
-import edu.cmu.cs.crystal.tac.ITACBranchSensitiveTransferFunction;
-import edu.cmu.cs.crystal.tac.ITACTransferFunction;
 import edu.cmu.cs.crystal.tac.model.AssignmentInstruction;
 import edu.cmu.cs.crystal.tac.model.BinaryOperation;
 import edu.cmu.cs.crystal.tac.model.BinaryOperator;
 import edu.cmu.cs.crystal.tac.model.CopyInstruction;
+import edu.cmu.cs.crystal.tac.model.IVariableVisitor;
 import edu.cmu.cs.crystal.tac.model.Variable;
 
 public class TransferFunctions
@@ -29,6 +29,8 @@ public class TransferFunctions
 	private TupleLatticeOperations<Variable, PositiveNegativeLattice> ops = new TupleLatticeOperations<Variable, PositiveNegativeLattice>(
 			new PostiveNegativeLatticeOperations(),
 			PositiveNegativeLattice.NOT_SURE);
+
+	private Map<String, PositiveNegativeLattice> mp = new HashMap<>();
 
 	@Override
 	public TupleLatticeElement<Variable, PositiveNegativeLattice> createEntryValue(
@@ -51,20 +53,86 @@ public class TransferFunctions
 			AssignmentInstruction instr,
 			TupleLatticeElement<Variable, PositiveNegativeLattice> value) {
 
+		if (instr.getNode() instanceof Assignment) {
+			System.out
+					.println("TransferFunctions.transfer(AssignmentInstruction) variable = "
+							+ instr.getTarget());
+			System.out
+					.println("TransferFunctions.transfer(AssignmentInstruction) variable.rhs() = "
+							+ ((Assignment) instr.getNode()).getRightHandSide());
+			System.out
+					.println("TransferFunctions.transfer(AssignmentInstruction) variable.rhs.getClass = "
+							+ ((Assignment) instr.getNode()).getRightHandSide()
+									.getClass());
+			System.out
+					.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+			Assignment assignment = ((Assignment) instr.getNode());
+			if (assignment.getRightHandSide() instanceof NumberLiteral
+					|| assignment.getRightHandSide() instanceof PrefixExpression) {
+				System.out
+						.println("Prefix, infix?"
+								+ (assignment.getRightHandSide() instanceof InfixExpression));
+				value.put(instr.getTarget(), basicAssignment(instr));
+			} else if (assignment.getRightHandSide() instanceof org.eclipse.jdt.core.dom.SimpleName) {
+				System.out
+						.println("SimpleName, infix?"
+								+ (assignment.getRightHandSide() instanceof InfixExpression));
+				value.put(instr.getTarget(), copy(instr, value));
+			} else if (assignment.getRightHandSide() instanceof InfixExpression) {
+				
+				value.put(instr.getTarget(),binop(instr));
+			}
+		}
+		mp.put(instr.getTarget().toString().trim(),
+				value.get(instr.getTarget()));
 		return super.transfer(instr, value);
 	}
 
-	private PositiveNegativeLattice copyInstr(CopyInstruction copy,
-			TupleLatticeElement<Variable, PositiveNegativeLattice> le) {
-		return le.get(copy.getOperand());
+	private PositiveNegativeLattice binop(AssignmentInstruction instr) {
+
+		System.out
+				.println("TransferFunctions.binop(AssignmentInstruction) instr.rhs = "
+						+ ((Assignment) instr.getNode()).getRightHandSide());
+		System.out
+				.println("TransferFunctions.binop(AssignmentInstruction) variable.instr.getClass() = "
+						+ ((Assignment) instr.getNode()).getRightHandSide()
+								.getClass());
+		System.out
+				.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
+		InfixExpression exp = ((InfixExpression) ((Assignment) instr.getNode())
+				.getRightHandSide());
+		exp.getLeftOperand();
+		exp.getRightOperand();
+		System.out.println("TransferFunctions.binop(AssignmentInstruction)"
+				+ exp.getOperator());
+		
+		return getBinOp(exp.getLeftOperand(), exp.getRightOperand(), exp.getOperator());
+	}
+
+	private PositiveNegativeLattice copy(AssignmentInstruction instr,
+			TupleLatticeElement<Variable, PositiveNegativeLattice> value) {
+
+		return mp.get(((Assignment) instr.getNode()).getRightHandSide()
+				.toString().trim());
+
 	}
 
 	private PositiveNegativeLattice basicAssignment(AssignmentInstruction instr) {
-		String expression = ((Assignment) instr.getNode()).getRightHandSide()
-				.toString().trim();
+		System.out
+				.println("TransferFunctions.BasicAssignment(Assignment) instr ="
+						+ instr.getNode());
+		System.out
+				.println("TransferFunctions.BasicAssignment(Assignment) instr.getClass() ="
+						+ instr.getNode().getClass());
+		System.out
+				.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		Assignment assign = ((Assignment) instr.getNode());
+
+		String rhs = assign.getRightHandSide().toString().trim();
 
 		try {
-			double d = Double.parseDouble(expression);
+			double d = Double.parseDouble(rhs);
 			if (d < 0) {
 				return PositiveNegativeLattice.NEG;
 			} else if (d > 0) {
@@ -76,70 +144,50 @@ public class TransferFunctions
 		} catch (Exception e) {
 			return PositiveNegativeLattice.NOT_SURE;
 		}
+
 	}
 
-	private PositiveNegativeLattice getBinOp(Variable v, BinaryOperation binop,
-			TupleLatticeElement<Variable, PositiveNegativeLattice> le) {
+	private PositiveNegativeLattice getBinOp(Expression leftOp,
+			Expression rightOp, Operator operator) {
 
-		String expression = binop.getNode().toString();
-		BinaryOperator operator = binop.getOperator();
+		PositiveNegativeLattice op1 = getOperandState(leftOp);
+		PositiveNegativeLattice op2 = getOperandState(rightOp);
 
-		PositiveNegativeLattice op1 = getOperandState(operator,
-				binop.getOperand1(), expression, le, true);
-		PositiveNegativeLattice op2 = getOperandState(operator,
-				binop.getOperand2(), expression, le, false);
-
-		if (operator == BinaryOperator.ARIT_DIVIDE
-				|| operator == BinaryOperator.ARIT_MULTIPLY) {
-			if (op1 == PositiveNegativeLattice.NEG
+		if (operator.toString() == "*" || operator.toString() == "/") {
+			if(op1 == PositiveNegativeLattice.ZERO|| op2 == PositiveNegativeLattice.ZERO){
+				return PositiveNegativeLattice.ZERO;
+			}else if (op1 == PositiveNegativeLattice.NEG
 					^ op2 == PositiveNegativeLattice.NEG) {
 				return PositiveNegativeLattice.NEG;
-			}
-		} else if ((op1 == PositiveNegativeLattice.POS && op2 == PositiveNegativeLattice.POS)
-				|| (op1 == PositiveNegativeLattice.NEG && op2 == PositiveNegativeLattice.NEG)) {
-			return PositiveNegativeLattice.POS;
-		} else {
-			return PositiveNegativeLattice.ZERO;
-		}
-
-		if (operator == BinaryOperator.ARIT_MODULO) {
-			if (op1 == PositiveNegativeLattice.POS) {
+			}else{
 				return PositiveNegativeLattice.POS;
-			} else if (op1 == PositiveNegativeLattice.NEG) {
-				return PositiveNegativeLattice.NEG;
-			} else {
-				return PositiveNegativeLattice.ZERO;
 			}
-		}
-
-		if (binop.getOperator() == BinaryOperator.ARIT_ADD) {
-			if (op1 == PositiveNegativeLattice.POS
-					&& op2 == PositiveNegativeLattice.POS) {
-				return PositiveNegativeLattice.POS;
-			} else if (op1 == PositiveNegativeLattice.NEG
-					&& op2 == PositiveNegativeLattice.NEG) {
-				return PositiveNegativeLattice.NEG;
-			}
-		}
-
+		}/*
+		 * else if ((op1 == PositiveNegativeLattice.POS && op2 ==
+		 * PositiveNegativeLattice.POS) || (op1 == PositiveNegativeLattice.NEG
+		 * && op2 == PositiveNegativeLattice.NEG)) { return
+		 * PositiveNegativeLattice.POS; } else { return
+		 * PositiveNegativeLattice.ZERO; }
+		 * 
+		 * if (operator == BinaryOperator.ARIT_MODULO) { if (op1 ==
+		 * PositiveNegativeLattice.POS) { return PositiveNegativeLattice.POS; }
+		 * else if (op1 == PositiveNegativeLattice.NEG) { return
+		 * PositiveNegativeLattice.NEG; } else { return
+		 * PositiveNegativeLattice.ZERO; } }
+		 * 
+		 * if (binop.getOperator() == BinaryOperator.ARIT_ADD) { if (op1 ==
+		 * PositiveNegativeLattice.POS && op2 == PositiveNegativeLattice.POS) {
+		 * return PositiveNegativeLattice.POS; } else if (op1 ==
+		 * PositiveNegativeLattice.NEG && op2 == PositiveNegativeLattice.NEG) {
+		 * return PositiveNegativeLattice.NEG; } }
+		 */
 		return PositiveNegativeLattice.NOT_SURE;
 
 	}
 
-	private PositiveNegativeLattice getOperandState(BinaryOperator b,
-			Variable v, String expression,
-			TupleLatticeElement<Variable, PositiveNegativeLattice> le,
-			boolean first) {
+	private PositiveNegativeLattice getOperandState(Expression operand) {
 		try {
-			double d;
-			if (first) {
-				d = Double.parseDouble(expression.substring(0,
-						expression.indexOf(b.token)).trim());
-			} else {
-				d = Double.parseDouble(expression.substring(
-						expression.indexOf(b.token), expression.length())
-						.trim());
-			}
+			double d = Double.parseDouble(operand.toString());
 
 			if (d > 0) {
 				return PositiveNegativeLattice.POS;
@@ -150,7 +198,7 @@ public class TransferFunctions
 			}
 
 		} catch (Exception e) {
-			return le.get(v);
+			return mp.get(operand.toString().trim());
 		}
 	}
 

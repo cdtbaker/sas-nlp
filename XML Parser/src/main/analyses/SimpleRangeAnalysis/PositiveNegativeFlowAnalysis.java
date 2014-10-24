@@ -34,30 +34,35 @@ public class PositiveNegativeFlowAnalysis extends AbstractCrystalMethodAnalysis 
 		@Override
 		public void endVisit(Assignment node) {
 			Expression exp = node;
-
+			
+			System.out.println("FlowAnalysis.EndVisit(Assignment) Exp = " + exp);
+			System.out.println("FlowAnalysis.EndVisit(Assignment) Node = " + node);
 			if (exp == null) {
 				return;
 			}
+		
 
 			TupleLatticeElement<Variable, PositiveNegativeLattice> beforeTuple = 
 					flowAnalysis.getResultsAfter(node);
 			Variable varToCheck = flowAnalysis.getVariable(node.getLeftHandSide());
 			PositiveNegativeLattice element = beforeTuple.get(varToCheck);
-			System.out.println(element.name());
-			System.out.println(beforeTuple.get(varToCheck));
-			
+			System.out.println("FlowAnalysis.EndVisit(Assignment) element = " + element);
+			System.out.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 			for (Variable v : beforeTuple.getKeySet()) {
 				System.out.println("Var " + v + " is in the tuple");
 			}
 			
 			if (element == PositiveNegativeLattice.POS) {
-				
 				getReporter().reportUserProblem(
-						"The variable " + exp + "is > 0", node, getName(),
+						"The variable " + node.getLeftHandSide() + " > 0 ", node, getName(),
 						SEVERITY.WARNING);
 			} else if (element == PositiveNegativeLattice.NEG) {
 				getReporter().reportUserProblem(
-						"The variable " + exp + "is < 0", node, getName(),
+						"The variable " + node.getLeftHandSide() + " < 0", node, getName(),
+						SEVERITY.WARNING);
+			}else if (element == PositiveNegativeLattice.ZERO){
+				getReporter().reportUserProblem(
+						"The variable " + node.getLeftHandSide() + " = 0", node, getName(),
 						SEVERITY.WARNING);
 			}
 		}
