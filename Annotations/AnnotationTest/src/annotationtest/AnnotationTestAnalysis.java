@@ -11,30 +11,24 @@ import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 
 import edu.cmu.cs.crystal.AbstractCompilationUnitAnalysis;
-import edu.cmu.cs.crystal.annotations.AnnotationDatabase;
 
 public class AnnotationTestAnalysis extends AbstractCompilationUnitAnalysis {
 
-	private AnnotationDatabase annoDb;
 	private CompilationUnit compUnit;
+
 	@Override
 	public void analyzeCompilationUnit(CompilationUnit c) {
-		annoDb = this.getInput().getAnnoDB();
+
 		this.compUnit = c;
 		c.accept(new AnnoVisitor());
 
 	}
-	
-	
 
 	private class AnnoVisitor extends ASTVisitor {
-
 		@Override
 		public void endVisit(MarkerAnnotation node) {
 			// annotation with no params
 			System.out.println("Marker anno:" + node.getTypeName());
-
-
 		}
 
 		@Override
@@ -42,13 +36,13 @@ public class AnnotationTestAnalysis extends AbstractCompilationUnitAnalysis {
 			// annotation with multiple params
 			System.out.println("Normal anno:" + node.getTypeName());
 			if (node.getTypeName().toString().equals("Positive")
-					|| node.getTypeName().toString().equals("Negative")) {
-				
+					|| node.getTypeName().toString().equals("Negative")
+					|| node.getTypeName().toString().equals("Zero")) {
+
 				PositiveNegativeFlowAnalysis fl = new PositiveNegativeFlowAnalysis(
 						node);
-				fl.runAnalysis(getReporter(), getInput(), compUnit.getTypeRoot(),compUnit);
-				
-				
+				fl.runAnalysis(getReporter(), getInput(),
+						compUnit.getTypeRoot(), compUnit);
 			}
 		}
 
@@ -56,17 +50,14 @@ public class AnnotationTestAnalysis extends AbstractCompilationUnitAnalysis {
 		public void endVisit(SingleMemberAnnotation node) {
 			// annotation with one param
 			System.out.println("Single mem anno:" + node.getTypeName());
-			
-
-			
 		}
-		public MethodDeclaration getMethod(ASTNode ast){
-			while(!(ast instanceof MethodDeclaration)){
+
+		public MethodDeclaration getMethod(ASTNode ast) {
+			while (!(ast instanceof MethodDeclaration)) {
 				ast = ast.getParent();
 			}
-			return (MethodDeclaration)ast;
+			return (MethodDeclaration) ast;
 		}
-
 	}
 
 }

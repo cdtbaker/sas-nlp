@@ -7,13 +7,9 @@ import java.util.Stack;
 
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.InfixExpression;
+import org.eclipse.jdt.core.dom.InfixExpression.Operator;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
-import org.eclipse.jdt.core.dom.NumberLiteral;
-import org.eclipse.jdt.core.dom.PrefixExpression;
-import org.eclipse.jdt.core.dom.InfixExpression.Operator;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import edu.cmu.cs.crystal.flow.ILatticeOperations;
@@ -21,10 +17,6 @@ import edu.cmu.cs.crystal.simple.AbstractingTransferFunction;
 import edu.cmu.cs.crystal.simple.TupleLatticeElement;
 import edu.cmu.cs.crystal.simple.TupleLatticeOperations;
 import edu.cmu.cs.crystal.tac.model.AssignmentInstruction;
-import edu.cmu.cs.crystal.tac.model.BinaryOperation;
-import edu.cmu.cs.crystal.tac.model.BinaryOperator;
-import edu.cmu.cs.crystal.tac.model.CopyInstruction;
-import edu.cmu.cs.crystal.tac.model.IVariableVisitor;
 import edu.cmu.cs.crystal.tac.model.Variable;
 
 public class TransferFunctions
@@ -288,6 +280,9 @@ public class TransferFunctions
 	}
 
 	// ////////////////////////////////////////////
+	/*
+	 * The following evaluation has a problem with precedence
+	 */
 	private void getComp(Stack<String> ops, Stack<PositiveNegativeLattice> vals) {
 		String op = ops.pop();
 		if (op.equals("+")) {
