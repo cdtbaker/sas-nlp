@@ -94,9 +94,9 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 		 */
 
 		
-		 PositiveNegativeFlowAnalysis analysis = new
+		 /*PositiveNegativeFlowAnalysis analysis = new
 		 PositiveNegativeFlowAnalysis(); analysis.runAnalysis(getReporter(),
-		 getInput(), rootNode, compilationUnit);
+		 getInput(), rootNode, compilationUnit);*/
 		 
 
 	}

@@ -45,26 +45,24 @@ public class TransferFunctions
 		return ops;
 	}
 
-	
-	
 	@Override
 	public TupleLatticeElement<Variable, PositiveNegativeLattice> transfer(
 			AssignmentInstruction instr,
 			TupleLatticeElement<Variable, PositiveNegativeLattice> value) {
+
 		
-		System.out.println(instr.getNode()instanceof VariableDeclarationFragment);
-		if(instr.getNode() instanceof VariableDeclarationFragment){
-			VariableDeclarationFragment vdf = (VariableDeclarationFragment)instr.getNode();
-			
+		if (instr.getNode() instanceof VariableDeclarationFragment) {
+			VariableDeclarationFragment vdf = (VariableDeclarationFragment) instr
+					.getNode();
 
 			if (vdf.getInitializer() instanceof MethodInvocation) {
 				value.put(instr.getTarget(), PositiveNegativeLattice.NOT_SURE);
 			} else {
-				value.put(instr.getTarget(),
-						eval(vdf.getInitializer().toString()));
+				value.put(instr.getTarget(), eval(vdf.getInitializer()
+						.toString()));
 			}
-		}else if (instr.getNode() instanceof Assignment) {
-			
+		} else if (instr.getNode() instanceof Assignment) {
+
 			Assignment assignment = ((Assignment) instr.getNode());
 			// System.out
 			// .println("TransferFunctions.transfer(AssignmentInstruction) variable = "
@@ -199,7 +197,10 @@ public class TransferFunctions
 
 	private PositiveNegativeLattice getMultDiv(PositiveNegativeLattice op1,
 			PositiveNegativeLattice op2) {
-		if (op1 == PositiveNegativeLattice.ZERO
+		if (op1 == PositiveNegativeLattice.NOT_SURE
+				|| op2 == PositiveNegativeLattice.NOT_SURE) {
+			return PositiveNegativeLattice.NOT_SURE;
+		} else if (op1 == PositiveNegativeLattice.ZERO
 				|| op2 == PositiveNegativeLattice.ZERO) {
 			return PositiveNegativeLattice.ZERO;
 		} else if (op1 == PositiveNegativeLattice.NEG
@@ -211,13 +212,7 @@ public class TransferFunctions
 	}
 
 	private PositiveNegativeLattice getMod(PositiveNegativeLattice op1) {
-		if (op1 == PositiveNegativeLattice.POS) {
-			return PositiveNegativeLattice.POS;
-		} else if (op1 == PositiveNegativeLattice.NEG) {
-			return PositiveNegativeLattice.NEG;
-		} else {
-			return PositiveNegativeLattice.ZERO;
-		}
+		return op1;
 	}
 
 	private PositiveNegativeLattice getNeg(PositiveNegativeLattice op1,
@@ -281,19 +276,24 @@ public class TransferFunctions
 
 	// ////////////////////////////////////////////
 	/*
-	 * The following evaluation has a problem with precedence
+	 * Following evaluation has an issue with precedence
 	 */
 	private void getComp(Stack<String> ops, Stack<PositiveNegativeLattice> vals) {
 		String op = ops.pop();
+
 		if (op.equals("+")) {
-			vals.push(getPlus(vals.pop(), vals.pop()));
+			PositiveNegativeLattice s = vals.pop();
+			PositiveNegativeLattice f = vals.pop();
+			vals.push(getPlus(f, s));
 		} else if (op.equals("*") || op.equals("/")) {
 			vals.push(getMultDiv(vals.pop(), vals.pop()));
 		} else if (op.equals("%")) {
 			vals.push(getMod(vals.pop()));
 			vals.pop();
 		} else if (op.equals("-")) {
-			vals.push(getNeg(vals.pop(), vals.pop()));
+			PositiveNegativeLattice s = vals.pop();
+			PositiveNegativeLattice f = vals.pop();
+			vals.push(getNeg(f, s));
 		}
 
 	}
@@ -315,6 +315,7 @@ public class TransferFunctions
 			} else {
 				vals.push(getOperandState(s));
 			}
+
 		}
 		if (!ops.empty()) {
 			getComp(ops, vals);

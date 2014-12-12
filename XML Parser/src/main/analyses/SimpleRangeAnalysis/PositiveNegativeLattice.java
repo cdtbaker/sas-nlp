@@ -4,11 +4,17 @@ import edu.cmu.cs.crystal.util.Copyable;
 
 public enum PositiveNegativeLattice implements Copyable{
 
-	POS,NEG,ZERO, NOT_SURE,BOTTOM;
+	POS(">0"),NEG("<0"),ZERO("==0"), NOT_SURE(" cannot guarentee state"),BOTTOM("");
 
 	@Override
 	public Copyable copy() {
 		return this;
+	}
+	
+	public String desc;
+	
+	PositiveNegativeLattice(String desc){
+		this.desc = desc;
 	}
 	
 }
