@@ -1,18 +1,9 @@
 package main.analyses.xmlparser;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-
-import main.analyses.NPEBranchChecker.BranchingNPEAnalysis;
-import main.analyses.NPEBranchChecker.NPEBranchingTransferFunction;
-import main.analyses.SimpleRangeAnalysis.PositiveNegativeFlowAnalysis;
 import main.commentextraction.com.jml.builder.XMLFromSource;
 import main.commentextraction.com.jml.objects.framework.JMLElement;
 import main.commentextraction.com.jml.output.XMLOutputter;
 
-import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -30,75 +21,56 @@ public class XMLAnalysis extends AbstractCrystalMethodAnalysis {
 			CompilationUnit compilationUnit) {
 
 		// to file
-	/*	String path = "";
+		/*
+		 * String path = ""; try {
+		 * 
+		 * JMLElement r = XMLFromSource.createXML(compilationUnit,
+		 * rootNode.getSource(), true, true); XMLOutputter o = new
+		 * XMLOutputter(r);
+		 * 
+		 * path = path +rootNode.getPath().toString().replaceAll("/src", "");
+		 * path = path.substring(1, path.indexOf(".java")); path =
+		 * path.replaceFirst("/", "/xml/"); path = "Converted Libraries/" +
+		 * path;
+		 * 
+		 * File dir = new File(path.substring(0, path.lastIndexOf('/')));
+		 * 
+		 * if (!dir.exists()) { dir.mkdirs(); } try (BufferedWriter bw = new
+		 * BufferedWriter(new FileWriter(path + ".xml"))) {
+		 * bw.write(o.getString()); // bw.close();
+		 * System.out.println("Written to " + path);
+		 * 
+		 * } catch (IOException e) { e.printStackTrace(); }
+		 * 
+		 * } catch (JavaModelException e) { e.printStackTrace(); }
+		 * 
+		 * path = path.replaceFirst("/xml/", "/source/"); File dir = new
+		 * File(path.substring(0, path.lastIndexOf('/')));
+		 * 
+		 * if (!dir.exists()) { dir.mkdirs(); } try { BufferedWriter bw = new
+		 * BufferedWriter(new FileWriter(path + ".java"));
+		 * bw.write(compilationUnit.toString()); bw.close(); } catch
+		 * (IOException e) { // TODO Auto-generated catch block
+		 * e.printStackTrace(); }
+		 */
+		// to console
+
+		toConsole(rootNode, compilationUnit);
+
+	}
+
+	private void toConsole(ITypeRoot rootNode, CompilationUnit compilationUnit) {
+		JMLElement r = null;
 		try {
-
-			JMLElement r = XMLFromSource.createXML(compilationUnit,
-					rootNode.getSource(), true, true);
-			XMLOutputter o = new XMLOutputter(r);
-		
-			path = path +rootNode.getPath().toString().replaceAll("/src", "");
-			path = path.substring(1, path.indexOf(".java"));
-			path = path.replaceFirst("/", "/xml/");
-			path = "Converted Libraries/" + path;
-			
-			File dir = new File(path.substring(0, path.lastIndexOf('/')));
-
-			if (!dir.exists()) {
-				dir.mkdirs();
-			}
-			try (BufferedWriter bw = new BufferedWriter(new FileWriter(path
-					+ ".xml"))) {
-				bw.write(o.getString()); // bw.close();
-				System.out.println("Written to " + path);
-
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-
+			r = XMLFromSource.createXML(
+					compilationUnit, rootNode.getSource(), true, true);
 		} catch (JavaModelException e) {
 			e.printStackTrace();
 		}
-
-		path = path.replaceFirst("/xml/", "/source/");
-		File dir = new File(path.substring(0, path.lastIndexOf('/')));
-
-		if (!dir.exists()) {
-			dir.mkdirs();
-		}
-		try {
-			BufferedWriter bw = new BufferedWriter(new FileWriter(path
-					+ ".java"));
-			bw.write(compilationUnit.toString());
-			bw.close();
-		} catch (IOException e) { // TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-		// to console
-
-		/*
-		 * JMLElement r = null; try { r =
-		 * main.commentextraction.com.jml.builder.XMLFromSource.createXML(
-		 * compilationUnit, rootNode.getSource(), true, true); } catch
-		 * (JavaModelException e) { e.printStackTrace(); }
-		 * main.commentextraction.com.jml.output.XMLOutputter o = new
-		 * main.commentextraction.com.jml.output.XMLOutputter( r);
-		 * System.out.println(o.getString());
-		 */
-
-		/*
-		 * PositiveNegitiveFlowAnalysis analysis = new
-		 * PositiveNegitiveFlowAnalysis(); analysis.runAnalysis(getReporter(),
-		 * getInput(), rootNode, compilationUnit);
-		 */
-
+		XMLOutputter o = new main.commentextraction.com.jml.output.XMLOutputter(
+				r);
 		
-		 /*PositiveNegativeFlowAnalysis analysis = new
-		 PositiveNegativeFlowAnalysis(); analysis.runAnalysis(getReporter(),
-		 getInput(), rootNode, compilationUnit);*/
-		 
-
+		System.out.println(o.getString());
 	}
 
 	@Override

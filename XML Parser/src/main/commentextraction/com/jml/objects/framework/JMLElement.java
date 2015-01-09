@@ -3,8 +3,6 @@ package main.commentextraction.com.jml.objects.framework;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.lang3.StringEscapeUtils;
-
 public class JMLElement extends Element {
 
 	protected List<Element> children;

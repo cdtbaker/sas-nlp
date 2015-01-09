@@ -22,7 +22,6 @@ import main.commentextraction.com.jml.objects.statement.JMLVariable;
 
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.core.dom.AST;
-import org.eclipse.jdt.core.dom.ASTMatcher;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;

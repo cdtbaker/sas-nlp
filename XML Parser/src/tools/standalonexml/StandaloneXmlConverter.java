@@ -8,17 +8,20 @@ import java.util.List;
 import main.commentextraction.com.jml.builder.XMLFromSource;
 import main.commentextraction.com.jml.output.XMLOutputter;
 
-
 public class StandaloneXmlConverter {
 
-	public static void main (String[] args){
-		String path ="C:/Users/Danny/Desktop/cv";
-		
-		for(File f : getJavaFiles(path)){
-			XMLOutputter output = new XMLOutputter(XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,true));//change last boolean to false if comments do 
-																												 //not have to be in line to be a block
+	public static void main(String[] args) {
+		String path = args[0]; //args[0] should be highest level path which all sub paths need converting from
+
+		for (File f : getJavaFiles(path)) {
+			XMLOutputter output = new XMLOutputter(
+					XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,
+							true));// change last boolean to false if comments
+									// do
+									// not have to be in line to be a block
 			try {
-				String pathO = f.getAbsolutePath().substring(0, f.getAbsolutePath().indexOf('.'));
+				String pathO = f.getAbsolutePath().substring(0,
+						f.getAbsolutePath().indexOf('.'));
 				pathO = pathO.replace("\\source\\", "\\xml\\");
 
 				output.toFile(pathO);
@@ -26,7 +29,7 @@ public class StandaloneXmlConverter {
 				e.printStackTrace();
 			}
 		}
-		
+
 		System.out.println("Converted");
 	}
 

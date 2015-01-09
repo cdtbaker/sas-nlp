@@ -1,7 +1,6 @@
 package main.commentextraction.com.jml.objects.framework;
 
 import org.apache.commons.lang3.StringEscapeUtils;
-import org.apache.commons.lang3.StringUtils;
 
 public class Attribute {
 

@@ -7,19 +7,15 @@ import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.MemberValuePair;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
-import edu.cmu.cs.crystal.AbstractCrystalMethodAnalysis;
 import edu.cmu.cs.crystal.IAnalysisReporter.SEVERITY;
 import edu.cmu.cs.crystal.simple.SimpleTACFlowAnalysis;
 import edu.cmu.cs.crystal.simple.TupleLatticeElement;
-import edu.cmu.cs.crystal.tac.model.ReturnInstruction;
 import edu.cmu.cs.crystal.tac.model.Variable;
 
-public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis {
+public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis<PositiveNegativeLattice> {
 
 	private SimpleTACFlowAnalysis<TupleLatticeElement<Variable, PositiveNegativeLattice>> flowAnalysis;
 

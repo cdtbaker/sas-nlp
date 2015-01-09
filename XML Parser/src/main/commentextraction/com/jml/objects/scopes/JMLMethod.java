@@ -1,7 +1,8 @@
 package main.commentextraction.com.jml.objects.scopes;
 
 import main.commentextraction.com.jml.objects.framework.JMLElement;
-import main.commentextraction.com.jml.objects.scopes.params.*;
+import main.commentextraction.com.jml.objects.scopes.params.JMLParamater;
+import main.commentextraction.com.jml.objects.scopes.params.JMLParamaters;
 
 
 public class JMLMethod extends JMLElement {
