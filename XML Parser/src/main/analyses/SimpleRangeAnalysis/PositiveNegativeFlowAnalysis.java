@@ -30,9 +30,9 @@ public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis<Positi
 		flowAnalysis = new SimpleTACFlowAnalysis<TupleLatticeElement<Variable, PositiveNegativeLattice>>(
 				tf, getInput());
 
-		if (m.getName().toString().equals(nlpResult.getMethodName())) {
+		/*if (m.getName().toString().equals(nlpResult.getMethodName())) {
 			m.accept(new Visitor());
-		}
+		}*/
 
 	}
 
@@ -52,7 +52,7 @@ public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis<Positi
 				return;
 			}
 
-			TupleLatticeElement<Variable, PositiveNegativeLattice> beforeTuple = flowAnalysis
+			/*TupleLatticeElement<Variable, PositiveNegativeLattice> beforeTuple = flowAnalysis
 					.getResultsAfter(node);
 			Variable varToCheck = flowAnalysis.getVariable(varName);
 			PositiveNegativeLattice element = beforeTuple.get(varToCheck);
@@ -67,8 +67,8 @@ public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis<Positi
 											+ element.desc, node, getName(),
 									SEVERITY.WARNING);
 					System.out.println(varName + " " + element.desc);
-				}
-			}
+				}*/
+			//}
 		}
 
 		@Override

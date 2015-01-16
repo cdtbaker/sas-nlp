@@ -29,10 +29,10 @@ public abstract class AbstractCommentAnalysis<T> extends AbstractCrystalMethodAn
 		return e.equals(v);
 	}
 	
-	public boolean betweenScope(int lineNo){
+	/*public boolean betweenScope(int lineNo){
 		
 		return lineNo>=nlpResult.getAnalysisScope()[0] && lineNo <= nlpResult.getAnalysisScope()[1]; 
 		
-	}
+	}*/
 	
 }

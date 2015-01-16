@@ -32,7 +32,7 @@ public class MainAnalysis extends AbstractCrystalMethodAnalysis{
 		List<NLPResult> results = new ArrayList<>();
 				
 		for (NLPResult nlpResult : results) {
-			nlpResult.getAnalysis().runAnalysis(getReporter(), getInput(), root, cUnit);
+		//	nlpResult.getAnalysis().runAnalysis(getReporter(), getInput(), root, cUnit);
 		}
 		
 	

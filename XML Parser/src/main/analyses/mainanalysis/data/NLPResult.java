@@ -1,46 +1,29 @@
 package main.analyses.mainanalysis.data;
 
-import java.lang.reflect.InvocationTargetException;
+import java.util.HashMap;
+import java.util.Map;
 
-import main.analyses.abstraction.AbstractCommentAnalysis;
+import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
+
+import edu.cmu.cs.crystal.annotations.AnnotationDatabase;
+
+import main.analyses.abstraction.AnalysisType;
+import main.analyses.abstraction.AnnotationComment;
 
 public class NLPResult {
 	
-	private AbstractCommentAnalysis<?> analysisToRun;
-	private String methodName, varName;
-	private int lineFrom, lineTo;
-
-	public NLPResult(Class<? extends AbstractCommentAnalysis<?>> analysisToRun, String methodName,
-			String varName, int lineFrom, int lineTo) {
-		super();
-		try {
-			this.analysisToRun = analysisToRun.getConstructor(String.class).newInstance(this);
-		} catch (InstantiationException | IllegalAccessException
-				| IllegalArgumentException | InvocationTargetException
-				| NoSuchMethodException | SecurityException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		this.methodName = methodName;
-		this.varName = varName;
-		this.lineFrom = lineFrom;
-		this.lineTo = lineTo;
-	}
-
-	public  AbstractCommentAnalysis<?> getAnalysis(){
-		return analysisToRun;
+	private Map<AnalysisType, AnnotationComment> analysisAnnotations;
+	
+	public NLPResult() {
+		analysisAnnotations = new HashMap<>();
 	}
 	
-	public String getMethodName(){
-		return methodName;
+	public void addComment(AnalysisType type, AnnotationComment comment){
+		this.analysisAnnotations.put(type, comment);
 	}
 	
-	public String getVarName(){
-		return varName;
-	}
-	
-	public int[] getAnalysisScope(){
-		return new int [] {lineFrom,lineTo};
+	public Map<AnalysisType, AnnotationComment> getAnnotations(){
+		return analysisAnnotations;
 	}
 
 }
