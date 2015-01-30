@@ -6,10 +6,9 @@ public enum AnalysisType {
 
 	SRA(PositiveNegativeFlowAnalysis.class);
 	
-	public Class<? extends AbstractCommentAnalysis<?>> classFile;
+	public Class<? extends AbstractCommentAnalysis<?,?>> classFile;
 	
-	
-	AnalysisType(Class<? extends AbstractCommentAnalysis<?>> classFile){
+	AnalysisType(Class<? extends AbstractCommentAnalysis<? ,?>> classFile){
 		this.classFile = classFile;
 	}
 	

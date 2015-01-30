@@ -1,89 +1,73 @@
 package main.analyses.SimpleRangeAnalysis;
 
 import main.analyses.abstraction.AbstractCommentAnalysis;
-import main.analyses.mainanalysis.data.NLPResult;
+import main.analyses.abstraction.CommentCollection;
+import main.analyses.abstraction.RangeAnalysisComment;
 
-import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
-import edu.cmu.cs.crystal.IAnalysisReporter.SEVERITY;
-import edu.cmu.cs.crystal.simple.SimpleTACFlowAnalysis;
+import edu.cmu.cs.crystal.simple.AbstractingTransferFunction;
 import edu.cmu.cs.crystal.simple.TupleLatticeElement;
 import edu.cmu.cs.crystal.tac.model.Variable;
 
-public class PositiveNegativeFlowAnalysis extends AbstractCommentAnalysis<PositiveNegativeLattice> {
+/**
+ * Implementation of abstract comment analysis
+ * @author daniel
+ *
+ */
+public class PositiveNegativeFlowAnalysis extends
+		AbstractCommentAnalysis<PositiveNegativeLattice, RangeAnalysisComment> {
 
-	private SimpleTACFlowAnalysis<TupleLatticeElement<Variable, PositiveNegativeLattice>> flowAnalysis;
-
-	public PositiveNegativeFlowAnalysis(NLPResult res) {
-		super(res);
-
+	
+	public PositiveNegativeFlowAnalysis(CommentCollection<PositiveNegativeLattice,RangeAnalysisComment> result) {
+		super(result);
 	}
 
 	@Override
-	public void analyzeMethod(MethodDeclaration m) {
-		TransferFunctions tf = new TransferFunctions();
-		flowAnalysis = new SimpleTACFlowAnalysis<TupleLatticeElement<Variable, PositiveNegativeLattice>>(
-				tf, getInput());
-
-		/*if (m.getName().toString().equals(nlpResult.getMethodName())) {
-			m.accept(new Visitor());
-		}*/
-
-	}
-
-	private class Visitor extends ASTVisitor {
-
-		@Override
-		public void endVisit(VariableDeclarationFragment node) {
-
-			Expression exp = node.getInitializer();
-
-			analyse(node, node.getName(), exp);
-
-		}
-
-		public void analyse(ASTNode node, Expression varName, Expression exp) {
-			if (exp == null) {
-				return;
+	protected ASTVisitor getVisitor() {
+		return new ASTVisitor() {
+			
+			@Override
+			public void endVisit(VariableDeclarationFragment node) {
+				Expression exp = node.getInitializer();
+				analyse(node, node.getName(), exp);
 			}
 
-			/*TupleLatticeElement<Variable, PositiveNegativeLattice> beforeTuple = flowAnalysis
-					.getResultsAfter(node);
-			Variable varToCheck = flowAnalysis.getVariable(varName);
-			PositiveNegativeLattice element = beforeTuple.get(varToCheck);
+			@Override
+			public void endVisit(Assignment node) {
+				Expression exp = node;
+				analyse(node, node.getLeftHandSide(), exp);
+			}
+		};
+	}
 
-			if (sameVar(varName.toString(), nlpResult.getVarName())
-					&& betweenScope(compUnit.getLineNumber(node
-							.getStartPosition()))) {
-				if (element != expectedLattice) {
-					getReporter()
-							.reportUserProblem(
-									"The variable " + varName.toString()
-											+ element.desc, node, getName(),
-									SEVERITY.WARNING);
-					System.out.println(varName + " " + element.desc);
-				}*/
-			//}
-		}
+	
+	@Override
+	protected boolean toAnalyse(MethodDeclaration md) {
+		return !current.isEmpty();
+	}
 
-		@Override
-		public void endVisit(Assignment node) {
-			Expression exp = node;
-
-			analyse(node, node.getLeftHandSide(), exp);
-
-		}
-
+	private boolean betweenScope(String varName, int line) {
+		return line < current.get(varName).getLineTo() && line > current.get(varName).getLineFrom();
 	}
 
 	@Override
-	protected PositiveNegativeLattice determineExpected() {
-		return PositiveNegativeLattice.POS; 
+	protected boolean toReport(String variableName, int line, PositiveNegativeLattice element) {
+		return current.containsKey(variableName) && betweenScope(variableName,line) && current.get(variableName).getExpected() != element;
 	}
 
+
+	@Override
+	protected AbstractingTransferFunction<TupleLatticeElement<Variable, PositiveNegativeLattice>> getTF() {
+		return new TransferFunctions();
+	}
+
+	@Override
+	protected String getWarning(PositiveNegativeLattice e) {
+		return e.desc;
+	}
 }

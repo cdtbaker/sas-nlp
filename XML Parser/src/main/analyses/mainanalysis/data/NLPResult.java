@@ -2,28 +2,42 @@ package main.analyses.mainanalysis.data;
 
 import java.util.HashMap;
 import java.util.Map;
-
-import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
-
-import edu.cmu.cs.crystal.annotations.AnnotationDatabase;
+import java.util.Set;
 
 import main.analyses.abstraction.AnalysisType;
 import main.analyses.abstraction.AnnotationComment;
+import main.analyses.abstraction.CommentCollection;
 
+/**
+ * Results from NLP
+ * @author daniel
+ *
+ */
 public class NLPResult {
-	
-	private Map<AnalysisType, AnnotationComment> analysisAnnotations;
-	
+
+	private Map<AnalysisType, CommentCollection> analysisAnnotations;
+
 	public NLPResult() {
 		analysisAnnotations = new HashMap<>();
 	}
-	
-	public void addComment(AnalysisType type, AnnotationComment comment){
-		this.analysisAnnotations.put(type, comment);
+
+	public void addComment(AnalysisType type, AnnotationComment comment) {
+		if (analysisAnnotations.containsKey(type)) {
+			this.analysisAnnotations.get(type).addComment(comment);
+		} else {
+			CommentCollection c = new CommentCollection();
+			c.addComment(comment);
+			this.analysisAnnotations.put(type, c);
+		}
+
 	}
-	
-	public Map<AnalysisType, AnnotationComment> getAnnotations(){
-		return analysisAnnotations;
+
+	public Set<AnalysisType> getTypes() {
+		return analysisAnnotations.keySet();
+	}
+
+	public CommentCollection getAnnotations(AnalysisType t) {
+		return analysisAnnotations.get(t);
 	}
 
 }
