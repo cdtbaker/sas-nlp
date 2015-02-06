@@ -80,17 +80,17 @@ public class AnnotationDatabase {
 	 * if it's not in the classpath (means edu.cmu.cs.planno plugin not loaded).
 	 * Notice that edu.cmu.cs.planno is an optional dependency so it may be missing.
 	 */
-	private static final String MULTI_ANNOTATION_CLASSNAME;
+	private static final String MULTI_ANNOTATION_CLASSNAME ="";
 	static {
-		String className = null;
+		//String className = null;
 		try {
-			className = MultiAnnotation.class.getName();
+			//className = MultiAnnotation.class.getName();
 		} catch (Throwable t) {
 			// Expect NoClassDefFoundError if MultiAnnotation is missing
 			// catch-all just in case so we can keep going no matter what
 			log.log(Level.INFO, "@MultiAnnotation not available, install edu.cmu.cs.planno plugin if you want to use multi-annotations", t);
 		}
-		MULTI_ANNOTATION_CLASSNAME = className;
+		//MULTI_ANNOTATION_CLASSNAME = className;
 	}
 
 	private Map<String, Class<? extends ICrystalAnnotation>> qualNames;
