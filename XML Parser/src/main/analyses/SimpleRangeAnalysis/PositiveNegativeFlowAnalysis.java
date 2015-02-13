@@ -1,8 +1,8 @@
 package main.analyses.SimpleRangeAnalysis;
 
 import main.analyses.abstraction.AbstractCommentAnalysis;
-import main.analyses.abstraction.CommentCollection;
-import main.analyses.abstraction.RangeAnalysisComment;
+import main.analyses.mainanalysis.data.CommentCollection;
+import main.analyses.mainanalysis.data.RangeAnalysisComment;
 
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;

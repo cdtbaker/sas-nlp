@@ -9,6 +9,7 @@ public class PostiveNegativeLatticeOperations extends
 	public boolean atLeastAsPrecise(PositiveNegativeLattice l,
 			PositiveNegativeLattice r) {
 		if (l == PositiveNegativeLattice.NOT_SURE) {
+			
 			return false;
 		}
 		return true;

@@ -3,10 +3,10 @@ package main.analyses.mainanalysis;
 import java.lang.reflect.InvocationTargetException;
 
 import main.analyses.SimpleRangeAnalysis.PositiveNegativeLattice;
-import main.analyses.abstraction.AnalysisType;
-import main.analyses.abstraction.CommentCollection;
-import main.analyses.abstraction.RangeAnalysisComment;
+import main.analyses.mainanalysis.data.AnalysisType;
+import main.analyses.mainanalysis.data.CommentCollection;
 import main.analyses.mainanalysis.data.NLPResult;
+import main.analyses.mainanalysis.data.RangeAnalysisComment;
 import main.commentextraction.com.jml.builder.XMLFromSource;
 import main.commentextraction.com.jml.objects.framework.JMLElement;
 

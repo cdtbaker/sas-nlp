@@ -10,7 +10,7 @@ public class Attribute {
 	public Attribute(String key, String val) {
 		this.key = key;
 		this.val = val;
-		this.val = StringEscapeUtils.escapeXml11(val);
+		this.val = StringEscapeUtils.escapeXml(val); // TODO: escapeXml11 wasn't working with Eclipse Luna; fix this later?
 
 	}
 

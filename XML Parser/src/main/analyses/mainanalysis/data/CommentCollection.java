@@ -1,9 +1,11 @@
-package main.analyses.abstraction;
+package main.analyses.mainanalysis.data;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import main.analyses.abstraction.AnnotationComment;
 
 /**
  * Collection of comments of a certain type

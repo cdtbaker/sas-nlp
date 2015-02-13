@@ -6,7 +6,6 @@ import java.util.Scanner;
 import java.util.Stack;
 
 import org.eclipse.jdt.core.dom.Assignment;
-import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -33,12 +32,12 @@ public class TransferFunctions
 			MethodDeclaration m) {
 		TupleLatticeElement<Variable, PositiveNegativeLattice> def = ops
 				.getDefault();
+
 		return def;
 	}
 
 	@Override
 	public ILatticeOperations<TupleLatticeElement<Variable, PositiveNegativeLattice>> getLatticeOperations() {
-
 		return ops;
 	}
 
@@ -138,22 +137,22 @@ public class TransferFunctions
 		return PositiveNegativeLattice.NOT_SURE;
 	}
 
-	private PositiveNegativeLattice getOperandState(Expression operand) {
-		try {
-			double d = Double.parseDouble(operand.toString());
-
-			if (d > 0) {
-				return PositiveNegativeLattice.POS;
-			} else if (d < 0) {
-				return PositiveNegativeLattice.NEG;
-			} else {
-				return PositiveNegativeLattice.ZERO;
-			}
-
-		} catch (Exception e) {
-			return mp.get(operand.toString().trim());
-		}
-	}
+//	private PositiveNegativeLattice getOperandState(Expression operand) {
+//		try {
+//			double d = Double.parseDouble(operand.toString());
+//
+//			if (d > 0) {
+//				return PositiveNegativeLattice.POS;
+//			} else if (d < 0) {
+//				return PositiveNegativeLattice.NEG;
+//			} else {
+//				return PositiveNegativeLattice.ZERO;
+//			}
+//
+//		} catch (Exception e) {
+//			return mp.get(operand.toString().trim());
+//		}
+//	}
 
 	// ////////////////////////////////////////////
 	/*

@@ -4,9 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-import main.analyses.abstraction.AnalysisType;
 import main.analyses.abstraction.AnnotationComment;
-import main.analyses.abstraction.CommentCollection;
 
 /**
  * Results from NLP

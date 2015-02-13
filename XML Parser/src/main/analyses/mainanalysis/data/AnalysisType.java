@@ -1,6 +1,7 @@
-package main.analyses.abstraction;
+package main.analyses.mainanalysis.data;
 
 import main.analyses.SimpleRangeAnalysis.PositiveNegativeFlowAnalysis;
+import main.analyses.abstraction.AbstractCommentAnalysis;
 
 public enum AnalysisType {
 

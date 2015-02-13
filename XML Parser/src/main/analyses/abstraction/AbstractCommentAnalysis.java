@@ -2,6 +2,9 @@ package main.analyses.abstraction;
 
 import java.util.Map;
 
+import main.analyses.mainanalysis.data.CommentCollection;
+import main.analyses.mainanalysis.data.VariableAnalysisData;
+
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;

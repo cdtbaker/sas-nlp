@@ -1,6 +1,7 @@
-package main.analyses.abstraction;
+package main.analyses.mainanalysis.data;
 
 import main.analyses.SimpleRangeAnalysis.PositiveNegativeLattice;
+import main.analyses.abstraction.AnnotationComment;
 
 /**
  * Implementation of AnnotationComment but needs further abstraction

@@ -1,4 +1,4 @@
-package main.analyses.abstraction;
+package main.analyses.mainanalysis.data;
 
 /**
  * Data to relate to a variable name for during analysis
