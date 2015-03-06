@@ -50,7 +50,6 @@ public class MainAnalysis extends AbstractCrystalMethodAnalysis {
 		for (AnalysisType c : result.getTypes()) {
 			try {
 
-				
 				c.classFile
 						.getConstructor(CommentCollection.class)
 						.newInstance(

@@ -11,8 +11,9 @@ import main.commentextraction.com.jml.output.XMLOutputter;
 public class StandaloneXmlConverter {
 
 	public static void main(String[] args) {
-		String path = args[0]; //args[0] should be highest level path which all sub paths need converting from
-
+		//String path = args[0]; //args[0] should be highest level path which all sub paths need converting from
+		String path = "/home/daniel/Downloads/hadoop/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop";
+	
 		for (File f : getJavaFiles(path)) {
 			XMLOutputter output = new XMLOutputter(
 					XMLFromSource.getXMLFromFile(f.getAbsolutePath(), true,
