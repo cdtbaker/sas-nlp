@@ -23,7 +23,7 @@ import edu.cmu.cs.crystal.AbstractCrystalMethodAnalysis;
  * @author parallels
  *
  */
-public class MainAnalysis extends AbstractCrystalMethodAnalysis {
+public class ScanCommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 	@Override
 	public void beforeAllMethods(ITypeRoot root, CompilationUnit cUnit) {
