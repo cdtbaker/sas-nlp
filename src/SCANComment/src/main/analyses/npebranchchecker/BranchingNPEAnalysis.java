@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with Crystal.  If not, see <http://www.gnu.org/licenses/>.
  */
-package main.analyses.NPEBranchChecker;
+package main.analyses.npebranchchecker;
 
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ArrayAccess;

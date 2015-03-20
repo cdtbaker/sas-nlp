@@ -1,4 +1,4 @@
-package main.analyses.SimpleRangeAnalysis;
+package main.analyses.simplerangeanalysis;
 
 import main.analyses.abstraction.AbstractCommentAnalysis;
 import main.analyses.mainanalysis.data.CommentCollection;

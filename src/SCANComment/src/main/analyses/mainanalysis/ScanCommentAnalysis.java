@@ -2,11 +2,11 @@ package main.analyses.mainanalysis;
 
 import java.lang.reflect.InvocationTargetException;
 
-import main.analyses.SimpleRangeAnalysis.PositiveNegativeLattice;
 import main.analyses.mainanalysis.data.AnalysisType;
 import main.analyses.mainanalysis.data.CommentCollection;
 import main.analyses.mainanalysis.data.NLPResult;
 import main.analyses.mainanalysis.data.RangeAnalysisComment;
+import main.analyses.simplerangeanalysis.PositiveNegativeLattice;
 import main.commentextraction.jml.builder.XMLFromSource;
 import main.commentextraction.jml.objects.framework.JMLElement;
 
@@ -25,6 +25,11 @@ import edu.cmu.cs.crystal.AbstractCrystalMethodAnalysis;
  */
 public class ScanCommentAnalysis extends AbstractCrystalMethodAnalysis {
 
+	/*
+	 * To make different projects for different analysis possible user passes enum, Type param, of all possible analyses extending AnalysisType
+	 * user also passes relevant data for NLP to identify when this analysis should be used??
+	 */
+	
 	@Override
 	public void beforeAllMethods(ITypeRoot root, CompilationUnit cUnit) {
 		JMLElement rootXML = null;

@@ -1,4 +1,4 @@
-package main.analyses.SimpleRangeAnalysis;
+package main.analyses.simplerangeanalysis;
 
 import edu.cmu.cs.crystal.simple.SimpleLatticeOperations;
 

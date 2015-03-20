@@ -1,4 +1,4 @@
-package main.analyses.SimpleRangeAnalysis;
+package main.analyses.simplerangeanalysis;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package main.analyses.NPEBranchChecker;
+package main.analyses.npebranchchecker;
 
 import edu.cmu.cs.crystal.simple.SimpleLatticeOperations;
 
