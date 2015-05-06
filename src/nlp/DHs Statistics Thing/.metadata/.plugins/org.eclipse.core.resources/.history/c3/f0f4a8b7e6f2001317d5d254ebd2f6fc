@@ -1,0 +1,116 @@
+package sanlp.nlp.runnables;
+
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.Properties;
+
+import sanlp.nlp.core.NGramParser;
+import sanlp.nlp.core.Stemmer;
+import sanlp.nlp.core.TFIDF;
+import sanlp.nlp.output.PMIWriter;
+import edu.stanford.nlp.ling.CoreAnnotations.TextAnnotation;
+import edu.stanford.nlp.ling.CoreAnnotations.TokensAnnotation;
+import edu.stanford.nlp.ling.CoreLabel;
+import edu.stanford.nlp.pipeline.Annotation;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
+import edu.stanford.nlp.stats.ClassicCounter;
+import edu.stanford.nlp.stats.Counter;
+
+public class NGramCardinals {
+
+	// private static final String customStopWordList =
+	// ".;,;?;(;);- >;>;<;-;a;an;and;are;as;at;be;but;by;for;if;in;into;is;it;no;not;of;on;or;such;that;the;their;then;there;these;they;this;to;was;will;with;i;'m;";
+
+
+	/**
+	 * Entry point to be used for testing.
+	 * 
+	 * MODIFY THE PATHS HERE TO GET IT TO WORK!!!!!!!
+	 */
+	public static void main(String... args) throws FileNotFoundException, IOException {
+		HashMap<String, String> docs = new HashMap<String, String>();
+
+		// Example of passing multiple documents (two) to the 'parser'.
+		//docs.put("SO - general", readTextFile("/Users/danhowden/2014-sas-nlp/public/compiled-general-corpus-stackoverflow.txt"));
+		//docs.put("Comment - domain", ReadParsedXMLComments.readCommentCorpus("/Users/danhowden/2014-sas-nlp/public/XML Parser/Converted Libraries/Commons/main/java/org/apache/commons/math3"));
+		
+		docs.put("doc1", "This is a sentence that will be deconstructed into some kind of grammatical structure with 5 facets. We are interested in a sentence that will be deconstructed into something with 2 facets of grammatical importance.");
+		
+		//You must specify a length for the n-grams.
+		calculate(docs, 3);
+	}
+
+	
+	/**
+	 * Read in a text file (assume UTF-8) into a string using the absolute path given.
+	 */
+	public static String readTextFile(String path) throws FileNotFoundException, IOException {
+		int lines = 0;
+		String everything = "";
+		try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+			StringBuilder sb = new StringBuilder();
+			String line = br.readLine();
+
+			while (line != null && lines++ < 50) { /////// IMPORTANT!!!!!!!!!! This only loads 500 lines of the stackoverflow stuff, otherwise it takes FOREVER. only for testing :)
+				sb.append(line);
+				sb.append(System.lineSeparator());
+				line = br.readLine();
+			}
+			everything = sb.toString();
+		}
+		return everything;
+	}
+	
+	/**
+	 * This method requires two documents (corpuses... corpi?), a GENERAL document and a DOMAIN document.
+	 * It will then parse the documents to produce PMI values for all bi-grams, n-gram AND single word TF-IDF
+	 * calculations, as well as calculating the domain specificity of all domain n-grams and single words.
+	 */
+	public static void calculate(HashMap<String, String> docs, int nGramLength) {
+		Properties props = new Properties();
+		props.put("tokenize.options", "normalizeParentheses=false,americanize=false,untokenizable=firstDelete");
+		props.put("annotators", "tokenize");
+
+		StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+		
+		// Used to parse the n-grams of given length
+		NGramParser biGramExtractor = new NGramParser(nGramLength);
+		
+		// Records all  words so that the n-gram parser operates on these words (sequentially).
+		List<String> wordList = new ArrayList<String>();
+
+		for (Entry<String, String> x : docs.entrySet()) {
+			
+			// Parse each document (should only be 2 of them)
+			Annotation document = new Annotation(x.getValue().toLowerCase());
+			pipeline.annotate(document);
+
+			for (CoreLabel token : document.get(TokensAnnotation.class)) {
+				
+				// The stemmer is a little bit complicated to use, could probably be made cleaner!
+				Stemmer stemmer = new Stemmer();
+				stemmer.add(token.get(TextAnnotation.class).toLowerCase().toCharArray(), token.get(TextAnnotation.class).length());
+				stemmer.stem();
+				String word = stemmer.toString();
+
+				// Record this word occurrence for later use.
+				wordList.add(word);
+				
+			}
+		}
+
+		biGramExtractor.parse(wordList, false, true);
+		
+		for(Entry<String, Integer> x : biGramExtractor.getNGramMap().entrySet())
+		{
+			String ngram =  String.format("%1$-" + 30 + "s", x.getKey());  
+			System.out.println(ngram + ":\t\t" + x.getValue());
+		}
+	}
+}

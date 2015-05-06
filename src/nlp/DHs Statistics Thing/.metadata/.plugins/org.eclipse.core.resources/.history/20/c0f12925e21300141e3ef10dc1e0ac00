@@ -1,0 +1,290 @@
+package sanlp.nlp.runnables;
+
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.Properties;
+
+import sanlp.nlp.core.CommentType;
+import sanlp.nlp.core.NGramParser;
+import sanlp.nlp.core.Stemmer;
+import sanlp.nlp.core.TFIDF;
+import sanlp.nlp.output.PMIWriter;
+import edu.stanford.nlp.ling.CoreAnnotations.TextAnnotation;
+import edu.stanford.nlp.ling.CoreAnnotations.TokensAnnotation;
+import edu.stanford.nlp.ling.CoreLabel;
+import edu.stanford.nlp.pipeline.Annotation;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
+import edu.stanford.nlp.stats.ClassicCounter;
+import edu.stanford.nlp.stats.Counter;
+
+public class PMIandTFIDFandSpecificityCalculator {
+
+	private static int nGramSize = 2;
+
+	/**
+	 * Entry point to be used.
+	 */
+	public static void main(String[] args) throws FileNotFoundException, IOException {
+		
+		List<String> a = Arrays.asList(args);
+		
+		int nGramSizeIdx = a.indexOf("-nGramSize");
+		int nGramSize = 2;
+		if(nGramSizeIdx > -1)
+			nGramSize = Integer.parseInt(a.get(nGramSizeIdx + 1));
+		
+		int skipSizeIdx = a.indexOf("-skipSize");
+		int skipSize = 0;
+		if(skipSizeIdx > -1)
+			skipSize = Integer.parseInt(a.get(skipSizeIdx + 1));
+		
+		int typeIdx = a.indexOf("-commentParseType");
+		CommentType commentParseType = CommentType.BOTH;
+		if(typeIdx > -1) {
+			String t = a.get(typeIdx + 1);
+			if(t.toLowerCase().equals("javadoc"))
+				commentParseType = CommentType.JAVADOC;
+			else if(t.toLowerCase().equals("inline"))
+				commentParseType = CommentType.INLINE;
+		}
+		
+		int doc1TypeIdx = a.indexOf("-generalType");
+		int doc1Type = 1;   // 1 is text, 2 is comment directory
+		if(doc1TypeIdx > -1)
+			doc1Type = Integer.parseInt(a.get(doc1TypeIdx + 1));
+		
+		int doc2TypeIdx = a.indexOf("-domainType");
+		int doc2Type = 1;   // 1 is text, 2 is comment directory
+		if(doc2TypeIdx > -1)
+			doc2Type = Integer.parseInt(a.get(doc2TypeIdx + 1));
+		
+		int doc1Idx = a.indexOf("-generalDoc");
+		String doc1 = null;
+		if(doc1Idx > -1)
+			doc1 = a.get(doc1Idx + 1);
+		
+		int doc2Idx = a.indexOf("-domainDoc");
+		String doc2 = null;
+		if(doc2Idx > -1)
+			doc2 = a.get(doc2Idx + 1);
+		
+		int includeSentenceEndStartsIdx = a.indexOf("-includeSentenceEndStarts");
+		boolean includeSentenceEndStarts = false;
+		if(includeSentenceEndStartsIdx > -1)
+			includeSentenceEndStarts = true;
+		
+		/*System.out.println("nGramSize: " + nGramSize);
+		System.out.println("CommentParseType: " + commentParseType);
+		System.out.println("SkipSize: " + skipSize);
+
+		System.out.println("Doc1 Type: " + doc1Type);
+		System.out.println("Doc1: " + doc1);
+		System.out.println("Doc2 Type: " + doc2Type);
+		System.out.println("Doc2: " + doc2);*/
+		
+		if(doc1 == null || doc2 == null) {
+			System.err.println("NO DOCS PROVIDED");
+			System.exit(1);
+		}
+		
+		HashMap<String, String> docs = new HashMap<String, String>();
+
+		if(doc1Type == 1)
+			docs.put("SO - general", readTextFile(doc1));
+		else
+			docs.put("SO - general", ReadParsedXMLComments.readCommentCorpus(doc1, commentParseType));
+
+		if(doc2Type == 1)
+			docs.put("Comment - domain", readTextFile(doc2));
+		else
+			docs.put("Comment - domain", ReadParsedXMLComments.readCommentCorpus(doc2, commentParseType));
+		
+		//You must specify a length for the n-grams.
+		calculate(docs, nGramSize, skipSize, includeSentenceEndStarts);
+	}
+
+	
+	/**
+	 * Read in a text file (assume UTF-8) into a string using the absolute path given.
+	 */
+	public static String readTextFile(String path) throws FileNotFoundException, IOException {
+		int lines = 0;
+		String everything = "";
+		try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+			StringBuilder sb = new StringBuilder();
+			String line = br.readLine();
+
+			while (line != null && lines++ < 50) { /////// IMPORTANT!!!!!!!!!! This only loads 500 lines of the stackoverflow stuff, otherwise it takes FOREVER. only for testing :)
+				sb.append(line);
+				sb.append(System.lineSeparator());
+				line = br.readLine();
+			}
+			everything = sb.toString();
+		}
+		return everything;
+	}
+	
+	/**
+	 * This method requires two corpora, a GENERAL document and a DOMAIN document.
+	 * It will then parse the documents to produce PMI values for all bi-grams, n-gram AND single word TF-IDF
+	 * calculations, as well as calculating the domain specificity of all domain n-grams and single words.
+	 */
+	public static void calculate(HashMap<String, String> docs, int nGramLength, int numSkips, boolean includeSentenceEndStarts) {
+		Properties props = new Properties();
+		props.put("tokenize.options",
+				"normalizeParentheses=false,americanize=false,untokenizable=firstDelete");
+		props.put("annotators", "tokenize");
+		// /props.setProperty("customAnnotatorClass.stopword",
+		// "sanlp.nlp.core.StopwordAnnotator");
+		// props.setProperty(StopwordAnnotator.STOPWORDS_LIST,
+		// customStopWordList);
+
+		StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+		
+		// Used to parse the n-grams of given length
+		NGramParser biGramExtractor = new NGramParser(nGramLength);
+		
+		// Records all  words so that the n-gram parser operates on these words (sequentially).
+		List<String> wordList = new ArrayList<String>();
+		
+		// Counts the number of words that occur based on their frequency in EACH document.
+		// For example: {"doc1" : {"word1", "word2"}, "doc2" : {"word9", "word2"}}
+		HashMap<String, ClassicCounter<String>> wordFrequencies = new HashMap<String, ClassicCounter<String>>();
+		
+		// Counts the total number of words in BOTH documents.
+		Counter<String> wordsOverall = new ClassicCounter<String>();
+		
+		// Counts the total number of words in the GENERAL corpus
+		Counter<String> wordsGeneral = new ClassicCounter<String>();
+		
+		// Counts the total number of words in the DOMAIN-specific corpus.
+		Counter<String> wordsDomain = new ClassicCounter<String>();
+		
+		// Records the TF-IDF of single words for EACH document.
+		// For example: {"doc1" : {"word1" : 4.23}, "doc2" : {"word1" : 3.324}}
+		HashMap<String, HashMap<String, Float>> tfidfSingleWords = new HashMap<String, HashMap<String, Float>>();
+		
+		// Records the TF-IDF of n-grams (size dictated by nGramLength parameter) for EACH document.
+		// For example: {"doc1" : {"this part" : 4.23}, "doc2" : {"this part" : 3.324}}
+		HashMap<String, HashMap<String, Float>> tfidfNGrams = new HashMap<String, HashMap<String, Float>>();
+		
+		// Records n-grams against the document they occurred in.
+		HashMap<String, NGramParser> ngramsPerDoc = new HashMap<String, NGramParser>();
+
+		for (Entry<String, String> x : docs.entrySet()) {
+			// Parse each document (should only be 2 of them)
+			Annotation document = new Annotation(x.getValue().toLowerCase());
+			pipeline.annotate(document);
+
+			List<String> wordListForThisDoc = new ArrayList<String>();
+
+			for (CoreLabel token : document.get(TokensAnnotation.class)) {
+				
+				// The stemmer is a little bit complicated to use, could probably be made cleaner!
+				Stemmer stemmer = new Stemmer();
+				stemmer.add(token.get(TextAnnotation.class).toLowerCase().toCharArray(), token.get(TextAnnotation.class).length());
+				stemmer.stem();
+				String word = stemmer.toString();
+
+				// Record this word occurrence for later use.
+				wordList.add(word);
+				wordListForThisDoc.add(word);
+				wordsOverall.incrementCount(word);
+
+				// Keep track of which words appear in which corpus.
+				if (x.getKey().contains("general"))
+					wordsGeneral.incrementCount(word);
+				else
+					wordsDomain.incrementCount(word);
+
+				// Record the occurrence of this word AGAINST the document it occurred in.
+				// Create key-value if it doesn't exist.
+				if (!wordFrequencies.containsKey(x.getKey())) {
+					wordFrequencies.put(x.getKey(), new ClassicCounter<String>());
+				}
+
+				wordFrequencies.get(x.getKey()).incrementCount(word);
+
+				// Create key-value if it doesn't exist.
+				if (!ngramsPerDoc.containsKey(x.getKey())) {
+					ngramsPerDoc.put(x.getKey(), new NGramParser(nGramSize));
+				}
+			}
+
+			// Calculate n-grams for this document based on the words stored.
+			ngramsPerDoc.get(x.getKey()).parse(wordListForThisDoc, false, false, 0);
+		}
+
+		for (Entry<String, String> x : docs.entrySet()) {
+
+			// Calculate TF-IDF for n-grams of the given size.
+			for (Entry<String, Integer> w : ngramsPerDoc.get(x.getKey()).getNGramMap().entrySet()) {
+				String word = w.getKey();
+
+				int docsWithTerm = 0;
+
+				for (Entry<String, NGramParser> i : ngramsPerDoc.entrySet()) {
+					if (i.getValue().getNGramMap().containsKey(word))
+						docsWithTerm++;
+				}
+
+				TFIDF t = new TFIDF(ngramsPerDoc.get(x.getKey()).getNGramMap()
+						.get(word), ngramsPerDoc.get(x.getKey())
+						.getNgramCount(), docs.size(), docsWithTerm);
+				Float tdidf = t.getValue();
+
+				if (!tfidfNGrams.containsKey(x.getKey()))
+					tfidfNGrams.put(x.getKey(), new HashMap<String, Float>());
+
+				tfidfNGrams.get(x.getKey()).put(word, tdidf);
+			}
+			
+			// Calculate TF-IDF for the single words.
+			for (Entry<String, Double> w : wordFrequencies.get(x.getKey()).entrySet()) {
+				String word = w.getKey();
+
+				int docsWithTerm = 0;
+
+				for (Entry<String, ClassicCounter<String>> i : wordFrequencies.entrySet()) {
+					if (i.getValue().getCount(word) > 0)
+						docsWithTerm++;
+				}
+
+				TFIDF t = new TFIDF(wordFrequencies.get(x.getKey()).getCount(word), 
+						wordFrequencies.get(x.getKey()).totalCount(), 
+						docs.size(), 
+						docsWithTerm);
+				Float tdidf = t.getValue();
+				
+				if (!tfidfSingleWords.containsKey(x.getKey()))
+					tfidfSingleWords.put(x.getKey(), new HashMap<String, Float>());
+
+				tfidfSingleWords.get(x.getKey()).put(word, tdidf);
+			}
+		}
+
+		boolean withSkips = false;
+		if(numSkips > 0)
+			withSkips = true;
+		biGramExtractor.parse(wordList, withSkips, includeSentenceEndStarts, numSkips);
+
+		// Write to the disk.
+		PMIWriter pmiWriter = new PMIWriter(
+				biGramExtractor, 
+				wordsOverall,
+				tfidfSingleWords, 
+				tfidfNGrams, 
+				wordsGeneral, 
+				wordsDomain,
+				ngramsPerDoc);
+
+		pmiWriter.generate();
+	}
+}
