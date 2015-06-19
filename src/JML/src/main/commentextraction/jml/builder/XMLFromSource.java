@@ -21,7 +21,6 @@ import main.commentextraction.jml.objects.sourcelevel.JMLImport;
 import main.commentextraction.jml.objects.statement.JMLVariable;
 
 import org.apache.commons.lang3.StringEscapeUtils;
-import org.eclipse.core.runtime.*;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -169,6 +168,7 @@ public class XMLFromSource {
 					}
 					if (lineNumbers) {
 						jc.addAttribute("line", getLineNumber(node));
+						jc.addAttribute("endLine", getLastLineNumber(node));
 					}
 					addComments(jc);
 					b.addBlock(jc);
@@ -213,6 +213,7 @@ public class XMLFromSource {
 					JMLMethod m = new JMLMethod(name, type);
 					if (lineNumbers) {
 						m.addAttribute("line", getLineNumber(node));
+						m.addAttribute("endLine", getLastLineNumber(node));
 					}
 
 					b.addLine(m);
@@ -275,8 +276,9 @@ public class XMLFromSource {
 				}
 				commentsToAdd.add(new JMLComment(getCommentText((ASTNode) com)
 						+ nextComments));
-				commentsToAdd.get(commentsToAdd.size() - 1).addAttribute(
-						"line", String.valueOf(1 + lineNo));
+				//commentsToAdd.get(commentsToAdd.size() - 1).addAttribute("line", String.valueOf(1 + lineNo));
+				// The "1+" here seems to be wrong, but this need to be tested.
+				commentsToAdd.get(commentsToAdd.size() - 1).addAttribute("line", String.valueOf(lineNo));
 
 				return linesDone;
 
@@ -392,6 +394,7 @@ public class XMLFromSource {
 					}
 					if (lineNumbers) {
 						m.addAttribute("line", getLineNumber(node));
+						m.addAttribute("endLine", getLastLineNumber(node));
 					}
 					b.addBlock(m);
 					addComments(m);
@@ -501,6 +504,10 @@ public class XMLFromSource {
 
 			private String getLineNumber(ASTNode n) {
 				return String.valueOf(c.getLineNumber(n.getStartPosition()));
+			}
+			
+			private String getLastLineNumber(ASTNode n) {
+				return String.valueOf(c.getLineNumber(n.getStartPosition()+n.getLength()));
 			}
 		});
 
