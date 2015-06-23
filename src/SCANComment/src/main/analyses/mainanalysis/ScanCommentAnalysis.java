@@ -1,6 +1,8 @@
 package main.analyses.mainanalysis;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashSet;
 import java.util.Map;
@@ -52,12 +54,13 @@ public class ScanCommentAnalysis extends AbstractCrystalMethodAnalysis {
 
 		// for use of NLP
 		XMLOutputter output = new XMLOutputter(rootXML);
-		String sourceAsXML = output.getString();
 		
 
 		// could make this pretty later - at the moment building XML just to parse it...
 		try {
-			Document jdoc = new SAXBuilder().build(sourceAsXML);
+			InputStream istream = new ByteArrayInputStream(output.getString().getBytes());
+			Document jdoc = new SAXBuilder().build(istream);
+			istream.close();
 			
 			NLPResult result = new NLPResult();
 			
@@ -70,8 +73,12 @@ public class ScanCommentAnalysis extends AbstractCrystalMethodAnalysis {
 					
 					// build set of variable names in scope
 					Set<String> variableNames = new HashSet<String>();
-					for (Element paramElement : methodElement.getChild("params").getChildren())
-						variableNames.add(paramElement.getAttributeValue("name"));
+					
+					Element paramsElement = methodElement.getChild("params");
+					if (paramsElement != null)
+						for (Element paramElement : paramsElement.getChildren())
+							variableNames.add(paramElement.getAttributeValue("name"));
+					
 					for (Element declarationElement : methodElement.getChildren("declaration"))
 						variableNames.add(declarationElement.getAttributeValue("name"));
 					
