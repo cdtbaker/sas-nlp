@@ -25,7 +25,7 @@ public class IntRangeMachine extends Machine {
 		q00.add(new VariableConsumingTransition(q10, "a0", variableNames));
 		
 		// expressions of modality
-		q10.setEpsilon(new EpsilonTransition(q40));
+		//q10.setEpsilon(new EpsilonTransition(q40));
 		q10.add(new Transition(q40, "is"));
 		q10.add(new Transition(q20, "has"));
 		q10.add(new Transition(q20, "ought"));
@@ -35,12 +35,16 @@ public class IntRangeMachine extends Machine {
 		q20.add(new Transition(q30, "to"));
 		q30.add(new Transition(q40, "be"));
 		
-		
 		// expressions of polarity
 		q40.add(new Transition(q50, "positive", new Action("op", "gt")));
 		q40.add(new Transition(q50, "negative", new Action("op", "lt")));
 		q40.add(new Transition(q50, "non-positive", new Action("op", "le")));
 		q40.add(new Transition(q50, "non-negative", new Action("op", "ge")));
+		
+		// recognise equalities
+		q40.add(new Transition(q50, "zero", new Action("a1", "0")));
+		q40.add(new NumberConsumingTransition(q50, "a1"));
+		
 		
 		// expression of relations
 		q10.add(new Transition(q100, "does not equal", new Action("op", "ne")));
