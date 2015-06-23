@@ -22,18 +22,18 @@ public abstract class Machine {
 		return builder.toString();
 	}
 
-	public Map<String,String> recognise(String input) {
-		
-		Map<String,String> frame = new HashMap<String,String>();
-		
+	public Map<String,String> recognise(String input) {	
 		List<String> tokens = new LinkedList<String>();
 		for (String token : input.split("\\s")) tokens.add(token);
-		
+		return recognise(tokens);
+	}
+	
+	protected Map<String,String> recognise(List<String> tokens) {
+		Map<String,String> frame = new HashMap<String,String>();
 		if (initial.recognise(tokens, frame))
 			return frame;
 		else
 			return null;
-		
 	}
 
 	public String toDigraph() {

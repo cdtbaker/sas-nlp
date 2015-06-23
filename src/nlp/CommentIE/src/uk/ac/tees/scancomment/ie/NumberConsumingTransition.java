@@ -1,21 +1,10 @@
 package uk.ac.tees.scancomment.ie;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
 
 public class NumberConsumingTransition extends Transition {
 
-	private static final Set<String> dummyNumbers = new HashSet<String>();
-	static {
-		dummyNumbers.add("0");
-		dummyNumbers.add("1");
-		dummyNumbers.add("zero");
-		dummyNumbers.add("one");
-	}
-	
 	public NumberConsumingTransition(State next, String slot) {
 		super(next, null, new Action(slot, "$num"));
 	}
@@ -35,9 +24,13 @@ public class NumberConsumingTransition extends Transition {
 	}
 
 	@Override
-	public boolean matches(List<String> tokens) {
-		String token = tokens.get(0);
-		return dummyNumbers.contains(token);
+	public boolean matches(List<String> tokens) {	
+		try {
+			Double.parseDouble(tokens.get(0));
+			return true;
+		} catch (NumberFormatException nfe) {
+			return false;
+		}
 	}
 	
 	

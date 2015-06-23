@@ -1,8 +1,10 @@
 package uk.ac.tees.scancomment.ie;
 
+import java.util.Collection;
+
 public class IntRangeMachine extends Machine {
 
-	public IntRangeMachine() {
+	public IntRangeMachine(Collection<String> variableNames) {
 		
 		super();
 		
@@ -20,7 +22,7 @@ public class IntRangeMachine extends Machine {
 		State q110 = new State(110,true);
 		
 		// recognise first argument
-		q00.add(new VariableConsumingTransition(q10, "a0"));
+		q00.add(new VariableConsumingTransition(q10, "a0", variableNames));
 		
 		// expressions of modality
 		q10.setEpsilon(new EpsilonTransition(q40));
@@ -33,6 +35,7 @@ public class IntRangeMachine extends Machine {
 		q20.add(new Transition(q30, "to"));
 		q30.add(new Transition(q40, "be"));
 		
+		
 		// expressions of polarity
 		q40.add(new Transition(q50, "positive", new Action("op", "gt")));
 		q40.add(new Transition(q50, "negative", new Action("op", "lt")));
@@ -40,7 +43,6 @@ public class IntRangeMachine extends Machine {
 		q40.add(new Transition(q50, "non-negative", new Action("op", "ge")));
 		
 		// expression of relations
-		
 		q10.add(new Transition(q100, "does not equal", new Action("op", "ne")));
 		q40.add(new Transition(q60, "greater"));
 		q40.add(new Transition(q60, "higher"));
@@ -51,6 +53,9 @@ public class IntRangeMachine extends Machine {
 		q40.add(new Transition(q70, "smaller"));
 		q40.add(new Transition(q80, "above"));
 		q40.add(new Transition(q90, "below"));
+		q40.add(new Transition(q100, "!=", new Action("op", "ne")));
+		q40.add(new Transition(q100, "=", new Action("op", "eq")));
+		q40.add(new Transition(q100, "==", new Action("op", "eq")));
 		q40.add(new Transition(q100, "equal to", new Action("op", "eq")));
 		q40.add(new Transition(q100, "not equal to", new Action("op", "ne")));
 		q40.add(new Transition(q100, "equals", new Action("op", "eq")));
@@ -67,7 +72,7 @@ public class IntRangeMachine extends Machine {
 		
 		// recognise second argument
 		q100.add(new NumberConsumingTransition(q110, "a1"));
-		q100.add(new VariableConsumingTransition(q110, "a1"));
+		q100.add(new VariableConsumingTransition(q110, "a1", variableNames));
 		 
 		initial = q00;
 	}

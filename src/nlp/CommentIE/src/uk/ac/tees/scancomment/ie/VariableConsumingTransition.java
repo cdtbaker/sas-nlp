@@ -1,22 +1,17 @@
 package uk.ac.tees.scancomment.ie;
 
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 
 public class VariableConsumingTransition extends Transition {
-
-	private static final Set<String> dummyVariables = new HashSet<String>();
-	static {
-		dummyVariables.add("x");
-		dummyVariables.add("y");
-		dummyVariables.add("z");
-	}
 	
-	public VariableConsumingTransition(State next, String slot) {
+	private final Collection<String> variableNames;
+	
+	public VariableConsumingTransition(State next, String slot, Collection<String> variableNames) {
 		super(next, null, new Action(slot, "$var"));
+		this.variableNames = variableNames;
 	}
 
 	@Override
@@ -36,6 +31,6 @@ public class VariableConsumingTransition extends Transition {
 	@Override
 	public boolean matches(List<String> tokens) {
 		String token = tokens.get(0);
-		return dummyVariables.contains(token);
+		return variableNames.contains(token);
 	}
 }
