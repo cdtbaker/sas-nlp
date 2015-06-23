@@ -5,6 +5,9 @@ import java.util.Map;
 import java.util.Set;
 
 import main.analyses.abstraction.AnnotationComment;
+import main.analyses.simplerangeanalysis.PositiveNegativeLattice;
+import main.commentextraction.jml.objects.framework.Element;
+import main.commentextraction.jml.objects.framework.JMLElement;
 
 /**
  * Results from NLP
@@ -18,6 +21,7 @@ public class NLPResult {
 	public NLPResult() {
 		analysisAnnotations = new HashMap<>();
 	}
+
 
 	public void addComment(AnalysisType type, AnnotationComment comment) {
 		if (analysisAnnotations.containsKey(type)) {
@@ -37,5 +41,5 @@ public class NLPResult {
 	public CommentCollection getAnnotations(AnalysisType t) {
 		return analysisAnnotations.get(t);
 	}
-
+	
 }
