@@ -47,6 +47,7 @@ public class IntRangeMachine extends Machine {
 		
 		
 		// expression of relations
+		q10.add(new Transition(q100, "equals", new Action("op", "eq")));
 		q10.add(new Transition(q100, "does not equal", new Action("op", "ne")));
 		q40.add(new Transition(q60, "greater"));
 		q40.add(new Transition(q60, "higher"));
